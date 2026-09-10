@@ -80,6 +80,9 @@ DTS 侧挂在控制器下：
 
 - [4.1 · GPIO 基础](./4.1-gpio-basics.md)
 - [4.2 · 排针与 DTS 的对应](./4.2-gpio-header-vs-dts.md)
+- [4.3 · gpiod 深入：属性名 / ACTIVE_LOW / Pi 5 引脚](./4.3-gpiod-in-depth.md)
+- [4.4 · I2C 子系统与 regmap](./4.4-i2c-subsystem-and-regmap.md) ★ 节点必须挂在控制器下
+- [4.5 · SPI 与传输时序](./4.5-spi-and-transfer-timing.md) ★ 全双工、四模式
 
 ---
 

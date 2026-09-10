@@ -278,6 +278,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-4-1"><span class="n">4.1</span>4.1-gpio-basics</a>
           <a href="#s-4-2"><span class="n">4.2</span>4.2-gpio-header-vs-dts</a>
+          <a href="#s-4-3"><span class="n">4.3</span>· gpiod 深入：属性名怎么拼、ACTIVE_LOW 是什么、Pi 5 引脚怎么数</a>
+          <a href="#s-4-4"><span class="n">4.4</span>· I2C 子系统：client 从哪来、为什么节点必须挂在控制器下</a>
+          <a href="#s-4-5"><span class="n">4.5</span>· SPI：全双工的本质与四种模式</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -298,7 +301,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Pi 5 上跑通一个驱动 + 设备树</div>
           <h1>04 · GPIO / I2C / SPI：接真实外设</h1>
           <div class="meta">
-<span>book <b>09-device-drivers-dt</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>09-device-drivers-dt</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>6</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -392,6 +395,9 @@ static const struct of_device_id my_of_match[] = {
 <ul>
 <li><a href="#s-4-1">4.1 · GPIO 基础</a></li>
 <li><a href="#s-4-2">4.2 · 排针与 DTS 的对应</a></li>
+<li><a href="#s-4-3">4.3 · gpiod 深入：属性名 / ACTIVE_LOW / Pi 5 引脚</a></li>
+<li><a href="#s-4-4">4.4 · I2C 子系统与 regmap</a> ★ 节点必须挂在控制器下</li>
+<li><a href="#s-4-5">4.5 · SPI 与传输时序</a> ★ 全双工、四模式</li>
 </ul>
 <hr />
 <h2>验收</h2>
@@ -607,6 +613,803 @@ Linux 上多数场景：<strong>主线 GPIO 驱动 + DTS 配脚</strong>，应�
 <li>双排金属针 = <strong>扩展插座</strong>，引出 GPIO / 电源 / 总线；<strong>针 ≠ 全是 GPIO</strong></li>
 </ol>
 <p>与 <a href="#s-4-1">8.5</a> 合读：先懂 GPIO 是什么，再懂「板边那排针」只是把它接到你手里。</p>
+      </section>
+      <section class="section" id="s-4-3">
+        <div class="sec-head"><div class="sec-no">4.3</div><h2>· gpiod 深入：属性名怎么拼、ACTIVE_LOW 是什么、Pi 5 引脚怎么数</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> 现代 GPIO 接口 gpiod 的三个易错点——<strong>属性名是怎么从 <code class="c">con_id</code> 拼出来的</strong>、<code class="c">gpiod_set_value(1)</code> 到底输出高还是低、以及 Pi 5 上"引脚号"指的到底是什么。</p>
+</blockquote>
+<hr />
+<h2>一、属性名是拼出来的，不是写死的</h2>
+<p>驱动侧：</p>
+<pre class="code" data-label="C"><code class="c">led = devm_gpiod_get(&amp;pdev-&gt;dev, &quot;led&quot;, GPIOD_OUT_LOW);
+</code></pre>
+<p>内核拿 <code class="c">con_id = "led"</code> 去拼属性名（v6.6 <code class="c">drivers/gpio/gpiolib-of.c:96</code>）：</p>
+<pre class="code" data-label="C"><code class="c">static const char *const gpio_suffixes[] = { &quot;gpios&quot;, &quot;gpio&quot; };
+
+for (i = 0; i &lt; ARRAY_SIZE(gpio_suffixes); i++) {
+    if (con_id)
+        snprintf(propname, sizeof(propname), &quot;%s-%s&quot;, con_id, gpio_suffixes[i]);
+    else
+        snprintf(propname, sizeof(propname), &quot;%s&quot;, gpio_suffixes[i]);
+    ...
+}
+</code></pre>
+<p>所以：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">gpiod_get(dev, X)</code></th>
+<th>依次查找的属性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">gpiod_get(dev, "led")</code></td>
+<td><code class="c">led-gpios</code> → 找不到再试 <code class="c">led-gpio</code></td>
+</tr>
+<tr>
+<td><code class="c">gpiod_get(dev, NULL)</code></td>
+<td><code class="c">gpios</code> → <code class="c">gpio</code></td>
+</tr>
+<tr>
+<td><code class="c">gpiod_get_index(dev, "cs", 1)</code></td>
+<td><code class="c">cs-gpios</code> 的第 2 项</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>两个实用结论：</strong></p>
+<ol>
+<li><strong><code class="c">-gpios</code>（复数）是标准写法</strong>，<code class="c">-gpio</code>（单数）是历史遗留但<strong>仍然被接受</strong>。写 binding 时用复数。</li>
+<li><strong><code class="c">con_id</code> 是"功能名"，不是"引脚名"</strong>。叫 <code class="c">"led"</code> 而不是 <code class="c">"gpio17"</code>——因为驱动只关心"这是个灯"，不关心它接在第几根线上。<strong>引脚号是板级信息，属于 DTS，不属于驱动。</strong> 这条守住了，同一份驱动就能在不同板子上跑。</li>
+</ol>
+<hr />
+<h2>二、✦ ACTIVE_LOW：逻辑值 vs 物理电平</h2>
+<p>这是 gpiod 与传统整数 GPIO 接口<strong>最大的语义差别</strong>，也是最容易出 bug 的地方。</p>
+<pre class="code" data-label="dts"><code class="c">led-gpios = &lt;&amp;gpio 17 GPIO_ACTIVE_LOW&gt;;    /* 低电平点亮 */
+</code></pre>
+<pre class="code" data-label="C"><code class="c">gpiod_set_value(led, 1);      /* 逻辑 1 = &quot;开灯&quot; */
+</code></pre>
+<p><strong><code class="c">gpiod_set_value()</code> 写的是逻辑值，不是物理电平。</strong> 内核根据 <code class="c">GPIO_ACTIVE_LOW</code> 标志自动翻转：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>DTS 标志</th>
+<th><code class="c">gpiod_set_value(d, 1)</code> 的实际电平</th>
+<th><code class="c">gpiod_set_value(d, 0)</code> 的实际电平</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">GPIO_ACTIVE_HIGH</code></td>
+<td>高</td>
+<td>低</td>
+</tr>
+<tr>
+<td><strong><code class="c">GPIO_ACTIVE_LOW</code></strong></td>
+<td><strong>低</strong></td>
+<td><strong>高</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么这个设计是对的：</strong> 硬件接法（共阳还是共阴、三极管是 NPN 还是 PNP）是板级事实，驱动代码不该关心。把极性写进 DTS，驱动里就只有"开/关"的语义，<strong>换一块接法相反的板子，只改 DTS 不改驱动</strong>。</p>
+<p><strong>常见坑：</strong></p>
+<pre class="code" data-label="C"><code class="c">gpiod_set_value(led, 1);          /* ✅ 逻辑开 */
+gpiod_set_raw(led, 1);            /* ⚠️ 物理高，绕过极性翻转 —— 几乎不该用 */
+</code></pre>
+<p><code class="c">gpiod_set_raw()</code> / <code class="c">gpiod_get_raw()</code> 会<strong>忽略 ACTIVE_LOW</strong>，只在极少数场景（比如你要精确控制某条线的电气状态做协议位bang）才用。</p>
+<p>同理，读的时候：</p>
+<pre class="code" data-label="C"><code class="c">int val = gpiod_get_value(irq_gpio);   /* 返回逻辑值（已经按极性翻转过） */
+</code></pre>
+<hr />
+<h2>三、sleepable GPIO：挂在 I2C/SPI 扩展芯片上的引脚</h2>
+<p>不是所有 GPIO 都直接连在 SoC 上。PCA9555 这类 I2C 扩展芯片也提供 GPIO，访问它<strong>要走 I2C 传输，可能睡眠</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用哪个</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SoC 直连 GPIO</td>
+<td><code class="c">gpiod_get_value()</code> / <code class="c">gpiod_set_value()</code></td>
+<td>可以在中断上下文 / 持自旋锁时用</td>
+</tr>
+<tr>
+<td>扩展芯片 GPIO</td>
+<td><code class="c">gpiod_get_value_cansleep()</code> / <code class="c">gpiod_set_value_cansleep()</code></td>
+<td><strong>可能睡眠</strong>，禁止在原子上下文用</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>判断依据不是"这是不是 GPIO"，而是"访问它要不要走总线"。</strong> 规则很简单：</p>
+<blockquote>
+<p>只要这个函数可能出现在硬中断处理或 spinlock 临界区里，就必须确认用的是非 cansleep 版本，或者用 <code class="c">gpiod_cansleep(desc)</code> 在 probe 时检查并拒绝。</p>
+</blockquote>
+<pre class="code" data-label="C"><code class="c">if (gpiod_cansleep(desc)) {
+    dev_err(dev, &quot;this GPIO sleeps, can't be used in hardirq\n&quot;);
+    return -EINVAL;
+}
+</code></pre>
+<hr />
+<h2>四、用户态：libgpiod（sysfs 已废弃）</h2>
+<p><code class="c">/sys/class/gpio</code> 已被<strong>移除</strong>（v6.x 主线）。现代方式：</p>
+<pre class="code" data-label="shell"><code class="c">gpiodetect              # 列出所有 gpiochip
+gpioinfo                # 每个 line 的名字、方向、使用者
+gpioget  gpiochip0 17   # 读
+gpioset  gpiochip0 17=1 # 写
+gpiomon  gpiochip0 17   # 等边沿事件（比轮询强得多）
+</code></pre>
+<p><strong><code class="c">gpioinfo</code> 是调试利器</strong>——它会显示每根线的 <code class="c">consumer</code> 字段。看到某根线被占用却不知道是谁占的，<code class="c">gpioinfo</code> 会告诉你：</p>
+<pre class="code" data-label="code"><code class="c">line  17: &quot;PIN17&quot; unused input active-high
+line  18: &quot;PIN18&quot; &quot;my-driver&quot; output active-low [used]
+</code></pre>
+<p>如果这里显示 <code class="c">[used]</code> 但你的驱动 probe 失败，说明<strong>资源已经被别的驱动抢了</strong>——这类冲突在 dmesg 里往往是 <code class="c">-EBUSY</code> 一闪而过。</p>
+<hr />
+<h2>五、Pi 5 引脚：三层编号别搞混</h2>
+<p>Pi 5 上最容易混淆的是<strong>同一个物理引脚有三个"号码"</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>例子</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>物理针脚号</strong></td>
+<td>第 11 脚</td>
+<td>排针上的物理位置，1–40。<strong>接线用这个</strong></td>
+</tr>
+<tr>
+<td><strong>GPIO 线号</strong></td>
+<td>GPIO 17</td>
+<td>内核/软件看到的编号。<strong>写代码、写 DTS 用这个</strong></td>
+</tr>
+<tr>
+<td><strong>芯片内 line 号</strong></td>
+<td>取决于 gpiochip</td>
+<td><code class="c">gpioinfo</code> 里显示的 offset</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Pi 5 的 GPIO 由 RP1（南桥）提供，不是 SoC 直出</strong>——这是它和 Pi 4 的根本差别。RP1 经 PCIe 挂在 BCM2712 下。后果：</p>
+<ol>
+<li><strong>GPIO 寄存器基址和 Pi 4 完全不同</strong>，Pi 4 教程里的 <code class="c">0xFE200000</code> 直接抄会打到错误地址。</li>
+<li><strong><code class="c">gpiodetect</code> 里看到的 chip 名字/编号以你板子的实际输出为准</strong>，不要照抄教程里的 <code class="c">gpiochip0</code>。跑一下 <code class="c">gpiodetect</code> 和 <code class="c">gpioinfo</code> 就有答案。</li>
+<li><strong>访问延迟比 Pi 4 高</strong>（多一跳 PCIe）。做 bit-bang 协议（比如软件 I2C、WS2812 灯带时序）时，Pi 5 的时序余量比 Pi 4 差——这类应用建议用硬件控制器或加协处理器。</li>
+</ol>
+<p><strong>权威对照表：<code class="c">/boot/overlays/README</code></strong>（板子上有），以及 <code class="c">pinout</code> 命令（树莓派 OS 自带）。第三方引脚图的编号要交叉验证。</p>
+<hr />
+<h2>六、完整例子：DTS + 驱动点灯</h2>
+<pre class="code" data-label="dts"><code class="c">/* 加到某个 overlay 或板级 DTS */
+/ {
+    myleds {
+        compatible = &quot;wzp,myled&quot;;
+        led-gpios = &lt;&amp;gpio 17 GPIO_ACTIVE_LOW&gt;;
+    };
+};
+</code></pre>
+<pre class="code" data-label="C"><code class="c">static int myled_probe(struct platform_device *pdev)
+{
+    struct gpio_desc *led;
+
+    led = devm_gpiod_get(&amp;pdev-&gt;dev, &quot;led&quot;, GPIOD_OUT_LOW);
+    if (IS_ERR(led))
+        return dev_err_probe(&amp;pdev-&gt;dev, PTR_ERR(led), &quot;get led gpio&quot;);
+
+    gpiod_set_value(led, 1);        /* 逻辑开 → 因 ACTIVE_LOW 实际输出低电平 */
+    return 0;
+}
+
+static const struct of_device_id myled_of_match[] = {
+    { .compatible = &quot;wzp,myled&quot; }, { }
+};
+MODULE_DEVICE_TABLE(of, myled_of_match);
+</code></pre>
+<p><strong>注意 <code class="c">devm_gpiod_get</code> 的第三个参数</strong>：<code class="c">GPIOD_OUT_LOW</code> 表示"申请并初始化为逻辑 0 输出"。其它选项：<code class="c">GPIOD_OUT_HIGH</code>、<code class="c">GPIOD_IN</code>、<code class="c">GPIOD_ASIS</code>（不改状态）。<strong><code class="c">GPIOD_ASIS</code> 有风险</strong>——引脚可能保持在上电时的不确定电平，导致上电瞬间灯闪一下或继电器误动作。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>"功能名 vs 引脚号"的分层，就是配置与代码分离。</strong> 驱动说"我要一个叫 led 的 GPIO"，DTS 说"led 接在 GPIO17、低电平有效"。换板子不动驱动——这个模式和 HFT 里"策略代码读配置、不硬编码合约代码"是一回事。</li>
+<li><strong>ACTIVE_LOW 的自动翻转消除了整类 bug。</strong> 老式整数接口里"开灯写 0 还是写 1"要靠注释和脑记，改硬件就改代码。gpiod 把它变成数据，这是<strong>把易变的硬件事实从代码挪到数据</strong>的典型收益。</li>
+<li><strong>cansleep 的存在提醒一件事：抽象可能泄漏。</strong> 同样是 <code class="c">gpiod_set_value</code>，走 SoC 直连是几条指令，走 I2C 扩展器是毫秒级总线事务。<strong>接口相同，代价差三个数量级</strong>——在延迟敏感路径上，这个差异会咬人。</li>
+</ul>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一步：</strong> <a href="#s-4-2">4.2 · 排针与 DTS 的对应</a></li>
+<li><strong>下一步：</strong> <a href="#s-4-4">4.4 · I2C 子系统与 regmap</a></li>
+<li><strong>相关：</strong> <a href="chapter-03.html#s-3-5">03 · platform + DT</a>（<code class="c">devm_gpiod_get</code> 的自动释放）</li>
+</ul>
+<hr />
+<details>
+<summary>自测</summary>
+<ol>
+<li>驱动里 <code class="c">devm_gpiod_get(dev, "reset", ...)</code>，DTS 里属性名该写什么？写成 <code class="c">reset-gpio</code>（单数）能用吗？</li>
+<li>DTS 里写 <code class="c">GPIO_ACTIVE_LOW</code>，<code class="c">gpiod_set_value(d, 1)</code> 输出高电平还是低电平？想强制输出物理高电平怎么办？</li>
+<li><code class="c">gpiod_set_value</code> 和 <code class="c">gpiod_set_value_cansleep</code> 怎么选？选错的后果是什么？</li>
+<li>想查某根 GPIO 被哪个驱动占用了，用什么命令？</li>
+<li>Pi 5 上"第 11 脚"、"GPIO 17"、寄存器基址，这三者分别是什么？Pi 4 的 GPIO 基址能直接用到 Pi 5 上吗？</li>
+<li><code class="c">GPIOD_ASIS</code> 有什么风险？</li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p>标准写 <strong><code class="c">reset-gpios</code></strong>。写成 <code class="c">reset-gpio</code>（单数）<strong>能用</strong>——内核会依次尝试 <code class="c">gpio_suffixes[] = {"gpios", "gpio"}</code> 两个后缀。但新 binding 应该用复数标准形式。</p>
+</li>
+<li>
+<p>输出<strong>低电平</strong>。<code class="c">gpiod_set_value()</code> 写的是<strong>逻辑值</strong>，内核按 <code class="c">GPIO_ACTIVE_LOW</code> 自动翻转。想强制物理高电平用 <code class="c">gpiod_set_raw(d, 1)</code>（绕过极性翻转），但几乎不该这么用——极性问题应该在 DTS 里修，不该在代码里绕过。</p>
+</li>
+<li>
+<p>看 GPIO 是否挂在 I2C/SPI 扩展芯片上：SoC 直连用普通版（可在中断上下文/自旋锁内调用）；扩展芯片用 <code class="c">cansleep</code> 版（访问要走总线，可能睡眠）。<strong>选错用普通版访问 sleeping GPIO，会在原子上下文中睡眠 → 内核 oops。</strong> 可在 probe 里用 <code class="c">gpiod_cansleep(desc)</code> 检查并拒绝。</p>
+</li>
+<li>
+<p><code class="c">gpioinfo</code>（libgpiod 工具集）。它会列出每根线的 <code class="c">consumer</code> 字段，显示占用者名字。若显示 <code class="c">[used]</code> 而你的驱动拿不到，说明被别的驱动抢了（通常 dmesg 里有 <code class="c">-EBUSY</code>）。</p>
+</li>
+<li>
+<p>"第 11 脚"是<strong>排针物理位置</strong>（接线用）；"GPIO 17"是<strong>内核线号</strong>（写代码/写 DTS 用）；寄存器基址是 SoC/RP1 的内存映射地址。<strong>Pi 4 的基址不能用到 Pi 5 上</strong>——Pi 5 的 GPIO 由 RP1 南桥提供（经 PCIe 挂载），与 Pi 4 的 SoC 直出完全不同。另外 <code class="c">gpiochip</code> 编号也以 <code class="c">gpiodetect</code> 实测为准。</p>
+</li>
+<li>
+<p><code class="c">GPIOD_ASIS</code> 表示<strong>不修改引脚当前状态</strong>，引脚可能保持在上电/引导阶段的 indeterminate 电平。对 LED 是上电闪一下，对继电器/电机驱动可能是<strong>上电瞬间误动作</strong>。显式用 <code class="c">GPIOD_OUT_LOW</code>/<code class="c">GPIOD_OUT_HIGH</code> 指定初始状态。</p>
+</li>
+</ol>
+</details>
+</details>
+      </section>
+      <section class="section" id="s-4-4">
+        <div class="sec-head"><div class="sec-no">4.4</div><h2>· I2C 子系统：client 从哪来、为什么节点必须挂在控制器下</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> I2C 从设备的 <code class="c">i2c_client</code> 是谁创建的、<code class="c">compatible</code> 匹配走哪条路，以及一个和 platform 设备<strong>机制不同</strong>的关键点——节点必须挂在控制器下。</p>
+</blockquote>
+<hr />
+<h2>与 platform 的机制差异（先记住这张表）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>platform_device</th>
+<th>i2c_client</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>谁创建</td>
+<td><code class="c">of_platform_populate()</code> <strong>启动早期扫整棵树</strong></td>
+<td><strong>控制器驱动</strong> probe 时扫<strong>自己的子节点</strong></td>
+</tr>
+<tr>
+<td>节点位置</td>
+<td>树里任何位置</td>
+<td><strong>必须是某个 I2C 控制器节点的子节点</strong></td>
+</tr>
+<tr>
+<td>匹配依据</td>
+<td><code class="c">compatible</code></td>
+<td><code class="c">compatible</code>（回退到 <code class="c">id_table</code>）</td>
+</tr>
+<tr>
+<td><code class="c">reg</code> 含义</td>
+<td>内存地址（可多个）</td>
+<td><strong>7 位 I2C 从机地址</strong>（一个）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这是最容易犯的错：</strong> 把 <code class="c">sensor@48</code> 写在根节点下，然后纳闷为什么 probe 从不调用。原因很简单——<strong>没人去扫那个位置</strong>。</p>
+<hr />
+<h2>client 的创建链</h2>
+<pre class="code" data-label="code"><code class="c">控制器驱动 probe()
+    └─ i2c_add_adapter()  /  devm_i2c_add_adapter()
+            └─ of_i2c_register_devices(adap)        /* drivers/i2c/i2c-core-of.c */
+                    └─ for_each_child_of_node(adap-&gt;dev.of_node, node)
+                            └─ of_i2c_register_device(adap, node)
+                                    ├─ of_i2c_get_board_info()   /* 读 reg → info.addr */
+                                    └─ i2c_new_client_device(adap, &amp;info)
+</code></pre>
+<p>关键点：<strong>时机取决于控制器驱动</strong>。如果你的传感器驱动在控制器驱动之前 probe，它压根还没被创建出来——这时正确的行为是返回 <code class="c">-EPROBE_DEFER</code>（见 <a href="chapter-03.html#s-3-4">3.4</a>）。</p>
+<hr />
+<h2>匹配：三级回退，和 platform 几乎一样</h2>
+<p>v6.6 <code class="c">drivers/i2c/i2c-core-base.c:136</code>：</p>
+<pre class="code" data-label="C"><code class="c">static int i2c_device_match(struct device *dev, struct device_driver *drv)
+{
+    struct i2c_client *client = i2c_verify_client(dev);
+    struct i2c_driver *driver;
+
+    /* Attempt an OF style match */
+    if (i2c_of_match_device(drv-&gt;of_match_table, client))
+        return 1;
+
+    /* Then ACPI style match */
+    if (acpi_driver_match_device(dev, drv))
+        return 1;
+
+    driver = to_i2c_driver(drv);
+
+    /* Finally an I2C match */
+    if (i2c_match_id(driver-&gt;id_table, client))
+        return 1;
+
+    return 0;
+}
+</code></pre>
+<p><strong>OF → ACPI → <code class="c">id_table</code></strong>，比 platform 少一级（没有 <code class="c">driver_override</code>）。</p>
+<p><code class="c">id_table</code> 那一级匹配的是 <code class="c">i2c_client-&gt;name</code>，而这个名字来自 <code class="c">compatible</code> 里<strong>逗号后面的部分</strong>（<code class="c">of_i2c_get_board_info</code> 取 compatible 的后半段作为 modalias）。所以：</p>
+<pre class="code" data-label="dts"><code class="c">compatible = &quot;wzp,my-sensor&quot;;
+</code></pre>
+<p>→ <code class="c">client-&gt;name = "my-sensor"</code></p>
+<p><strong>这就是为什么有些老驱动没有 <code class="c">of_match_table</code> 也能匹配成功</strong>——它靠 <code class="c">id_table</code> 里的名字匹配 compatible 后半段。新驱动应该显式写 <code class="c">of_match_table</code>。</p>
+<hr />
+<h2>DTS 与驱动对照</h2>
+<pre class="code" data-label="dts"><code class="c">&amp;i2c1 {                                  /* ★ 挂在控制器下 */
+    clock-frequency = &lt;100000&gt;;          /* 100 kHz 标准模式 */
+
+    sensor@48 {                          /* 节点名 = 类型@地址 */
+        compatible = &quot;wzp,my-sensor&quot;;
+        reg = &lt;0x48&gt;;                    /* ★ 7 位地址，与节点名后缀一致 */
+        interrupt-parent = &lt;&amp;gpio&gt;;
+        interrupts = &lt;17 IRQ_TYPE_EDGE_FALLING&gt;;
+    };
+};
+</code></pre>
+<pre class="code" data-label="C"><code class="c">static int my_probe(struct i2c_client *client)
+{
+    u8 id;
+
+    /* client-&gt;addr 就是 DTS 里的 reg = &lt;0x48&gt; */
+    dev_info(&amp;client-&gt;dev, &quot;at 0x%02x\n&quot;, client-&gt;addr);
+
+    id = i2c_smbus_read_byte_data(client, REG_WHO_AM_I);
+    if (id &lt; 0)
+        return id;                       /* 负数错误码直接透传 */
+
+    if (id != EXPECTED_ID)
+        return dev_err_probe(&amp;client-&gt;dev, -ENODEV, &quot;bad id 0x%02x\n&quot;, id);
+
+    return 0;
+}
+
+static const struct of_device_id my_of_match[] = {
+    { .compatible = &quot;wzp,my-sensor&quot; }, { }
+};
+MODULE_DEVICE_TABLE(of, my_of_match);
+
+static struct i2c_driver my_driver = {
+    .driver = { .name = &quot;my-sensor&quot;, .of_match_table = my_of_match },
+    .probe = my_probe,
+    .id_table = my_id,                  /* 建议也带上 */
+};
+module_i2c_driver(my_driver);           /* = module_init+exit 的封装 */
+</code></pre>
+<p><strong><code class="c">module_i2c_driver()</code> 宏</strong>帮你生成 <code class="c">module_init</code>/<code class="c">module_exit</code>，一行顶六行。</p>
+<hr />
+<h2>读写 API：smbus vs 裸 transfer</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>API</th>
+<th>适用</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">i2c_smbus_read_byte_data(client, reg)</code></td>
+<td>单寄存器读写</td>
+<td><strong>最常用</strong>。SMBus 是 I2C 的子集，语义明确</td>
+</tr>
+<tr>
+<td><code class="c">i2c_smbus_read_word_data()</code> / <code class="c">write_word_data()</code></td>
+<td>16 位寄存器</td>
+<td><strong>注意字节序</strong></td>
+</tr>
+<tr>
+<td><code class="c">i2c_smbus_read_i2c_block_data()</code></td>
+<td>连续多字节</td>
+<td>长度上限 32（SMBus 限制）</td>
+</tr>
+<tr>
+<td><code class="c">i2c_transfer()</code> + <code class="c">i2c_msg[]</code></td>
+<td>复杂时序</td>
+<td>需要自己拼 msg 数组</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>规则：能用 smbus 就用 smbus。</strong> 大部分传感器芯片的手册里"读寄存器"时序就是 SMBus 语义，<code class="c">i2c_transfer</code> 只在需要重复起始条件、混合读写方向等特殊时序时才用。</p>
+<p><strong>字节序坑</strong>：<code class="c">read_word_data</code> 返回的是<strong>小端</strong>（先收到的字节在低 8 位）。有些传感器（比如部分 IMU）寄存器对是大端，需要手动 <code class="c">swab16()</code>。这个不查手册一定会错。</p>
+<hr />
+<h2>regmap：什么时候该用它</h2>
+<p><strong>触发条件：芯片寄存器超过 ~10 个，或者需要缓存/批量访问。</strong></p>
+<p>regmap 解决四件事：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>能力</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>总线抽象</strong></td>
+<td>同一份寄存器定义，I2C / SPI / MMIO 都能用（换总线只改 init）</td>
+</tr>
+<tr>
+<td><strong>字节序</strong></td>
+<td>一次性配置 <code class="c">val_format_endian</code>，不用每次手动 <code class="c">swab16</code></td>
+</tr>
+<tr>
+<td><strong>缓存</strong></td>
+<td><code class="c">regcache</code> 把寄存器镜像放内存，避免重复读（也支持只写回脏值）</td>
+</tr>
+<tr>
+<td><strong>原子访问</strong></td>
+<td>选择 <code class="c">regmap_config</code> 里的锁类型，或完全无锁（自己保证）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">static const struct regmap_config my_regmap_config = {
+    .reg_bits = 8,              /* 寄存器地址宽度 */
+    .val_bits = 8,              /* 寄存器值宽度 */
+    .max_register = 0x7F,
+    .cache_type = REGCACHE_RBTREE,
+};
+
+/* probe 里 */
+m-&gt;regmap = devm_regmap_init_i2c(client, &amp;my_regmap_config);
+
+/* 之后读写都走 regmap */
+regmap_read(m-&gt;regmap, REG_ID, &amp;val);
+regmap_write(m-&gt;regmap, REG_CTRL, 0x01);
+regmap_update_bits(m-&gt;regmap, REG_CTRL, MASK_EN, MASK_EN);   /* 读-改-写 */
+</code></pre>
+<p><strong><code class="c">regmap_update_bits</code> 是"读-改-写"的原子封装</strong>——手写容易漏掉"只改相关位"这一步，而这个 bug 表现为"改了一个功能，另一个功能莫名失效"。</p>
+<p><strong>什么时候不必用：</strong> 只读写 1–3 个寄存器、没有缓存需求的简单设备，直接 <code class="c">i2c_smbus_*</code> 更直白。regmap 的初始化代码本身就有十几行。</p>
+<hr />
+<h2>调试</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 总线在吗、有几个
+i2cdetect -l
+
+# 2. 扫某个总线上挂了哪些设备（★ 确认硬件连接的第一件事）
+i2cdetect -y 1
+#        0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+#   00:          -- -- -- -- -- -- -- -- -- -- -- -- --
+#   40: -- -- -- -- -- -- -- -- 48 -- -- -- -- -- -- --
+#                                ↑ 有设备应答
+
+# 3. 直接读寄存器（不写驱动先验证芯片活着）
+i2cget -y 1 0x48 0x0f        # 读 0x48 的 0x0f 寄存器
+i2cset -y 1 0x48 0x20 0x01
+
+# 4. 内核侧
+cat /sys/bus/i2c/devices/1-0048/name
+</code></pre>
+<p><strong><code class="c">i2cdetect</code> 应该永远排在第一位</strong>——它是"硬件层有没有问题"的判据。如果 <code class="c">i2cdetect</code> 看不到设备，那问题在接线/上拉/地址，<strong>跟驱动代码一点关系都没有</strong>，不查这个就去改驱动是浪费时间。</p>
+<p>⚠️ <code class="c">i2cdetect</code> 扫描会向所有地址发探测，某些设备可能被误伤（比如写操作触发意外状态）。对已知敏感的总线谨慎使用。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>I2C 是"慢总线 + 少引脚"的权衡产物</strong>：100kbps–1Mbps，两根线挂多个设备。选型的本质是<strong>引脚预算 vs 带宽预算</strong>——和 HFT 里"网卡带宽 vs PCIe 通道数"是同一类问题。</li>
+<li><strong>I2C 传输会睡眠</strong>（总线事务是毫秒级）。<strong>硬中断上下文里不能直接做 I2C 读写</strong>——这是 <a href="chapter-05.html#s-5-1">05-irq-locking</a> 里"中断里不能睡眠"的真实案例。传感器数据准备好产生中断 → 中断里只能调度下半部 → 在线程化中断或 workqueue 里做 I2C 读。</li>
+<li><strong>regmap 的缓存是双刃剑</strong>：省了总线往返，但缓存与实际寄存器可能不一致（比如硬件自己改了某位）。需要精确读取状态时用 <code class="c">regcache_cache_bypass()</code> 或 <code class="c">REGCACHE_NONE</code>。<strong>"省一次读"换来"状态错乱"，在控制系统里是灾难。</strong></li>
+</ul>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一步：</strong> <a href="#s-4-3">4.3 · gpiod 深入</a></li>
+<li><strong>下一步：</strong> <a href="#s-4-5">4.5 · SPI 与传输时序</a></li>
+<li><strong>相关：</strong> <a href="chapter-03.html#s-3-4">03 · compatible 匹配</a>（匹配机制对比）</li>
+</ul>
+<hr />
+<details>
+<summary>自测</summary>
+<ol>
+<li>I2C 从设备节点写在根节点下会怎样？为什么？</li>
+<li><code class="c">i2c_client</code> 是谁、在什么时候创建的？</li>
+<li><code class="c">reg = &lt;0x48&gt;</code> 里的 0x48 是什么？节点名为什么约定写成 <code class="c">sensor@48</code>？</li>
+<li><code class="c">i2c_device_match</code> 的三级回退是什么？没有 <code class="c">of_match_table</code> 的老驱动靠什么匹配？</li>
+<li>什么情况下该引入 regmap？<code class="c">regmap_update_bits</code> 解决了什么 bug？</li>
+<li>硬件连上了但驱动读不到数据，第一件事该做什么？</li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p><strong>probe 永远不会被调用，且没有任何报错。</strong> 因为 <code class="c">i2c_client</code> 是由<strong>控制器驱动</strong>在 probe 时扫描<strong>自己的子节点</strong>创建的（<code class="c">of_i2c_register_devices</code>），根节点下的节点不在任何控制器的子节点里，没人去扫它。这和 platform_device 不同——后者由 <code class="c">of_platform_populate()</code> 启动早期扫整棵树。</p>
+</li>
+<li>
+<p>由<strong>控制器（adapter）驱动</strong>创建。控制器 probe 时调用 <code class="c">i2c_add_adapter()</code>，内部触发 <code class="c">of_i2c_register_devices()</code> 遍历自己的 DT 子节点，对每个子节点调 <code class="c">of_i2c_get_board_info()</code>（读 <code class="c">reg</code> 得到地址）再 <code class="c">i2c_new_client_device()</code>。所以如果传感器驱动比控制器驱动先 probe，client 还不存在——这正需要 <code class="c">-EPROBE_DEFER</code>。</p>
+</li>
+<li>
+<p><code class="c">0x48</code> 是 <strong>7 位 I2C 从机地址</strong>。节点名 <code class="c">sensor@48</code> 中 <code class="c">@</code> 后面必须与 <code class="c">reg</code> 值一致（十六进制）——这是 DT 规范对"有 reg 的节点"的命名约定，便于 <code class="c">i2cdetect</code> 结果与 DTS 对照。</p>
+</li>
+<li>
+<p><strong>OF（compatible）→ ACPI → <code class="c">id_table</code></strong>，比 platform 少一级（platform 还有 <code class="c">driver_override</code>）。老驱动没有 <code class="c">of_match_table</code> 时靠 <code class="c">id_table</code> 匹配 <code class="c">i2c_client-&gt;name</code>，而这个名字来自 <code class="c">compatible</code> 逗号后的部分（<code class="c">"wzp,my-sensor"</code> → <code class="c">"my-sensor"</code>）。</p>
+</li>
+<li>
+<p><strong>寄存器超过约 10 个、需要缓存/批量访问、或希望同一份代码支持多种总线时</strong>引入 regmap。它解决字节序、缓存、总线抽象。<code class="c">regmap_update_bits()</code> 封装了"读-改-写"并只修改指定 mask 的位，避免了手写时"读回整个寄存器、改了别的位、写回导致其它功能失效"这类经典 bug。</p>
+</li>
+<li>
+<p><strong>先跑 <code class="c">i2cdetect -y &lt;bus&gt;</code> 确认设备有应答。</strong> 这是"硬件层是否 OK"的判据——看不到设备说明问题在接线、上拉电阻、地址或供电，与驱动代码无关。在没确认这一点之前改驱动是浪费时间。</p>
+</li>
+</ol>
+</details>
+</details>
+      </section>
+      <section class="section" id="s-4-5">
+        <div class="sec-head"><div class="sec-no">4.5</div><h2>· SPI：全双工的本质与四种模式</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> SPI 和 I2C 的根本差别不是"快"，而是<strong>全双工、无寻址、靠片选选设备</strong>——这三点决定了它的 API 长什么样，也决定了最常见的两个坑：<strong>读数据必须发 dummy 字节</strong>、<strong><code class="c">spi_sync</code> 不能在中断里调用</strong>。</p>
+</blockquote>
+<hr />
+<h2>SPI vs I2C：结构差异决定一切</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>I2C</th>
+<th>SPI</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>信号线</td>
+<td>2（SDA + SCL）</td>
+<td>4（SCLK + MOSI + MISO + CS），每加一个从设备多一根 CS</td>
+</tr>
+<tr>
+<td>寻址</td>
+<td><strong>7 位地址</strong>（协议里带地址字节）</td>
+<td><strong>无地址</strong>——靠<strong>片选线</strong>选中</td>
+</tr>
+<tr>
+<td>方向</td>
+<td>半双工（同一时刻只能发或收）</td>
+<td><strong>全双工</strong>（发的同时必然也在收）</td>
+</tr>
+<tr>
+<td>速率</td>
+<td>100k – 3.4M bps</td>
+<td>通常 10M – 50M+ bps（受布线限制）</td>
+</tr>
+<tr>
+<td>流控/应答</td>
+<td>有 ACK/NACK</td>
+<td><strong>无应答</strong>——主设备不知道从设备是否存在</td>
+</tr>
+<tr>
+<td>多主</td>
+<td>支持</td>
+<td>不支持</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>"无寻址"的后果：</strong> SPI 从设备的身份完全由<strong>硬件连线（CS 线）</strong>决定，DTS 里的 <code class="c">reg</code> 表示<strong>用的是第几根片选</strong>，不是设备地址：</p>
+<pre class="code" data-label="dts"><code class="c">&amp;spi0 {
+    adc@0 {                      /* @0 = chip select 0 */
+        compatible = &quot;wzp,my-adc&quot;;
+        reg = &lt;0&gt;;               /* ★ 片选编号，不是设备地址！ */
+        spi-max-frequency = &lt;10000000&gt;;
+    };
+};
+</code></pre>
+<p>这和 I2C 的 <code class="c">reg = &lt;0x48&gt;</code>（设备地址）<strong>含义完全不同</strong>，是跨总线时最常搞混的一点。</p>
+<hr />
+<h2>全双工：没有"读"，只有"交换"</h2>
+<p>SPI 硬件上根本没有"只读"这个操作。<strong>主设备每送出一位，就必然同时收到一位</strong>（移位寄存器环回）。</p>
+<p>所以"读寄存器"实际是：</p>
+<pre class="code" data-label="code"><code class="c">主机发：  [0x80][0x00][0x00]     ← 命令字 + 两个 dummy 字节
+主机收：  [0xXX][0xAA][0xBB]     ← 第一个字节是无效数据，后两个才是真数据
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* 读 2 字节：要发 1 命令 + 2 dummy，总共 3 字节 */
+u8 tx[3] = { 0x80 | REG_DATA, 0x00, 0x00 };
+u8 rx[3];
+
+spi_write_then_read(spi, tx, 1, rx, 2);   /* 便捷封装：发 1 字节，再收 2 字节 */
+</code></pre>
+<p><strong>⭐ 最常见的 bug：</strong> 以为"读 N 字节就传 N 字节"。真实需要的是 <code class="c">1 + N</code>（命令 + N 个 dummy），而且<strong>收到的前 1 个字节永远是垃圾</strong>（从设备还没准备好数据）。</p>
+<p>对比 I2C：<code class="c">i2c_smbus_read_byte_data()</code> 内部帮你处理了"发地址→重复起始→读数据"的复杂时序，你只看到"读一个寄存器"。<strong>SPI 没有这层抽象，时序得自己数。</strong></p>
+<hr />
+<h2>四种模式：CPOL 和 CPHA</h2>
+<pre class="code" data-label="code"><code class="c">CPOL (Clock Polarity)  = 空闲时 SCLK 是高还是低
+CPHA (Clock Phase)     = 数据在第几个边沿采样
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>mode</th>
+<th>CPOL</th>
+<th>CPHA</th>
+<th>空闲电平</th>
+<th>采样边沿</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>低</td>
+<td>上升沿</td>
+</tr>
+<tr>
+<td>1</td>
+<td>0</td>
+<td>1</td>
+<td>低</td>
+<td>下降沿</td>
+</tr>
+<tr>
+<td>2</td>
+<td>1</td>
+<td>0</td>
+<td>高</td>
+<td>下降沿</td>
+</tr>
+<tr>
+<td>3</td>
+<td>1</td>
+<td>1</td>
+<td>高</td>
+<td>上升沿</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>绝大多数芯片用 mode 0 或 mode 3。</strong> DTS 里指定：</p>
+<pre class="code" data-label="dts"><code class="c">spi-cpol;              /* CPOL=1 */
+spi-cpha;              /* CPHA=1 */
+/* 两个都不写 = mode 0；两个都写 = mode 3 */
+</code></pre>
+<p><strong>模式配错的症状很有特征：</strong> 数据能收到，但<strong>每一位都偏移或反转</strong>——比如读 ID 期望 <code class="c">0xEA</code> 却得到 <code class="c">0xD5</code>。看到这种"看起来差一点"的错误，第一嫌疑就是 SPI 模式，不是接线。</p>
+<hr />
+<h2>传输 API 三层</h2>
+<pre class="code" data-label="C"><code class="c">/* ① 最便捷：一次&quot;写然后读&quot;，内部拆成两个 transfer */
+spi_write_then_read(spi, txbuf, n_tx, rxbuf, n_rx);
+
+/* ② 单传输：全双工交换 n 字节 */
+spi_write_then_read 不够用时：
+struct spi_transfer t = {
+    .tx_buf = tx,
+    .rx_buf = rx,
+    .len    = len,
+    .speed_hz = 1000000,       /* 这次传输临时降速 */
+};
+spi_sync_transfer(spi, &amp;t, 1);
+
+/* ③ 完整控制：spi_message + 多个 transfer（保持 CS 连续选中） */
+struct spi_message m;
+spi_message_init(&amp;m);
+spi_message_add_tail(&amp;t1, &amp;m);
+spi_message_add_tail(&amp;t2, &amp;m);
+spi_sync(spi, &amp;m);
+</code></pre>
+<p><strong>为什么需要 message（第③层）：</strong> 有些器件要求"CS 拉低 → 发命令 → 发地址 → 读数据 → CS 拉高"，中间<strong>不能释放片选</strong>。用两个独立的 <code class="c">spi_write_then_read</code> 会在中间把 CS 拉高，器件状态机就复位了。<strong>message 保证一组 transfer 期间 CS 连续有效。</strong></p>
+<hr />
+<h2>⚠️ spi_sync 会睡眠，中断里不能用</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>能否在中断上下文</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">spi_sync()</code> / <code class="c">spi_sync_transfer()</code> / <code class="c">spi_write_then_read()</code></td>
+<td>❌ <strong>会睡眠</strong>（等待 completion）</td>
+</tr>
+<tr>
+<td><code class="c">spi_async()</code></td>
+<td>✅ 不等待，但完成回调在<strong>非原子上下文</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>和 I2C 一样的问题，但更常踩</strong>——因为 SPI 常用于高速数据采集，"数据准备好了"中断触发后想立刻读是自然反应，而这在硬中断里是做不了的（见 <a href="chapter-05.html#s-5-1">05 · 中断上下文</a>）。</p>
+<p>正确做法：</p>
+<pre class="code" data-label="code"><code class="c">硬中断（快速应答、清中断）  →  调度下半部
+                                  ↓
+                    线程化中断 / workqueue  ← 在这里 spi_sync 读数据
+</code></pre>
+<hr />
+<h2>驱动骨架</h2>
+<pre class="code" data-label="C"><code class="c">static int my_probe(struct spi_device *spi)
+{
+    int ret;
+    u8 id;
+
+    /* 从 spi_device 拿参数（都来自 DTS，不要硬编码） */
+    dev_info(&amp;spi-&gt;dev, &quot;mode=%d max_speed=%u cs=%d bpw=%d\n&quot;,
+             spi-&gt;mode, spi-&gt;max_speed_hz, spi-&gt;chip_select,
+             spi-&gt;bits_per_word);
+
+    ret = spi_write_then_read(spi, (u8[]){0x00}, 1, &amp;id, 1);
+    if (ret &lt; 0)
+        return dev_err_probe(&amp;spi-&gt;dev, ret, &quot;read id&quot;);
+
+    if (id != EXPECTED_ID)
+        return dev_err_probe(&amp;spi-&gt;dev, -ENODEV, &quot;bad id 0x%02x&quot;, id);
+
+    return 0;
+}
+
+static const struct of_device_id my_of_match[] = {
+    { .compatible = &quot;wzp,my-adc&quot; }, { }
+};
+MODULE_DEVICE_TABLE(of, my_of_match);
+
+static struct spi_driver my_driver = {
+    .driver = { .name = &quot;my-adc&quot;, .of_match_table = my_of_match },
+    .probe = my_probe,
+};
+module_spi_driver(my_driver);
+</code></pre>
+<p><strong>配置从 DTS 来，驱动不写死速率/模式</strong>——同一颗芯片在不同板子上布线不同，能跑的最高频率也不同，这是板级事实。</p>
+<hr />
+<h2>调试</h2>
+<pre class="code" data-label="shell"><code class="c"># 用户态先验证硬件（无需驱动）
+ls /dev/spidev*                      # 需启用 spidev（调试用，产品别开）
+# 用 spidev_test 工具（内核源码 tools/spi/）
+spidev_test -D /dev/spidev0.0 -s 1000000 -p &quot;\x00&quot;
+
+# 内核侧
+cat /sys/bus/spi/devices/spi0.0/modalias
+ls /sys/bus/spi/drivers/
+
+# ★ 最有效：逻辑分析仪 / 示波器看四根线
+</code></pre>
+<p><strong>SPI 必须看波形。</strong> I2C 有 ACK 可以确认设备存在，SPI <strong>没有应答机制</strong>——主设备发完了就完了，从设备在不在它不知道。所以"读回来全是 0xFF 或全是 0x00"时，无法从软件层面区分"没接设备"、"CS 线没接对"、"模式错"这三种情况。<strong>四根线的波形看一眼就有结论，比读代码快十倍。</strong></p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong><code class="c">spi_sync</code> 不能进中断这条规则，在高频采样场景是架构约束</strong>：IMU/高速 ADC 的数据就绪中断频率可达数十 kHz，中断里做不了总线传输，只能"中断里打时间戳 + 下半部搬数据"。这个"上半部只做最少量工作"的模式，和 HFT 里网卡中断只负责 NAPI 调度、实际收包在软中断/轮询线程里做，<strong>是同一个设计范式</strong>。</li>
+<li><strong>大数据量必然走向 DMA</strong>：<code class="c">spi_transfer</code> 可以设 <code class="c">tx_dma</code>/<code class="c">rx_dma</code>，让控制器直接搬内存，见 <a href="chapter-06.html#s-6-1">06 · DMA 与 mmap</a>。CPU 逐字节 SPI 的开销在 MHz 级采样下不可接受。</li>
+<li><strong>无应答是 SPI 的可靠性软肋</strong>：工业场景要么靠周期性读 ID 寄存器做"心跳"，要么加 CRC。这和交易系统里"链路层没有确认就必须自己做应用层心跳"是同一条经验——<strong>别指望底层替你保证可靠性</strong>。</li>
+</ul>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一步：</strong> <a href="#s-4-4">4.4 · I2C 子系统与 regmap</a></li>
+<li><strong>下一步：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/05-irq-locking/">05 · 中断与并发</a></li>
+<li><strong>相关：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06-dma-mmap/">06 · DMA 与 mmap</a>（高速 SPI 采集的最终归宿）</li>
+</ul>
+<hr />
+<details>
+<summary>自测</summary>
+<ol>
+<li>SPI DTS 里的 <code class="c">reg = &lt;0&gt;</code> 是什么意思？和 I2C 的 <code class="c">reg = &lt;0x48&gt;</code> 有什么本质区别？</li>
+<li>为什么 SPI "读 N 字节"实际要传 N+1 字节？收到的第一个字节是什么？</li>
+<li>CPOL 和 CPHA 各决定什么？mode 0 和 mode 3 分别是什么组合？</li>
+<li>数据能收到但每一位都偏移/反转，最可能是什么原因？</li>
+<li>什么情况下必须用 <code class="c">spi_message</code> 而不是多次 <code class="c">spi_sync_transfer</code>？</li>
+<li>传感器数据就绪中断里想读 SPI，为什么不行？正确做法是什么？</li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p>SPI 的 <code class="c">reg = &lt;0&gt;</code> 是<strong>片选编号</strong>（用第几根 CS 线），因为 SPI <strong>协议里没有地址概念</strong>，设备身份由硬件连线决定。I2C 的 <code class="c">reg = &lt;0x48&gt;</code> 是<strong>7 位从机地址</strong>，写在协议的地址字节里。这是跨总线移植时最容易搞混的一点。</p>
+</li>
+<li>
+<p>SPI 是<strong>全双工</strong>：主设备发第一位的同时就收到第一位，没有"只收不发"的操作。所以读 N 字节需要先发命令字节，再发 N 个 dummy 字节来"换"回数据，总共 N+1（或 1+N）。<strong>收到的第一个字节是从设备还在解析命令时返回的，永远是无效数据</strong>，必须从偏移 1 开始取。</p>
+</li>
+<li>
+<p><strong>CPOL</strong> 决定 SCLK 空闲时的电平（0=低，1=高）；<strong>CPHA</strong> 决定在第几个时钟边沿采样数据（0=第一个边沿，1=第二个边沿）。组合成 4 种模式：mode 0 = CPOL0/CPHA0，mode 3 = CPOL1/CPHA1。多数芯片用 0 或 3。</p>
+</li>
+<li>
+<p><strong>SPI 模式（CPOL/CPHA）配错。</strong> 特征就是"能收到数据但看起来差一点"——位偏移、字节值像被移位。此时接线是通的，改 <code class="c">spi-cpol</code>/<code class="c">spi-cpha</code> 即可，不要去查接线。</p>
+</li>
+<li>
+<p>当<strong>多个 transfer 之间不能释放片选（CS）</strong>时。某些器件要求"CS 拉低 → 命令 → 地址 → 读数据 → CS 拉高"是一个连续事务，中间 CS 一抬器件状态机就复位。多次 <code class="c">spi_sync_transfer</code> 会在每次传输后释放 CS；<code class="c">spi_message</code> 把多个 transfer 串成一个原子事务，期间 CS 保持有效。</p>
+</li>
+<li>
+<p><strong><code class="c">spi_sync()</code> 会睡眠</strong>（内部等 completion），硬中断上下文不允许睡眠，会导致内核 oops。正确做法：硬中断里只做最必要的工作（清中断、记录时间戳），然后调度下半部——在<strong>线程化中断或 workqueue</strong> 里调用 <code class="c">spi_sync</code> 读数据。</p>
+</li>
+</ol>
+</details>
+</details>
       </section>
 
 

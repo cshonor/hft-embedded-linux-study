@@ -278,6 +278,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-3-1"><span class="n">3.1</span>3.1-new-hw-dts-vs-driver</a>
           <a href="#s-3-2"><span class="n">3.2</span>3.2-dts-driver-relationship</a>
+          <a href="#s-3-3"><span class="n">3.3</span>· DTB 的一生：从 DTS 到 platform_device</a>
+          <a href="#s-3-4"><span class="n">3.4</span>· compatible 匹配与 probe：为什么"没报错"才是最难查的</a>
+          <a href="#s-3-5"><span class="n">3.5</span>· devm 与出错路径：为什么 probe 里不用手写 unwind</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -298,7 +301,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Pi 5 上跑通一个驱动 + 设备树</div>
           <h1>03 · platform + 设备树：本模块的核心</h1>
           <div class="meta">
-<span>book <b>09-device-drivers-dt</b></span><span>chapter <b>Ch 3</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>09-device-drivers-dt</b></span><span>chapter <b>Ch 3</b></span><span>sections <b>6</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -379,6 +382,9 @@ static int my_probe(struct platform_device *pdev)
 <ul>
 <li><a href="#s-3-1">3.1 · 加新硬件：改 DTS 还是写驱动</a></li>
 <li><a href="#s-3-2">3.2 · DTS 与驱动的关系</a></li>
+<li><a href="#s-3-3">3.3 · DTB 的一生：DTS → platform_device</a> ★ 先查"跑的是哪棵树"</li>
+<li><a href="#s-3-4">3.4 · compatible 匹配与 probe 全流程</a> ★ 为什么"没报错"最难查</li>
+<li><a href="#s-3-5">3.5 · devm 与出错路径</a></li>
 <li><a href="../../08-embedded-boot-build/html/chapter-01.html#s-1-6">设备树 vs UEFI</a></li>
 </ul>
 <hr />
@@ -696,6 +702,778 @@ static struct platform_driver uart_drv = {
 <p><strong>DT = 静态资源清单；驱动 = 操作逻辑。</strong><br />
 靠 <code class="c">compatible</code> 绑在一起，靠 <code class="c">of_*</code> 在 <code class="c">probe</code> 里读树 — 板级移植成本主要落在改树上，而不是改遍驱动源码。</p>
 <p>实操主线：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/..">12 Madieu · Platform + DTS</a>；本书 Ch8 仅概念预告。</p>
+      </section>
+      <section class="section" id="s-3-3">
+        <div class="sec-head"><div class="sec-no">3.3</div><h2>· DTB 的一生：从 DTS 到 platform_device</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> 一个 <code class="c">.dts</code> 文本文件，怎么变成内核里一颗 <code class="c">device_node</code> 树，又怎么变成 <code class="c">platform_device</code> 触发你的 <code class="c">probe()</code>。以及<strong>板子上到底跑的是哪个 DTB</strong>——这个问题必须先有答案，否则改半天改的不是在跑的那棵树。</p>
+</blockquote>
+<hr />
+<h2>完整链路</h2>
+<pre class="code" data-label="code"><code class="c">   arch/arm64/boot/dts/.../bcm2712-rpi-5-b.dts    ← 人写的文本
+                  │  dtc（设备树编译器）
+                  ▼
+   bcm2712-rpi-5-b.dtb                            ← 二进制 blob（扁平化 = FDT）
+                  │  固件/ bootloader 加载到内存
+                  │  启动内核时把 DTB 物理地址放进寄存器（arm64: x0）
+                  ▼
+   setup_arch() → unflatten_device_tree()          ← 展开成 device_node 树
+                  ▼
+   of_platform_populate()                          ← 扫树，建 platform_device
+                  ▼
+   platform_bus 匹配 → driver-&gt;probe()
+</code></pre>
+<p><strong>关键认知：</strong> DTB 是<strong>扁平化</strong>的（Flattened Device Tree，所以叫 FDT）——它是线性的字节流，不是树形结构。内核启动时把它"展开"（unflatten）成内存里的树。这个名字本身就解释了为什么改 DTS 必须重新编译：内核不认识文本。</p>
+<hr />
+<h2>第二步最容易踩：不是所有节点都会变成 device</h2>
+<p><code class="c">of_platform_populate()</code> 递归扫树（<code class="c">drivers/of/platform.c</code>），但有三道闸门：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>闸门</th>
+<th>源码位置</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">!of_device_is_available(np)</code></td>
+<td><code class="c">of_platform_device_create_pdata</code></td>
+<td><code class="c">status</code> 不是 <code class="c">okay</code>/<code class="c">ok</code> → <strong>跳过</strong></td>
+</tr>
+<tr>
+<td><code class="c">strict &amp;&amp; !compatible</code></td>
+<td><code class="c">of_platform_bus_create</code></td>
+<td>没有 <code class="c">compatible</code> 属性 → <strong>跳过</strong></td>
+</tr>
+<tr>
+<td><code class="c">!of_match_node(matches, bus)</code></td>
+<td><code class="c">of_platform_bus_create</code> 末尾</td>
+<td><strong>父节点不在总线表里 → 不递归子节点</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>第三道是最阴的。看这段（v6.6 <code class="c">drivers/of/platform.c:418</code>）：</p>
+<pre class="code" data-label="C"><code class="c">dev = of_platform_device_create_pdata(bus, bus_id, platform_data, parent);
+if (!dev || !of_match_node(matches, bus))
+    return 0;                    /* ← 不递归！子节点全不建 */
+
+for_each_child_of_node(bus, child) {
+    rc = of_platform_bus_create(child, matches, lookup, &amp;dev-&gt;dev, strict);
+    ...
+}
+</code></pre>
+<p>也就是说：<strong>你的节点挂在某个父节点下，如果父节点的 <code class="c">compatible</code> 不在 <code class="c">of_default_bus_match_table</code> 里，你这个子节点根本不会被创建成 device</strong>，probe 永远不调用，且<strong>没有任何报错</strong>。</p>
+<p><code class="c">status</code> 的判定也很直白（v6.6 <code class="c">drivers/of/base.c:426</code>）：</p>
+<pre class="code" data-label="C"><code class="c">status = __of_get_property(device, &quot;status&quot;, &amp;statlen);
+if (status == NULL)
+    return true;                 /* 没写 status == 默认可用 */
+if (statlen &gt; 0) {
+    if (!strcmp(status, &quot;okay&quot;) || !strcmp(status, &quot;ok&quot;))
+        return true;
+}
+return false;                    /* 其它一律不可用，包括 &quot;disabled&quot;、&quot;fail-*&quot; */
+</code></pre>
+<p>注意两件事：<strong>不写 <code class="c">status</code> 等于 <code class="c">okay</code></strong>（不是等于 disabled）；<strong>写错成 <code class="c">ok</code> 以外的任何值（比如 <code class="c">enable</code>、<code class="c">OKAY</code>）都算不可用</strong>——大小写敏感。</p>
+<hr />
+<h2>命名规则：为什么是 <code class="c">fe200000.gpio</code> 这种怪名字</h2>
+<p><code class="c">of_device_make_bus_id()</code>（<code class="c">drivers/of/platform.c:108</code>）拼的名字：</p>
+<pre class="code" data-label="C"><code class="c">reg = of_get_property(node, &quot;reg&quot;, NULL);
+if (reg &amp;&amp; (addr = of_translate_address(node, reg)) != OF_BAD_ADDR) {
+    dev_set_name(dev, &quot;%llx.%pOFn&quot;, addr, node);   /* 地址.节点名 */
+    return;
+}
+/* 地址翻译不了 → 往上找父节点，用 kbasename(full_name) 拼前缀 */
+dev_set_name(dev, &quot;%s:%s&quot;, kbasename(node-&gt;full_name), dev_name(dev));
+</code></pre>
+<p>所以 <code class="c">/sys/bus/platform/devices/</code> 里看到的 <code class="c">107d001000.serial</code> = 物理地址 <code class="c">0x107d001000</code> + 节点名 <code class="c">serial</code>。<strong>地址前缀来自 <code class="c">reg</code> 的翻译结果</strong>，这也是为什么同名节点不会撞车。</p>
+<hr />
+<h2>第三步：运行时怎么查"现在跑的是哪棵树"</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路径</th>
+<th>是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">/sys/firmware/devicetree/base/</code></td>
+<td>真正的运行时视图（device_node 树导出）</td>
+</tr>
+<tr>
+<td><code class="c">/proc/device-tree</code></td>
+<td>指向上面的<strong>符号链接</strong>（兼容老习惯）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>三板斧</h3>
+<p><strong>① 看节点在不在、compatible 对不对</strong></p>
+<pre class="code" data-label="shell"><code class="c">ls /proc/device-tree/
+cat /proc/device-tree/mydev@fe200000/compatible
+</code></pre>
+<p><code class="c">compatible</code> 是<strong>字符串列表</strong>（多个串以 <code class="c">\0</code> 分隔），直接 <code class="c">cat</code> 会粘成一行。正确读法：</p>
+<pre class="code" data-label="shell"><code class="c">tr '\0' '\n' &lt; /proc/device-tree/mydev@fe200000/compatible
+# 输出：
+# wzp,my-device
+# generic-fallback-name
+</code></pre>
+<p><strong>② 反编译整棵树</strong></p>
+<pre class="code" data-label="shell"><code class="c">dtc -I fs -O dts /proc/device-tree &gt; /tmp/running.dts
+</code></pre>
+<p><code class="c">-I fs</code> = 输入格式是文件系统（sysfs 视图）。这样得到的就是<strong>内核实际看到的那棵树</strong>，包含固件动态填充的（内存大小、MAC 地址等）——和你 <code class="c">.dts</code> 源文件不一定一样。</p>
+<p><strong>③ 反编译磁盘上的 DTB 文件</strong></p>
+<pre class="code" data-label="shell"><code class="c">dtc -I dtb -O dts /boot/bcm2712-rpi-5-b.dtb -o /tmp/disk.dts
+diff /tmp/running.dts /tmp/disk.dts      # 差异就是固件改过的地方
+</code></pre>
+<p><strong>这个 diff 是 Pi 上最有诊断价值的一步。</strong> 固件会按 <code class="c">config.txt</code> 注入 overlay、改 <code class="c">status</code>、填 MAC，你看到的运行树是"DTS 源文件 + 固件补丁"的合成结果。</p>
+<hr />
+<h2>Pi 5 的特殊性</h2>
+<pre class="code" data-label="code"><code class="c">/config.txt
+    ├── 决定用哪个 dtb：      device_tree=bcm2712-rpi-5-b.dtb（通常自动选）
+    ├── overlay：             dtoverlay=xxx          ← 按顺序叠加，后面的覆盖前面的
+    └── 参数：                dtparam=i2c_arm=on     ← 本质是改 status
+</code></pre>
+<p><strong>overlay 的顺序影响最终结果</strong>，两个 overlay 改同一个属性的话后加载的赢。Pi 官方 <code class="c">README</code>（<code class="c">/boot/overlays/README</code>）是所有 <code class="c">dtoverlay</code> 的权威文档。</p>
+<p>⚠️ <strong>Pi 5 的外设走 RP1（南桥，经 PCIe 挂）</strong>，引脚叙事和 Pi 4 完全不同。<strong>网上大量 Pi 4 教程直接抄到 Pi 5 上会失败</strong>，尤其是 GPIO 基址和 <code class="c">pinctrl</code> 部分。查资料认准 <code class="c">bcm2712</code> / <code class="c">RP1</code> 关键字。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>"跑的是哪棵树"永远是调试第一问。</strong> 驱动不 probe 的排查顺序：节点存在吗 → <code class="c">status</code> 是 <code class="c">okay</code> 吗 → <code class="c">compatible</code> 逐字符对吗 → 父节点被递归到了吗 → 驱动模块加载了吗。<strong>前三步全在 <code class="c">/proc/device-tree</code> 里能验完，不需要重新编译任何东西。</strong></li>
+<li><strong>overlay 是产品化的标准手段</strong>：同一份内核镜像，靠 config.txt 适配不同硬件配置。这和 HFT 里"一份二进制 + 不同配置文件适配不同交易所网关"是同一个思路——<strong>把差异从代码里挪到数据里</strong>。</li>
+<li><strong><code class="c">status = "disabled"</code> 是做 A/B 硬件验证的廉价手段</strong>：不用改驱动，改一行 DTS 就能让某设备消失，用来定位"到底是哪个设备在抢资源"。</li>
+</ul>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一步：</strong> <a href="#s-3-2">3.2 · DTS 与驱动的关系</a></li>
+<li><strong>下一步：</strong> <a href="#s-3-4">3.4 · compatible 匹配与 probe 全流程</a></li>
+<li><strong>相关：</strong> <a href="../../08-embedded-boot-build/html/chapter-06.html#s-6-1">08/06 · 内核怎么找 init</a>（同样"内核按固定顺序试探、失败语义不同"的设计风格）</li>
+</ul>
+<hr />
+<details>
+<summary>自测</summary>
+<ol>
+<li><code class="c">status</code> 属性不写，设备可用吗？写成 <code class="c">OKAY</code>（大写）呢？</li>
+<li>你的节点 <code class="c">compatible</code> 完全正确、<code class="c">status = "okay"</code>，但 probe 从不调用。除了驱动没加载，还有一种可能是什么？（提示：看上面第三道闸门）</li>
+<li>想确认内核实际看到的 <code class="c">compatible</code>，命令怎么写？为什么不能直接 <code class="c">cat</code>？</li>
+<li><code class="c">/proc/device-tree</code> 和磁盘上的 <code class="c">.dtb</code> 反编译出来不一样，可能的原因是什么？</li>
+<li>反编译运行时设备树的 <code class="c">dtc</code> 命令里，<code class="c">-I fs</code> 是什么意思？</li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>不写 <code class="c">status</code> = <strong>可用</strong>（<code class="c">of_device_is_available</code> 在 status 为 NULL 时返回 true）。写 <code class="c">OKAY</code> = <strong>不可用</strong>，判定只认小写 <code class="c">okay</code> 和 <code class="c">ok</code>，大小写敏感。</li>
+<li><strong>父节点不在 <code class="c">of_default_bus_match_table</code> 里，导致你的节点所在的子树压根没被递归创建</strong>。源码在 <code class="c">of_platform_bus_create</code> 末尾的 <code class="c">return 0</code>——父节点自己建了 device，但子节点不递归。这类问题在 <code class="c">/proc/device-tree</code> 里<strong>看不出来</strong>（树还在），只有 <code class="c">/sys/bus/platform/devices/</code> 里找不到对应 device 才暴露。</li>
+<li><code class="c">tr '\0' '\n' &lt; /proc/device-tree/&lt;node&gt;/compatible</code>。因为 <code class="c">compatible</code> 是<strong>多字符串属性</strong>，内部以 <code class="c">\0</code> 分隔，直接 cat 会把多个串粘在一起且看不到分隔。</li>
+<li>固件（Pi 上是 GPU 侧的 start.elf / config.txt）在加载 DTB 后会动态修改：启停 overlay、按 <code class="c">dtparam</code> 改 <code class="c">status</code>、填入实际的内存大小 / MAC 地址 / 序列号。所以磁盘 DTB 是"静态源"，运行时树是"源 + 固件补丁"。</li>
+<li><code class="c">-I fs</code> 表示输入格式是<strong>文件系统</strong>（filesystem），即 sysfs 导出的目录树形式（<code class="c">/proc/device-tree</code> 或 <code class="c">/sys/firmware/devicetree/base</code>），而不是 <code class="c">-I dtb</code>（二进制）或 <code class="c">-I dts</code>（文本）。</li>
+</ol>
+</details>
+</details>
+      </section>
+      <section class="section" id="s-3-4">
+        <div class="sec-head"><div class="sec-no">3.4</div><h2>· compatible 匹配与 probe：为什么&quot;没报错&quot;才是最难查的</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> <code class="c">compatible</code> 是怎么被匹配的、匹配成功后 probe 走哪条路、以及<strong>为什么驱动没 probe 时 <code class="c">dmesg</code> 里常常什么都看不到</strong>——答案在内核源码的日志级别选择里。</p>
+</blockquote>
+<hr />
+<h2>匹配不是"相等比较"，是四级回退</h2>
+<p>v6.6 <code class="c">drivers/base/platform.c:1335</code>：</p>
+<pre class="code" data-label="C"><code class="c">static int platform_match(struct device *dev, struct device_driver *drv)
+{
+    /* When driver_override is set, only bind to the matching driver */
+    if (pdev-&gt;driver_override)
+        return !strcmp(pdev-&gt;driver_override, drv-&gt;name);
+
+    /* Attempt an OF style match first */
+    if (of_driver_match_device(dev, drv))
+        return 1;
+
+    /* Then try ACPI style match */
+    if (acpi_driver_match_device(dev, drv))
+        return 1;
+
+    /* Then try to match against the id table */
+    if (pdrv-&gt;id_table)
+        return platform_match_id(pdrv-&gt;id_table, pdev) != NULL;
+
+    /* fall-back to driver name match */
+    return (strcmp(pdev-&gt;name, drv-&gt;name) == 0);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>优先级</th>
+<th>机制</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code class="c">driver_override</code></td>
+<td>用户通过 sysfs 强制指定，<strong>一票否决</strong>（设了就只认这个名字）</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>OF（设备树）</strong></td>
+<td><code class="c">of_match_table</code> 里的 <code class="c">compatible</code> —— 现代 ARM 走这条</td>
+</tr>
+<tr>
+<td>3</td>
+<td>ACPI</td>
+<td>x86 世界</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">id_table</code></td>
+<td>无设备树的平台驱动</td>
+</tr>
+<tr>
+<td>5</td>
+<td>驱动名 == 设备名</td>
+<td>老式兜底</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>调试价值：</strong> 想临时把一个设备绑给另一个驱动，不用重编内核：</p>
+<pre class="code" data-label="shell"><code class="c">echo my_driver &gt; /sys/bus/platform/devices/fe200000.gpio/driver_override
+echo fe200000.gpio &gt; /sys/bus/platform/drivers/my_driver/bind
+</code></pre>
+<p><code class="c">driver_override</code> 是<strong>优先级最高</strong>的那一级，写进去就压过 <code class="c">compatible</code>。</p>
+<p><strong><code class="c">compatible</code> 的匹配是"最具体优先"</strong>：<code class="c">of_driver_match_device</code> 会遍历驱动的 <code class="c">of_match_table</code>，逐个比对设备节点的 compatible <strong>列表</strong>，命中第一个就返回。所以 DTS 里写 <code class="c">compatible = "wzp,my-device", "generic-foo"</code> 时，内核会先看有没有驱动认 <code class="c">wzp,my-device</code>，没有再退化看 <code class="c">generic-foo</code>——<strong>这是硬件兼容性的兜底机制</strong>。</p>
+<hr />
+<h2><code class="c">MODULE_DEVICE_TABLE</code> 到底是干什么的</h2>
+<pre class="code" data-label="C"><code class="c">static const struct of_device_id my_of_match[] = {
+    { .compatible = &quot;wzp,my-device&quot; },
+    { /* sentinel */ }
+};
+MODULE_DEVICE_TABLE(of, my_of_match);
+</code></pre>
+<p><strong>它不是给内核匹配用的</strong>（匹配用的是 <code class="c">of_match_table</code> 指针）。它的作用是：编译期把这张表放进 ELF 的 <code class="c">__mod_of_device_table</code> 段，<code class="c">depmod</code> 扫到后生成 <code class="c">modules.alias</code>：</p>
+<pre class="code" data-label="code"><code class="c">alias of:N*T*Cwzp,my-device* my_device
+</code></pre>
+<p>于是 <code class="c">udev</code>/<code class="c">modprobe</code> 能在设备出现时<strong>自动加载对应模块</strong>。</p>
+<p><strong>少了它的症状很有迷惑性：</strong> 手动 <code class="c">insmod</code> 一切正常（表在内存里，匹配照常），但<strong>重启后驱动不会自动加载</strong>。所以：</p>
+<blockquote>
+<p>不用 <code class="c">MODULE_DEVICE_TABLE</code> = 每次开机手动 insmod。功能"能跑"，自动化链路断了。</p>
+</blockquote>
+<p>验证：</p>
+<pre class="code" data-label="shell"><code class="c">modinfo my_device.ko | grep alias
+# alias:          of:N*T*Cwzp,my-device
+</code></pre>
+<hr />
+<h2>★ 核心：probe 失败为什么常常"静默"</h2>
+<p>v6.6 <code class="c">drivers/base/dd.c:572</code>：</p>
+<pre class="code" data-label="C"><code class="c">static int call_driver_probe(struct device *dev, struct device_driver *drv)
+{
+    if (dev-&gt;bus-&gt;probe)
+        ret = dev-&gt;bus-&gt;probe(dev);
+    else if (drv-&gt;probe)
+        ret = drv-&gt;probe(dev);
+
+    switch (ret) {
+    case 0:
+        break;
+    case -EPROBE_DEFER:
+        /* Driver requested deferred probing */
+        dev_dbg(dev, &quot;Driver %s requests probe deferral\n&quot;, drv-&gt;name);
+        break;
+    case -ENODEV:
+    case -ENXIO:
+        pr_debug(&quot;%s: probe of %s rejects match %d\n&quot;,
+             drv-&gt;name, dev_name(dev), ret);
+        break;
+    default:
+        /* driver matched but the probe failed */
+        pr_warn(&quot;%s: probe of %s failed with error %d\n&quot;,
+            drv-&gt;name, dev_name(dev), ret);
+        break;
+    }
+    return ret;
+}
+</code></pre>
+<p><strong>这张表值得背下来：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>probe 返回值</th>
+<th>内核怎么记</th>
+<th>默认 <code class="c">dmesg</code> 能看到吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">0</code></td>
+<td>无</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">-EPROBE_DEFER</code></td>
+<td><code class="c">dev_dbg</code></td>
+<td>❌ 看不到</td>
+</tr>
+<tr>
+<td><code class="c">-ENODEV</code> / <code class="c">-ENXIO</code></td>
+<td><code class="c">pr_debug</code></td>
+<td>❌ 看不到</td>
+</tr>
+<tr>
+<td>其它（<code class="c">-ENOMEM</code>、<code class="c">-EINVAL</code>…）</td>
+<td><code class="c">pr_warn</code></td>
+<td>✅ 能看到</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论（这是本节最实用的一条）：</strong></p>
+<blockquote>
+<p>如果你在 probe 里 <code class="c">return -ENODEV</code> 表示"这个设备我不认"，内核<strong>只会打 debug 级日志</strong>。默认 <code class="c">dmesg</code> 完全看不见。</p>
+<p>所以<strong>调试期不要用 <code class="c">-ENODEV</code> 表示"出错了"</strong>——它是"拒绝匹配"的语义。出错就返回 <code class="c">-EINVAL</code>、<code class="c">-ENOMEM</code>、<code class="c">-EIO</code> 之类，至少能在 dmesg 里留痕。</p>
+</blockquote>
+<p>要看那些隐藏日志：</p>
+<pre class="code" data-label="shell"><code class="c"># 打开动态调试（CONFIG_DYNAMIC_DEBUG）
+echo 'file drivers/base/dd.c +p' &gt; /sys/kernel/debug/dynamic_debug/control
+# 或者启动时加内核参数
+initcall_debug dyndbg=&quot;file drivers/base/dd.c +p&quot;
+</code></pre>
+<hr />
+<h2><code class="c">-EPROBE_DEFER</code>：不是失败，是"等一会儿"</h2>
+<p>驱动依赖的资源（时钟、regulator、GPIO 控制器、supplier 设备）还没就绪时，probe 应该返回 <code class="c">-EPROBE_DEFER</code>，内核会把它放进延迟队列，<strong>等其他驱动 probe 完再重试</strong>。</p>
+<pre class="code" data-label="C"><code class="c">static int my_probe(struct platform_device *pdev)
+{
+    struct clk *clk;
+
+    clk = devm_clk_get(&amp;pdev-&gt;dev, NULL);
+    if (IS_ERR(clk))
+        return dev_err_probe(&amp;pdev-&gt;dev, PTR_ERR(clk), &quot;get clock&quot;);
+    ...
+}
+</code></pre>
+<p><strong><code class="c">dev_err_probe()</code> 是现代写法，强烈推荐</strong>，它做两件事：</p>
+<ol>
+<li><strong><code class="c">-EPROBE_DEFER</code> 时不刷屏</strong>（defer 会重试很多次，用 <code class="c">dev_err</code> 会淹没日志）</li>
+<li>真实错误时打 <code class="c">error</code> 级日志并附带错误码，同时把返回值原样透传</li>
+</ol>
+<p><code class="c">dev_err_probe</code> 内部对 <code class="c">-EPROBE_DEFER</code> 走 <code class="c">dev_dbg</code>，其它走 <code class="c">dev_err</code>——<strong>等于帮你实现了上面那张日志级别表的正确行为</strong>。</p>
+<p>查看当前有没有卡在 defer 状态的设备：</p>
+<pre class="code" data-label="shell"><code class="c">cat /sys/kernel/debug/devices_deferred
+</code></pre>
+<hr />
+<h2>★ probe 的返回码会被取反</h2>
+<p>v6.6 <code class="c">drivers/base/dd.c:670</code>：</p>
+<pre class="code" data-label="C"><code class="c">        /*
+         * Return probe errors as positive values so that the callers
+         * can distinguish them from other errors.
+         */
+        ret = -ret;
+        goto probe_failed;
+</code></pre>
+<p>驱动 <code class="c">return -ENODEV</code>，<code class="c">really_probe()</code> 往外抛的是<strong>正的 <code class="c">ENODEV</code></strong>。这个约定（"bus 层返回正值表示 probe 失败"）在写 bus glue 层或者读内核日志对照错误码时会撞上：<strong>dmesg 里看到的数字和驱动里写的是反的</strong>。</p>
+<hr />
+<h2>排查清单：驱动没 probe 怎么办</h2>
+<p>按顺序验，每步都能在 30 秒内出结果：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>检查</th>
+<th>命令</th>
+<th>不通过怎么办</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>模块加载了吗</td>
+<td><code class="c">lsmod \| grep my</code></td>
+<td><code class="c">modprobe</code> / 查 <code class="c">modules.alias</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>节点在吗</td>
+<td><code class="c">ls /proc/device-tree/</code></td>
+<td>查 DTB / overlay</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">status</code> 可用吗</td>
+<td><code class="c">tr '\0' '\n' &lt; .../status</code></td>
+<td>改成 <code class="c">okay</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">compatible</code> 逐字符对吗</td>
+<td><code class="c">tr '\0' '\n' &lt; .../compatible</code></td>
+<td>对照 <code class="c">modinfo \| grep alias</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>device 建出来了吗</td>
+<td><code class="c">ls /sys/bus/platform/devices/</code></td>
+<td>查父节点是否被递归（<a href="#s-3-3">3.3</a>）</td>
+</tr>
+<tr>
+<td>6</td>
+<td>卡在 defer 吗</td>
+<td><code class="c">cat /sys/kernel/debug/devices_deferred</code></td>
+<td>找缺的 supplier</td>
+</tr>
+<tr>
+<td>7</td>
+<td>匹配表有吗</td>
+<td><code class="c">modinfo x.ko \| grep alias</code></td>
+<td>补 <code class="c">MODULE_DEVICE_TABLE</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>probe 日志</td>
+<td>开 dynamic debug 后重看</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>第 4 步最常出错</strong>：<code class="c">compatible</code> 里多一个空格、少一个逗号、大小写不对，都会静默失败。<strong>用 <code class="c">modinfo</code> 的 alias 和 DTS 的 compatible 逐字符对比</strong>，别用眼睛看。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>"静默失败"是嵌入式最贵的调试成本。</strong> 内核把"驱动拒绝匹配"设计成 debug 级日志是合理的（每次总线扫描都可能有很多这种"拒绝"），但对开发者的代价是：<strong>你必须有意识地选择错误码</strong>。这是"可观测性由 API 使用者负责"的典型例子——框架给了分级，用错是你的问题。</li>
+<li><strong><code class="c">-EPROBE_DEFER</code> 是依赖注入</strong>：驱动不关心 supplier 什么时候就绪，只说"我没好，待会再叫我"。这比在驱动里手写等待/重试健壮得多，也是内核"声明依赖而非控制时序"的思路。</li>
+<li><strong>HFT 的类比</strong>：低延迟系统里"超时"和"明确失败"也必须分开处理——超时可能重试成功，明确失败重试只会浪费时间。内核这里把 <code class="c">-EPROBE_DEFER</code>（重试有意义）和 <code class="c">-EINVAL</code>（重试无意义）分开统计，是同一个设计哲学。</li>
+</ul>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一步：</strong> <a href="#s-3-3">3.3 · DTB 的一生</a></li>
+<li><strong>下一步：</strong> <a href="#s-3-5">3.5 · devm 与出错路径</a></li>
+<li><strong>相关：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/05-irq-locking/">05 · 中断与并发</a>（probe 里申请中断的时序）</li>
+</ul>
+<hr />
+<details>
+<summary>自测</summary>
+<ol>
+<li><code class="c">platform_match</code> 的四级回退顺序是什么？最高优先级那个怎么用？</li>
+<li>少了 <code class="c">MODULE_DEVICE_TABLE(of, ...)</code> 会怎样？为什么手动 insmod 发现不了问题？</li>
+<li>probe 里 <code class="c">return -ENODEV</code> 和 <code class="c">return -ENOMEM</code>，在 dmesg 里表现有什么不同？</li>
+<li>为什么 probe 里申请资源失败应该用 <code class="c">dev_err_probe</code> 而不是 <code class="c">dev_err</code> + <code class="c">return</code>？</li>
+<li>驱动 probe 返回 <code class="c">-EPROBE_DEFER</code> 说明什么？怎么确认哪些设备卡在这个状态？</li>
+<li>驱动 <code class="c">return -ENODEV</code>，<code class="c">really_probe()</code> 往外返回的是几？</li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p><code class="c">driver_override</code> → OF(<code class="c">compatible</code>) → ACPI → <code class="c">id_table</code> → 驱动名==设备名。最高优先级是 <code class="c">driver_override</code>：往 <code class="c">/sys/bus/platform/devices/&lt;dev&gt;/driver_override</code> 写驱动名，再 <code class="c">echo &lt;dev&gt; &gt; /sys/bus/platform/drivers/&lt;drv&gt;/bind</code>，可以强制绑定，常用于调试时临时换驱动。</p>
+</li>
+<li>
+<p>模块不会在设备出现时<strong>自动加载</strong>——<code class="c">MODULE_DEVICE_TABLE</code> 的作用是把匹配表导出到 <code class="c">modules.alias</code>，供 <code class="c">depmod</code>/<code class="c">udev</code> 做自动加载。但手动 <code class="c">insmod</code> 时匹配表本身已经在内核里了，<code class="c">platform_match</code> 照常工作，所以"手动能跑"掩盖了"自动加载链断了"。验证：<code class="c">modinfo x.ko | grep alias</code> 应该有一行 <code class="c">of:N*T*C&lt;compatible&gt;</code>。</p>
+</li>
+<li>
+<p><code class="c">-ENODEV</code> 落到 <code class="c">pr_debug</code>（<strong>默认 dmesg 看不见</strong>），因为内核认为这是"驱动拒绝匹配"，属于正常流程；<code class="c">-ENOMEM</code> 落到 <code class="c">pr_warn</code>（<strong>看得见</strong>），因为这是"匹配了但 probe 失败了"，属于异常。所以调试期表示真实错误不要返回 <code class="c">-ENODEV</code>/<code class="c">-ENXIO</code>。</p>
+</li>
+<li>
+<p>因为 <code class="c">-EPROBE_DEFER</code> 会触发<strong>多次重试</strong>（每次 supplier 就绪都重试一遍），用 <code class="c">dev_err</code> 会刷屏淹没真实日志。<code class="c">dev_err_probe()</code> 内部对 <code class="c">-EPROBE_DEFER</code> 只打 <code class="c">dev_dbg</code>，其它错误才打 <code class="c">dev_err</code> 并附错误码——一行代码实现了正确的日志分级，同时原样透传返回值（defer 语义不丢）。</p>
+</li>
+<li>
+<p>表示依赖的资源（时钟、regulator、GPIO 控制器、supplier 设备）尚未就绪，<strong>不是失败</strong>，内核会把它放进延迟队列，等依赖就绪后重试。确认方法：<code class="c">cat /sys/kernel/debug/devices_deferred</code> 会列出所有卡在 defer 状态的设备。</p>
+</li>
+<li>
+<p><strong>正的 <code class="c">ENODEV</code>（即 <code class="c">+19</code>）</strong>。<code class="c">really_probe()</code> 在 <code class="c">dd.c:673</code> 处 <code class="c">ret = -ret;</code> 把 probe 错误码取反成正值返回，注释说明是"让调用者能区分 probe 失败和其它错误"。</p>
+</li>
+</ol>
+</details>
+</details>
+      </section>
+      <section class="section" id="s-3-5">
+        <div class="sec-head"><div class="sec-no">3.5</div><h2>· devm 与出错路径：为什么 probe 里不用手写 unwind</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> <code class="c">devm_*</code> 到底把资源挂在哪、什么时候释放、释放顺序如何，以及两个反直觉的细节——<strong>probe 前 devres 链表必须为空</strong>，和 <strong>probe 错误码会被取反</strong>。</p>
+</blockquote>
+<hr />
+<h2>心智模型：一张挂在 device 上的链表</h2>
+<pre class="code" data-label="code"><code class="c">struct device {
+    ...
+    struct list_head  devres_head;   /* ★ 所有 devm_ 申请都挂这里 */
+    spinlock_t        devres_lock;
+};
+</code></pre>
+<p><code class="c">devm_kzalloc(&amp;pdev-&gt;dev, ...)</code> 做的事：</p>
+<ol>
+<li>分配一块 <code class="c">devres</code> 结构（头部 + 你的数据）</li>
+<li>在里面记下<strong>释放函数</strong>（<code class="c">devm_kzalloc</code> 对应的 free）</li>
+<li><code class="c">devres_add()</code> → <code class="c">add_dr()</code> 挂到 <code class="c">dev-&gt;devres_head</code> 尾</li>
+</ol>
+<pre class="code" data-label="code"><code class="c">devres_head ─→ [kzalloc#1] → [ioremap#2] → [irq#3] → [gpio#4]
+</code></pre>
+<p><strong>device 没了，链表跟着走</strong>——这就是"自动回收"的全部秘密，没有 GC，没有引用计数。</p>
+<hr />
+<h2>释放时机与顺序</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时机</th>
+<th>触发函数</th>
+<th>场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>probe 失败</td>
+<td><code class="c">probe_failed:</code> → <code class="c">devres_release_all()</code></td>
+<td><strong>你不用写任何清理代码</strong></td>
+</tr>
+<tr>
+<td>驱动卸载</td>
+<td><code class="c">device_release_driver()</code></td>
+<td><code class="c">rmmod</code></td>
+</tr>
+<tr>
+<td>设备消失</td>
+<td><code class="c">device_del()</code></td>
+<td>热插拔 / 总线 rescan</td>
+</tr>
+</tbody>
+</table></div>
+<p>释放顺序是<strong>申请顺序的逆序</strong>（v6.6 <code class="c">drivers/base/devres.c:496</code>）：</p>
+<pre class="code" data-label="C"><code class="c">list_for_each_entry_safe_reverse(dr, tmp, todo, node.entry) {
+    dr-&gt;node.release(dev, dr-&gt;data);
+    kfree(dr);
+}
+</code></pre>
+<p>注意 <code class="c">..._reverse</code>：<strong>LIFO，后申请的先释放</strong>。这跟手写 unwind 的顺序一致——先释放最内层依赖（irq），再释放它依赖的东西（映射、内存）。</p>
+<pre class="code" data-label="code"><code class="c">申请：  内存 → ioremap → irq
+释放：  irq → ioremap → 内存      ← 自动就是这个顺序
+</code></pre>
+<p><strong>所以 devm 不只是"省代码"，它还保证了释放顺序不会写错。</strong> 手写 unwind 时漏掉中间某步、或者顺序搞反，是驱动里最常见的一类 bug。</p>
+<hr />
+<h2>对比：手写 vs devm</h2>
+<pre class="code" data-label="C"><code class="c">/* ============ 手写（老式） ============ */
+static int my_probe(struct platform_device *pdev)
+{
+    struct my_dev *m;
+    int ret;
+
+    m = kzalloc(sizeof(*m), GFP_KERNEL);
+    if (!m)
+        return -ENOMEM;
+
+    res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+    m-&gt;base = ioremap(res-&gt;start, resource_size(res));
+    if (!m-&gt;base) {
+        ret = -ENOMEM;
+        goto err_free;          /* ← 每个失败点都要 goto */
+    }
+
+    ret = request_irq(irq, handler, 0, &quot;my&quot;, m);
+    if (ret)
+        goto err_iounmap;       /* ← goto 越来越多 */
+
+    platform_set_drvdata(pdev, m);
+    return 0;
+
+err_iounmap:
+    iounmap(m-&gt;base);
+err_free:
+    kfree(m);
+    return ret;                 /* ← 加一步资源，就要改两处 */
+}
+
+static int my_remove(struct platform_device *pdev)
+{
+    /* 卸载路径再写一遍，且顺序必须与上面相反 */
+    free_irq(irq, m);
+    iounmap(m-&gt;base);
+    kfree(m);
+    return 0;
+}
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* ============ devm（现代） ============ */
+static int my_probe(struct platform_device *pdev)
+{
+    struct my_dev *m;
+
+    m = devm_kzalloc(&amp;pdev-&gt;dev, sizeof(*m), GFP_KERNEL);
+    if (!m)
+        return -ENOMEM;
+
+    m-&gt;base = devm_ioremap_resource(&amp;pdev-&gt;dev,
+                  platform_get_resource(pdev, IORESOURCE_MEM, 0));
+    if (IS_ERR(m-&gt;base))
+        return PTR_ERR(m-&gt;base);        /* 直接 return，无 goto */
+
+    ret = devm_request_irq(&amp;pdev-&gt;dev, irq, handler, 0, &quot;my&quot;, m);
+    if (ret)
+        return dev_err_probe(&amp;pdev-&gt;dev, ret, &quot;irq&quot;);   /* 无 unwind */
+
+    platform_set_drvdata(pdev, m);
+    return 0;
+}
+
+static int my_remove(struct platform_device *pdev)
+{
+    return 0;               /* ★ 空的。资源由核心在返回后释放 */
+}
+</code></pre>
+<p><strong>注意 remove 的时序</strong>：<code class="c">devm</code> 释放在 <code class="c">remove()</code> <strong>返回之后</strong>发生。所以如果你的设备有特殊关机序列（比如"先停硬件再释放"），不能全交给 devm——要么在 <code class="c">remove()</code> 里显式做，要么用 <code class="c">devm_add_action()</code> 注册一个按逆序调用的清理钩子。</p>
+<hr />
+<h2>两个反直觉的细节</h2>
+<h3>① probe 开始前，devres 链表必须是空的</h3>
+<p>v6.6 <code class="c">drivers/base/dd.c:625</code>：</p>
+<pre class="code" data-label="C"><code class="c">    if (!list_empty(&amp;dev-&gt;devres_head)) {
+        dev_err(dev, &quot;Resources present before probing\n&quot;);
+        ret = -EBUSY;
+        goto done;
+    }
+</code></pre>
+<p><strong>内核在 probe 前检查：如果链表已经非空，直接拒绝并报 <code class="c">-EBUSY</code>。</strong></p>
+<p>含义：<strong><code class="c">devm_*</code> 的第一个参数必须是"这个 device"，且只能在 probe 之后调用。</strong> 在 <code class="c">module_init</code> 里对某个 device 提前 <code class="c">devm_kzalloc</code>，会让后续真正的 probe 直接失败——而报错信息 "Resources present before probing" 看起来和你的代码毫无关系。</p>
+<p>反过来说，这也是个诊断线索：<strong>看到 <code class="c">Resources present before probing</code> 就说明有人在 probe 之外动了 devres。</strong></p>
+<h3>② probe 返回的错误码会被取反成正数</h3>
+<p>见 <a href="#s-3-4">3.4</a>——<code class="c">really_probe()</code> 里 <code class="c">ret = -ret;</code>。驱动 <code class="c">return -ENODEV</code>，总线层往外抛 <code class="c">+ENODEV</code>。读内核调用链代码时别以为自己看错了。</p>
+<hr />
+<h2>自定义清理：devm_add_action</h2>
+<p>devm 没有覆盖到的资源（比如自己开的 workqueue、注册到某个全局链表的东西），用 action 钩子：</p>
+<pre class="code" data-label="C"><code class="c">static void my_cleanup(void *data)
+{
+    struct my_dev *m = data;
+    cancel_work_sync(&amp;m-&gt;work);
+    /* 反注册、关时钟…… */
+}
+
+/* probe 里： */
+ret = devm_add_action_or_reset(&amp;pdev-&gt;dev, my_cleanup, m);
+if (ret)
+    return ret;      /* 失败时 action 已自动执行过一次（_or_reset 的语义） */
+</code></pre>
+<p><strong>优先用 <code class="c">_or_reset</code> 后缀版本</strong>：注册失败时它会自动调用一次 action，省掉"注册失败时手动清理"这个分支。</p>
+<hr />
+<h2>常用 devm 清单</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用途</th>
+<th>API</th>
+<th>非 devm 版本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内存</td>
+<td><code class="c">devm_kzalloc</code> / <code class="c">devm_kmalloc</code></td>
+<td><code class="c">kzalloc</code></td>
+</tr>
+<tr>
+<td>寄存器映射</td>
+<td><code class="c">devm_ioremap_resource</code> / <code class="c">devm_platform_ioremap_resource</code></td>
+<td><code class="c">ioremap</code></td>
+</tr>
+<tr>
+<td>中断</td>
+<td><code class="c">devm_request_irq</code> / <code class="c">devm_request_threaded_irq</code></td>
+<td><code class="c">request_irq</code></td>
+</tr>
+<tr>
+<td>GPIO</td>
+<td><code class="c">devm_gpiod_get</code></td>
+<td><code class="c">gpiod_get</code></td>
+</tr>
+<tr>
+<td>时钟</td>
+<td><code class="c">devm_clk_get</code> / <code class="c">devm_clk_get_enabled</code></td>
+<td><code class="c">clk_get</code></td>
+</tr>
+<tr>
+<td>regulator</td>
+<td><code class="c">devm_regulator_get</code></td>
+<td><code class="c">regulator_get</code></td>
+</tr>
+<tr>
+<td>清理钩子</td>
+<td><code class="c">devm_add_action_or_reset</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong>不是所有东西都有 devm 版本</strong>，且有些"有 devm 版本但语义微妙不同"。拿不准时查 <code class="c">drivers/base/devres.c</code> 的导出符号：<strong>没有 <code class="c">EXPORT_SYMBOL(devm_xxx)</code> 的就是不存在</strong>，别猜。</p>
+<hr />
+<h2>检查清单</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>probe 用 <code class="c">devm_*</code>、remove 里又手动 <code class="c">free_irq</code></td>
+<td><strong>double free</strong>（devm 回去再释放一次）</td>
+</tr>
+<tr>
+<td>在 <code class="c">module_init</code> 里 <code class="c">devm_*</code></td>
+<td>后续 probe 报 <code class="c">-EBUSY</code> "Resources present before probing"</td>
+</tr>
+<tr>
+<td><code class="c">devm_request_irq</code> 的 dev 参数传错（传了别的 device）</td>
+<td>中断挂到别的设备上，device 消失时机错位 → 悬空 handler</td>
+</tr>
+<tr>
+<td>remove 里做"先停硬件"的清理，依赖 devm 顺序</td>
+<td>devm 在 remove <strong>返回后</strong>才跑，你的清理可能太晚</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>最实用的一条：</strong> 用了 devm 就<strong>彻底别手动释放</strong>。混用是最容易出现 double free / use-after-free 的组合。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>devm 是 RAII 思想在 C 里的落地</strong>。C 没有析构函数，内核用"资源登记到对象（device）上 + 对象销毁时逆序回调"实现同样效果。理解这一点后，看到任何 <code class="c">devm_xxx</code> 都能立刻推断出释放时机和顺序。</li>
+<li><strong>出错路径的代码量直接决定 bug 密度</strong>。驱动里 90% 的 bug 在错误路径（正常路径谁都会写、也都会测）。devm 把错误路径从"N 个 goto 标签 + N 段清理"压成"直接 return"，是<strong>结构性降低 bug 率</strong>，不是语法糖。</li>
+<li><strong>HFT 里的对应物</strong>：确定性拆除顺序对低延迟系统同样关键——网卡驱动卸载时如果先释放了 ring buffer 再注销 NAPI，就会在中断里访问已释放内存。devm 的 LIFO 保证让这类"顺序错误"不可能发生。</li>
+</ul>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一步：</strong> <a href="#s-3-4">3.4 · compatible 匹配与 probe 全流程</a></li>
+<li><strong>下一步：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/04-gpio-i2c-spi/">04 · GPIO / I2C / SPI</a></li>
+<li><strong>相关：</strong> <a href="chapter-06.html#s-6-1">06 · DMA 与 mmap</a>（DMA 缓冲也有 devm 版本，但一致性语义更复杂）</li>
+</ul>
+<hr />
+<details>
+<summary>自测</summary>
+<ol>
+<li><code class="c">devm_*</code> 把资源挂在哪里？释放发生在什么时候？</li>
+<li>多个 devm 资源的释放顺序是什么？为什么这个顺序是对的？</li>
+<li>用了 <code class="c">devm_request_irq</code>，<code class="c">remove()</code> 里还需要 <code class="c">free_irq</code> 吗？为什么？</li>
+<li>内核报 <code class="c">-EBUSY</code> 且信息是 "Resources present before probing"，最可能的原因是什么？</li>
+<li>remove() 里需要"先停硬件再释放资源"，devm 能满足吗？为什么？</li>
+<li><code class="c">devm_add_action</code> 和 <code class="c">devm_add_action_or_reset</code> 有什么区别？该用哪个？</li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p>挂在 <code class="c">struct device</code> 的 <code class="c">devres_head</code> 链表上（每个 devres 节点记录了对应的 release 函数）。释放在三种时机触发：probe 失败（<code class="c">probe_failed:</code> → <code class="c">devres_release_all</code>）、驱动卸载（<code class="c">device_release_driver</code>）、设备消失（<code class="c">device_del</code>）。<strong>关键：remove() 返回之后才释放。</strong></p>
+</li>
+<li>
+<p><strong>申请顺序的逆序（LIFO）</strong>。源码是 <code class="c">list_for_each_entry_safe_reverse</code>。这个顺序是对的，因为后申请的资源通常依赖先申请的（irq 依赖 ioremap，ioremap 依赖内存），逆序释放保证"释放 X 时 X 依赖的东西还在"，与手写 unwind 的正确顺序天然一致。</p>
+</li>
+<li>
+<p><strong>不需要，且不应该。</strong> devm 会在 remove 返回后自动 free_irq；手动再 free 一次是 <strong>double free</strong>。规则是用 devm 就彻底不要手动释放，混用是 use-after-free / double free 的主要来源。</p>
+</li>
+<li>
+<p>有人在 <strong>probe 之前</strong>往这个 device 的 devres 链表里塞了东西。典型是在 <code class="c">module_init</code> 里对某个 device 调用了 <code class="c">devm_*</code>。内核在 <code class="c">really_probe</code> 开头检查链表非空就直接返回 <code class="c">-EBUSY</code> 拒绝 probe。修法：把那些 <code class="c">devm_*</code> 挪进 probe，或改用非 devm 的普通分配 + 自己管理生命周期。</p>
+</li>
+<li>
+<p><strong>不能可靠满足。</strong> devm 的释放发生在 <code class="c">remove()</code> <strong>返回之后</strong>，也就是你的清理代码跑完之后。如果硬件需要在"资源释放前"被停止，正确做法是：在 remove() 里显式做停机序列，或者用 <code class="c">devm_add_action_or_reset()</code> 注册清理钩子（钩子按 devm 的 LIFO 顺序被调用）。</p>
+</li>
+<li>
+<p><code class="c">_or_reset</code> 版本在<strong>注册失败时会自动调用一次 action</strong>，省掉"注册失败要手动清理"的分支；普通版注册失败后 action 不会被调用，你得自己处理。所以<strong>优先用 <code class="c">devm_add_action_or_reset</code></strong>——和 devm 的设计意图（错误路径零手工）一致。</p>
+</li>
+</ol>
+</details>
+</details>
       </section>
 
 
