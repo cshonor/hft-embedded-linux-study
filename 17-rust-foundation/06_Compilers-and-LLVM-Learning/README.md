@@ -52,34 +52,36 @@ LLVM 可与 RFR **第 2 章**（布局、分发）**并行**精读；**原子 / 
 
 ## 开 Learn LLVM 前的 C++ 前置（必修）
 
-**LLVM 本体用 C++ 实现**；书里讲的 IR、类型系统、Pass、STL 式容器，默认读者已有 **C++ 语法 + 现代特性 + STL** 底子。  
-本仓库 **05 / `04_Learn-LLVM-17`** 的实验虽用 **Rust** 导出 `.ll`，但**读** LLVM 设计与《Learn LLVM 17》仍建议先补 C++。
+**LLVM 本体用 C++ 实现**；本目录 `04_Learn-LLVM-17` 的实验虽用 **Rust** 导出 `.ll`，但**读** LLVM 设计与《Learn LLVM 17》仍需 C++ 底子。
 
-**姊妹仓（外部，同一维护者）**：[cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)  
-**进入 `04_Learn-LLVM-17/` 之前，请在该仓至少通读 `01`～`06`：**
+> **更正（2026-09-10）**：此处原要求跳到姊妹仓 `cpp-learning-notes` 通读 `01`～`06` —— **该指引已过时**。
+> 那些笔记**早已复制进本仓 `04-cpp`**（按 M0–M5 重组，共 751 篇），见 [`04-cpp/README.md`](../../04-cpp/README.md)。
+> 且 LLVM 用的是**非典型 C++**（禁用异常 / RTTI，热路径用自研 ADT），**不必**通读那 6 本。
 
-| # | 目录 | 书名 | 为何 LLVM 需要 |
-|---|------|------|----------------|
-| **01** | [`01-C++Primer`](https://github.com/cshonor/cpp-learning-notes/tree/main/01-C%2B%2BPrimer) | C++ Primer | 语法、标准库；读示例不卡在指针/引用/类 |
-| **02** | [`02-Effective-C++`](https://github.com/cshonor/cpp-learning-notes/tree/main/02-Effective-C%2B%2B) | Effective C++ | 资源管理、三/五/零法则 → 理解 IR 里的 ctor/dtor |
-| **03** | [`03-More-Effective-C++`](https://github.com/cshonor/cpp-learning-notes/tree/main/03-More-Effective-C%2B%2B) | More Effective C++ | 进阶惯用法 |
-| **04** | [`04-Effective-Modern-C++`](https://github.com/cshonor/cpp-learning-notes/tree/main/04-Effective-Modern-C%2B%2B) | Effective Modern C++ | **移动、lambda、类型推导** — LLVM 代码风格 |
-| **06** | [`05-Effective-STL`](https://github.com/cshonor/cpp-learning-notes/tree/main/05-Effective-STL) | Effective STL | 容器/迭代器 — 对照 LLVM ADT 与 Pass 遍历 |
-| **06** | [`06-STL-Source-Analysis`](https://github.com/cshonor/cpp-learning-notes/tree/main/06-STL-Source-Analysis) | STL 源码剖析 |  vector/list/算法实现 — 读 IR 与优化直觉 |
+### 最小子集（本目录只取 P0）
 
-**`07`～`09` 不挡 LLVM 入门**（对象模型、并发、C++20），可与 Rust **`04`** 并行；见 [04_Learn-LLVM-17 学习取舍](./04_Learn-LLVM-17/Learn-LLVM-17-学习取舍.md)。
+完整清单见 [`20-compilers-llvm/_refs/cpp-minimum-for-llvm.md`](../../20-compilers-llvm/_refs/cpp-minimum-for-llvm.md)。
+**本目录只读 IR、不写 C++，取其中 P0 即可**（约 15–20 小时，且是已有笔记的复习）：
 
-### 推荐总顺序（Rust 仓 + C++ 仓）
+| 需要 | 本仓入口 | 为何 |
+|------|----------|------|
+| 类 · 拷贝控制 | [`M0/…/ch07-classes`](../../04-cpp/M0-entry-syntax/01-C%2B%2BPrimer/ch07-classes/) · [`ch13-copy-control`](../../04-cpp/M0-entry-syntax/01-C%2B%2BPrimer/ch13-copy-control/) | 理解 IR 里的 ctor / dtor |
+| 模板基础 | [`M0/…/ch16-templates`](../../04-cpp/M0-entry-syntax/01-C%2B%2BPrimer/ch16-templates/) | `isa<>` / `dyn_cast<>` 的实现基础 |
+| 现代 C++ | [`M1/01-Effective-Modern-C++`](../../04-cpp/M1-modern-cpp/01-Effective-Modern-C%2B%2B/) | auto / 移动 / lambda —— LLVM 代码风格 |
+
+**可跳过**：`Effective STL`、`STL 源码剖析`（LLVM 用自研 ADT 而非 `std::` 容器）、并发、C++17/20。
+
+### 推荐总顺序
 
 ```text
 本仓库：00-Book → RFR → ER → StdLib → Nomicon → 05(01-atomic → 02-async_tokio → 03-network) → 07 Wasm Part I
-姊妹仓：cpp-learning-notes 01～06（与 04 后期可并行，但须在 Learn LLVM 17 之前完成）
+C++ 前置：04-cpp 最小子集 P0（与 05 后期可并行，但须在 Learn LLVM 17 之前完成）
   ↓
 06：01 Crafting Interpreters → 03 自制编译器 → 04 Learn LLVM 17（Rust emit IR）
-以后：02 编译器工程（橡书）+ 若读 LLVM C++ 源码再补 cpp 07～09
+以后：02 编译器工程（橡书）
 ```
 
-> **分工**：C++ **01～06** = 读懂 LLVM **设计与 API 语境**；Rust **04 + llvm_insight_lab** = **产出并对照 IR**，不要求在本仓写 C++ Pass。
+> **分工**：C++ 最小子集 **P0** = 读懂 LLVM **设计与 API 语境**；Rust **04 + llvm_insight_lab** = **产出并对照 IR**，不要求在本仓写 C++ Pass（写 C++ 去 [`20-compilers-llvm`](../../20-compilers-llvm/README.md)）。
 
 ---
 

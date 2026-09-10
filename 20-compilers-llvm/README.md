@@ -46,16 +46,28 @@
 
 ---
 
-## 前置（硬门槛）
+## 前置：C++ 最小子集（不是「学完 C++」）
 
-LLVM 本体是 C++，课程示例默认读者已有 **C++11/14 + STL + 现代特性（移动、lambda、类型推导）**。
-姊妹仓 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 至少 `01`～`06`：
+LLVM 本体是 C++，但它用的是**非典型 C++**——禁用异常、禁用 RTTI，热路径用自研 ADT
+（`SmallVector` / `StringRef` / `DenseMap`），并自研 RTTI（`isa<>` / `dyn_cast<>`）。
+
+所以**不需要**先系统学完 C++：
+
+- ✅ **走 [`_refs/cpp-minimum-for-llvm.md`](./_refs/cpp-minimum-for-llvm.md)**：P0 必做 10 项 + P1 建议 3 项，约 **30–40 小时**
+- ✅ 笔记全在**本仓 [`04-cpp`](../04-cpp/README.md)**（751 篇真内容），**无需**去姊妹仓 `cpp-learning-notes`
+- ⛔ 明确跳过：Effective STL、STL 源码剖析、C++17/20、并发 —— 对 LLVM 性价比低，理由见清单
 
 ```text
-01-C++Primer → 02-Effective-C++ → 03-More-Effective-C++ → 04-Effective-Modern-C++ → 05-Effective-STL → 06-STL-Source-Analysis
-  ↓
-20-compilers-llvm / 01-frontend-pipeline
+开课前 1 周：M0 核心 5 章（类 / 动态内存 / 拷贝控制 / OOP / 模板）
+   ↓
+刷课 1–5 讲（词法语法，不碰 C++ API，有缓冲）
+   ↓
+第 6 讲前补：M1 现代 C++（auto / 智能指针 / 移动 / lambda）
+   ↓
+01-frontend-pipeline 验收
 ```
+
+> 第 6 讲才第一次碰 `IRBuilder`，**不必等 C++ 全补完再开课**。
 
 ---
 

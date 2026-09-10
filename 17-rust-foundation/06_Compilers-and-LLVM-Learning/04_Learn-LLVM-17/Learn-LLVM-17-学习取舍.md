@@ -8,19 +8,21 @@
 
 ## 开读本书前的 C++ 前置（必修）
 
-LLVM 用 **C++** 实现；《Learn LLVM 17》示例与 API 默认你已具备 **C++11/14 + STL** 阅读能力。  
-请在 **[cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)** 读完 **`01`～`06`** 后再开本目录：
+LLVM 用 **C++** 实现；《Learn LLVM 17》示例与 API 默认你已具备 **C++11/14** 阅读能力。
 
-| # | 目录 | 书名 |
-|---|------|------|
-| 01 | `01-C++Primer` | C++ Primer |
-| 02 | `02-Effective-C++` | Effective C++ |
-| 03 | `03-More-Effective-C++` | More Effective C++ |
-| 04 | `04-Effective-Modern-C++` | Effective Modern C++ |
-| 05 | `05-Effective-STL` | Effective STL |
-| 06 | `06-STL-Source-Analysis` | STL 源码剖析 |
+> **更正（2026-09-10）**：此处原要求去姊妹仓 `cpp-learning-notes` 读 `01`～`06` —— **已过时**。
+> 那些笔记**早已复制进本仓 `04-cpp`**（M0–M5，751 篇）。且 LLVM 用**非典型 C++**（禁用异常 / RTTI、自研 ADT），
+> **不必通读 6 本**，按下表取最小子集即可（约 15–20 小时，是复习不是从零学）。
 
-详表与总路线 → [05/README](../README.md)。**07～09**（对象模型、并发、C++20）可与 Rust `04` 并行，不挡 LLVM 入门。
+| 需要 | 本仓入口 |
+|------|----------|
+| 类 · 拷贝控制 | [`04-cpp/M0/…/ch07-classes`](../../../04-cpp/M0-entry-syntax/01-C%2B%2BPrimer/ch07-classes/) · [`ch13-copy-control`](../../../04-cpp/M0-entry-syntax/01-C%2B%2BPrimer/ch13-copy-control/) |
+| 模板基础 | [`04-cpp/M0/…/ch16-templates`](../../../04-cpp/M0-entry-syntax/01-C%2B%2BPrimer/ch16-templates/) |
+| 现代 C++ | [`04-cpp/M1/01-Effective-Modern-C++`](../../../04-cpp/M1-modern-cpp/01-Effective-Modern-C%2B%2B/) |
+
+**可跳过**：`Effective STL`、`STL 源码剖析`（LLVM 用自研 ADT 而非 `std::` 容器）、并发、C++17/20。
+
+完整清单 → [`20-compilers-llvm/_refs/cpp-minimum-for-llvm.md`](../../../20-compilers-llvm/_refs/cpp-minimum-for-llvm.md)；总路线 → [05/README](../README.md)。
 
 ---
 
