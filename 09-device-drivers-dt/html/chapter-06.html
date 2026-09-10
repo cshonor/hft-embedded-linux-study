@@ -280,6 +280,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-6-2"><span class="n">12.1</span>缓存一致性：为什么 DMA 和 Cache 会打架</a>
           <a href="#s-6-3"><span class="n">12.2</span>一致性 / 流式映射 API：两类映射的完整生命周期</a>
           <a href="#s-6-4"><span class="n">12.3</span>scatter/gather：把"物理连续"的枷锁拆掉</a>
+          <a href="#s-6-5"><span class="n">6.5</span>· mmap：让用户态直接看到内核内存</a>
+          <a href="#s-6-6"><span class="n">6.6</span>· 缓存属性与惰性 fault：mmap 怎么才算"对"</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -300,7 +302,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Pi 5 上跑通一个驱动 + 设备树</div>
           <h1>06 · DMA 与 mmap：让数据不经过 CPU</h1>
           <div class="meta">
-<span>book <b>09-device-drivers-dt</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>5</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>09-device-drivers-dt</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>7</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -380,16 +382,34 @@ dma_map_sg(dev, sglist, nents, DMA_FROM_DEVICE);
 </code></pre>
 <hr />
 <h2>mmap：把内核内存交给用户态</h2>
-<pre class="code" data-label="C"><code class="c">static int my_mmap(struct file *filp, struct vm_area_struct *vma)
+<p><strong>两种情况写法不同，别混用：</strong></p>
+<pre class="code" data-label="C"><code class="c">/* ① DMA 缓冲 —— 用 dma_mmap_coherent，它会自动设对缓存属性 */
+static int my_mmap_dma(struct file *filp, struct vm_area_struct *vma)
 {
-    /* 一次性把整段物理区间映射过去 */
+    return dma_mmap_coherent(m-&gt;dev, vma, m-&gt;cpu_addr,
+                             m-&gt;dma_addr, m-&gt;size);
+}
+
+/* ② MMIO 寄存器 / 保留内存 —— 手写 remap_pfn_range，但必须做两件事 */
+static int my_mmap_mmio(struct file *filp, struct vm_area_struct *vma)
+{
+    unsigned long off  = vma-&gt;vm_pgoff &lt;&lt; PAGE_SHIFT;
+    unsigned long size = vma-&gt;vm_end - vma-&gt;vm_start;
+
+    if (off + size &gt; m-&gt;region_size)          /* ★ ① 边界检查：vm_pgoff 是用户可控的 */
+        return -EINVAL;
+
+    vma-&gt;vm_page_prot = pgprot_noncached(vma-&gt;vm_page_prot);   /* ★ ② 必须关缓存 */
+
     return remap_pfn_range(vma, vma-&gt;vm_start,
-                           virt_to_phys(buf) &gt;&gt; PAGE_SHIFT,
-                           vma-&gt;vm_end - vma-&gt;vm_start,
-                           vma-&gt;vm_page_prot);
+                           (m-&gt;phys_addr + off) &gt;&gt; PAGE_SHIFT,
+                           size, vma-&gt;vm_page_prot);
 }
 </code></pre>
-<p>用户态 <code class="c">mmap(fd, ...)</code> 之后直接读写，<strong>不再有 <code class="c">read()</code> 的一次拷贝</strong>。</p>
+<p>⚠️ <strong>最常见的错：DMA 缓冲也用 <code class="c">remap_pfn_range</code> 且不动 <code class="c">vm_page_prot</code>。</strong>
+默认 prot 是 <strong>cached</strong>，而 <code class="c">dma_alloc_coherent</code> 的内核侧映射是 noncached——两侧属性不一致，
+症状是<strong>数据偶尔不对</strong>（不是必崩，极难查）。详见 <a href="#s-6-5">6.5</a> 与 <a href="#s-6-6">6.6</a>。</p>
+<p>用户态 <code class="c">mmap(fd, ...)</code> 之后直接读写，<strong>不再有 <code class="c">read()</code> 的一次拷贝</strong>。记得用 <code class="c">MAP_SHARED</code>。</p>
 <hr />
 <h2>本节笔记</h2>
 <div class="tbl-wrap"><table>
@@ -415,6 +435,14 @@ dma_map_sg(dev, sglist, nents, DMA_FROM_DEVICE);
 <tr>
 <td>6.4</td>
 <td><a href="#s-6-4">散聚传输</a></td>
+</tr>
+<tr>
+<td>6.5</td>
+<td><a href="#s-6-5">mmap 与 remap_pfn_range</a> ★ 三种 API 选型</td>
+</tr>
+<tr>
+<td>6.6</td>
+<td><a href="#s-6-6">缓存属性与惰性 fault</a> ★ MMIO 必须 noncached</td>
 </tr>
 </tbody>
 </table></div>
@@ -1633,6 +1661,548 @@ int my_tx(struct device *dev, struct page **pages, int npages,
 <li>Linux v6.6 <code class="c">Documentation/core-api/dma-api-howto.rst</code>（:566-610 SG 用法与合并、unmap note 原文）</li>
 <li>Linux v6.6 <code class="c">include/linux/scatterlist.h</code>（struct scatterlist :11、SG_CHAIN/SG_END :67-75、sg_dma 宏 :31-36、struct sg_table :39、for_each_sg :195）</li>
 </ul>
+      </section>
+      <section class="section" id="s-6-5">
+        <div class="sec-head"><div class="sec-no">6.5</div><h2>· mmap：让用户态直接看到内核内存</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> <code class="c">mmap()</code> 怎么把内核/设备内存映射到用户态地址空间、<code class="c">remap_pfn_range</code> 到底做了什么、以及三种 mmap API 该怎么选。<strong>重点是一个容易错的点：<code class="c">dma_mmap_*</code> 会替你处理缓存属性，手写 <code class="c">remap_pfn_range</code> 不会——漏了就数据错乱。</strong></p>
+</blockquote>
+<hr />
+<h2>零拷贝的价值：先算一笔账</h2>
+<p>高频采集场景，用户态要拿到 DMA 缓冲里的数据，两条路：</p>
+<pre class="code" data-label="code"><code class="c">① read() 路径：  用户 buf ←──copy── 内核 buf ←──DMA── 设备
+                       ↑ 每次都要拷贝
+② mmap  路径：  用户态虚拟地址 ──页表── 同一块物理页 ──DMA── 设备
+                       ↑ 零拷贝，设备直接写用户能读的内存
+</code></pre>
+<p>采样率 1 MHz × 2 字节 × 8 通道 ≈ 16 MB/s，<code class="c">read()</code> 多一次拷贝在 MHz 级采样下<strong>不只是 CPU 占用，还引入延迟抖动</strong>。这就是 <a href="../../06.6-systems-performance/html/index.html">HFT 里 mmap 做零拷贝</a> 的同一套动机。</p>
+<hr />
+<h2>调用链</h2>
+<pre class="code" data-label="code"><code class="c">用户态 mmap(NULL, len, PROT_READ|PROT_WRITE, MAP_SHARED, fd, offset)
+        │  sys_mmap → ksys_mmap_pgoff
+        ▼
+do_mmap()   ← 分配一段用户虚拟地址区间，建 vm_area_struct（VMA）
+        │
+        ▼
+file-&gt;f_op-&gt;mmap(file, vma)     ← ★ 驱动实现的回调
+        │
+        ▼
+remap_pfn_range() / dma_mmap_*() / 只填 vma-&gt;vm_ops-&gt;fault
+        │
+        ▼
+建立页表项：用户虚拟地址 → 物理页帧
+</code></pre>
+<p><strong>驱动要做的唯一一件事：把 <code class="c">vma</code> 这段虚拟地址范围填上页表。</strong></p>
+<p>VMA 提供的信息：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">vma-&gt;vm_start</code> / <code class="c">vm_end</code></td>
+<td>用户虚拟地址区间（已按页对齐）</td>
+</tr>
+<tr>
+<td><code class="c">vma-&gt;vm_pgoff</code></td>
+<td>用户传的 <code class="c">offset</code> 右移 PAGE_SHIFT（<strong>常用作"映射第几块"的索引</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">vma-&gt;vm_page_prot</code></td>
+<td>页保护属性（<strong>能不能改缓存策略就看这里</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">vma_pages(vma)</code></td>
+<td>区间页数</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2><code class="c">remap_pfn_range</code>：一次建完所有页表</h2>
+<p>v6.6 <code class="c">mm/memory.c:2496</code>：</p>
+<pre class="code" data-label="C"><code class="c">int remap_pfn_range(struct vm_area_struct *vma, unsigned long addr,
+                    unsigned long pfn, unsigned long size, pgprot_t prot)
+{
+    int err;
+
+    err = track_pfn_remap(vma, &amp;prot, pfn, addr, PAGE_ALIGN(size));
+    if (err)
+        return -EINVAL;
+
+    err = remap_pfn_range_notrack(vma, addr, pfn, size, prot);
+    ...
+}
+</code></pre>
+<p>参数含义：</p>
+<pre class="code" data-label="code"><code class="c">remap_pfn_range(vma, 起始虚拟地址, 起始物理页帧号, 长度, 页保护)
+
+物理地址 → pfn：  phys_addr &gt;&gt; PAGE_SHIFT
+                  或 page_to_pfn(page)   （有 struct page 时）
+</code></pre>
+<p>典型用法：</p>
+<pre class="code" data-label="C"><code class="c">static int my_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+    struct my_dev *m = filp-&gt;private_data;
+    unsigned long size = vma-&gt;vm_end - vma-&gt;vm_start;
+
+    if (size &gt; m-&gt;buf_size)
+        return -EINVAL;
+
+    /* 关掉这段映射的缓存（MMIO / DMA 场景必需，见 6.6） */
+    vma-&gt;vm_page_prot = pgprot_noncached(vma-&gt;vm_page_prot);
+
+    return remap_pfn_range(vma, vma-&gt;vm_start,
+                           m-&gt;phys_addr &gt;&gt; PAGE_SHIFT,
+                           size, vma-&gt;vm_page_prot);
+}
+
+static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .mmap  = my_mmap,
+    ...
+};
+</code></pre>
+<p><strong>注意那行 <code class="c">pgprot_noncached</code></strong> —— 手写路径必须自己设，见下节。</p>
+<hr />
+<h2>★ 三种 API 怎么选（这是本节的核心表）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用哪个</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>MMIO 寄存器 / 保留内存 / CMA</strong>（无 struct page）</td>
+<td><code class="c">remap_pfn_range</code></td>
+<td>物理地址已知且连续，<strong>要自己设 pgprot</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">dma_alloc_coherent</code> 分配的缓冲</strong></td>
+<td><strong><code class="c">dma_mmap_coherent</code></strong></td>
+<td><strong>自动设对缓存属性</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">dma_alloc_noncontiguous</code> / scatter-gather</strong></td>
+<td><code class="c">dma_mmap_noncontiguous</code></td>
+<td>内部走 <code class="c">vm_map_pages</code>（离散页数组）</td>
+</tr>
+<tr>
+<td><strong>普通内核内存（有 struct page）</strong></td>
+<td><code class="c">vm_insert_page</code> / <code class="c">vm_map_pages</code></td>
+<td>逐页插入，别用 <code class="c">remap_pfn_range</code> 强来</td>
+</tr>
+</tbody>
+</table></div>
+<h3>为什么 <code class="c">dma_mmap_*</code> 更正确</h3>
+<p>看 <code class="c">dma_mmap_attrs</code> 的下游（v6.6 <code class="c">kernel/dma/mapping.c:417</code>）：</p>
+<pre class="code" data-label="C"><code class="c">pgprot_t dma_pgprot(struct device *dev, pgprot_t prot, unsigned long attrs)
+{
+    if (dev_is_dma_coherent(dev))
+        return prot;                        /* 硬件保证一致 → 保持缓存 */
+#ifdef CONFIG_ARCH_HAS_DMA_WRITE_COMBINE
+    if (attrs &amp; DMA_ATTR_WRITE_COMBINE)
+        return pgprot_writecombine(prot);
+#endif
+    return pgprot_dmacoherent(prot);        /* ★ 非 coherent 设备：关缓存 */
+}
+</code></pre>
+<p><strong><code class="c">dma_mmap_*</code> 会自动把用户态映射的缓存属性设成与 DMA 语义匹配的值</strong>（通常是 noncached 或 writecombine）。</p>
+<p>而手写 <code class="c">remap_pfn_range</code> 时传的 <code class="c">vma-&gt;vm_page_prot</code> <strong>默认是 cached</strong>：</p>
+<pre class="code" data-label="code"><code class="c">dma_alloc_coherent 分配      → 内核侧映射已经是 noncached
+手写 mmap 用默认 prot        → 用户侧映射是 cached  ★ 两侧属性不一致
+结果                          → 用户读到的是缓存里的旧数据，或写出去没到内存
+</code></pre>
+<p><strong>症状是"数据偶尔不对"，而不是"必崩"</strong> —— 这种 intermittent bug 极难查。所以：</p>
+<blockquote>
+<p><strong>DMA 缓冲做 mmap，优先用 <code class="c">dma_mmap_coherent</code> / <code class="c">dma_mmap_noncontiguous</code>。</strong>
+只有映射 MMIO 寄存器或保留内存时才手写 <code class="c">remap_pfn_range</code>，且<strong>必须显式设 pgprot</strong>。</p>
+</blockquote>
+<p><code class="c">dma_mmap_pages</code> 内部其实也是 <code class="c">remap_pfn_range</code>（<code class="c">mapping.c:609</code>），但它传的是<strong>已被 <code class="c">dma_pgprot</code> 修正过的</strong> <code class="c">vma-&gt;vm_page_prot</code>——差别就在这一层。</p>
+<hr />
+<h2>生命周期：一个容易漏的约束</h2>
+<p><code class="c">dma_mmap_attrs</code> 的内核注释写得很明确：</p>
+<blockquote>
+<p><em>"The coherent DMA buffer must not be freed by the driver until the user space mapping has been released."</em></p>
+</blockquote>
+<p><strong>驱动不能在用户映射还活着的时候释放缓冲。</strong> 实践做法：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>做法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>最简单</strong></td>
+<td>用 <code class="c">devm_*</code> / <code class="c">dma_alloc_coherent</code> 在 probe 里分配，remove 时释放——模块卸载本身会解除映射</td>
+</tr>
+<tr>
+<td><strong>需要动态时</strong></td>
+<td>在 <code class="c">vm_ops-&gt;close</code> 里计数，配合 refcount</td>
+</tr>
+<tr>
+<td><strong>别做</strong></td>
+<td>在 <code class="c">release()</code> 里无条件 free，而用户还 mmap 着</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>完整骨架（MMIO 场景）</h2>
+<pre class="code" data-label="C"><code class="c">static int my_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+    struct my_dev *m = filp-&gt;private_data;
+    unsigned long off = vma-&gt;vm_pgoff &lt;&lt; PAGE_SHIFT;
+    unsigned long size = vma-&gt;vm_end - vma-&gt;vm_start;
+
+    /* ① 边界检查：越界必须拒绝，否则用户能读到别的物理内存 */
+    if (off + size &gt; m-&gt;region_size)
+        return -EINVAL;
+
+    /* ② 缓存属性：MMIO 必须 noncached（见 6.6） */
+    vma-&gt;vm_page_prot = pgprot_noncached(vma-&gt;vm_page_prot);
+
+    /* ③ 建页表 */
+    return remap_pfn_range(vma, vma-&gt;vm_start,
+                           (m-&gt;phys_addr + off) &gt;&gt; PAGE_SHIFT,
+                           size, vma-&gt;vm_page_prot);
+}
+</code></pre>
+<p><strong>第 ① 步的边界检查不能省</strong>——<code class="c">vm_pgoff</code> 是用户可控的，不做检查等于把整个物理地址空间暴露给用户态。这是<strong>提权漏洞</strong>，不是小问题。</p>
+<hr />
+<h2>验证</h2>
+<pre class="code" data-label="shell"><code class="c"># 映射是否建立：看进程的 maps
+cat /proc/&lt;pid&gt;/maps          # 应看到你设备的映射区间
+
+# 更详细（含物理页帧，需 root + CONFIG_PROC_PAGE_MONITOR）
+cat /proc/&lt;pid&gt;/pagemap       # 二进制，需解析工具
+
+# 内核侧确认页属性
+# 用 kernel/debug 或 devmem2 读同一物理地址比对
+</code></pre>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>mmap 零拷贝是 HFT 与嵌入式采集的共同语言</strong>：DPDK 用 hugepage + mmap 旁路内核；网卡驱动的 ring buffer 也常 mmap 给用户态。见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk/">13 DPDK</a>。</li>
+<li><strong><code class="c">vm_pgoff</code> 当索引用</strong>是内核惯例：同一个设备有多块缓冲时，用户 <code class="c">mmap(fd, N * PAGE_SIZE)</code> 第 N 块。但<strong>必须校验上界</strong>。</li>
+<li><strong>属性不一致的 bug 值得警惕</strong>：内核态和用户态看到同一块物理内存、但缓存策略不同，是"两边数据对不上"类问题的经典根因。这类 bug 不会崩溃，只会<strong>偶尔算错</strong>——在控制系统里比崩溃更危险。</li>
+</ul>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一步：</strong> <a href="#s-6-4">6.4 · scatter/gather</a></li>
+<li><strong>下一步：</strong> <a href="#s-6-6">6.6 · 缓存属性与惰性 fault</a></li>
+<li><strong>相关：</strong> <a href="#s-6-2">6.2 · 缓存一致性</a></li>
+</ul>
+<hr />
+<details>
+<summary>自测</summary>
+<ol>
+<li>驱动的 <code class="c">mmap</code> 回调要做的本质工作是什么？</li>
+<li><code class="c">remap_pfn_range</code> 的 <code class="c">pfn</code> 参数怎么算？有 <code class="c">struct page</code> 时呢？</li>
+<li><strong>DMA 缓冲做 mmap，为什么优先用 <code class="c">dma_mmap_coherent</code> 而不是手写 <code class="c">remap_pfn_range</code>？</strong></li>
+<li><code class="c">dma_pgprot()</code> 在什么条件下会返回原 prot 不改？</li>
+<li>用户的 <code class="c">offset</code> 参数最终落在 VMA 的哪个字段？为什么要检查它？</li>
+<li>驱动能在用户还 mmap 着的时候释放 DMA 缓冲吗？</li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p><strong>给 <code class="c">vma</code> 描述的这段用户虚拟地址区间建立页表</strong>，让它指向目标物理内存。内核已经分配好了 VMA（虚拟区间），驱动只需填页表——通过 <code class="c">remap_pfn_range</code> 一次性建、或 <code class="c">dma_mmap_*</code>、或只提供 <code class="c">vm_ops-&gt;fault</code> 惰性建。</p>
+</li>
+<li>
+<p><code class="c">pfn = phys_addr &gt;&gt; PAGE_SHIFT</code>；有 <code class="c">struct page</code> 时用 <code class="c">page_to_pfn(page)</code>。注意 <code class="c">remap_pfn_range</code> 要的是<strong>页帧号</strong>不是字节地址，传错表现为映射到了完全无关的物理页（能"跑"但数据全错）。</p>
+</li>
+<li>
+<p>因为 <code class="c">dma_mmap_*</code> 内部会通过 <code class="c">dma_pgprot()</code> <strong>自动把用户态映射的缓存属性设成与 DMA 语义一致</strong>（通常是 noncached/writecombine）。手写 <code class="c">remap_pfn_range</code> 若不显式设 <code class="c">pgprot</code>，用的 <code class="c">vma-&gt;vm_page_prot</code> 默认是 <strong>cached</strong>，与内核侧 <code class="c">dma_alloc_coherent</code> 的 noncached 映射<strong>属性不一致</strong>，症状是用户读到缓存里的旧数据——表现为"偶尔不对"，极难定位。</p>
+</li>
+<li>
+<p><code class="c">dev_is_dma_coherent(dev)</code> 为真时（设备与 CPU 间硬件保证缓存一致性）。否则根据 <code class="c">DMA_ATTR_WRITE_COMBINE</code> 返回 writecombine 或 <code class="c">pgprot_dmacoherent(prot)</code>。</p>
+</li>
+<li>
+<p>落在 <strong><code class="c">vma-&gt;vm_pgoff</code></strong>（= 用户 <code class="c">offset &gt;&gt; PAGE_SHIFT</code>）。必须检查上界，因为它是<strong>用户完全可控</strong>的，不做越界检查等于允许用户映射任意物理内存（包括其它进程/内核的内存），是提权漏洞。</p>
+</li>
+<li>
+<p><strong>不能。</strong> <code class="c">dma_mmap_attrs</code> 的注释明确要求 coherent DMA buffer 在用户映射释放前不得被驱动释放。实践上最简单是用 <code class="c">devm_*</code>/probe 分配、remove 释放（模块卸载会解除映射）；需要动态生命周期则在 <code class="c">vm_ops-&gt;close</code> 里做引用计数。</p>
+</li>
+</ol>
+</details>
+</details>
+      </section>
+      <section class="section" id="s-6-6">
+        <div class="sec-head"><div class="sec-no">6.6</div><h2>· 缓存属性与惰性 fault：mmap 怎么才算&quot;对&quot;</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> <code class="c">pgprot_noncached</code> / <code class="c">pgprot_writecombine</code> / 默认 cached 三者怎么选、<strong>为什么 MMIO 寄存器必须 noncached</strong>（不只是"为了看到最新值"，还有更硬的理由）、以及什么时候该用 <code class="c">fault</code> 惰性映射而不是一次性建完页表。</p>
+</blockquote>
+<hr />
+<h2>三种缓存策略</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>策略</th>
+<th>设置方式</th>
+<th>CPU 读</th>
+<th>CPU 写</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>cached</strong>（默认）</td>
+<td>不动 <code class="c">vm_page_prot</code></td>
+<td>走缓存</td>
+<td>写回缓存</td>
+<td>普通内存。<strong>DMA/MMIO 禁用</strong></td>
+</tr>
+<tr>
+<td><strong>noncached</strong></td>
+<td><code class="c">pgprot_noncached(prot)</code></td>
+<td>直达内存</td>
+<td>直达内存</td>
+<td><strong>MMIO 寄存器</strong>、DMA 缓冲</td>
+</tr>
+<tr>
+<td><strong>write-combine</strong></td>
+<td><code class="c">pgprot_writecombine(prot)</code></td>
+<td>直达内存</td>
+<td><strong>可合并/缓冲</strong></td>
+<td>帧缓冲、显存、大块输出型 DMA</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">vma-&gt;vm_page_prot = pgprot_noncached(vma-&gt;vm_page_prot);      /* MMIO */
+vma-&gt;vm_page_prot = pgprot_writecombine(vma-&gt;vm_page_prot);   /* 帧缓冲 */
+</code></pre>
+<hr />
+<h2>★ 为什么 MMIO 必须 noncached：三个理由，不只是"看到最新值"</h2>
+<p>直觉答案是"怕读到缓存里的旧值"。<strong>这只对了一半</strong>，还有两个更硬的理由：</p>
+<h3>① 寄存器值会被硬件改，CPU 不知道</h3>
+<p>状态寄存器（比如"数据就绪"标志）由硬件翻转。如果这段映射是 cached，CPU 第一次读之后就缓存住，<strong>硬件改了 CPU 也看不到</strong>——设备永远"没准备好"。这是真实的死循环。</p>
+<h3>② 读操作可能有副作用，缓存会把它吞掉</h3>
+<p>很多硬件寄存器是<strong>读即清除</strong>（read-to-clear）的：读一次中断状态寄存器，标志就清了。</p>
+<pre class="code" data-label="code"><code class="c">期望：  读 → 清中断 → 再读 → 读到 0
+cached：读 → 缓存命中，第二次读根本不产生总线事务 → 中断没被正确处理
+</code></pre>
+<p><strong>缓存不仅让数据变旧，它让"读"这个动作本身消失了。</strong></p>
+<h3>③ 写顺序必须保持</h3>
+<p>设备寄存器往往要求严格的写入顺序（先写地址寄存器、再写命令寄存器触发）。cached 或 writecombine 都可能<strong>重排或合并写入</strong>：</p>
+<pre class="code" data-label="C"><code class="c">writel(addr,  base + REG_ADDR);      /* 要先到 */
+writel(cmd,   base + REG_CMD);       /* 后到，触发动作 */
+</code></pre>
+<p>如果这两次写被合并成一次突发或者乱序，设备收到的是错误命令。<strong>noncached 保证程序顺序的写直达。</strong></p>
+<blockquote>
+<p><strong>规则：MMIO 寄存器一律 <code class="c">pgprot_noncached</code>。</strong> 帧缓冲这类"只写、顺序无关、量大"的才用 writecombine。</p>
+</blockquote>
+<hr />
+<h2>惰性映射：什么时候用 <code class="c">fault</code></h2>
+<p><code class="c">remap_pfn_range</code> 在 <code class="c">mmap()</code> 返回前<strong>一次性建完所有页表</strong>。缺点：映射 1 GB 就要立刻建 26 万个页表项，即使程序只访问其中 1 MB。</p>
+<p><code class="c">fault</code> 是<strong>按需建表</strong>：首次访问某页才触发缺页异常，内核回调 <code class="c">vm_ops-&gt;fault</code> 补上这一页。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">remap_pfn_range</code></th>
+<th><code class="c">vm_ops-&gt;fault</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>建表时机</td>
+<td>mmap 时全部建完</td>
+<td>首次访问该页时</td>
+</tr>
+<tr>
+<td>mmap 返回延迟</td>
+<td>与映射大小成正比</td>
+<td><strong>O(1)</strong></td>
+</tr>
+<tr>
+<td>内存开销</td>
+<td>全部页表</td>
+<td>只建访问过的</td>
+</tr>
+<tr>
+<td>适用场景</td>
+<td>MMIO 寄存器、CMA 连续缓冲</td>
+<td>大缓冲、稀疏访问、动态分配</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">static vm_fault_t my_fault(struct vm_fault *vmf)
+{
+    struct vm_area_struct *vma = vmf-&gt;vma;
+    struct my_dev *m = vma-&gt;vm_private_data;
+    unsigned long offset = vmf-&gt;pgoff &lt;&lt; PAGE_SHIFT;
+    struct page *page;
+
+    if (offset &gt;= m-&gt;buf_size)
+        return VM_FAULT_SIGBUS;          /* 越界 → 给用户发 SIGBUS，不是 SIGSEGV */
+
+    page = m-&gt;pages[vmf-&gt;pgoff];
+    if (!page)
+        return VM_FAULT_OOM;
+
+    /* 逐页插入（要求内存有 struct page） */
+    return vmf_insert_page(vma, vmf-&gt;address, page);
+}
+
+static const struct vm_operations_struct my_vm_ops = {
+    .fault = my_fault,
+};
+
+static int my_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+    vma-&gt;vm_ops = &amp;my_vm_ops;            /* ★ 只挂 ops，不建表 */
+    vma-&gt;vm_private_data = filp-&gt;private_data;
+    return 0;
+}
+</code></pre>
+<p><strong>注意 <code class="c">mmap</code> 回调直接 <code class="c">return 0</code></strong> —— 不建任何页表，等缺页时再说。</p>
+<p><strong>返回值语义</strong>（<code class="c">vm_fault_t</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>返回</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">VM_FAULT_NOPAGE</code> / <code class="c">vmf_insert_page</code> 成功</td>
+<td>页已装好</td>
+</tr>
+<tr>
+<td><code class="c">VM_FAULT_SIGBUS</code></td>
+<td><strong>越界/无效访问</strong> → 给用户 SIGBUS</td>
+</tr>
+<tr>
+<td><code class="c">VM_FAULT_OOM</code></td>
+<td>内存不足</td>
+</tr>
+<tr>
+<td><code class="c">VM_FAULT_SIGSEGV</code></td>
+<td>真正的非法地址</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>越界要返回 <code class="c">VM_FAULT_SIGBUS</code> 而不是 <code class="c">SIGSEGV</code></strong>：语义上"映射存在但访问了不存在的后端"是总线错误，不是段错误。用户态看到的是 <code class="c">Bus error</code>，这提示"映射范围问题"，比 <code class="c">Segmentation fault</code> 定位更快。</p>
+<hr />
+<h2>常见坑清单</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>坑</th>
+<th>症状</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>DMA 缓冲 mmap 忘设 pgprot</strong></td>
+<td>数据<strong>偶尔</strong>不对</td>
+<td>改用 <code class="c">dma_mmap_coherent</code>（见 <a href="#s-6-5">6.5</a>）</td>
+</tr>
+<tr>
+<td><strong>MMIO 用默认 cached</strong></td>
+<td>死等"就绪标志"；中断清不掉；命令乱序</td>
+<td><code class="c">pgprot_noncached</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">vm_pgoff</code> 不校验</strong></td>
+<td>用户能映射任意物理内存（<strong>提权漏洞</strong>）</td>
+<td>上界检查</td>
+</tr>
+<tr>
+<td><strong>映射普通 <code class="c">kmalloc</code> 内存用 <code class="c">remap_pfn_range</code></strong></td>
+<td>页可能被回收，且属性不对</td>
+<td>有 <code class="c">struct page</code> 就用 <code class="c">vm_insert_page</code> / <code class="c">vm_map_pages</code></td>
+</tr>
+<tr>
+<td><strong>用户态用 <code class="c">MAP_PRIVATE</code></strong></td>
+<td>写不回设备（写时复制）</td>
+<td>设备 mmap 一律 <code class="c">MAP_SHARED</code></td>
+</tr>
+<tr>
+<td><strong>缓冲在用户还映射着时被释放</strong></td>
+<td>用户访问已释放内存</td>
+<td>见 6.5 生命周期</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关于"映射普通内核内存"这一条值得展开：</strong> 老教程里教的是给 <code class="c">kmalloc</code> 的页打 <code class="c">SetPageReserved</code> 再 <code class="c">remap_pfn_range</code>。<strong>现代内核不推荐这个做法</strong>——一是这些页仍在伙伴系统管理下，二是语义混乱。正确做法：</p>
+<ul>
+<li>需要给用户态映射的缓冲 → <strong>用 <code class="c">dma_alloc_*</code> 分配 + <code class="c">dma_mmap_*</code> 映射</strong>（首选）</li>
+<li>已有 <code class="c">struct page</code> 数组 → <code class="c">vm_insert_page</code> / <code class="c">vm_map_pages</code></li>
+<li><code class="c">vmalloc</code> 区域 → 有专门的 <code class="c">remap_vmalloc_range</code></li>
+</ul>
+<hr />
+<h2>用户态侧配合</h2>
+<pre class="code" data-label="C"><code class="c">int fd = open(&quot;/dev/mydev&quot;, O_RDWR);
+
+/* ★ 必须 MAP_SHARED：MAP_PRIVATE 会触发写时复制，写不回设备 */
+void *p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+if (p == MAP_FAILED) { perror(&quot;mmap&quot;); return -1; }
+
+/* noncached 映射不需要 msync —— 写已经直达内存
+   但如果是 cached 映射且要刷出去，才需要 msync(p, len, MS_SYNC) */
+</code></pre>
+<p><strong><code class="c">MAP_SHARED</code> 是硬性要求。</strong> 用 <code class="c">MAP_PRIVATE</code> 时内核会做写时复制，用户写的是副本，<strong>设备永远看不到</strong>——而且这个 bug 表现是"写进去没反应"，很容易误判成驱动问题。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>缓存属性错误是"静默算错"类 bug 的主要来源。</strong> 它不崩溃、不报 warning，只是在高负载或特定时序下数据不对。<strong>这类 bug 的代价远高于崩溃</strong>——崩溃会立刻被发现，算错会一路流到下游。</li>
+<li><strong>惰性映射与大页</strong>是高频场景的标配：先 <code class="c">mmap</code> 一大片（建表 O(1)），实际访问时按页建表，配合 <code class="c">madvise(MADV_HUGEPAGE)</code> 或 hugetlbfs 减少 TLB miss。DPDK 的 hugepage 就是这条路（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk/">13 DPDK</a>）。</li>
+<li><strong><code class="c">VM_FAULT_SIGBUS</code> 的价值在于信息量</strong>：同样是"访问出错"，<code class="c">Bus error</code> 立刻把排查方向指向"映射的后端出了问题"（越界、设备没了），而 <code class="c">Segmentation fault</code> 会让人去查指针。选对错误语义是给自己省时间。</li>
+</ul>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一步：</strong> <a href="#s-6-5">6.5 · mmap 与 remap_pfn_range</a></li>
+<li><strong>相关：</strong> <a href="#s-6-2">6.2 · 缓存一致性</a>（DMA 侧的同一主题）· <a href="#s-6-3">6.3 · coherent vs streaming</a></li>
+<li><strong>向外：</strong> <a href="../../06-linux-mm/html/index.html">06 内存管理</a> · <a href="../../06.6-systems-performance/html/index.html">06.6 性能</a></li>
+</ul>
+<hr />
+<details>
+<summary>自测</summary>
+<ol>
+<li><code class="c">pgprot_noncached</code> 和 <code class="c">pgprot_writecombine</code> 分别在什么场景用？</li>
+<li><strong>MMIO 寄存器必须 noncached 的三个理由是什么？</strong> 为什么说"怕读到旧值"只是其中一半？</li>
+<li><code class="c">remap_pfn_range</code> 和 <code class="c">vm_ops-&gt;fault</code> 的取舍依据是什么？</li>
+<li><code class="c">fault</code> 回调里访问越界应该返回什么？为什么不是 <code class="c">VM_FAULT_SIGSEGV</code>？</li>
+<li>用户态 <code class="c">mmap</code> 设备时用 <code class="c">MAP_PRIVATE</code> 会怎样？</li>
+<li>想给用户态映射一块缓冲，最推荐的分配 + 映射组合是什么？</li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p><code class="c">pgprot_noncached</code>：<strong>MMIO 寄存器、DMA 缓冲</strong>——需要读直达、写顺序保持。<code class="c">pgprot_writecombine</code>：<strong>帧缓冲/显存、大块输出型 DMA</strong>——写可以合并成突发提高吞吐，读直达。两者都不能用于普通内存。</p>
+</li>
+<li>
+<p>① 寄存器值被硬件改，CPU 缓存看不到 → 永远等不到"就绪"；② <strong>读有副作用</strong>（读即清除），缓存会让第二次读不产生总线事务，中断清不掉；③ <strong>写顺序必须保持</strong>，缓存/writecombine 可能重排或合并写入，导致设备收到错误命令。"怕读到旧值"只覆盖了 ①，而 ② 和 ③ 是更硬的约束。</p>
+</li>
+<li>
+<p>看映射大小和访问模式。<code class="c">remap_pfn_range</code> 在 mmap 返回前建完所有页表，延迟与大小成正比，适合 MMIO 寄存器、CMA 连续缓冲这类<strong>小而必访</strong>的区域；<code class="c">fault</code> 惰性建表，mmap 是 O(1)，适合<strong>大缓冲、稀疏访问、需要动态分配</strong>的场景——首次访问某页才补表。</p>
+</li>
+<li>
+<p>返回 <strong><code class="c">VM_FAULT_SIGBUS</code></strong>。语义上"映射存在但后端无效"是总线错误，用户看到 <code class="c">Bus error</code> 会把排查方向直接指向"映射的后端/范围问题"；<code class="c">SIGSEGV</code> 会误导去查指针错误。诊断信息更准确。</p>
+</li>
+<li>
+<p>内核会做<strong>写时复制（COW）</strong>，用户写的是副本，<strong>设备永远看不到写入</strong>。症状是"写进去没反应"，容易被误判成驱动 bug。设备 mmap 必须用 <code class="c">MAP_SHARED</code>。</p>
+</li>
+<li>
+<p><strong><code class="c">dma_alloc_coherent</code> / <code class="c">dma_alloc_attrs</code> 分配 + <code class="c">dma_mmap_coherent</code> / <code class="c">dma_mmap_attrs</code> 映射</strong>。<code class="c">dma_mmap_*</code> 内部会通过 <code class="c">dma_pgprot()</code> 自动把用户态映射的缓存属性设成与 DMA 语义匹配（noncached 或 writecombine），避免手写 <code class="c">remap_pfn_range</code> 漏设 pgprot 导致的"两侧属性不一致"问题。</p>
+</li>
+</ol>
+</details>
+</details>
       </section>
 
 

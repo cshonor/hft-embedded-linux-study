@@ -279,6 +279,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-1-1"><span class="n">1.1</span>1.1-why-drivers-in-kernel</a>
           <a href="#s-1-2"><span class="n">1.2</span>1.2-why-most-drivers-are-shared</a>
           <a href="#s-1-3"><span class="n">1.3</span>1.3-driver-lifecycle-and-irq</a>
+          <a href="#s-1-4"><span class="n">1.4</span>· 为什么内核模块不能用 libc，以及 MODULE_LICENSE 的实际后果</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Pi 5 上跑通一个驱动 + 设备树</div>
           <h1>01 · 内核模块：从 insmod 到 dmesg 有输出</h1>
           <div class="meta">
-<span>book <b>09-device-drivers-dt</b></span><span>chapter <b>Ch 1</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>09-device-drivers-dt</b></span><span>chapter <b>Ch 1</b></span><span>sections <b>5</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -400,6 +401,10 @@ sudo rmmod hello &amp;&amp; dmesg -T | tail -3
 <tr>
 <td>1.3</td>
 <td><a href="#s-1-3">驱动生命周期与中断</a></td>
+</tr>
+<tr>
+<td>1.4</td>
+<td><a href="#s-1-4">为什么不能用 libc · MODULE_LICENSE 后果</a> ★ 对应验收 2、3</td>
 </tr>
 </tbody>
 </table></div>
@@ -739,6 +744,297 @@ sudo rmmod hello &amp;&amp; dmesg -T | tail -3
 <h2>五、一句话</h2>
 <p>驱动不是开机脚本；<strong>运行期每一次硬件打断、数据搬运、故障与释放，都走内核驱动。</strong><br />
 中断 = 驱动核心职责。与 <a href="#s-1-1">8.2</a>（为何必须在内核）同一条线。</p>
+      </section>
+      <section class="section" id="s-1-4">
+        <div class="sec-head"><div class="sec-no">1.4</div><h2>· 为什么内核模块不能用 libc，以及 MODULE_LICENSE 的实际后果</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> 内核模块<strong>不能链接 libc</strong> 的根本原因（不是"忘了链接"，是架构上不可能），以及两个常被当成"只是标记"、实际有硬后果的东西——<strong><code class="c">MODULE_LICENSE</code> 缺失会让你用不了 <code class="c">EXPORT_SYMBOL_GPL</code> 的符号</strong>，还有自己编的模块<strong>必然</strong>让内核 taint。</p>
+</blockquote>
+<hr />
+<h2>一、为什么用不了 libc</h2>
+<h3>表层原因：没有链接</h3>
+<p>用户态程序由动态链接器把 <code class="c">libc.so</code> 映射进来；内核模块加载时解析的是<strong>内核自己的符号表</strong>（<code class="c">/proc/kallsyms</code> 里那些 <code class="c">EXPORT_SYMBOL</code> 导出的），里面根本没有 <code class="c">printf</code>。</p>
+<pre class="code" data-label="code"><code class="c">用户态：a.out  ──ld.so──▶ libc.so ──syscall──▶ 内核
+内核态：my.ko  ──模块加载器──▶ 内核符号表（printk / kmalloc / ...）
+                              ✗ 没有 printf，也没有 syscall 入口可用
+</code></pre>
+<h3>★ 根本原因：libc 的函数依赖 syscall，而内核没法"调用自己"</h3>
+<p><code class="c">printf</code> 最终落到 <code class="c">write(1, buf, n)</code>；<code class="c">malloc</code> 最终落到 <code class="c">brk</code>/<code class="c">mmap</code>。<strong>系统调用的本质是"从用户态陷入内核"的机制</strong>（<code class="c">svc</code> / <code class="c">syscall</code> 指令 + 特权级切换 + 内核栈切换）。</p>
+<p>内核代码本身就在 ring 0 / EL1 <strong>运行在 syscall 的另一端</strong>：</p>
+<ul>
+<li>它没有"陷入自己"这回事</li>
+<li>它需要的文件操作直接调 VFS 内部函数（<code class="c">vfs_write</code> 等），而不是 <code class="c">write</code> 这个系统调用入口</li>
+<li>它需要内存直接调 <code class="c">kmalloc</code> / <code class="c">alloc_pages</code>，而不是 <code class="c">brk</code></li>
+</ul>
+<p><strong>所以这不是"内核里没有 libc 的实现"，而是 libc 依赖的那套机制在内核上下文中不成立。</strong></p>
+<h3>对照表：你要习惯的替换</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用户态（libc）</th>
+<th>内核态</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">printf</code></td>
+<td><strong><code class="c">printk</code></strong></td>
+<td>有日志级别（<code class="c">KERN_INFO</code> / <code class="c">KERN_ERR</code> 等）</td>
+</tr>
+<tr>
+<td><code class="c">malloc</code> / <code class="c">free</code></td>
+<td><strong><code class="c">kmalloc</code> / <code class="c">kfree</code></strong></td>
+<td>带 <code class="c">GFP_</code> 标志，可睡眠</td>
+</tr>
+<tr>
+<td><code class="c">vmalloc</code></td>
+<td><strong><code class="c">vmalloc</code></strong></td>
+<td>虚拟连续、物理不必连续</td>
+</tr>
+<tr>
+<td><code class="c">memcpy</code> / <code class="c">strlen</code></td>
+<td><strong>有</strong></td>
+<td>内核自带一份，直接用</td>
+</tr>
+<tr>
+<td><code class="c">strcpy</code></td>
+<td><strong><code class="c">strscpy</code></strong></td>
+<td>⚠️ <code class="c">strcpy</code> 不安全，<code class="c">strlcpy</code> 已废弃</td>
+</tr>
+<tr>
+<td><code class="c">sprintf</code></td>
+<td><strong><code class="c">snprintf</code> / <code class="c">scnprintf</code></strong></td>
+<td>内核态没有浮点格式化（见下）</td>
+</tr>
+<tr>
+<td><code class="c">open</code>/<code class="c">read</code>/<code class="c">write</code></td>
+<td><strong>无直接对应</strong></td>
+<td>内核直接调 VFS；<strong>不该在驱动里读写文件</strong></td>
+</tr>
+<tr>
+<td><code class="c">sleep</code>/<code class="c">usleep</code></td>
+<td><strong><code class="c">msleep</code> / <code class="c">usleep_range</code></strong></td>
+<td>⚠️ 进程上下文才能用</td>
+</tr>
+<tr>
+<td><code class="c">pthread_mutex</code></td>
+<td><strong><code class="c">mutex</code> / <code class="c">spinlock</code></strong></td>
+<td>见 <a href="chapter-05.html#s-5-2">05-irq-locking</a></td>
+</tr>
+</tbody>
+</table></div>
+<h3>另外三条硬约束</h3>
+<p><strong>① 浮点 / SIMD 默认不可用。</strong> 内核为了省去每次进出都保存恢复 FPU 寄存器的开销，默认不启用。要用必须显式声明区间：</p>
+<pre class="code" data-label="C"><code class="c">kernel_fpu_begin();
+/* ... 这里可以用浮点/SIMD ... */
+kernel_fpu_end();
+</code></pre>
+<p>而且<strong>中断上下文里不能用</strong>（会破坏被打断进程的 FPU 状态）。信号处理里能用的那套，在内核没这个自由度。</p>
+<p><strong>② 栈极小。</strong> 用户态栈默认 8 MB；<strong>内核栈通常 8 KB（或配置成 16 KB）</strong>，且和中断共用（某些配置下中断另用栈）。后果：</p>
+<pre class="code" data-label="C"><code class="c">char buf[65536];        /* ❌ 直接爆栈，没有 SIGSEGV 兜底，oops */
+</code></pre>
+<p>大缓冲一律 <code class="c">kmalloc</code> / <code class="c">devm_kzalloc</code>，不要在栈上开。深递归同理。</p>
+<p><strong>③ 没有内存保护。</strong> 所有内核代码共享同一地址空间，模块与核心之间<strong>没有隔离</strong>。你越界写一个字节，可能踩到不相关的内核数据——症状是"过一会儿在完全无关的地方崩"。用户态有 SIGSEGV 兜底，内核只有 oops/panic。</p>
+<hr />
+<h2>二、MODULE_LICENSE：不只是标记</h2>
+<pre class="code" data-label="C"><code class="c">MODULE_LICENSE(&quot;GPL&quot;);              /* 或 &quot;GPL v2&quot; / &quot;Dual BSD/GPL&quot; 等 */
+MODULE_AUTHOR(&quot;wzp&quot;);
+MODULE_DESCRIPTION(&quot;my first driver&quot;);
+MODULE_VERSION(&quot;0.1&quot;);
+</code></pre>
+<h3>★ 硬后果：非 GPL 兼容模块用不了 <code class="c">EXPORT_SYMBOL_GPL</code> 的符号</h3>
+<p>内核符号分两类导出：</p>
+<pre class="code" data-label="C"><code class="c">EXPORT_SYMBOL(func);          /* 任何模块可用 */
+EXPORT_SYMBOL_GPL(func);      /* ★ 只有 GPL 兼容许可的模块可用 */
+</code></pre>
+<p>模块加载时，加载器解析未定义符号会检查模块的 license。<strong>声明不兼容（或不声明）时，<code class="c">EXPORT_SYMBOL_GPL</code> 的符号解析失败</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">insmod my.ko
+# insmod: ERROR: could not insert module my.ko: Unknown symbol in module
+dmesg | tail
+# my: Unknown symbol some_gpl_only_func (err -2)
+</code></pre>
+<p><strong>这不是"警告"，是加载不了。</strong> 很多重要的 DMA / 网络 / 文件系统辅助函数只以 <code class="c">_GPL</code> 导出——所以：</p>
+<blockquote>
+<p><strong>不写 <code class="c">MODULE_LICENSE("GPL")</code> 的模块，等于自我限制了一部分内核 API。</strong>
+学习/自用驱动没有理由不声明 GPL。</p>
+</blockquote>
+<h3>内核 taint（污染）标志</h3>
+<p>v6.6 <code class="c">kernel/panic.c:462</code> 的完整表（每个条目 = <code class="c">{ 全局大写字母, 模块自身小写字母, 是否与模块相关 }</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>字母</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">TAINT_PROPRIETARY_MODULE</code></td>
+<td><strong>P / G</strong></td>
+<td>加载了非 GPL 兼容模块</td>
+</tr>
+<tr>
+<td><code class="c">TAINT_OOT_MODULE</code></td>
+<td><strong>O</strong></td>
+<td>加载了 <strong>out-of-tree（树外）</strong> 模块</td>
+</tr>
+<tr>
+<td><code class="c">TAINT_CRAP</code></td>
+<td>C</td>
+<td>加载了 <code class="c">drivers/staging</code> 的模块</td>
+</tr>
+<tr>
+<td><code class="c">TAINT_UNSIGNED_MODULE</code></td>
+<td>E</td>
+<td>未签名模块（开了模块签名时）</td>
+</tr>
+<tr>
+<td><code class="c">TAINT_FORCED_MODULE</code></td>
+<td>F</td>
+<td>用 <code class="c">insmod -f</code> 强加载</td>
+</tr>
+<tr>
+<td><code class="c">TAINT_DIE</code></td>
+<td>D</td>
+<td>发生过 oops / BUG</td>
+</tr>
+<tr>
+<td><code class="c">TAINT_WARN</code></td>
+<td>W</td>
+<td>发生过 WARN</td>
+</tr>
+<tr>
+<td><code class="c">TAINT_SOFTLOCKUP</code></td>
+<td>L</td>
+<td>发生过 soft lockup</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>⚠️ 反直觉的一点：自己编的模块必然带 <code class="c">O</code>。</strong></p>
+<pre class="code" data-label="shell"><code class="c">cat /proc/sys/kernel/tainted          # 非 0 表示已污染
+dmesg | grep -i taint
+# my: module verification failed: signature and/or required key missing - tainting kernel
+# 或：my: loading out-of-tree module taints kernel.
+
+# 单个模块的标志（第二个字段）
+cat /proc/modules | grep my
+# my 16384 0 - Live 0x0000000000000000 (OE)
+#                                        ↑↑
+#                                        O = out-of-tree
+#                                        E = 未签名
+</code></pre>
+<p><strong>即使你写了 <code class="c">MODULE_LICENSE("GPL")</code>，<code class="c">O</code>（out-of-tree）仍在</strong>——因为你编的模块不在内核源码树里，这是"来源"标记，与许可证无关。<strong>所以调试期看到 taint 不必慌，先分清是 <code class="c">O</code>/<code class="c">E</code>（正常的自编译）还是 <code class="c">P</code>（真的没声明 GPL 许可）。</strong></p>
+<h3>实际影响</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>影响</th>
+<th>严重度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用不了 <code class="c">EXPORT_SYMBOL_GPL</code> 符号</td>
+<td><strong>高</strong>（加载失败）</td>
+</tr>
+<tr>
+<td>社区/维护者看到 tainted 的 oops 报告，通常会让你先用干净内核复现</td>
+<td>中（求助会被打回）</td>
+</tr>
+<tr>
+<td><code class="c">panic_on_taint</code> 被设置时直接 panic</td>
+<td>低（默认关）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>三、最小可加载模块（把上面串起来）</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+
+static int __init my_init(void)
+{
+    pr_info(&quot;my: loaded\n&quot;);            /* = printk(KERN_INFO ...) */
+    return 0;
+}
+
+static void __exit my_exit(void)
+{
+    pr_info(&quot;my: unloaded\n&quot;);
+}
+
+module_init(my_init);
+module_exit(my_exit);
+
+/* ★ 缺了 MODULE_LICENSE 会用不了 EXPORT_SYMBOL_GPL 的符号 */
+MODULE_LICENSE(&quot;GPL&quot;);
+MODULE_AUTHOR(&quot;wzp&quot;);
+MODULE_DESCRIPTION(&quot;minimal example&quot;);
+</code></pre>
+<p>对应的 Makefile：</p>
+<pre class="code" data-label="make"><code class="c">obj-m += my.o
+KDIR ?= /lib/modules/$(shell uname -r)/build
+
+all:
+    make -C $(KDIR) M=$(PWD) modules
+clean:
+    make -C $(KDIR) M=$(PWD) clean
+</code></pre>
+<p><strong><code class="c">__init</code> / <code class="c">__exit</code> 宏</strong>：把函数放进特定段，<code class="c">__init</code> 的代码在初始化完成后被<strong>释放</strong>（内核启动时打印 "Freeing unused kernel memory" 就包含这部分）。只在模块里对初始化函数用。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>"内核没有 libc" 这个约束决定了内核编程的整个风格</strong>：没有异常、没有内存保护、栈极小、不能睡眠的上下文。这些不是限制而是<strong>设计选择</strong>——为了确定性和性能。理解"为什么"比记住"不能用什么"重要得多。</li>
+<li><strong>栈限制与 HFT 的对应</strong>：低延迟代码同样忌讳在热路径上做大栈分配和深递归（cache 局部性）。内核是 8 KB 硬限制，HFT 是 cache miss 的软惩罚——<strong>本质都是"离 CPU 越近的资源越贵"</strong>。</li>
+<li><strong><code class="c">EXPORT_SYMBOL_GPL</code> 是一个社会契约的技术实现</strong>：内核用链接期的符号可见性来维护 GPL 边界。这类"用技术手段表达法律意图"的设计在开源基础设施里很常见，值得留意。</li>
+</ul>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一步：</strong> <a href="#s-1-3">1.3 · 驱动生命周期与中断</a></li>
+<li><strong>下一步：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/02-char-device/">02 · 字符设备</a></li>
+<li><strong>相关：</strong> <a href="../../08-embedded-boot-build/html/chapter-04.html#s-4-3">08/04 · vermagic 版本魔法</a>（<code class="c">version magic</code> 报错的修法）</li>
+</ul>
+<hr />
+<details>
+<summary>自测</summary>
+<ol>
+<li>内核模块用不了 libc，表层原因是什么？根本原因是什么？</li>
+<li><code class="c">printf</code> / <code class="c">malloc</code> 在内核里分别用什么替代？</li>
+<li><strong>不写 <code class="c">MODULE_LICENSE</code> 的实际后果是什么？</strong>（不只是"有警告"）</li>
+<li>自己编译的 out-of-tree 模块，<code class="c">/proc/modules</code> 里会带什么标志？写了 <code class="c">MODULE_LICENSE("GPL")</code> 能消掉吗？</li>
+<li>内核栈大概多大？在栈上开 <code class="c">char buf[65536]</code> 会怎样？</li>
+<li>内核里想用浮点运算要做什么？中断上下文里可以吗？</li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p><strong>表层</strong>：内核模块加载时解析的是内核符号表（<code class="c">/proc/kallsyms</code> 里 <code class="c">EXPORT_SYMBOL</code> 导出的），里面没有 libc 的函数，也没有动态链接器去加载 <code class="c">libc.so</code>。
+   <strong>根本</strong>：libc 的函数（printf→write、malloc→brk/mmap）<strong>依赖系统调用</strong>，而系统调用是"从用户态陷入内核"的机制。内核本身运行在 syscall 的另一端，<strong>无法"陷入自己"</strong>。它需要的功能由内核内部函数直接提供（VFS 内部接口、<code class="c">kmalloc</code> 等），绕过了 syscall 这一层。</p>
+</li>
+<li>
+<p><code class="c">printf</code> → <strong><code class="c">printk</code></strong>（或 <code class="c">pr_info</code>/<code class="c">pr_err</code> 等封装，带日志级别）；<code class="c">malloc</code>/<code class="c">free</code> → <strong><code class="c">kmalloc</code>/<code class="c">kfree</code></strong>（带 <code class="c">GFP_KERNEL</code> 等标志，可睡眠）或 <code class="c">vmalloc</code>（虚拟连续、物理可离散）。
+   注意 <code class="c">memcpy</code>/<code class="c">strlen</code> 内核自带可直接用；但 <code class="c">strcpy</code> 不安全，要用 <code class="c">strscpy</code>。</p>
+</li>
+<li>
+<p><strong>用不了 <code class="c">EXPORT_SYMBOL_GPL</code> 导出的符号，导致模块加载失败</strong>（<code class="c">Unknown symbol in module</code>）。这是链接期的硬限制，不是警告。此外内核被标记 <code class="c">TAINT_PROPRIETARY_MODULE</code>（P），社区通常会拒绝处理 tainted 内核的 oops 报告。</p>
+</li>
+<li>
+<p>会带 <strong><code class="c">O</code></strong>（out-of-tree）和通常的 <strong><code class="c">E</code></strong>（未签名）。<strong>写了 <code class="c">MODULE_LICENSE("GPL")</code> 也消不掉 <code class="c">O</code></strong>——<code class="c">O</code> 标记的是"模块来源不在内核源码树"，与许可证无关。GPL 声明能消掉的是 <strong><code class="c">P</code></strong>（非 GPL 兼容）。调试期看到 taint 先分清是哪个字母。</p>
+</li>
+<li>
+<p><strong>通常 8 KB</strong>（可配成 16 KB），而用户态默认 8 MB——差三个数量级。在栈上开 64 KB 数组会<strong>立刻爆栈</strong>，且没有 SIGSEGV 兜底，直接 oops。大缓冲必须 <code class="c">kmalloc</code>/<code class="c">devm_kzalloc</code>；深递归同理要避免。</p>
+</li>
+<li>
+<p>需要 <strong><code class="c">kernel_fpu_begin()</code> / <code class="c">kernel_fpu_end()</code></strong> 显式包裹（内核默认不启用 FPU 以省去保存恢复开销）。<strong>中断上下文里不能用</strong>——会破坏被打断进程的 FPU 寄存器状态。</p>
+</li>
+</ol>
+</details>
+</details>
       </section>
 
 
