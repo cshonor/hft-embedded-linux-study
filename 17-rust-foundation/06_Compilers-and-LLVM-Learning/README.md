@@ -5,6 +5,26 @@
 
 ---
 
+## ⚠️ 先看：投入与 Rust 相关度严重错配
+
+本目录**服务 Rust 主线**，但实际投入是反的（2026-09-10 实测）：
+
+| 目录 | 篇数 | 体量 | 与 Rust 的关系 | 该怎么做 |
+|------|------|------|----------------|----------|
+| `01_Crafting-Interpreters` | 234 | **329 KB** | ❌ Java/C 的 Lox 解释器，与 Rust 无关 | **已够，停止扩张** |
+| `03_Build-Your-Own-Compiler` | 55 | 111 KB | ❌ Java 实现的 C♭ 编译器 | 已够，停止扩张 |
+| `02_Compiler-Principles` | 92 | 180 KB | ⚠️ 通用理论（橡书） | 有需要再查，不通读 |
+| **`04_Learn-LLVM-17`** | 34 | **27 KB** | ✅ **唯一直接服务 Rust** | **该补 —— 34 篇里 19 篇是空壳** |
+| **`05_rustc-pipeline`** | 1 | 5 KB | ✅✅ **纯 Rust 视角（MIR）** | **第一优先** |
+
+**算笔账**：全目录 652 KB，与 Rust 直接相关的 `04`+`05` 只有 **32 KB（5%）**；
+与 Rust 最无关的 `01`+`03`（**都是 Java 实现**）占了 **440 KB（67%）**。
+
+> **结论**：前端直觉 `01` / `03` 已经给足了，**不要再往里投时间**。
+> 剩下的力气花在 `04`（补空壳）和 `05`（新建，直接服务 Rust 性能）。
+
+---
+
 ## 我的选用（已确认封面）
 
 | 阶段 | 做什么 | 书目 / 入口 |
@@ -15,27 +35,23 @@
 | **以后深入** | SSA、优化、代码生成、读 LLVM Pass | [**《编译器工程》**](./02_Compiler-Principles/README.md) · Cooper/Torczon **第三版**（橡书） |
 
 ```text
-04 实战：atomic → async_tokio → rust_network
-  + 姊妹仓 cpp-learning-notes 01～06（开 Learn LLVM 前必修）
-  → 05：01 Crafting Interpreters 中文在线（免费）
-  → 买一本：03 《自制编译器》
-  → 04 Learn LLVM 17 + RFR 第 2 章（Rust 代码反查 IR）
-以后：02 Engineering a Compiler 3e（橡书）+ LLVM Pass / O0 vs O3
+05_rustc-pipeline（第一优先）→ 04_Learn-LLVM-17（补空壳）→ 02 橡书（按需查）
+01 / 03 前端直觉已足 —— 停止扩张
 ```
 
 > **命名**：口头「编译器工程」= Cooper *Engineering a Compiler*（**橡书**），不是 Muchnick **鲸书**《高级编译器设计与实现》。
 
 ---
 
-## 目录（四本书 + 一个 Rust 专属节点）
+## 目录（**按 Rust 相关度排序**，不是按书排）
 
-| # | 目录 | 当前选用 | 状态 |
-|---|------|----------|------|
-| **1** | [01_Crafting-Interpreters](./01_Crafting-Interpreters/) | *Crafting Interpreters* · **中文在线** | 路线已定 · 笔记待整理 |
-| **2** | [02_Compiler-Principles](./02_Compiler-Principles/) | **《编译器工程》** Cooper/Torczon **3e** | **以后** · 占位 |
-| **3** | [03_Build-Your-Own-Compiler](./03_Build-Your-Own-Compiler/) | **《自制编译器》**（青木峰郎） | 目录已建 · 逐章笔记待读 |
-| **4** | [04_Learn-LLVM-17](./04_Learn-LLVM-17/) | *Learn LLVM 17* · `llvm_insight_lab` | **已有** 笔记 + `ir_samples` |
-| **5** | [05_rustc-pipeline](./05_rustc-pipeline/) | **rustc：MIR → LLVM IR → asm** | **新建** · 补四本书的缺口 |
+| 优先级 | 目录 | 当前选用 | 状态 |
+|:---:|------|----------|------|
+| **1** | [05_rustc-pipeline](./05_rustc-pipeline/) | **rustc：MIR → LLVM IR → asm** | **第一优先** · 补四本书的缺口 |
+| **2** | [04_Learn-LLVM-17](./04_Learn-LLVM-17/) | *Learn LLVM 17* · `llvm_insight_lab` | 已有 IR 实验 · 空壳待补（`part04` 与 ch08 已删） |
+| 3 | [02_Compiler-Principles](./02_Compiler-Principles/) | **《编译器工程》** Cooper/Torczon **3e** | **已有 92 篇真内容** · 按需查，不通读 |
+| ⏸ | [01_Crafting-Interpreters](./01_Crafting-Interpreters/) | *Crafting Interpreters* · **中文在线** | **234 篇已足 · 停止扩张** |
+| ⏸ | [03_Build-Your-Own-Compiler](./03_Build-Your-Own-Compiler/) | **《自制编译器》**（青木峰郎） | 55 篇已足 · 停止扩张 |
 
 ---
 

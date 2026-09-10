@@ -1,11 +1,15 @@
 # 04 · Learn LLVM 17 · LLVM IR 透视
 
-> 所属：[Compilers & LLVM Learning](../README.md)（仓库编号 **05**）  
-> **C++ 前置（必修）**：本仓 `04-cpp` **最小子集 P0**（非姊妹仓 01～06，见下） → 见 [05/README 前置说明](../README.md#开-learn-llvm-前的-c-前置必修)  
+> 所属：[Compilers & LLVM Learning](../README.md)（仓库编号 **06**）  
+> **C++ 前置（必修）**：本仓 `04-cpp` **最小子集 P0**（非姊妹仓 01～06，见下） → 见 [06/README 前置说明](../README.md#开-learn-llvm-前的-c-前置必修)  
 > 与 RFR **第 2、第 10 章** 对照读 IR；**本目录用 Rust 导出 IR，不必写 C++ Pass**。  
 > 前置实战：[05-Async-Concurrency-Network](../../05-Async-Concurrency-Network/README.md)
 
 **笔记 + 可运行 crate `llvm_insight_lab` + `ir_samples/`** 分目录完成。
+
+> 🗑️ **2026-09-10 清理**：`part04_custom_backend`（第 11 / 12 / 13 章）与 `part03/chapter08_tablegen`（第 8 章）
+> 均属 [《学习取舍》](./Learn-LLVM-17-学习取舍.md) 判定的「**整段跳过**」，原为不足 500 字节的空壳，已删除。
+> 剩余 `part01` / `part02` / `part03`（ch09、ch10）中仍有空壳待补。
 
 ---
 
