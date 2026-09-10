@@ -26,6 +26,7 @@ GROUP_ORDER = [
     ("cpp",     "C++"),
     ("rust",    "Rust"),
     ("embed",   "嵌入式 · 驱动"),
+    ("compiler","编译器 · 工具链"),
 ]
 
 def _b(root, title, sub, group):
@@ -101,6 +102,8 @@ BOOKS = [
     # ---- 嵌入式 · 驱动 ----
     _b("08-embedded-boot-build", "嵌入式构建", "点亮一块板：工具链 → 内核 → rootfs", "embed"),
     _b("09-device-drivers-dt", "Linux 设备驱动", "Pi 5 上跑通一个驱动 + 设备树", "embed"),
+    # ---- 编译器 · 工具链（语言中立，服务 C / C++ / Rust / ARM 多条主线）----
+    _b("20-compilers-llvm", "Compilers & LLVM", "C++ 造 C 编译器：前端 → IR → 后端", "compiler"),
 ]
 
 # ---------- 通用结构识别 ----------
