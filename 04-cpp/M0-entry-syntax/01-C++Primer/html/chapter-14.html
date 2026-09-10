@@ -279,6 +279,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-14-1"><span class="n">14.1</span>运算符重载</a>
           <a href="#s-14-2"><span class="n">14.2</span>函数调用运算符与函数对象</a>
           <a href="#s-14-3"><span class="n">14.3</span>类型转换运算符</a>
+          <a href="#s-14-4"><span class="n">14.4</span>输入输出运算符</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -313,7 +314,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">C++ Primer · 入门语法精读</div>
           <h1>第 14 章 操作重载与类型转换</h1>
           <div class="meta">
-<span>book <b>M0-entry-syntax · 01-C++Primer</b></span><span>chapter <b>Ch 14</b></span><span>sections <b>4</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M0-entry-syntax · 01-C++Primer</b></span><span>chapter <b>Ch 14</b></span><span>sections <b>5</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -323,7 +324,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <p>本章介绍如何让自定义类类型在直观上像内置类型一样使用，核心是通过重载机制给内置运算符赋予新含义。</p>
 <h2>章节摘要</h2>
-<p>运算符重载（让自定义类型像内置类型一样使用运算符）、函数调用运算符与函数对象（lambda 的底层机制）、类型转换运算符。</p>
+<p>运算符重载（让自定义类型像内置类型一样使用运算符）、函数调用运算符与函数对象（lambda 的底层机制）、类型转换运算符、输入输出运算符（<code class="c">&gt;&gt;</code> / <code class="c">&lt;&lt;</code> 的两层身份：位运算 vs 提取/插入，重载决议怎么选、<code class="c">cin &gt;&gt; x</code> 到底是成员还是非成员、sentry→num_get→streambuf 的分层开销）。</p>
 <h3>和 C 的区别</h3>
 <div class="tbl-wrap"><table>
 <thead>
@@ -422,7 +423,7 @@ std::cout &lt;&lt; c;      // 调 operator&lt;&lt;(cout, c)
 <tr>
 <td>IO</td>
 <td><code class="c">&lt;&lt; &gt;&gt;</code></td>
-<td>非成员</td>
+<td>非成员（自定义类型；内置类型其实是 <code class="c">istream</code>/<code class="c">ostream</code> 的成员——见 <a href="#s-14-4">14.4</a>）</td>
 </tr>
 </tbody>
 </table></div>
@@ -538,6 +539,8 @@ std::ostream&amp; operator&lt;&lt;(std::ostream&amp; os, const Fraction&amp; f) 
 <ul>
 <li>C++ Primer §14.1–14.4：运算符重载</li>
 <li>下一节：§14.2 函数调用运算符与函数对象</li>
+<li>⭐ IO 运算符（<code class="c">&gt;&gt;</code> / <code class="c">&lt;&lt;</code>）的完整剖析 —— 两层身份、重载决议、<code class="c">cin &gt;&gt; x</code> 到底是成员还是自由函数、
+  sentry→num_get→streambuf 分层开销、HFT 为什么不用它 → <a href="#s-14-4">14.4 输入输出运算符</a></li>
 <li>C 程序员迁移：<code class="c">add(a,b)</code> 函数 → <code class="c">a+b</code> 运算符（让自定义类型像内置类型）</li>
 </ul>
       </section>
@@ -826,6 +829,520 @@ f + 1;                           // 错误：explicit 禁止算术中转 bool
 <li>C 程序员迁移：转换函数 <code class="c">to_xxx()</code> → 转换运算符（自动）；注意 <code class="c">explicit</code> 避免意外隐式转换</li>
 </ul>
       </section>
+      <section class="section" id="s-14-4">
+        <div class="sec-head"><div class="sec-no">14.4</div><h2>输入输出运算符</h2></div>
+<h2>本节讲什么</h2>
+<p><code class="c">&gt;&gt;</code> 和 <code class="c">&lt;&lt;</code> 是 C++ 里唯一一对「<strong>同一个符号、两套完全不同的语义</strong>」的运算符：</p>
+<pre class="code" data-label="cpp"><code class="c">int a = 8 &gt;&gt; 1;      // ① 内置右移：位运算，4
+std::cin &gt;&gt; x;       // ② 提取运算符：从流里读入数据，塞进 x
+</code></pre>
+<p>第①种和 C 一模一样；第②种是<strong>重载出来的函数</strong>。本节讲清楚三件事：</p>
+<ol>
+<li>编译器是怎么区分这两种身份的（不是"看符号"，是看<strong>操作数类型的重载决议</strong>）；</li>
+<li><code class="c">cin &gt;&gt; x</code> 实际调用的到底是成员函数还是自由函数（答案和很多教程说的不一样）；</li>
+<li>一次 <code class="c">&gt;&gt;</code> 在底层走了几层，以及为什么 HFT 热路径不能用它。</li>
+</ol>
+<blockquote>
+<p>前置：<a href="#s-14-1">14.1 运算符重载</a>（成员 vs 非成员）、<a href="chapter-08.html#s-8-1">8.1 IO 类体系</a>、<a href="chapter-01.html#s-1-2">1.2 初识输入输出</a>。</p>
+</blockquote>
+<h2>一句话区分：看左操作数的类型</h2>
+<p><strong>判定规则不是"看符号长什么样"，而是看操作数里有没有类类型。</strong></p>
+<p>对任意 <code class="c">a &gt;&gt; b</code>，编译器按 [over.match.oper] 组候选集：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情况</th>
+<th>候选集</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">a</code>、<code class="c">b</code> 都是内置算术/枚举类型</td>
+<td>只有<strong>内置候选</strong>（整型提升后的各种 <code class="c">L operator&gt;&gt;(L, R)</code> 组合）</td>
+<td>位右移</td>
+</tr>
+<tr>
+<td>至少一个是类类型/枚举</td>
+<td>① <code class="c">a.operator&gt;&gt;(b)</code> 成员候选 ② 非成员 <code class="c">operator&gt;&gt;(a,b)</code>（普通查找 + <strong>ADL</strong>） ③ 内置候选</td>
+<td>走重载决议，选最优可行函数</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以：</p>
+<ul>
+<li><code class="c">8 &gt;&gt; 1</code>：<code class="c">int</code> 和 <code class="c">int</code>，没有类类型 → 只有内置候选 → <strong>位运算</strong>，编译后就是一条 <code class="c">sar</code> 指令；</li>
+<li><code class="c">cin &gt;&gt; x</code>：<code class="c">cin</code> 是 <code class="c">std::istream</code>（类类型）→ 进入重载决议 → 在 <code class="c">istream</code> 的成员里找到 <code class="c">operator&gt;&gt;(int&amp;)</code>。</li>
+</ul>
+<blockquote>
+<p>⚠️ 常见误解：以为"是 IO 还是位运算"看符号在不在 <code class="c">cin</code> 旁边。<strong>真正决定的是左操作数的类型</strong>。
+写 <code class="c">my_class &gt;&gt; 2</code>（左操作数是自定义类）照样会去查 <code class="c">my_class::operator&gt;&gt;</code>，查不到才报错。</p>
+</blockquote>
+<h3>词法层面的证据：<code class="c">&gt;&gt;</code> 曾经真的会打架</h3>
+<p>这两层身份的冲突不只是"语义上容易混淆"——C++03 时代它在<strong>词法分析阶段</strong>就是一个真 bug 源：</p>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;std::vector&lt;int&gt; &gt;  v;   // C++03 必须写 &quot;&gt; &gt;&quot;，中间加空格
+std::vector&lt;std::vector&lt;int&gt;&gt;   v;   // C++03 编译错误；C++11 起合法
+</code></pre>
+<p>原因：词法用<strong>最大匹配</strong>（maximal munch），<code class="c">&gt;&gt;</code> 是<strong>一个 token</strong>，不会被自动拆成两个 <code class="c">&gt;</code>。
+C++11 在 [temp.names] 加了一条特判：<strong><code class="c">&gt;&gt;</code> 用于关闭两个嵌套模板参数列表时，视为两个 <code class="c">&gt;</code></strong>。</p>
+<p>→ 这是"<code class="c">&gt;&gt;</code> 有两层身份"最硬的证据：如果不是真的冲突过，标准根本不需要打这个补丁。</p>
+<h2><code class="c">cin &gt;&gt; x</code> 调的到底是谁？——不是 <code class="c">operator&gt;&gt;(cin, x)</code></h2>
+<p>很多教程（包括本仓库早期表述）写：<code class="c">cin &gt;&gt; x</code> 等价于 <code class="c">operator&gt;&gt;(cin, x)</code>。
+<strong>对内置类型，这句话是错的。</strong> 精确答案分三类（签名以 cppreference/标准为准）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>右操作数类型</th>
+<th>选中的函数</th>
+<th>身份</th>
+<th>声明位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">short/int/long/long long</code> + unsigned 版、<code class="c">float/double/long double</code>、<code class="c">bool</code>、<code class="c">void*</code></td>
+<td><code class="c">std::istream::operator&gt;&gt;(T&amp;)</code></td>
+<td><strong>成员函数</strong></td>
+<td><code class="c">&lt;istream&gt;</code></td>
+</tr>
+<tr>
+<td><code class="c">char</code> / <code class="c">signed char</code> / <code class="c">unsigned char</code></td>
+<td><code class="c">operator&gt;&gt;(istream&amp;, CharT&amp;)</code></td>
+<td><strong>非成员自由函数</strong></td>
+<td><code class="c">&lt;istream&gt;</code></td>
+</tr>
+<tr>
+<td><code class="c">char*</code>（C++20 前）/ <code class="c">char (&amp;)[N]</code>（C++20 起）</td>
+<td>非成员</td>
+<td><strong>非成员自由函数</strong></td>
+<td><code class="c">&lt;istream&gt;</code></td>
+</tr>
+<tr>
+<td><code class="c">std::string</code></td>
+<td><code class="c">operator&gt;&gt;(istream&amp;, string&amp;)</code></td>
+<td><strong>非成员自由函数</strong></td>
+<td><code class="c">&lt;string&gt;</code></td>
+</tr>
+<tr>
+<td>自定义类型 <code class="c">T</code></td>
+<td>你自己写的 <code class="c">operator&gt;&gt;(istream&amp;, T&amp;)</code></td>
+<td><strong>非成员自由函数</strong>（必须）</td>
+<td>你的头文件</td>
+</tr>
+<tr>
+<td>操纵符，如 <code class="c">std::ws</code></td>
+<td><code class="c">operator&gt;&gt;(istream&amp; (*)(istream&amp;))</code></td>
+<td>成员函数（第 17 号重载）</td>
+<td><code class="c">&lt;istream&gt;</code></td>
+</tr>
+<tr>
+<td><code class="c">std::streambuf*</code></td>
+<td><code class="c">operator&gt;&gt;(basic_streambuf*)</code></td>
+<td>成员函数（第 18 号）</td>
+<td><code class="c">&lt;istream&gt;</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么会分成两半？</strong> 一条设计约束：</p>
+<blockquote>
+<p>左操作数是 <code class="c">std::istream</code>（你已经关上源码的标准类）→ 只能用<strong>成员</strong>；
+左操作数是 <code class="c">istream</code> 但你没法给它加成员（char/string/自定义类型都是后加的）→ 只能用<strong>非成员</strong>。</p>
+</blockquote>
+<p>所以 <code class="c">cin &gt;&gt; x</code>（x 是 <code class="c">int</code>）的真身是 <code class="c">cin.operator&gt;&gt;(x)</code>，写成自由函数形式反而编不过：</p>
+<pre class="code" data-label="cpp"><code class="c">int x;
+std::cin &gt;&gt; x;                    // ✅ 成员版：std::istream::operator&gt;&gt;(int&amp;)
+// operator&gt;&gt;(std::cin, x);       // ❌ 编译错误：标准库根本没有 operator&gt;&gt;(istream&amp;, int&amp;)
+</code></pre>
+<blockquote>
+<p>验证方法（取成员函数指针，能取到就证明它是成员）：
+<code class="c">cpp
+std::istream&amp; (std::istream::*pmf)(int&amp;) = &amp;std::istream::operator&gt;&gt;;  // ✅ 能编译</code>
+反过来，你能给 <code class="c">std::string</code> 写 <code class="c">operator&gt;&gt;(std::cin, s)</code> 显式调用——因为那个版本<strong>确实</strong>是非成员。</p>
+<p>⚠️ <strong>实测状态</strong>：本仓库当前环境<strong>没有可用的 C++ 编译器</strong>（WSL 被安全策略拦截，本机 clang 无 libc 头文件、
+无 MSVC），本节示例代码<strong>未实编译</strong>。上面所有签名与行为结论取自标准条款与 cppreference
+（<code class="c">basic_istream::operator&gt;&gt;</code>、<code class="c">operator&gt;&gt;(std::basic_istream)</code>、<code class="c">operator&lt;&lt;,&gt;&gt;(std::basic_string)</code>、
+<code class="c">basic_ios::operator bool</code>），不是实测输出。</p>
+</blockquote>
+<h3>三个容易讲错的细节（cppreference 逐条核对）</h3>
+<ol>
+<li><strong>第 17 号操纵符重载的返回值不是 <code class="c">*this</code>，而是 <code class="c">func(*this)</code></strong>
+   （1–16、18 都返回 <code class="c">*this</code>，只有 17 直接返回操纵符的返回值；效果上等价，因为操纵符自己就返回流引用）。</li>
+<li><strong><code class="c">short</code> / <code class="c">int</code> 不是直接抽 <code class="c">short</code> / <code class="c">int</code></strong>：内部先当 <code class="c">long</code> 抽出来，再做范围检查
+   （LWG 118 / LWG 661）。越界时写 <code class="c">numeric_limits&lt;T&gt;::min()</code> / <code class="c">max()</code> 并置 <code class="c">failbit</code>。</li>
+<li><strong><code class="c">operator&gt;&gt;(istream&amp;, char&amp;)</code> 有特例</strong>：抽到流的<strong>最后一个</strong>字符时<strong>不置 <code class="c">eofbit</code></strong>
+   （与 <code class="c">scanf("%c")</code> 行为一致），但抽最后一个 <code class="c">int</code> 会置 <code class="c">eofbit</code>。</li>
+</ol>
+<h2>为什么返回 <code class="c">istream&amp;</code>：链式 + 状态</h2>
+<pre class="code" data-label="cpp"><code class="c">std::cin &gt;&gt; a &gt;&gt; b;        // 等价于 (cin.operator&gt;&gt;(a)).operator&gt;&gt;(b)
+if (std::cin &gt;&gt; x) { }     // 流直接当条件用
+while (std::cin &gt;&gt; x) { }  // 惯用输入循环
+</code></pre>
+<p>返回<strong>引用</strong>（不是值、不是 void）同时服务两件事：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>靠什么实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>链式调用 <code class="c">&gt;&gt; a &gt;&gt; b</code></td>
+<td>返回 <code class="c">*this</code> 的引用，下一次 <code class="c">&gt;&gt;</code> 的左操作数还是同一个流</td>
+</tr>
+<tr>
+<td><code class="c">if (cin &gt;&gt; x)</code> 能判断成败</td>
+<td>流到 bool 的转换：<code class="c">explicit operator bool()</code>，返回 <code class="c">!fail()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">operator bool</code> 的演化（<strong>版本断崖</strong>，C++ 程序员最爱踩）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标准</th>
+<th>形态</th>
+<th>出处</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C++98 原始</td>
+<td><code class="c">operator void*()</code></td>
+<td>空指针 = 失败</td>
+</tr>
+<tr>
+<td>C++98 + LWG 468</td>
+<td>「unspecified boolean type」（Safe Bool 惯用法）</td>
+<td>修 safe bool 问题</td>
+</tr>
+<tr>
+<td><strong>C++11 起（LWG 1094）</strong></td>
+<td><code class="c">explicit operator bool() const</code></td>
+<td>现在的安全写法</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><code class="c">explicit</code> 是关键：允许 <code class="c">if (cin)</code>，但禁止 <code class="c">int n = cin;</code> 这类意外的整型转换。
+这也是 C++ 面试常考的「为什么 C++98 不能直接用 <code class="c">operator bool</code>」——答：会静默转成 int。</p>
+</blockquote>
+<h2>一次 <code class="c">&gt;&gt;</code> 在底层走了几层</h2>
+<pre class="code" data-label="code"><code class="c">std::cin &gt;&gt; price        （price 是 double）
+  │
+  ├─ ① istream::operator&gt;&gt;(double&amp;)             ← 重载决议选中（成员）
+  │     ├─ ② sentry 构造：检查 good() → 若 tie() 了就 flush 对方 → 若 skipws 则跳过前导空白
+  │     ├─ ③ std::num_get&lt;char&gt;::get(loc, ...)  ← locale facet，做真正的&quot;字符→数字&quot;解析
+  │     │     └─ ④ 逐字符 sgetc()/sbumpc()      ← 经 basic_streambuf（虚调用）
+  │     │           └─ ⑤ filebuf::underflow()   ← 缓冲空了才 refill
+  │     │                 └─ ⑥ read(2)          ← 真正的系统调用
+  │     ├─ 解析失败 → setstate(failbit)，value = 0
+  │     └─ ⑦ 返回 *this
+</code></pre>
+<ul>
+<li><strong>第 ② 步 sentry 是每次格式化输入都要付的固定成本</strong>：状态检查 + tie 刷新 + 跳空白。</li>
+<li><strong>第 ③ 步 num_get 是 locale 依赖的 facet</strong>——虚派发，且意味着解析行为随全局 locale 变化（千分位、小数点都是 facet 决定的）。</li>
+<li><strong>第 ⑥ 步不是每次都发生</strong>：只有 streambuf 缓冲耗尽才 refill（所以 <code class="c">strace</code> 里 <code class="c">read</code> 次数远少于 <code class="c">&gt;&gt;</code> 次数）。</li>
+</ul>
+<h3>失败语义（写代码时必知）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>输入情况</th>
+<th>写入 <code class="c">value</code> 的值</th>
+<th>流状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类型不匹配（期望 int 来了字母）</td>
+<td><strong>0</strong></td>
+<td><code class="c">failbit</code></td>
+</tr>
+<tr>
+<td>有符号整型溢出（太大）</td>
+<td><code class="c">numeric_limits&lt;T&gt;::max()</code></td>
+<td><code class="c">failbit</code></td>
+</tr>
+<tr>
+<td>有符号整型溢出（太小）</td>
+<td><code class="c">numeric_limits&lt;T&gt;::min()</code></td>
+<td><code class="c">failbit</code></td>
+</tr>
+<tr>
+<td>无符号整型溢出（任一侧）</td>
+<td><code class="c">numeric_limits&lt;T&gt;::max()</code></td>
+<td><code class="c">failbit</code></td>
+</tr>
+<tr>
+<td><code class="c">std::string</code> 版一个字符都没读到</td>
+<td><strong>先 <code class="c">str.erase()</code> 清空</strong>，无字符则置位</td>
+<td><code class="c">failbit</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>「失败时把值置 0」不是从 C++98 就有的：原始标准写的是"value 不变"，
+后来 <strong>LWG 696</strong> 改成置 0 / min / max。写跨平台老代码时要留意。
+失败后<strong>不 <code class="c">clear()</code> 就继续读，后续所有 <code class="c">&gt;&gt;</code> 会静默失败</strong>——详见 <a href="chapter-08.html#s-8-2">8.2 管理条件状态</a>。</p>
+</blockquote>
+<h2>自定义类型的 <code class="c">operator&gt;&gt;</code>：规范写法</h2>
+<p>必须为<strong>非成员</strong>（左操作数是 <code class="c">istream</code>，你不能给标准库加成员）。两种写法：</p>
+<h3>写法 A：委托给标准版本（推荐，自动获得 sentry 与 failbit 语义）</h3>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;iomanip&gt;   // std::setw
+#include &lt;iostream&gt;
+#include &lt;string&gt;
+
+// HFT 场景：一条行情快照的文本记录，格式 &quot;AAPL 187.32 100&quot;
+struct Tick {
+    char   symbol[8];     // 定长字段（HFT 里常见，避免动态分配）
+    double price;
+    int    qty;
+};
+
+std::istream&amp; operator&gt;&gt;(std::istream&amp; is, Tick&amp; t) {
+    // ⚠️ char 数组版本（C++20 前）不知道数组有多长 —— 必须显式 setw，否则就是缓冲区溢出
+    is &gt;&gt; std::setw(sizeof t.symbol) &gt;&gt; t.symbol;
+    is &gt;&gt; t.price &gt;&gt; t.qty;
+    return is;                       // 返回流引用，支持链式 + while (is &gt;&gt; t)
+}
+
+std::ostream&amp; operator&lt;&lt;(std::ostream&amp; os, const Tick&amp; t) {
+    return os &lt;&lt; t.symbol &lt;&lt; ' ' &lt;&lt; t.price &lt;&lt; ' ' &lt;&lt; t.qty;
+}
+
+int main() {
+    Tick t;
+    // while (std::cin &gt;&gt; t) { std::cout &lt;&lt; t &lt;&lt; '\n'; }
+    return 0;
+}
+</code></pre>
+<blockquote>
+<p>C++20 起数组版本改成 <code class="c">CharT (&amp;s)[N]</code>，<strong>编译器知道 N</strong>，上面那个 <code class="c">setw</code> 就不需要了
+（但 <code class="c">char*</code> 指针版同时被移除）。这正是 C++20 修这个坑的方式。</p>
+</blockquote>
+<h3>写法 B：自己管 sentry（需要自定义解析逻辑时）</h3>
+<pre class="code" data-label="cpp"><code class="c">std::istream&amp; operator&gt;&gt;(std::istream&amp; is, Tick&amp; t) {
+    std::istream::sentry s(is);   // ① 跳空白 + 检查状态 + flush tie
+    if (!s) return is;            // ② 约定：失败就原样返回，不碰 t
+
+    std::string sym;
+    double px; int q;
+    is &gt;&gt; sym &gt;&gt; px &gt;&gt; q;
+    if (is.fail() || px &lt;= 0) {           // ③ 业务校验也算失败
+        is.setstate(std::ios::failbit);   //    必须置位，否则 while (is &gt;&gt; t) 死循环
+        return is;
+    }
+    std::snprintf(t.symbol, sizeof t.symbol, &quot;%s&quot;, sym.c_str());
+    t.price = px; t.qty = q;
+    return is;
+}
+</code></pre>
+<p><strong>三条铁律</strong>：
+1. 返回 <code class="c">istream&amp;</code>（不是 <code class="c">void</code>、不是值）；
+2. 失败时<strong>自己置 <code class="c">failbit</code></strong>——这是调用方 <code class="c">while (is &gt;&gt; t)</code> 唯一的退出依据；
+3. 放在与类型<strong>同一个命名空间</strong>里，靠 <strong>ADL</strong> 被找到（不要往 <code class="c">namespace std</code> 里塞）。</p>
+<h2>和 C 的区别</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>C（<code class="c">scanf</code>）</th>
+<th>C++（<code class="c">&gt;&gt;</code>）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>怎么知道要读什么类型</td>
+<td>运行期解析<strong>格式串</strong> <code class="c">"%d %lf"</code></td>
+<td>编译期<strong>重载决议</strong>（<code class="c">istream::operator&gt;&gt;(double&amp;)</code>）</td>
+</tr>
+<tr>
+<td>写错类型的后果</td>
+<td><code class="c">%d</code> 配 <code class="c">double</code> → 静默 UB</td>
+<td>编译期选中正确重载，不可能选错</td>
+</tr>
+<tr>
+<td>忘 <code class="c">&amp;</code></td>
+<td><code class="c">scanf("%d", v)</code> → 崩溃</td>
+<td><code class="c">&gt;&gt;</code> 的参数声明就是 <code class="c">T&amp;</code>，不存在的错误类别</td>
+</tr>
+<tr>
+<td>成败判断</td>
+<td>返回成功项数（要自己比对 <code class="c">== 3</code>）</td>
+<td><code class="c">if (is &gt;&gt; a &gt;&gt; b)</code>（靠 <code class="c">explicit operator bool</code>）</td>
+</tr>
+<tr>
+<td>可扩展到自定义类型</td>
+<td>❌ 只能另写函数</td>
+<td>✅ 重载 <code class="c">operator&gt;&gt;</code></td>
+</tr>
+<tr>
+<td>局部性/locale</td>
+<td><code class="c">setlocale</code> 影响 <code class="c">LC_NUMERIC</code></td>
+<td>每个流自带 locale（<code class="c">imbue()</code>）</td>
+</tr>
+<tr>
+<td>缓冲</td>
+<td><code class="c">FILE*</code> 自带</td>
+<td><code class="c">istream</code> → <code class="c">streambuf</code> → 可换（<code class="c">rdbuf()</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT / 嵌入式关联</h2>
+<h3>热路径为什么不用 <code class="c">&gt;&gt;</code></h3>
+<p>一次 <code class="c">&gt;&gt;</code> 的固定开销构成（对照上面分层图）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>开销来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>sentry</td>
+<td>状态检查 + <code class="c">tie()</code> 的 flush（cin 默认 tie 到 cout！）</td>
+</tr>
+<tr>
+<td>locale facet</td>
+<td>虚派发 <code class="c">num_get::get</code>，解析行为随 locale 变化</td>
+</tr>
+<tr>
+<td>逐字符取数</td>
+<td>每个字符一次 <code class="c">sgetc()</code> <strong>虚调用</strong></td>
+</tr>
+<tr>
+<td>格式化状态</td>
+<td><code class="c">flags()</code> / <code class="c">width()</code> / <code class="c">precision()</code> 每轮参与</td>
+</tr>
+</tbody>
+</table></div>
+<p>两条立刻能做、且只解决部分问题的优化：</p>
+<pre class="code" data-label="cpp"><code class="c">std::ios::sync_with_stdio(false);   // 关掉与 C stdio 的同步（1.2 已提）
+std::cin.tie(nullptr);              // 解掉 cin→cout 的 tie，省掉每次读之前的 flush
+</code></pre>
+<blockquote>
+<p>注意：这两条<strong>只去掉同步和 tie</strong>，facet 与逐字符虚调用一点没少。
+真正的做法是<strong>别用格式化输入</strong>：
+- C++17 <code class="c">std::from_chars</code>：无 locale、无分配、无异常，返回 <code class="c">errc</code>；
+- 定长二进制协议：<code class="c">read()</code> 直接读结构体 / 自研 SIMD 解析（见 <code class="c">14-hft-engineering</code>）；
+- 冷路径（配置加载、回放、日志、调试输出）用 <code class="c">&gt;&gt;</code> 完全没问题——<strong>先分清热冷，再谈优化</strong>。</p>
+</blockquote>
+<p><strong>量测方法</strong>（不要凭感觉下结论）：</p>
+<pre class="code" data-label="shell"><code class="c"># ① read(2) 次数 —— 验证 streambuf 缓冲确实在起作用
+strace -e trace=read -c ./a.out &lt; market.txt
+# ② 采样看热点是不是落在 num_get / underflow 上
+perf record -g ./a.out &lt; market.txt &amp;&amp; perf report | grep -i 'num_get\|underflow\|operator&gt;&gt;'
+</code></pre>
+<h3>嵌入式视角</h3>
+<ul>
+<li><code class="c">#include &lt;iostream&gt;</code> 会引入 <strong>静态初始化</strong>（<code class="c">std::ios_base::Init</code> 保护 cout/cin 的构造顺序），
+  在看重启动时间 / 固件体积的场景是实打实的成本；</li>
+<li>locale 的全局状态在无 MMU / 资源受限环境是负担，很多嵌入式工具链的 libstdc++ <strong>裁掉了完整 locale</strong>；</li>
+<li>结论与 HFT 一致：<strong>控制面用 <code class="c">&gt;&gt;</code>，数据面用定长解析</strong>。</li>
+</ul>
+<h2>常见错误</h2>
+<ol>
+<li><strong>把 <code class="c">operator&gt;&gt;</code> 写成成员函数</strong>
+   <code class="c">cpp
+   struct Tick { std::istream&amp; operator&gt;&gt;(std::istream&amp;); };  // ❌</code>
+   成员版的左操作数是 <code class="c">*this</code>（Tick），调用变成 <code class="c">t &gt;&gt; cin</code>，语义反了。<strong>IO 运算符必须非成员。</strong></li>
+<li><strong>以为 <code class="c">cin &gt;&gt; x</code> 等于 <code class="c">operator&gt;&gt;(cin, x)</code></strong> —— 对 <code class="c">int</code>/<code class="c">double</code> 等内置类型是<strong>成员调用</strong>，
+   写成自由函数形式直接编译不过（见前文表格）。</li>
+<li><strong>忘了 <code class="c">&gt;&gt;</code> 遇空白即停</strong>：<code class="c">cin &gt;&gt; name</code> 只读一个词，整行要用 <code class="c">std::getline</code>
+   （见 <a href="chapter-01.html#s-1-2">1.2 初识输入输出</a>）。</li>
+<li><strong>失败后不 <code class="c">clear()</code></strong>：failbit 一旦置位，后面所有 <code class="c">&gt;&gt;</code> 静默失败，
+   典型症状是"循环只读了一次就退出"（见 <a href="chapter-08.html#s-8-2">8.2 管理条件状态</a>）。</li>
+<li><strong>自定义 <code class="c">operator&gt;&gt;</code> 不置 failbit</strong>：<code class="c">while (is &gt;&gt; t)</code> 变成死循环。</li>
+<li><strong><code class="c">char buf[8]; is &gt;&gt; buf;</code>（C++20 前）没加 <code class="c">setw</code></strong> —— 输入超长就是缓冲区溢出。
+   改用 <code class="c">std::string</code>，或 <code class="c">is &gt;&gt; std::setw(sizeof buf) &gt;&gt; buf</code>。</li>
+<li><strong>右值当目标</strong>：<code class="c">cin &gt;&gt; (a + b)</code> 编译错误——<code class="c">&gt;&gt;</code> 的右操作数是 <code class="c">T&amp;</code>（非 const 左值引用）。</li>
+</ol>
+<h2>自测题</h2>
+<p><strong>1（选择）</strong> <code class="c">int x; std::cin &gt;&gt; x;</code> 选中的函数是：
+- A. <code class="c">std::operator&gt;&gt;(std::istream&amp;, int&amp;)</code>
+- B. <code class="c">std::istream::operator&gt;&gt;(int&amp;)</code>
+- C. 内置右移运算符
+- D. 由编译器运行时决定</p>
+<details>
+<summary>答案</summary>
+<p><strong>B。</strong> <code class="c">int</code> 走的是 <code class="c">basic_istream</code> 的<strong>成员</strong>重载。标准库<strong>没有</strong> <code class="c">operator&gt;&gt;(istream&amp;, int&amp;)</code> 这个自由函数
+（你可以写 <code class="c">std::istream&amp; (std::istream::*p)(int&amp;) = &amp;std::istream::operator&gt;&gt;;</code> 验证它确实是成员）。
+非成员版本只有 <code class="c">char&amp;</code> / <code class="c">char[N]</code> / <code class="c">std::string&amp;</code> / rvalue 流这几类。
+C 错：左操作数是类类型，进入重载决议不是内置运算符。D 错：重载决议在<strong>编译期</strong>完成。</p>
+</details>
+<p><strong>2（判断）</strong> 下面两行在 C++03 里都能编译：</p>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;std::vector&lt;int&gt;&gt;  a;   // ①
+std::vector&lt;std::vector&lt;int&gt; &gt; b;   // ②
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong>只有 ② 能过。</strong> C++03 词法用最大匹配，<code class="c">&gt;&gt;</code> 是单个 token，① 会被解析成「右移」而报错。
+C++11 在 [temp.names] 加了特判，<code class="c">&gt;&gt;</code> 在关闭两个嵌套模板参数列表时视为两个 <code class="c">&gt;</code>，① 才合法。
+→ 这是「<code class="c">&gt;&gt;</code> 两层身份真的冲突过」的直接证据，不只是教学上的比喻。</p>
+</details>
+<p><strong>3（踩坑）</strong> 输入 <code class="c">abc</code> 后，这段代码的 <code class="c">x</code> 是多少？</p>
+<pre class="code" data-label="cpp"><code class="c">int x = 42;
+std::cin &gt;&gt; x;      // 用户输入 abc
+std::cout &lt;&lt; x;
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong><code class="c">0</code></strong>（不是保持 42）。类型不匹配 → 置 <code class="c">failbit</code>，并把 <strong>0</strong> 写入 <code class="c">value</code>（LWG 696 起的规定）。
+有符号整型溢出则写 <code class="c">numeric_limits&lt;T&gt;::max()</code> / <code class="c">min()</code>。
+另外：<strong>failbit 不清除，后续所有读取都会静默失败</strong>，必须 <code class="c">cin.clear()</code> + <code class="c">cin.ignore(...)</code>。</p>
+</details>
+<p><strong>4（机制）</strong> 为什么 <code class="c">operator&gt;&gt;</code> 必须返回 <code class="c">istream&amp;</code> 而不是 <code class="c">void</code>？给出两个理由。</p>
+<details>
+<summary>答案</summary>
+<ol>
+<li><strong>链式调用</strong>：<code class="c">cin &gt;&gt; a &gt;&gt; b</code> = <code class="c">(cin.operator&gt;&gt;(a)).operator&gt;&gt;(b)</code>，返回引用才能把同一个流接下去；</li>
+<li><strong>状态判断</strong>：<code class="c">if (cin &gt;&gt; x)</code> / <code class="c">while (cin &gt;&gt; x)</code> 依赖流 → <code class="c">bool</code> 的转换
+   （C++11 起是 <code class="c">explicit operator bool()</code>，返回 <code class="c">!fail()</code>）。
+返回 <code class="c">void</code> 两个都做不到；返回<strong>值</strong>（非引用）会拷贝流对象（而且 <code class="c">basic_istream</code> 不可拷贝）。</li>
+</ol>
+</details>
+<p><strong>5（应用）</strong> 给 <code class="c">struct Price { int64_t ticks; };</code> 写 <code class="c">operator&gt;&gt;</code>，要求：输入 <code class="c">18732</code> 表示 187.32
+（即 <code class="c">ticks = 18732</code>，隐含两位小数）；非法输入（负数、超范围、非数字）必须让 <code class="c">while (is &gt;&gt; p)</code> 正常退出。</p>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;cstdint&gt;
+#include &lt;istream&gt;
+#include &lt;charconv&gt;     // C++17 from_chars（热路径推荐）
+#include &lt;string&gt;
+
+struct Price { std::int64_t ticks; };
+
+std::istream&amp; operator&gt;&gt;(std::istream&amp; is, Price&amp; p) {
+    std::string tok;
+    if (!(is &gt;&gt; tok)) return is;            // sentry + 跳空白 + 失败直接返回
+
+    std::int64_t v = 0;
+    const char* first = tok.data();
+    const char* last  = tok.data() + tok.size();
+    auto [ptr, ec] = std::from_chars(first, last, v);   // 无 locale、无分配、无异常
+    if (ec != std::errc{} || ptr != last || v &lt; 0) {    // 解析失败 / 有残留字符 / 负数
+        is.setstate(std::ios::failbit);                 // ⭐ 必须置位，否则 while 死循环
+        return is;
+    }
+    p.ticks = v;
+    return is;                                          // ⭐ 返回流引用
+}
+</code></pre>
+<p>三个必考点：① 非成员；② 失败时 <code class="c">setstate(failbit)</code>；③ 返回 <code class="c">istream&amp;</code>。
+用 <code class="c">from_chars</code> 而非 <code class="c">stoll</code> 的理由：<code class="c">stoll</code> 会抛异常、受 locale 影响；<code class="c">from_chars</code> 是热路径首选。</p>
+</details>
+<h2>延伸</h2>
+<ul>
+<li>← <a href="#s-14-1">14.1 运算符重载</a>（成员 vs 非成员的基本规则）</li>
+<li>← <a href="chapter-08.html#s-8-1">8.1 IO 类体系</a> / <a href="chapter-08.html#s-8-2">8.2 管理条件状态</a>（failbit 与恢复）</li>
+<li>← <a href="chapter-08.html#s-8-4">8.4 string 流</a>（<code class="c">istringstream</code> 拆字段）</li>
+<li>← <a href="chapter-01.html#s-1-2">1.2 初识输入输出</a>（<code class="c">&gt;&gt;</code> 的第一次出现）</li>
+<li>C++ Primer §14.2 输入和输出运算符；cppreference <code class="c">basic_istream::operator&gt;&gt;</code>、<code class="c">operator&gt;&gt;(std::basic_istream)</code>、<code class="c">basic_ios::operator bool</code></li>
+<li>缺陷报告：LWG 696（失败置 0/极值）、LWG 118/661（short/int 走 long）、LWG 468/1094（<code class="c">operator bool</code> 演化）</li>
+</ul>
+      </section>
 
       <section class="section" id="quiz">
         <div class="sec-head"><div class="sec-no">★</div><h2>章节自测</h2></div>
@@ -903,6 +1420,56 @@ int y = w + 10;   // B: 合法？
 // int x = static_cast&lt;int&gt;(w);  // OK
 </code></pre>
 <p><strong>复习：</strong> → <a href="#s-14-3">类型转换运算符</a></p>
+</details>
+</div></div><div class="qa"><div class="qa-q"><span class="qid">Q4</span><code class="c">&gt;&gt;</code> 的两层身份</div><div class="qa-a">
+<pre class="code" data-label="cpp"><code class="c">int x = 42, a = 8 &gt;&gt; 1;
+std::cin &gt;&gt; x;              // ①
+// operator&gt;&gt;(std::cin, x); // ②
+</code></pre>
+<blockquote>
+<p>① 和 ② 等价吗？<code class="c">8 &gt;&gt; 1</code> 和 <code class="c">cin &gt;&gt; x</code> 的 <code class="c">&gt;&gt;</code> 是同一个东西吗？</p>
+</blockquote>
+<details>
+<summary>答案与复习指引</summary>
+<p><strong>不等价。</strong> ① 编译通过；② <strong>编译错误</strong> —— 标准库没有 <code class="c">operator&gt;&gt;(istream&amp;, int&amp;)</code> 这个自由函数。</p>
+<p><strong>关键区分：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th><code class="c">&gt;&gt;</code> 的身份</th>
+<th>选中谁</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">8 &gt;&gt; 1</code></td>
+<td>内置右移（位运算）</td>
+<td>操作数都是 <code class="c">int</code>，只有内置候选 → 一条 <code class="c">sar</code> 指令</td>
+</tr>
+<tr>
+<td><code class="c">cin &gt;&gt; x</code>（x 是 int/double）</td>
+<td>提取运算符</td>
+<td><strong>成员</strong> <code class="c">std::istream::operator&gt;&gt;(int&amp;)</code></td>
+</tr>
+<tr>
+<td><code class="c">cin &gt;&gt; s</code>（s 是 string/char/char[N]）</td>
+<td>提取运算符</td>
+<td><strong>非成员</strong> <code class="c">operator&gt;&gt;(istream&amp;, string&amp;)</code> 等</td>
+</tr>
+<tr>
+<td><code class="c">cin &gt;&gt; my_obj</code></td>
+<td>提取运算符</td>
+<td>你自己写的非成员 <code class="c">operator&gt;&gt;</code>（靠 ADL 找到）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>判定规则</strong>：不是看符号在谁旁边，而是看<strong>左操作数的类型</strong> ——
+只要有一个操作数是类类型就进入重载决议（成员候选 + 非成员候选 + ADL + 内置候选），
+否则只有内置候选，就是位运算。</p>
+<p><strong>冷的证据</strong>：C++03 写 <code class="c">vector&lt;vector&lt;int&gt;&gt;</code> 必须改成 <code class="c">&gt; &gt;</code>——<code class="c">&gt;&gt;</code> 是<strong>单个 token</strong>（最大匹配），
+C++11 才在 [temp.names] 打补丁允许它关闭两个模板参数列表。说明这两层身份在<strong>词法阶段</strong>就真冲突过。</p>
+<p><strong>复习：</strong> → <a href="#s-14-4">输入输出运算符</a></p>
 </details></div></div>
       </section>
 
