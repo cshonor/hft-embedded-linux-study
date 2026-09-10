@@ -14,6 +14,9 @@ C++ 通过标准库中的一族类处理输入和输出。本章介绍如何读�
 
 C++ IO 库体系：IO 类继承层次（`istream`/`ostream`/`iostream`/`ifstream`/`ofstream`/`istringstream`/`ostringstream`）、条件状态管理（`good`/`fail`/`bad`/`eof`）、文件流（打开/关闭/模式）、字符串流。
 
+> ⭐ 想深挖 `>>` / `<<` **本身**（位运算 vs 提取插入的两层身份、重载决议怎么选、`cin >> x` 是成员还是自由函数、
+> sentry→num_get→streambuf 的分层开销与 HFT 取舍） → [14.4 输入输出运算符](../ch14-operator-overloading/14.4-输入输出运算符.md)
+
 ### 和 C 的区别
 
 | C | C++ |
