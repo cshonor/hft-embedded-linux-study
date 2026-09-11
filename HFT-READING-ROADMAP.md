@@ -329,28 +329,42 @@
 | **14 前置** | 建议 **13 或至少 12（含 DT）** 后再开算法整合 |
 | **C 语言** | [01 C](./01-c-language/) |
 
-### 阅读顺序（书目在模块内；文件夹用技术名）
+### 书的查阅顺序（⚠ 2026-09-11 修订：这是「卡住时先翻哪本」的顺序，不是学习主线）
 
-| 序 | 书目 | 定位 | 文件夹 |
-|----|------|------|--------|
-| **1a** | ***ARM Assembly Language*** — Smith | 汇编思维（可选） | [**10**/arm32-asm](./07-arm-architecture/arm32-asm/) |
-| **1b** | **《ARM64体系结构编程与实践》** | AArch64 主书 | [**10**/aarch64-practice](./07-arm-architecture/aarch64-practice/) |
-| **2** | ***Embedded Linux Primer*** | 启动与系统全貌 | [**11**/primer](./08-embedded-boot-build/) |
-| **3** | ***Mastering Embedded Linux Programming*, 3rd** | 构建实操 | [**11**/build](./08-embedded-boot-build/) |
-| **4** | ***Linux Device Drivers Development*** — Madieu | 驱动实操 | [**12**](./09-device-drivers-dt/) |
-| **5** | ***Linux Device Drivers*, 3rd** — LDD3 | 原理补课 | [**12**/refs](./09-device-drivers-dt/) |
+> **08 / 09 已于 2026-09-10 去书本化**：目录是「要做出什么」，**不是「书的第几章」**。
+> 下面这个顺序只在你要查书时才有意义——**主线是 [P5 动手清单](./projects/P5-raspberry-pi-embedded/)，
+> 走一步、卡一步、查一步**。按书序从头通读是把主线让给书，正是当时重构要避免的事。
+
+| 序 | 书目 | 内核基准 | 定位 | 怎么用 |
+|----|------|----------|------|--------|
+| **1a** | ***ARM Assembly Language*** — Smith | — | 汇编思维（可选） | [10/arm32-asm](./07-arm-architecture/arm32-asm/) |
+| **1b** | **《ARM64体系结构编程与实践》** | — | AArch64 主书 | [10/aarch64-practice](./07-arm-architecture/aarch64-practice/) |
+| **2** | ***Embedded Linux Primer*** — Hallinan | **2.6** | 概念模型："为什么" | 查 [08 · BOOK-MAP](./08-embedded-boot-build/_refs/BOOK-MAP.md) |
+| **3** | ***Mastering Embedded Linux Programming*, 3rd** | 4.x/5.x | 全流程实操："怎么做" | 同上 |
+| **4** | ***Linux Device Drivers Development*** — Madieu | 4.1–4.13 | **现代驱动主查** | 查 [09 · BOOK-MAP](./09-device-drivers-dt/_refs/BOOK-MAP.md) |
+| **5** | ***Linux Device Drivers*, 3rd** — LDD3 | **2.6.10** | **只补原理，代码勿抄** | 同上 |
+
+⚠️ **两条别踩：**
+
+- **Primer（2.6）和 LDD3（2.6.10）都是 2005–2010 年代的内核**。取它们的**设计思想**，
+  代码一律别抄——API 大面积变了。LDD3 的 18 章里真正值得回头精读的只有
+  **Ch3 / 5 / 6 / 9 / 10 / 15**，Ch12(PCI) / 13(USB) / 16(块设备) / 17(网络) / 18(TTY) 对
+  HFT + 嵌入式网关主线基本无用，硬啃是浪费时间。
+- **构建主线是 Buildroot，不是 Yocto。** Yocto 是量产事实标准，但出第一个可启动镜像
+  要数小时 + 几十 GB；Buildroot 几十分钟、概念栈与内核同构（Kconfig + make）。
+  Yocto 等真要做量产镜像再说（MELP Ch6–8 留在 `_refs/`）。
 
 **13–14 延续：** [P5 板级实战](./projects/P5-raspberry-pi-embedded/) · [11 飞控](./10-motion-control/)  
-**设备树：** 并入 [12](./09-device-drivers-dt/)，不单开号。
+**设备树：** 并入 [09](./09-device-drivers-dt/)，不单开号。
 
 ### 严格顺序（文件夹级）
 
 ```
 10  ARM / AArch64
  ↓
-11  Primer → 构建工具链 / Yocto
+11  Primer（概念）→ MELP（实操）→ 构建工具链 / Buildroot
  ↓
-12  驱动 + 设备树
+12  驱动 + 设备树（Madieu 主查 · LDD3 补原理）
  ↓
 13  无人机 / 网关项目实战
  ↓
