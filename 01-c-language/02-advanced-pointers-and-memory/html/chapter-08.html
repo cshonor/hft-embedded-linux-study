@@ -710,6 +710,10 @@ memcpy(a, b, sizeof(a));               /* ✅ 整块复制（必须在定义域�
 <td>UB 且 sanitaizer 抓不到，改用序号 / 时间戳</td>
 </tr>
 <tr>
+<td>跨数组指针相减 <code class="c">&amp;b[0]-&amp;a[0]</code></td>
+<td>同样是 UB——相减与 <code class="c">&lt;</code> 受同一条限制（§6.5.6p9）</td>
+</tr>
+<tr>
 <td><code class="c">sizeof(arr)</code> 在函数内失效</td>
 <td>传 <code class="c">len</code>，或用宏仅在定义域</td>
 </tr>
@@ -821,7 +825,7 @@ memcpy(a, b, sizeof(a));               /* ✅ 整块复制（必须在定义域�
 <tr>
 <td>t5</td>
 <td>指针遍历的边界</td>
-<td>三段拆解 / 尾后指针地址 / <code class="c">p=p+2</code> 小测验 / 尾后解引用 ASan 报错 vs 静默 / 跨数组比较 UB</td>
+<td>三段拆解 / 尾后指针地址 / <code class="c">p=p+2</code> 小测验 / 尾后解引用 ASan 报错 vs 静默 / 跨数组比较 UB / 指针相减 <code class="c">ptrdiff_t</code>（元素差 vs 字节差）/ 元素-vs-尾后思考题</td>
 </tr>
 </tbody>
 </table></div>
@@ -1423,11 +1427,13 @@ printf(&quot;%d %d %d\n&quot;, arr[i], i[arr], *(arr + i));
       <section class="section" id="s-8-1-3">
         <div class="sec-head"><div class="sec-no">8.1</div><h2>.3 指针与下标</h2></div>
 <h2>本节讲什么</h2>
-<p><strong><code class="c">arr[i]</code> 和 <code class="c">*(arr+i)</code> 不是"效果差不多"，是同一件事。</strong> 这一节做三件事：</p>
+<p><strong><code class="c">arr[i]</code> 和 <code class="c">*(arr+i)</code> 不是"效果差不多"，是同一件事。</strong> 这一节做五件事：</p>
 <ol>
 <li>把 <code class="c">arr[i] ≡ *(arr+i)</code> 追到标准的<strong>定义</strong>上（不是语法糖，是定义本身）；</li>
 <li>把指针版 <code class="c">for</code> 循环<strong>逐段拆开</strong>，每段给出标准依据；</li>
-<li>把最容易踩的边界讲清楚——<strong>尾后指针可以比较、不能解引用</strong>，以及<strong>哪些指针比较是 UB</strong>。</li>
+<li>把最容易踩的边界讲清楚——<strong>尾后指针可以比较、不能解引用</strong>，以及<strong>哪些指针比较是 UB</strong>；</li>
+<li>破掉"指针内部就是一个整数"这个直觉（第七节）；</li>
+<li>讲清指针相减为什么返回 <code class="c">ptrdiff_t</code>、为什么它与 <code class="c">&lt;</code> 受<strong>同一条限制</strong>（第八节）。</li>
 </ol>
 <blockquote>
 <p>本节管<strong>语法与语义</strong>；"指针快还是下标快"是性能问题，归 <a href="chapter-08.html#s-8-1-4">8.1.4 指针的效率</a>。</p>
@@ -1711,7 +1717,148 @@ exit=0
 </blockquote>
 <p>工程结论只有一条：<strong>别拿 <code class="c">&lt;</code> 比较无关的指针</strong>。要判断两个指针谁在前，先问"它们属于同一个数组吗"——不属于就别比。</p>
 <hr />
-<h2>七、<code class="c">&lt;</code> 还是 <code class="c">!=</code>？</h2>
+<h2>七、先破一个直觉：指针不是整数</h2>
+<blockquote>
+<p><strong>C11 §6.3.2.3p6</strong>：Any pointer type may be converted to an integer type. Except as previously specified, the result is <strong>implementation-defined</strong>. If the result cannot be represented in the integer type, the behavior is undefined. The result <strong>need not be in the range of values of any integer type</strong>.</p>
+</blockquote>
+<p>"指针里面存的本质就是一个 <code class="c">uint64</code> 地址数字"——这句话在 x86-64 / aarch64 的平坦地址空间上是<strong>观察结果</strong>，但它不是标准保证，也不能当推理前提。标准只承诺三件事：转换是 <strong>implementation-defined</strong>；转不下就是 UB；<strong>指针可以比任何整数类型能表达的范围更大</strong>（最后半句尤其反直觉，等于承认"指针 ≅ 整数"这个模型本身不完备）。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>平台</th>
+<th>为什么指针 ≠ 整数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86 实模式 / 16 位分段</td>
+<td>far pointer 是 <code class="c">seg:off</code> 两个数，没有唯一的线性数值可比</td>
+</tr>
+<tr>
+<td>CHERI（能力指针硬件）</td>
+<td>指针 128 位，低 64 位是地址、高位是边界与权限 tag，任意整数转换会破坏 tag</td>
+</tr>
+<tr>
+<td>带 provenance 的实现（C23 起标准正式引入）</td>
+<td>数值相同但"来历"不同的指针可以表现不同</td>
+</tr>
+</tbody>
+</table></div>
+<h3>那"转成整数再比大小"算绕过 UB 吗？</h3>
+<pre class="code" data-label="C"><code class="c">/* 想判断两个缓冲的先后，绕开指针比较 */
+if ((uintptr_t)p &lt; (uintptr_t)q) { ... }
+</code></pre>
+<p><strong>严格说它绕开了 §6.5.8p5</strong>——被比较的是两个整数，不是指针，所以不触发那条约束。但它并没有变"合法"，只是把<strong>未定义行为</strong>换成了<strong>实现定义的结果</strong>：转换本身就 implementation-defined，你依赖的仍然是没人向你承诺的东西。</p>
+<blockquote>
+<p>工程结论只有一句：<strong>指针的比较与加减，语义层在"它指向哪个数组的哪个元素"，不在"地址数字谁大"。</strong> 要比较先后，比的是<strong>下标 / 序号</strong>，不是指针本身。</p>
+</blockquote>
+<hr />
+<h2>八、指针相减：<code class="c">ptrdiff_t</code></h2>
+<blockquote>
+<p><strong>C11 §6.5.6p9</strong>：When two pointers are subtracted, <strong>both shall point to elements of the same array object, or one past the last element of the array object</strong>; the result is <strong>the difference of the subscripts</strong> of the two array elements. The size of the result is implementation-defined, and its type (a signed integer type) is <code class="c">ptrdiff_t</code> defined in the <code class="c">&lt;stddef.h&gt;</code> header. If the result is not representable in an object of that type, the behavior is undefined. In other words, if the expressions <code class="c">P</code> and <code class="c">Q</code> point to, respectively, the i-th and j-th elements of an array object, the expression <code class="c">(P)-(Q)</code> has the value <code class="c">i-j</code> provided the value fits in an object of type <code class="c">ptrdiff_t</code>.</p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>前提</strong></td>
+<td>双方都必须指向<strong>同一个数组</strong>（或尾后）—— 与 <code class="c">&lt;</code> 是同一条限制</td>
+</tr>
+<tr>
+<td><strong>结果语义</strong></td>
+<td><strong>下标之差 <code class="c">i - j</code></strong>，不是字节差</td>
+</tr>
+<tr>
+<td><strong>类型</strong></td>
+<td><code class="c">ptrdiff_t</code>：<strong>有符号</strong>整数类型，定义在 <code class="c">&lt;stddef.h&gt;</code></td>
+</tr>
+<tr>
+<td><strong>大小</strong></td>
+<td>implementation-defined（x86-64 上是 8 字节）</td>
+</tr>
+<tr>
+<td><strong>溢出</strong></td>
+<td>结果放不进 <code class="c">ptrdiff_t</code> → UB</td>
+</tr>
+</tbody>
+</table></div>
+<h3>三个量别混</h3>
+<pre class="code" data-label="C"><code class="c">const int *p1 = &amp;g[1], *p2 = &amp;g[4];
+
+p2 - p1                     /*  3  ← 下标差（元素个数） */
+(const char*)p2 - (const char*)p1   /* 12  ← 字节差 = 3 × sizeof(int) */
+sizeof(ptrdiff_t)           /*  8  ← 有符号，所以结果可以是负数 */
+</code></pre>
+<p>demo T5.5 实测到 <code class="c">p2 - p1 = 3</code>。<strong>指针相减自动除以元素大小</strong>，所以你拿到的是"隔了几个元素"，不是"隔了几个字节"；想要字节差必须先转成 <code class="c">char *</code>。</p>
+<h3>相减也受"同数组"限制（常被漏掉）</h3>
+<p>很多人记住了"比较受限"，却忘了<strong>相减受同一条锁约束</strong>：</p>
+<pre class="code" data-label="C"><code class="c">int a[4], b[4];
+ptrdiff_t d = &amp;b[0] - &amp;a[0];   /* ❌ UB —— 跨数组相减 */
+</code></pre>
+<p>把三条规则放一起看：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>要求同数组？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">p + n</code> / <code class="c">p - n</code>（指针 ± 整数）</td>
+<td>结果须落在 <code class="c">[首元素, 尾后]</code> 内</td>
+</tr>
+<tr>
+<td><code class="c">p &lt; q</code>（关系比较）</td>
+<td>✅ 必须同数组（含尾后）</td>
+</tr>
+<tr>
+<td><code class="c">p - q</code>（指针相减）</td>
+<td>✅ <strong>必须同数组</strong>（含尾后）</td>
+</tr>
+<tr>
+<td><code class="c">p == q</code>（相等比较）</td>
+<td>❌ 不要求（§6.5.9p6）</td>
+</tr>
+</tbody>
+</table></div>
+<h3><code class="c">ptrdiff_t</code> vs <code class="c">size_t</code></h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">ptrdiff_t</code></th>
+<th><code class="c">size_t</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>符号</td>
+<td><strong>有符号</strong></td>
+<td>无符号</td>
+</tr>
+<tr>
+<td>用途</td>
+<td>指针相减、可能为负的偏移</td>
+<td><code class="c">sizeof</code>、元素个数、下标</td>
+</tr>
+<tr>
+<td>经典坑</td>
+<td>—</td>
+<td><code class="c">size_t n = 0; if (n - 1 &gt; 0)</code> <strong>恒真</strong>（无符号下溢成巨大值）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>一句话记法：<strong>做减法用 <code class="c">ptrdiff_t</code>，做计数用 <code class="c">size_t</code>。</strong> 混用时的下溢/符号提升问题，是这类面试题的主要来源。</p>
+</blockquote>
+<hr />
+<h2>九、<code class="c">&lt;</code> 还是 <code class="c">!=</code>？</h2>
 <p>数组范围内 <code class="c">p != end</code> 和 <code class="c">p &lt; end</code> 等价，但<strong>容错性不同</strong>：</p>
 <pre class="code" data-label="C"><code class="c">/* 游标每次前进 1：两者都对 */
 for (p = arr; p != arr + n; p++) ...
@@ -1742,7 +1889,7 @@ for (p = arr; p != arr + n; p += step)   /* step=3, n=5 时永远踩不到 arr+5
 </table></div>
 <p>惯用 <code class="c">&lt;</code> 是因为它把"越过终点"当成了终止条件而不是"永远到不了"。</p>
 <hr />
-<h2>八、底层映射：为什么两种写法最终一样</h2>
+<h2>十、底层映射：为什么两种写法最终一样</h2>
 <pre class="code" data-label="C"><code class="c">int sum_idx(const int *arr, int n) {           int sum_ptr(const int *arr, int n) {
     int s = 0;                                     int s = 0;
     for (int i = 0; i &lt; n; i++) s += arr[i];       const int *p;
@@ -1869,6 +2016,8 @@ for (p = arr; p != arr + n; p += step)   /* step=3, n=5 时永远踩不到 arr+5
 <li><code class="c">arr + n + 1</code> 呢？它和 <code class="c">*(arr + n)</code> 的非法性有区别吗？</li>
 <li>两个不同数组的指针：用 <code class="c">&lt;</code> 比较会怎样？用 <code class="c">==</code> 比较呢？为什么两者不同？</li>
 <li>为什么循环条件惯用 <code class="c">p &lt; end</code> 而不是 <code class="c">p != end</code>？</li>
+<li>"指针内部就是一个 <code class="c">uint64</code> 地址"——这句话在标准层面哪里站不住？转成 <code class="c">uintptr_t</code> 再比大小，算绕过 UB 吗？</li>
+<li><code class="c">p - q</code> 的结果是什么类型？为什么是<strong>有符号</strong>的？跨数组相减合法吗？</li>
 </ol>
 <hr />
 <h2>代码自测</h2>
@@ -1901,6 +2050,54 @@ for (int *p = a; p != a + 6; p += 2)
 <p>改正：用 <code class="c">&lt;</code> 或让步长整除长度。</p>
 <pre class="code" data-label="C"><code class="c">for (int *p = a; p &lt; a + 6; p += 2)   /* ✅ 安全退出 */
 </code></pre>
+</details>
+<p><strong>题目 3：</strong> 结果是 <code class="c">1</code> 还是 <code class="c">0</code>？合法吗？</p>
+<pre class="code" data-label="C"><code class="c">int arr[4];
+int *p = arr + 3;
+int *q = arr + 4;
+printf(&quot;%d&quot;, p &lt; q);
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>输出 <code class="c">1</code>，合法。</strong></p>
+<p>三段拆开看：</p>
+<ol>
+<li><code class="c">q = arr + 4</code> 是<strong>尾后指针</strong>——§6.5.6p8 明确允许<strong>形成</strong>它（不算 overflow），只是不能解引用。</li>
+<li><code class="c">p</code>（即 <code class="c">&amp;arr[3]</code>，最后一个元素）与 <code class="c">q</code>（尾后）<strong>同属 <code class="c">arr</code></strong>，满足 §6.5.8p5 的前提条件。</li>
+<li>结果不是"机器上凑巧比出来的数字大小"，而是标准<strong>明确规定</strong>的。§6.5.8p5 末句：</li>
+</ol>
+<blockquote>
+<p>If the expression <code class="c">P</code> points to an element of an array object and the expression <code class="c">Q</code> points to the last element of the same array object, the pointer expression <code class="c">Q+1</code> compares greater than <code class="c">P</code>.</p>
+</blockquote>
+<p>这里取 <code class="c">P = arr+3</code>、<code class="c">Q = arr+3</code>（最后一个元素）、<code class="c">Q+1 = arr+4</code> → 必然 <code class="c">arr+3 &lt; arr+4</code>，即输出 <code class="c">1</code>。</p>
+<p>由此展开的三个结论：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>表达式</th>
+<th>结果</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">p &lt; q</code></td>
+<td><code class="c">1</code></td>
+<td>同数组的「元素 vs 尾后」，标准保证</td>
+</tr>
+<tr>
+<td><code class="c">*q</code></td>
+<td>❌ UB</td>
+<td>尾后指针不可解引用（§6.5.6p8）</td>
+</tr>
+<tr>
+<td><code class="c">q - p</code></td>
+<td><code class="c">1</code></td>
+<td>同数组可相减，返回下标差（§6.5.6p9）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>对照记忆</strong>：这里 <code class="c">p &lt; q</code> 合法，而题目 2 里两个无关数组比较是 UB——<strong>差别不在"能不能算出地址数字"，而在"是否属于同一个数组"。</strong></p>
 </details>
       </section>
       <section class="section" id="s-8-1-4">
