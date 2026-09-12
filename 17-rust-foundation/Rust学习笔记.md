@@ -355,6 +355,22 @@
 ### 19.5 宏
 - [x] `macro_rules!` · 过程宏 · hygiene → [19.5](./00-Book/19-advanced-features/19.5-宏.md)
 
+## 20. 最后的项目：多线程 Web 服务器
+
+→ [20 章导读](./00-Book/20-final-project/20-章节导读.md)
+
+> 本章此前缺失，2026-09-12 补齐。它是全书唯一把所有权 / 并发 / 智能指针 / trait
+> 串起来的收官项目，线程池 + 优雅停机也是低延迟服务最常见的骨架。
+
+### 20.1 单线程 Web 服务器
+- [x] `TcpListener` · `BufReader::lines()` · 队头阻塞 → [20.1](./00-Book/20-final-project/20.1-单线程Web服务器.md)
+
+### 20.2 多线程与线程池
+- [x] `Arc<Mutex<Receiver>>` · `Box<dyn FnOnce() + Send + 'static>` → [20.2](./00-Book/20-final-project/20.2-多线程与线程池.md) · [demo](./00-Book/20-final-project/20.2-thread-pool-demo/)
+
+### 20.3 优雅停机与清理
+- [x] `Drop` 发信号 · 先 `drop(sender)` 再 `join` → [20.3](./00-Book/20-final-project/20.3-优雅停机与清理.md)
+
 ---
 
 ## 学习进度追踪
@@ -365,6 +381,7 @@
 | 6-10 | ⬜   | 核心概念 |
 | 11-14| ⬜   | 项目与工具 |
 | 15-19| ⬜   | 进阶篇 |
+| 20   | ⬜   | 收官项目：线程池 + 优雅停机 |
 
 ---
 

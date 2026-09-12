@@ -18,23 +18,60 @@ ch11_async_testing_debugging/
         └── 11.3-testing-for-deadlocks-timeout-demo.rs
 ```
 
-## 如何运行 Demo
+## 如何运行 Demo（2026-09-12 修订）
 
-**仅需 std**（第 10 章部分、占位小节）：
+> **旧写法已废弃**。此前本目录没有 Cargo 工程，README 教人直接 `rustc X.Y-xxx-demo.rs`，
+> 但文件名含 `.`（如 `1.1-what-is-async-join-demo.rs`）会被 rustc 以非法 crate 名拒绝，
+> 且多数 demo 依赖 tokio —— **结果就是 84 个 demo 没有一个个跑起来过**。
 
-```bash
-cd 05-Async-Concurrency-Network/02-async_tokio/ch10_dependency_free_async_server/10.2-building-std-async-runtime
-rustc 10.2-building-std-async-runtime-noop-waker-demo.rs
-```
-
-**需要 Tokio**（多数章节）：在仓库根 `01-atomic/` 工程已含 Tokio 时，可将 demo 拷入 `examples/`，或在本机：
+现在本目录已有 `Cargo.toml`，84 个 demo 全部注册为 `[[bin]]`：
 
 ```bash
-# 单文件（需本机已 cargo init 且 Cargo.toml 含 tokio）
-rustc --edition 2021 --crate-type bin your-demo.rs  # 通常仍用 cargo 更省事
+cd 05-Async-Concurrency-Network/02-async_tokio
+
+cargo check                                  # 全量检查：84 bin / 0 error / 0 warning
+cargo run --bin c1_1_what_is_async_join_demo # 跑单个
+cargo build                                  # 全部构建
 ```
 
-推荐：为常用 demo 在 `atomic/Cargo.toml` 增加 `[[example]]` 指向 `../02-async_tokio/...`（可按需自行添加）。
+### bin 命名规则
+
+原文件**不改名**，改用 `[[bin]]` 显式给出合法 name（非字母数字 → `_`，数字开头补 `c`）：
+
+| 原文件 | bin 名 |
+|---|---|
+| `ch01_async_intro/1.1-what-is-async/code/1.1-what-is-async-join-demo.rs` | `c1_1_what_is_async_join_demo` |
+| `ch07_tokio_graceful_shutdown/7.1-building-a-runtime/code/7.1-building-a-runtime-demo.rs` | `c7_1_building_a_runtime_demo` |
+
+不知道名字就列一下：
+
+```bash
+cargo metadata --no-deps --format-version 1 | python -c "import json,sys;[print(t['name']) for t in json.load(sys.stdin)['packages'][0]['targets']]"
+```
+
+### 依赖
+
+| crate | 用途 |
+|---|---|
+| `tokio`（full） | 41 个 demo 的运行时 |
+| `tokio-util`（`rt`） | ch07 `LocalPoolHandle` |
+| `mio` | ch04/4.7–4.8 轮询 socket |
+| `reqwest` | ch01/1.6 HTTP 性能对比 |
+| `futures-lite` | ch03/3.6 `join!` 宏的 `block_on` |
+| `flume` | ch03 自定义任务队列通道 |
+
+### 顺带修掉的 3 个真实编译错误
+
+代码从未编译过，所以藏着真 bug：
+
+| 文件 | 原错误 | 修法 |
+|---|---|---|
+| `11.5-testing-channel-capacity-demo.rs` | `JoinHandle` 被 `timeout` 移走后又 `await`；且对 `()` 调 `.unwrap()` | `&mut` 借用 + 去掉多余 `.unwrap()` |
+| `2.6-sharing-data-try-lock-demo.rs` | `MutexGuard` 借用到块尾，与 `self.done = true` 冲突（E0502） | 加锁自增圈进独立作用域 |
+| `6.5-event-bus-broadcasting-demo.rs` | `Event::Temp(i16)` 负载从未读取 | 让 demo 真正读出并打印负载 |
+
+另有 29 个文件顶部的 `#![crate_name = "..."]`（当年绕开文件名问题的土办法）已移除——
+它与 `[[bin]]` 的 `--crate-name` 冲突。
 
 ## 维护脚本
 

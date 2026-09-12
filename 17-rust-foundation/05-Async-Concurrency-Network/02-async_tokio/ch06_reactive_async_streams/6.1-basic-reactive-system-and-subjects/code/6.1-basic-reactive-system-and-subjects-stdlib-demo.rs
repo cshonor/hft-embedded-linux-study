@@ -1,5 +1,4 @@
 //! §6.1：定义加热器「主题」——`AtomicI16` / `AtomicBool` + `LazyLock`（无 Tokio）。
-#![crate_name = "demo_6_1_subjects"]
 use std::sync::atomic::{AtomicBool, AtomicI16, Ordering};
 use std::sync::LazyLock;
 

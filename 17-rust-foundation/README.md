@@ -34,7 +34,7 @@ Rust 学习笔记仓库：**以看书、整理笔记为主**；The Book 作语�
 ```text
 ⑤ atomic → async_tokio → rust_network
 ⑦ WebAssembly（Rust → Wasm；可与 ⑤ 后期并行）
-⑥a C++ 前置：姊妹仓 cpp-learning-notes 01～06（开 LLVM 前必修，见 06 README）
+⑥a C++ 前置：**本仓 `04-cpp` 最小子集 P0**（非姊妹仓 01～06，见 [`20-compilers-llvm`](../20-compilers-llvm/README.md) 前置小节）
 ⑥b Compilers / Learn LLVM 17（Rust 导出 IR 对照；与 ⑦ 栈式 VM / WAT 并排）
 ```
 
@@ -42,7 +42,7 @@ Rust 学习笔记仓库：**以看书、整理笔记为主**；The Book 作语�
 |:---:|------|------|
 | **5** | 并发 / 异步 / 网络 | [`05-Async-Concurrency-Network/README.md`](05-Async-Concurrency-Network/README.md) |
 | **7** | **WebAssembly** | [`07-Programming-WebAssembly-with-Rust/README.md`](07-Programming-WebAssembly-with-Rust/README.md) · [知识链](07-Programming-WebAssembly-with-Rust/学习路径与知识链.md) |
-| **6a** | **C++ 前置**（外部） | [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) **`01`～`06`** → 再开 LLVM |
+| **6a** | **C++ 前置**（本仓） | [`04-cpp`](../04-cpp/README.md) **最小子集 P0** → 见 [`cpp-minimum-for-llvm.md`](../20-compilers-llvm/_refs/cpp-minimum-for-llvm.md) |
 | **6b** | 编译器 / LLVM | [`06_Compilers-and-LLVM-Learning/README.md`](06_Compilers-and-LLVM-Learning/README.md) |
 
 ---
@@ -142,4 +142,4 @@ cargo +nightly build
 
 | 仓库 | 语言 | 说明 |
 |------|------|------|
-| [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) | C++ | **`01`～`06` 为 Learn LLVM 前置（必修）**；`07`～`09` 与 Rust **05 / 06** 并行；详见 [`06/README`](06_Compilers-and-LLVM-Learning/README.md) |
+| 姊妹仓 `cpp-learning-notes` · **已并入本仓** `04-cpp` | C++ | 内容早已复制进本仓 `04-cpp`（M0–M5，751 篇）。**开 LLVM 只需 `04-cpp` 最小子集 P0**，见 [`cpp-minimum-for-llvm.md`](../20-compilers-llvm/_refs/cpp-minimum-for-llvm.md) |

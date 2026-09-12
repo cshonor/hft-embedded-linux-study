@@ -1,5 +1,4 @@
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
 
 use axum::{
     body::Body,

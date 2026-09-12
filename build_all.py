@@ -29,6 +29,9 @@ GROUP_ORDER = [
     ("compiler","编译器 · 工具链"),
 ]
 
+# 目录导航页遍历时跳过的目录：版本控制、构建产物、工具缓存
+SKIP_DIRS = {".git", "target", "node_modules", ".vscode", ".idea", "__pycache__", ".workbuddy"}
+
 def _b(root, title, sub, group):
     return dict(root=root, out=root + "/html", title_zh=title, sub_zh=sub, group=group)
 
@@ -967,7 +970,9 @@ def build_dir_indexes():
     cover_dirs = {WORKSPACE, WORKSPACE / "html"} | {WORKSPACE / b["root"] / "html" for b in BOOKS}
     count = 0
     for dirpath, dirnames, filenames in os.walk(WORKSPACE):
-        dirnames[:] = sorted(d for d in dirnames if d != ".git")
+        # 排除版本控制与构建产物目录 —— 否则 cargo 的 target/ 会被逐级生成
+        # 上千个 index.html（构建产物里再生成构建产物），既拖慢 build 又污染磁盘。
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
         d = Path(dirpath)
         if d in cover_dirs:
             continue  # 封面页所在目录跳过（封面不覆盖）

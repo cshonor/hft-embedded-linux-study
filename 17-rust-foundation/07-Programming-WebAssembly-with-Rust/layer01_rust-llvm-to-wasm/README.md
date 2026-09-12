@@ -52,10 +52,20 @@ rustup target add wasm32-unknown-unknown
 
 | demo | 说明 | 状态 |
 |------|------|:----:|
-| `emit_dual/` | 同一 `add_moving_average_tick()` 导出 `.ll` + `.wasm` | 📄 待建 |
-| `wat_diff/` | O0 wasm vs `wasm-opt -O3` 指令数对比 | 📄 待建 |
+| [`emit_dual/`](./demo/emit_dual/) | 同一 `sma_update()` / `weighted_mean()` 导出 `.ll`(O0+O3) + `.wasm` | ✅ **已建**（4 单测通过，产物可复现） |
+| `wat_diff/` | O0 wasm vs `wasm-opt -O3` 指令数对比 | 📄 待建（需先装 wabt / binaryen） |
 
-**建议源码**：从 Layer 3 会用的「单 tick 均线更新」抽一个**纯计算**函数，避免 Layer 1 就引入 JS/网络。
+**已落地**：`demo/emit_dual/` —— 纯计算函数（无 I/O、无分配、无 panic 路径），
+所以导出的 `.ll` / `.wasm` 里几乎只剩算术与 `load`/`store`，便于逐条比对。
+复现命令与「O3 下 IR 实测摘录」见 [demo/emit_dual/README.md](./demo/emit_dual/README.md)。
+
+```bash
+cd demo/emit_dual
+cargo test
+cargo rustc -- --emit=llvm-ir                        # O0 IR
+cargo rustc --release -- --emit=llvm-ir              # O3 IR
+cargo build --release --target wasm32-unknown-unknown # .wasm
+```
 
 ---
 

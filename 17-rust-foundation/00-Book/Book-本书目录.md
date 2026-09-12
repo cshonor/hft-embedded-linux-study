@@ -2,7 +2,8 @@
 
 > **书名**：《Rust 程序设计语言》（*The Rust Programming Language*，俗称 **The Book**）  
 > **在线全文**：[doc.rust-lang.org/book](https://doc.rust-lang.org/book/)（中文版：[rustwiki.org/zh-CN/book](https://rustwiki.org/zh-CN/book/)）  
-> **本仓库**：笔记与 demo 在 **`00-Book/01-*`～`00-Book/19-*`**（与本文件同目录）；本文为**全书导航索引**。
+> **本仓库**：笔记与 demo 在 **`00-Book/01-*`～`00-Book/20-*`**（与本文件同目录）；本文为**全书导航索引**。  
+> 注：第 20 章此前缺失，2026-09-12 补齐（线程池 + 优雅停机，是全书唯一把所有权/并发/trait 串起来的收官项目）。
 
 **扩展阅读**：[Effective Rust](../01-ER/ER-本书目录.md)（`01-ER/`，35 条建议，与主线并行）
 
@@ -41,6 +42,7 @@
 | 17 | 面向对象特性 | [17-oop](./17-oop/) |
 | 18 | 模式 | [18-patterns](./18-patterns/) |
 | 19 | 高级特性 | [19-advanced-features](./19-advanced-features/) |
+| 20 | 最后的项目：多线程 Web 服务器 | [20-final-project](./20-final-project/) |
 
 ---
 
@@ -330,6 +332,24 @@
 
 ---
 
+## 第 20 章 — 最后的项目：多线程 Web 服务器
+
+→ **章节导读**：[20-章节导读](./20-final-project/20-章节导读.md)（三节结论 · HFT 关联 · 易错点）
+
+| 节 | 笔记 | demo |
+|----|------|------|
+| 20.1 单线程 Web 服务器 | [20.1](./20-final-project/20.1-单线程Web服务器.md)（`TcpListener` · `BufReader` · 队头阻塞） | —（概念） |
+| 20.2 多线程与线程池 | [20.2](./20-final-project/20.2-多线程与线程池.md)（`Arc<Mutex<Receiver>>` · `Box<dyn FnOnce() + Send>`） | [20.2-thread-pool-demo](./20-final-project/20.2-thread-pool-demo/) |
+| 20.3 优雅停机与清理 | [20.3](./20-final-project/20.3-优雅停机与清理.md)（`Drop` 发信号 · 先 drop sender 再 join） | ↑ 同上（含 `Drop` 实现） |
+
+```bash
+cd 00-Book/20-final-project/20.2-thread-pool-demo
+cargo test     # 4 个测试：含「并行度」与「优雅停机不卡死」
+cargo run      # 8 任务 / 4 worker → 约 200ms 后优雅停机
+```
+
+---
+
 ## 学习进度（粗分）
 
 | 段落 | 章 | 建议 |
@@ -338,6 +358,7 @@
 | 核心 | 6–10 | 枚举、模块、集合、错误、泛型与生命周期 |
 | 项目与工具 | 11–14 | 测试、grep 项目、迭代器、Cargo |
 | 进阶 | 15–19 | 智能指针、并发、OOP、模式、unsafe/宏 |
+| **收官项目** | **20** | **把所有权 / 并发 / 智能指针 / trait 串起来：线程池 + 优雅停机** |
 
 详细勾选见 [`Rust学习笔记.md`](../Rust学习笔记.md)。
 

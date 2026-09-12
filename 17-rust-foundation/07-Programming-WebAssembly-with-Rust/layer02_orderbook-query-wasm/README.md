@@ -3,6 +3,14 @@
 > 上层索引：[三层学习架构](../三层学习架构.md)  
 > 原书：**第 2 章** [跳棋/数据结构](../chapter02_wasm_checkers/README.md) · **第 3～4 章** [Rust Wasm + JS 集成](../chapter03_rust_wasm/README.md)
 
+> [!WARNING]
+> **状态：设计稿，尚未落地（0 行代码）。** 2026-09-12 体检确认。
+> 本层的两个前置都不具备：① 需要**外部 Go 订单簿服务**（不在本仓，接口形状还是占位）；
+> ② 需要 `wasm-bindgen` + JS 宿主。
+> 在两者就绪前，本文件只是一份**规划**，不要当作已完成内容。
+> 想先动 Wasm，请走 [Layer 1](../layer01_rust-llvm-to-wasm/README.md)
+> （已落地：`demo/emit_dual/`，纯 Rust 无外部依赖）。
+
 **目标**：写一个 **Wasm 模块**，在浏览器或轻量宿主中调用你已有的 **Go 订单簿服务** 查询接口，解析快照并在 Wasm 线性内存里做 **best bid/ask、档位深度** 等只读查询 — 把原书 Checkers「紧凑棋盘状态」换成 **订单簿档位布局**。
 
 ---

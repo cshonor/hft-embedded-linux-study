@@ -17,13 +17,24 @@ impl Future for IncFuture {
         if self.done {
             return Poll::Ready(*self.shared.lock().unwrap());
         }
-        match self.shared.try_lock() {
-            Ok(mut g) => {
-                *g += 1;
-                self.done = true;
-                Poll::Ready(*g)
+        // 把「加锁 + 自增」圈进独立作用域：guard 与 match 的临时值在块尾就释放，
+        // 否则它们的不可变借用会一直活到函数尾，下面的 self.done = true 就会冲突（E0502）。
+        let inc: Option<u32> = {
+            match self.shared.try_lock() {
+                Ok(mut g) => {
+                    *g += 1;
+                    Some(*g)
+                }
+                Err(_) => None,
             }
-            Err(_) => Poll::Pending,
+        };
+
+        match inc {
+            Some(value) => {
+                self.done = true;
+                Poll::Ready(value)
+            }
+            None => Poll::Pending,
         }
     }
 }

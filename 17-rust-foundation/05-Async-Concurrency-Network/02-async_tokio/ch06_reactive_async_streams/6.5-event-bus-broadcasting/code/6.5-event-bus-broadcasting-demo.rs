@@ -40,4 +40,10 @@ fn main() {
     assert_eq!(bus.subs[&a].len(), 1);
     assert_eq!(bus.subs[&b].len(), 1);
     println!("§6.5 ok: two subscribers each got one event");
+
+    // 顺带验证负载本身 —— 否则 Event::Temp 的字段从未被读取（dead_code 警告）。
+    let q = bus.subs.get_mut(&a).expect("subscriber a");
+    match q.pop_front().expect("event") {
+        Event::Temp(t) => println!("§6.5 payload check: subscriber {a} received Temp({t})"),
+    }
 }

@@ -3,6 +3,14 @@
 > 上层索引：[三层学习架构](../三层学习架构.md)  
 > 原书：**第 5 章** [Yew](../chapter05_yew/README.md) · **第 6～8 章** [非 Web 宿主 / IoT / WARoS](../chapter06_nonweb_hosts/README.md) · [附录](../appendix/README.md)
 
+> [!WARNING]
+> **状态：设计稿，尚未落地（0 行代码）。** 2026-09-12 体检确认。
+> 本层依赖 Layer 2（Go 订单簿宿主），且需要 Yew / wasmtime 两套宿主环境，
+> 是全三层里成本最高的一层。在 Layer 2 落地前，本文件只是**规划**，不要当作已完成内容。
+> 其中的「均线计算」内核其实已经在
+> [Layer 1 的 `demo/emit_dual/`](../layer01_rust-llvm-to-wasm/demo/emit_dual/) 里
+> 以纯函数形式落地了（`sma_update` / `weighted_mean`）—— 真要推进，直接从那里往上长。
+
 **目标**：用 Rust 写 **轻量均线（MA）策略** 核心，编译为 Wasm：
 
 1. **浏览器**：Yew 面板拉历史/模拟 tick，Wasm 内跑回测，画权益曲线。  

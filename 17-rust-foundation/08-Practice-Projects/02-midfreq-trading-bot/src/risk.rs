@@ -10,8 +10,6 @@ impl RiskGate {
     }
 
     pub fn check(&self, signal: &Signal) -> bool {
-        match signal {
-            Signal::Buy { qty } | Signal::Sell { qty } => *qty <= self.max_qty,
-        }
+        signal.qty() <= self.max_qty
     }
 }

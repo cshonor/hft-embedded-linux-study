@@ -12,6 +12,6 @@ async fn main() {
         .with_env_filter(EnvFilter::from_default_env().add_directive("midfreq_trading_bot=info".parse().unwrap()))
         .init();
 
-    tracing::info!("midfreq-trading-bot — framework skeleton");
+    tracing::info!("midfreq-trading-bot — mock feed + momentum strategy + OMS");
     engine::run_demo().await;
 }
