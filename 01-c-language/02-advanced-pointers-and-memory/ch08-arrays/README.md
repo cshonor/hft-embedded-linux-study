@@ -57,7 +57,7 @@
 | [t2_zero_init.c](demo/t2_zero_init.c) | `= {0}` 全 0 机制、`{1}` 对照、全零 `.data` 被收回 `.bss` |
 | [t3_clear_cost.c](demo/t3_clear_cost.c) | 清零代价 + DSE（≈0.3 ms vs ≈21 ms）、HFT 判据 |
 | [t4_param_decay.c](demo/t4_param_decay.c) | `int a[10]` ≡ `int *a`（`_Static_assert` 证明） |
-| [t5_pointer_iter.c](demo/t5_pointer_iter.c) | 指针遍历三段拆解、尾后指针地址、`p=p+2` 小测验、跨数组比较 UB（ASan/UBSan 均不报） |
+| [t5_pointer_iter.c](demo/t5_pointer_iter.c) | 指针遍历三段拆解、尾后指针地址、`p=p+2` 小测验、指针相减 `ptrdiff_t`、跨数组比较 UB（gcc/clang **答案相反**，ASan/UBSan 均不报） |
 
 
 ---

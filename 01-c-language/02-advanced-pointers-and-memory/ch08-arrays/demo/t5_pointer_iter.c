@@ -1,7 +1,9 @@
 /* t5_pointer_iter.c — 指针遍历数组：核心等价 / 尾后指针 / 关系比较
  *
  * 对应笔记 8.1.3 指针与下标
- * 环境：WSL Ubuntu，gcc 13.3 / clang 18.1.3
+ * 环境：WSL Ubuntu gcc 13.3 / clang 18.1.3
+ *       另有 Compiler Explorer gcc 13.2 / clang 18.1.0 复核，结论一致；
+ *       唯一差异是 T5.7 的 UB 比较方向随编译器翻转——正是该实验要说明的点
  */
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
