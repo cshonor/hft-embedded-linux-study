@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 8.1 一维数组 · 实测脚本（数组 vs 指针 + `= {0}` 语义 + 指针遍历边界）
+# 8.1 一维数组 · 实测脚本（数组 vs 指针 + `= {0}` 语义 + 指针遍历边界 + 数组是对象）
 # 环境：WSL Ubuntu，gcc 13.3 / clang 18.1.3
 # 用法：bash run.sh
 set -u
@@ -21,22 +21,20 @@ $CC -c /tmp/t1_sym.c -o /tmp/t1_sym.o 2>/dev/null
 echo "  -- nm --print-size --size-sort --radix=d --"
 nm --print-size --size-sort --radix=d /tmp/t1_sym.o 2>/dev/null | grep -E 'g_arr|g_ptr'
 
-hr "T1 附 b: 数组名不可赋值 / 不可自增（编译器原文）"
-cat > /tmp/t1_err.c <<'EOF'
-int main(void) { int a[10], *p; a = p; return 0; }
-EOF
-echo "  -- a = p; --"
-$CC -std=c11 -c /tmp/t1_err.c -o /dev/null 2>&1 | head -3
-cat > /tmp/t1_err2.c <<'EOF'
-int main(void) { int a[10]; a++; return 0; }
-EOF
-echo "  -- a++; --"
-$CC -std=c11 -c /tmp/t1_err2.c -o /dev/null 2>&1 | head -3
-cat > /tmp/t1_err3.c <<'EOF'
-int main(void) { int a[10]; &a = 0; return 0; }
-EOF
-echo "  -- &a = 0; --"
-$CC -std=c11 -c /tmp/t1_err3.c -o /dev/null 2>&1 | head -3
+hr "T1 附 b: 数组名不可赋值 / 不可自增（gcc 与 clang 原文对照）"
+# 四个片段 x 两个编译器，只抽 error: 之后那半句
+err_case() {   # $1 = 标签，$2 = 源码
+  printf '%s\n' "$2" > /tmp/t1_err.c
+  echo "  -- $1 --"
+  printf '     gcc   : '; $CC   -std=c11 -c /tmp/t1_err.c -o /dev/null 2>&1 \
+    | grep -m1 'error:' | sed 's/^.*error: //'
+  printf '     clang : '; clang -std=c11 -c /tmp/t1_err.c -o /dev/null 2>&1 \
+    | grep -m1 'error:' | sed 's/^.*error: //'
+}
+err_case 'a = p;'        'int main(void){ int a[10], *p; a = p; return 0; }'
+err_case 'a++;'          'int main(void){ int a[10]; a++; return 0; }'
+err_case '&a = 0;'       'int main(void){ int a[10]; &a = 0; return 0; }'
+err_case 'int c[10] = a;' 'int main(void){ int a[10]; int c[10] = a; return 0; }'
 
 hr "T2: \`= {0}\` 语义 —— 全 0 的机制"
 $CC -std=c11 -O0 -Wall -Wno-unused -fno-pie -no-pie -o t2_zero_init t2_zero_init.c \
@@ -113,8 +111,13 @@ $CC -std=c11 -O0 -g -fsanitize=undefined -fno-pie -no-pie -o /tmp/t5_ub t5_point
   && /tmp/t5_ub > /dev/null 2>&1
 echo "    gcc -fsanitize=undefined 跑完整个 t5，exit=$?，无任何报告"
 
+hr "T6: 数组是对象 —— 类型 / 对齐 / 成员 / 拷贝 四层正面证据"
+$CC -std=c11 -O0 -Wall -Wno-unused -fno-pie -no-pie -o t6_array_is_object t6_array_is_object.c \
+  && ./t6_array_is_object
+
 hr "双编译器验证（gcc + clang）"
-for f in t1_array_vs_pointer t2_zero_init t3_clear_cost t4_param_decay t5_pointer_iter; do
+for f in t1_array_vs_pointer t2_zero_init t3_clear_cost t4_param_decay t5_pointer_iter \
+         t6_array_is_object; do
   if clang -std=c11 -O2 -Wall -Wno-unused -Wno-unused-but-set-variable -fno-pie -no-pie \
        -c "$f.c" -o "/tmp/c_$f.o" 2>/tmp/c_err_$f; then
     echo "  clang OK   : $f.c"

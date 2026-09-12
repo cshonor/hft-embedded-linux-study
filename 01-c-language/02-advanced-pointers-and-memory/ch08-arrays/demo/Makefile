@@ -1,9 +1,10 @@
-# 8.1 一维数组 · demo（数组 vs 指针 + `= {0}` 语义 + 指针遍历边界）
+# 8.1 一维数组 · demo（数组 vs 指针 + `= {0}` 语义 + 指针遍历边界 + 数组是对象）
 CC      ?= gcc
 CFLAGS  ?= -std=c11 -O0 -Wall -Wno-unused -fno-pie -no-pie
 CFLAGS2  = -std=c11 -O2 -Wall -Wno-unused -fno-pie -no-pie
 
-BINS = t1_array_vs_pointer t2_zero_init t3_clear_cost t4_param_decay t5_pointer_iter
+BINS = t1_array_vs_pointer t2_zero_init t3_clear_cost t4_param_decay t5_pointer_iter \
+       t6_array_is_object
 
 all: $(BINS)
 
@@ -20,6 +21,9 @@ t4_param_decay: t4_param_decay.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 t5_pointer_iter: t5_pointer_iter.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+t6_array_is_object: t6_array_is_object.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 run: all
