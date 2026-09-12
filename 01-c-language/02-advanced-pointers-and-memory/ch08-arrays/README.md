@@ -12,7 +12,8 @@
 - 二维：**`*(*(buf+i)+j)`**；传参 **`int (*)[COLS]`**
 - **`int *a[5]`** vs **`int (*b)[5]`**
 - 字符串指针数组 vs **`char buf[N][M]`**
-- **VLA** 栈风险；**`{0}`** 清零
+- **数组是对象，指针是变量**（[8.1.5](8.1-one-dimensional-arrays/8.1.5-数组和指针.md) 12 项对照）
+- **VLA** 栈风险；**`= {0}`** 的精确语义（[8.1.8](8.1-one-dimensional-arrays/8.1.8-初始化.md)：首元素显式 0 + 其余隐式补 0）
 - 栈 mega 数组 → **malloc**
 
 ## 场景价值
@@ -45,6 +46,17 @@
 - 8.1 一维数组（8.1.1–8.1.11）
 - [8.2 多维数组](8.2-multidimensional-arrays/8.2-多维数组.md)（8.2.1–8.2.7）
 - [8.3 指针数组](./8.3-指针数组.md)
+
+## 本节实测（8.1）
+
+[demo/](demo/)：4 个实验 + `run.sh` 一键跑（WSL gcc 13.3 / clang 18.1.3 双编译）
+
+| 实验 | 验证 |
+|------|------|
+| [t1_array_vs_pointer.c](demo/t1_array_vs_pointer.c) | 数组 vs 指针：`_Generic` 类型探针、sizeof、步长、三条赋值错误原文、符号表 400 vs 8 |
+| [t2_zero_init.c](demo/t2_zero_init.c) | `= {0}` 全 0 机制、`{1}` 对照、全零 `.data` 被收回 `.bss` |
+| [t3_clear_cost.c](demo/t3_clear_cost.c) | 清零代价 + DSE（0.34 ms vs 22 ms）、HFT 判据 |
+| [t4_param_decay.c](demo/t4_param_decay.c) | `int a[10]` ≡ `int *a`（`_Static_assert` 证明） |
 
 
 ---
