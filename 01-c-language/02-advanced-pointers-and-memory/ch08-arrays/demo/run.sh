@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 8.1 一维数组 · 实测脚本（数组 vs 指针 + `= {0}` 语义）
+# 8.1 一维数组 · 实测脚本（数组 vs 指针 + `= {0}` 语义 + 指针遍历边界）
 # 环境：WSL Ubuntu，gcc 13.3 / clang 18.1.3
 # 用法：bash run.sh
 set -u
@@ -87,8 +87,34 @@ echo "  -- 附: 函数内对形参用 sizeof，gcc/clang 的警告原文 --"
 $CC -std=c11 -O0 -Wall -c t4_param_decay.c -o /dev/null 2>&1 \
   | grep -E 'sizeof.*array function parameter|declared here' | head -4 | sed 's/^/    /'
 
+hr "T5: 指针遍历的边界（尾后指针 / 关系比较）"
+$CC -std=c11 -O0 -Wall -Wno-unused -fno-pie -no-pie -o t5_pointer_iter t5_pointer_iter.c \
+  && ./t5_pointer_iter
+
+hr "T5 附 a: 尾后解引用 —— ASan 报错 vs 不挂 ASan 时「静默通过」"
+cat > /tmp/t5_oob.c <<'EOF'
+#include <stdio.h>
+int main(void) {
+    int g[5] = {1,2,3,4,5};
+    volatile int i = 5;
+    printf("读到 = %d\n", g[i]);      /* 尾后解引用：*(g+5) */
+    return 0;
+}
+EOF
+echo "  -- 挂 ASan（clang，应报 stack-buffer-overflow）--"
+clang -std=c11 -O0 -g -fsanitize=address -fno-pie -no-pie -o /tmp/t5_oob_asan /tmp/t5_oob.c 2>/dev/null \
+  && /tmp/t5_oob_asan 2>&1 | grep -E 'ERROR: AddressSanitizer|READ of size' | head -2 | sed 's/^/    /'
+echo "  -- 不挂 ASan（gcc）：读到残留值，exit=0，看不出任何异常 --"
+$CC -std=c11 -O0 -fno-pie -no-pie -o /tmp/t5_oob_plain /tmp/t5_oob.c 2>/dev/null \
+  && /tmp/t5_oob_plain 2>&1 | head -2 | sed 's/^/    /'
+
+hr "T5 附 b: 跨数组指针比较 —— sanitizer 也抓不到（UB 静默）"
+$CC -std=c11 -O0 -g -fsanitize=undefined -fno-pie -no-pie -o /tmp/t5_ub t5_pointer_iter.c 2>/dev/null \
+  && /tmp/t5_ub > /dev/null 2>&1
+echo "    gcc -fsanitize=undefined 跑完整个 t5，exit=$?，无任何报告"
+
 hr "双编译器验证（gcc + clang）"
-for f in t1_array_vs_pointer t2_zero_init t3_clear_cost t4_param_decay; do
+for f in t1_array_vs_pointer t2_zero_init t3_clear_cost t4_param_decay t5_pointer_iter; do
   if clang -std=c11 -O2 -Wall -Wno-unused -Wno-unused-but-set-variable -fno-pie -no-pie \
        -c "$f.c" -o "/tmp/c_$f.o" 2>/tmp/c_err_$f; then
     echo "  clang OK   : $f.c"
