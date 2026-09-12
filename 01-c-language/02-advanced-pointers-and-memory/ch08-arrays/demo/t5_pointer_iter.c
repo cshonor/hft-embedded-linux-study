@@ -59,11 +59,18 @@ int main(void)
         printf("  再 +1 得 &a[3] 是尾后指针：可以比较，不能解引用\n");
     }
 
-    /* T5.5 指针相减 */
-    sec("T5.5 指针相减 = 元素个数");
+    /* T5.5 指针相减：下标差，类型 ptrdiff_t */
+    sec("T5.5 指针相减 = 下标差（不是字节差）");
     {
         const int *p1 = &g[1], *p2 = &g[4];
-        printf("  p2 - p1 = %td   （元素差，非字节差）\n", p2 - p1);
+        printf("  p2 - p1               = %td  ← 下标差（元素个数）\n", p2 - p1);
+        printf("  (char*)p2 - (char*)p1 = %td  ← 字节差\n",
+               (const char *)p2 - (const char *)p1);
+        printf("  sizeof(ptrdiff_t)     = %zu 字节（有符号类型，<stddef.h>）\n",
+               sizeof(ptrdiff_t));
+        printf("  字节差 / sizeof(int)  = %td  ← 编译器在类型层面替你除回去\n",
+               ((const char *)p2 - (const char *)p1) / (ptrdiff_t)sizeof(int));
+        printf("  注：相减和 < 一样，要求二者同属一个数组（含尾后）\n");
     }
 
     /* T5.6 同一数组内比较：合法 */
@@ -78,6 +85,20 @@ int main(void)
         printf("  raw_lt(x, y) = %d\n", raw_lt(x, y));
         printf("  raw_lt(y, x) = %d\n", raw_lt(y, x));
         printf("  两者都不是「可依赖的真值」——标准未定义，别拿它做判断\n");
+    }
+
+    /* T5.8 思考题：元素 vs 尾后，属同一数组 → 合法且有确定结果 */
+    sec("T5.8 思考题：p=arr+3, q=arr+4, p<q ?");
+    {
+        int arr[4] = {1, 2, 3, 4};
+        int *p = arr + 3;    /* 最后一个元素 arr[3] */
+        int *q = arr + 4;    /* 尾后指针 */
+        printf("  p = arr+3 = %p  （最后一个元素）\n", (const void *)p);
+        printf("  q = arr+4 = %p  （尾后 one-past-the-end）\n", (const void *)q);
+        printf("  p < q   = %d     ← 合法，结果由标准保证为 1\n", p < q);
+        printf("  q - p   = %td     ← 同数组，允许相减\n", q - p);
+        printf("  *q 不允许：尾后指针不能被解引用（§6.5.6p8）\n");
+        printf("  对照 raw_lt(q,q) = %d（同一个指针，比较必相等）\n", raw_lt(q, q));
     }
 
     return 0;
