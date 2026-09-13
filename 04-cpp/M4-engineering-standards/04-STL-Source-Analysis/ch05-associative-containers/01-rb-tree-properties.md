@@ -40,6 +40,11 @@ for (auto& [k, v] : m) { /* 有序遍历 */ }
 
 性质 ④ + ⑤ 合力保证：**最长路径（红黑交替）≤ 2 × 最短路径（全黑）**，因此树高 ≤ 2·log(n+1)。
 
+> **④ 不是 ⑤ 的推论**：纯链每层子树只有一条路径，黑高天然相等 —— 只保留 ⑤ 时树高可到 O(n)，
+> 是 ④ 把高度压到 O(log n)。枚举验证 + 「性质③ 的 NIL 哨兵到底有没有」的实现对照，
+> 见 [LKD3rd §6.5 二叉树 · 红黑树](../../../../05-linux-kernel/chapter-06-kernel-data-structures/notes/section-6.5-二叉树.md)：
+> **内核与 libstdc++ 的叶子都是裸 `NULL`**，不用哨兵；颜色约定也都是**红 = 0 / 黑 = 1**。
+
 ### 旋转与着色
 
 插入/删除可能破坏性质，通过旋转 + 着色恢复：
@@ -240,3 +245,4 @@ m.erase(some_black_key);  // 删除一个黑节点
 - 上一节：[本章概览](README.md)
 - 下一节：[5.2 set/map 封装](02-set-map-as-rb-tree.md)
 - 源码参考：`/usr/include/c++/*/bits/stl_tree.h`（GCC libstdc++ 的 `__rb_tree` 实现）
+- 实现对照（NIL 哨兵 / 颜色位编码 / 插入修复的 Case 1–3 核心源码）：[LKD3rd §6.5 二叉树 · 红黑树](../../../../05-linux-kernel/chapter-06-kernel-data-structures/notes/section-6.5-二叉树.md)

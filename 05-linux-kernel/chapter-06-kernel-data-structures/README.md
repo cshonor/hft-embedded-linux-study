@@ -4,7 +4,7 @@
 
 > 本章定位：内核内置 **链表 / 队列 / 映射 / 红黑树** — **别重新发明轮子**。  
 > 读 Ch 3 `task_struct` 链表、**Ch 4 CFS `rbtree`（按 `vruntime`，最左先跑）**、驱动与 IPC 时的词汇表。  
-> §6.5 钉死：内嵌 `rb_node` + `container_of`；`rb_first` = CFS 下一个候选。
+> §6.5 钉死：内嵌 `rb_node` + `container_of`；`rb_first` = CFS 下一个候选；NIL 哨兵只是教科书约定、内核用裸 `NULL`。
 
 ---
 
