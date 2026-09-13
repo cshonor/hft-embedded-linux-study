@@ -1,7 +1,7 @@
 # TLPI 第 13 章 — File I/O Buffering
 
-**优先级**：🔴（日志 / 持久化 / 高性能 IO / DB）  
-**前置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/README.md) · [Ch5 Further I/O](../chapter-05-file-io-further/README.md) · [Ch12 `/proc`](../chapter-12-system-process-info/README.md)  
+**优先级**：🔴（日志 / 持久化 / 高性能 IO / DB）
+**前置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/README.md) · [Ch5 Further I/O](../chapter-05-file-io-further/README.md) · [Ch12 `/proc`](../chapter-12-system-process-info/README.md)
 **后置**：[Ch14 File Systems](../chapter-14-file-systems/README.md) · [Ch49 mmap](../chapter-49-memory-mappings/README.md) · Ch63 替代 I/O
 
 ---
@@ -24,9 +24,6 @@
 
 ---
 
-
----
-
 ## 13.7 速查：持久化相关标志/调用
 
 
@@ -43,35 +40,26 @@
 
 ---
 
-
----
-
 ## 13.8 易错清单
 
 
-1. `write` 成功 ≠ 落盘  
-2. 只要数据、不要改大小/mtime → 优先 `fdatasync`  
-3. stdout→文件/管道：全缓冲，无 `\n`/`fflush` 看不见输出  
-4. `O_SYNC` 管的是 `write`，管不住未 `fflush` 的 stdio  
-5. `O_DIRECT` 对齐失败 → `EINVAL`；用 `posix_memalign`  
-6. 崩溃丢：**用户态 stdio** + **内核脏页**；已刷盘的安全  
-
----
-
+1. `write` 成功 ≠ 落盘
+2. 只要数据、不要改大小/mtime → 优先 `fdatasync`
+3. stdout→文件/管道：全缓冲，无 `\n`/`fflush` 看不见输出
+4. `O_SYNC` 管的是 `write`，管不住未 `fflush` 的 stdio
+5. `O_DIRECT` 对齐失败 → `EINVAL`；用 `posix_memalign`
+6. 崩溃丢：**用户态 stdio** + **内核脏页**；已刷盘的安全
 
 ---
 
 ## 练习
 
 
-1. 终端 vs 重定向：stdout 行缓冲/全缓冲 + `fflush`  
-2. 小循环多次 `write` vs 加大缓冲/批写  
-3. 复现 `printf`+`write` 乱序，用 `fflush` 修  
-4. `O_DIRECT` 故意不对齐 → `EINVAL`  
-5. （选）`posix_fadvise` 顺序读提示  
-
----
-
+1. 终端 vs 重定向：stdout 行缓冲/全缓冲 + `fflush`
+2. 小循环多次 `write` vs 加大缓冲/批写
+3. 复现 `printf`+`write` 乱序，用 `fflush` 修
+4. `O_DIRECT` 故意不对齐 → `EINVAL`
+5. （选）`posix_fadvise` 顺序读提示
 
 ---
 
@@ -89,15 +77,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch13  
+- Kerrisk · TLPI Ch13
 - `man 2 fsync` · `man 2 fdatasync` · `man 2 open`（`O_SYNC`/`O_DIRECT`）· `man 3 setvbuf` · `man 3 posix_fadvise`
-
 
 ---
 
@@ -139,10 +123,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

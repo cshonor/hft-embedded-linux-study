@@ -1,7 +1,7 @@
 # TLPI 第 50 章 — Virtual Memory Operations
 
-**优先级**：🔴（低延迟 / JIT / 大映射调优）  
-**前置**：[Ch49 mmap](../chapter-49-memory-mappings/README.md)  
+**优先级**：🔴（低延迟 / JIT / 大映射调优）
+**前置**：[Ch49 mmap](../chapter-49-memory-mappings/README.md)
 **后置**：[Ch51 POSIX IPC 导论](../chapter-51-posix-ipc-intro/README.md)
 
 > 源码核验基准：Linux v6.6 · `mm/mprotect.c` · `mm/mlock.c` · `mm/mincore.c` · `mm/madvise.c`（2026-09-05 实测）
@@ -83,6 +83,6 @@
 
 ## 参考
 
-- Kerrisk · TLPI Ch50（非「第 45 章」误标）  
+- Kerrisk · TLPI Ch50（非「第 45 章」误标）
 - `man 2 mprotect` · `mlock` · `mincore` · `madvise`
 - 内核深挖：[06-linux-mm](../../06-linux-mm/README.md)

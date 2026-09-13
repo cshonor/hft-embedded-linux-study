@@ -236,10 +236,3 @@ int main(void)
     return 0;
 }
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

@@ -1,7 +1,7 @@
 # TLPI 第 48 章 — System V Shared Memory
 
-**优先级**：🔴（无拷贝；配信号量）  
-**前置**：[Ch47 SysV 信号量](../chapter-47-sysv-semaphores/README.md)  
+**优先级**：🔴（无拷贝；配信号量）
+**前置**：[Ch47 SysV 信号量](../chapter-47-sysv-semaphores/README.md)
 **后置**：[Ch49 mmap](../chapter-49-memory-mappings/README.md) · [Ch51 POSIX IPC 导论](../chapter-51-posix-ipc-intro/README.md)
 
 ---
@@ -23,20 +23,14 @@
 
 ---
 
-
----
-
 ## 优缺点
 
 
-✅ 无拷贝、多进程同区。  
-❌ 非 fd、无 epoll「数据就绪」、须自管同步、内核持久易漏、API 老。  
+✅ 无拷贝、多进程同区。
+❌ 非 fd、无 epoll「数据就绪」、须自管同步、内核持久易漏、API 老。
 → 新项目常选 **POSIX shm + mmap**。
 
 拷贝对比：pipe/mq ≈ 两次拷贝；shm ≈ **零业务拷贝**（仍有页表建立成本）。
-
----
-
 
 ---
 
@@ -52,21 +46,15 @@
 
 ---
 
-
----
-
 ## 思考题要点
 
 
-1. RMID 延迟到 nattch=0。  
-2. attach/detach；exec 全 detach。  
-3. 虚址不同 → offset。  
-4. 无同步 → 竞态。  
-5. attach++ / detach--；nattch=0 + DEST → 回收。  
+1. RMID 延迟到 nattch=0。
+2. attach/detach；exec 全 detach。
+3. 虚址不同 → offset。
+4. 无同步 → 竞态。
+5. attach++ / detach--；nattch=0 + DEST → 回收。
 6. pipe/mq 拷贝 vs shm 共享页。
-
----
-
 
 ---
 
@@ -84,15 +72,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch48（非「第 21 章」误标）  
+- Kerrisk · TLPI Ch48（非「第 21 章」误标）
 - `man 2 shmget` · `shmat` · `shmdt` · `shmctl`
-
 
 ---
 
@@ -152,10 +136,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

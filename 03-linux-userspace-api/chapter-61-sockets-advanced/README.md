@@ -1,7 +1,7 @@
 # TLPI 第 61 章 — Sockets: Advanced Topics
 
-**优先级**：🔴（选项、msghdr、UDP connect、短读写）  
-**前置**：[Ch60 Server Design](../chapter-60-server-design/README.md)  
+**优先级**：🔴（选项、msghdr、UDP connect、短读写）
+**前置**：[Ch60 Server Design](../chapter-60-server-design/README.md)
 **后置**：[Ch62 Terminals](../chapter-62-terminals/README.md)
 
 ---
@@ -26,23 +26,17 @@
 
 ---
 
-
----
-
 ## 陷阱
 
 
-1. REUSEADDR 设晚于 bind  
-2. REUSEADDR vs REUSEPORT  
-3. TCP 不循环写满  
-4. TCP 当包边界  
-5. send 传 fd  
-6. linger=0 粗暴 RST  
-7. UDP connect≠可靠  
-8. OOB 当大数据通道  
-
----
-
+1. REUSEADDR 设晚于 bind
+2. REUSEADDR vs REUSEPORT
+3. TCP 不循环写满
+4. TCP 当包边界
+5. send 传 fd
+6. linger=0 粗暴 RST
+7. UDP connect≠可靠
+8. OOB 当大数据通道
 
 ---
 
@@ -60,15 +54,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch61  
+- Kerrisk · TLPI Ch61
 - `man 7 socket` · `tcp` · `man 2 sendmsg` · `getsockname`
-
 
 ---
 
@@ -166,10 +156,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

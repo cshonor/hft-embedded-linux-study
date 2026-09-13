@@ -1,7 +1,7 @@
 # TLPI 第 19 章 — Monitoring File Events
 
-**优先级**：🔴（热重载、配置监视、构建工具、日志跟随）  
-**前置**：[Ch18 Directories and Links](../chapter-18-directories-links/README.md)  
+**优先级**：🔴（热重载、配置监视、构建工具、日志跟随）
+**前置**：[Ch18 Directories and Links](../chapter-18-directories-links/README.md)
 **后置**：[Ch20 Signals](../chapter-20-signals-fundamentals/README.md) · Ch63 多路 I/O
 
 ---
@@ -23,9 +23,6 @@
 
 ---
 
-
----
-
 ## 19.2 核心 API
 
 
@@ -40,9 +37,6 @@ int inotify_rm_watch(int fd, int wd);
 ```
 
 对 inotify **fd** 做 `read()` 取事件；该 fd 可进 `select`/`poll`/`epoll`。
-
----
-
 
 ---
 
@@ -61,20 +55,14 @@ int inotify_rm_watch(int fd, int wd);
 
 ---
 
-
----
-
 ## 练习
 
 
-1. 监控目录：打印 create/delete/modify  
-2. epoll + 非阻塞 inotify  
-3. （选）子目录创建时动态 add_watch  
-4. （选）压测溢出  
-5. 移动文件观察 cookie  
-
----
-
+1. 监控目录：打印 create/delete/modify
+2. epoll + 非阻塞 inotify
+3. （选）子目录创建时动态 add_watch
+4. （选）压测溢出
+5. 移动文件观察 cookie
 
 ---
 
@@ -92,15 +80,11 @@ int inotify_rm_watch(int fd, int wd);
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch19  
+- Kerrisk · TLPI Ch19
 - `man 7 inotify` · `man 2 inotify_init` · `man 2 inotify_add_watch` · `inotifywait(1)`
-
 
 ---
 
@@ -153,10 +137,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

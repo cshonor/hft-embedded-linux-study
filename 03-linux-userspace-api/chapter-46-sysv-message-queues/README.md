@@ -1,7 +1,7 @@
 # TLPI 第 46 章 — System V Message Queues
 
-**优先级**：🔴（首个完整 SysV 实例；消息 vs 字节流）  
-**前置**：[Ch45 SysV IPC 导论](../chapter-45-sysv-ipc-intro/README.md)  
+**优先级**：🔴（首个完整 SysV 实例；消息 vs 字节流）
+**前置**：[Ch45 SysV IPC 导论](../chapter-45-sysv-ipc-intro/README.md)
 **后置**：[Ch47 SysV 信号量](../chapter-47-sysv-semaphores/README.md)
 
 ---
@@ -22,22 +22,16 @@
 
 ---
 
-
----
-
 ## 思考题要点
 
 
-1. `msgtyp` 0 / >0 / <0（上表）。  
-2. `EINTR`；SA_RESTART 无效。  
-3. mq RMID 立即标记 vs shm 等 detach。  
-4. `MSG_NOERROR` vs `E2BIG`。  
-5. id≠fd。  
-6. 崩溃 + 内核持久 → `ipcrm`/`IPC_RMID`。  
+1. `msgtyp` 0 / >0 / <0（上表）。
+2. `EINTR`；SA_RESTART 无效。
+3. mq RMID 立即标记 vs shm 等 detach。
+4. `MSG_NOERROR` vs `E2BIG`。
+5. id≠fd。
+6. 崩溃 + 内核持久 → `ipcrm`/`IPC_RMID`。
 7. **0 长度消息合法**。
-
----
-
 
 ---
 
@@ -55,15 +49,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch46（非「第 19 章」误标）  
+- Kerrisk · TLPI Ch46（非「第 19 章」误标）
 - `man 2 msgget` · `msgsnd` · `msgrcv` · `msgctl`
-
 
 ---
 
@@ -128,10 +118,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

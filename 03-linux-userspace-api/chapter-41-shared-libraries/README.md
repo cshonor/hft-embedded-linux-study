@@ -1,7 +1,7 @@
 # TLPI 第 41 章 — Fundamentals of Shared Libraries
 
-**优先级**：🔴（部署、插件铺垫、ABI 版本）  
-**前置**：[Ch40 登录记账](../chapter-40-login-accounting/README.md)  
+**优先级**：🔴（部署、插件铺垫、ABI 版本）
+**前置**：[Ch40 登录记账](../chapter-40-login-accounting/README.md)
 **后置**：[Ch42 共享库高级 / dlopen](../chapter-42-shared-libraries-advanced/README.md)
 
 ---
@@ -24,35 +24,26 @@
 
 ---
 
-
----
-
 ## 易错清单
 
 
-1. 忘 `-fPIC`  
-2. 搞混 real/soname/linker name  
-3. 装库不 `ldconfig`  
-4. SUID + 依赖 `LD_LIBRARY_PATH`  
-5. RPATH vs RUNPATH  
-6. 未预期的符号介入  
-
----
-
+1. 忘 `-fPIC`
+2. 搞混 real/soname/linker name
+3. 装库不 `ldconfig`
+4. SUID + 依赖 `LD_LIBRARY_PATH`
+5. RPATH vs RUNPATH
+6. 未预期的符号介入
 
 ---
 
 ## 实验清单
 
 
-1. 带 soname 的三链构建  
-2. RUNPATH vs `LD_LIBRARY_PATH`  
-3. （选）interposition / `-Bsymbolic`  
-4. `LD_BIND_NOW`  
-5. `$ORIGIN`  
-
----
-
+1. 带 soname 的三链构建
+2. RUNPATH vs `LD_LIBRARY_PATH`
+3. （选）interposition / `-Bsymbolic`
+4. `LD_BIND_NOW`
+5. `$ORIGIN`
 
 ---
 
@@ -70,15 +61,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch41  
+- Kerrisk · TLPI Ch41
 - `man 8 ldconfig` · `man 1 ldd` · `man 1 ld.so`
-
 
 ---
 
@@ -140,10 +127,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

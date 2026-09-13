@@ -1,7 +1,7 @@
 # TLPI 第 14 章 — File Systems
 
-**优先级**：🔴（路径解析、挂载、硬链接、持久化与 fsck/日志理解）  
-**前置**：[Ch13 File I/O Buffering](../chapter-13-file-io-buffering/README.md)  
+**优先级**：🔴（路径解析、挂载、硬链接、持久化与 fsck/日志理解）
+**前置**：[Ch13 File I/O Buffering](../chapter-13-file-io-buffering/README.md)
 **后置**：[Ch15 File Attributes](../chapter-15-file-attributes/README.md) · [Ch18 目录与链接](../chapter-18-directories-links/README.md) · [Ch19 inotify](../chapter-19-monitoring-file-events/README.md)
 
 ---
@@ -27,9 +27,6 @@
 
 ---
 
-
----
-
 ## 14.10 速查：`statfs` vs `statvfs` · 挂载标志
 
 
@@ -51,36 +48,27 @@
 
 ---
 
-
----
-
 ## 14.11 易错清单
 
 
-1. inode 号仅在**同一 FS** 内可比；硬链接不能跨 FS  
-2. `unlink`：链接计数→0 且无打开者 → 才真正释放数据块  
-3. 挂载遮盖：别把重要目录当挂载点却忘了「底下有东西」  
-4. tmpfs 吃内存/swap，不占普通磁盘配额语义  
-5. dentry 是**内核缓存**，不落盘  
-6. 日志 ≠ 用户数据已持久化；关键写仍要 `fsync`/`fdatasync`  
-7. 可移植：`statvfs`；挂载信息可解析 `/proc/mounts`  
-
----
-
+1. inode 号仅在**同一 FS** 内可比；硬链接不能跨 FS
+2. `unlink`：链接计数→0 且无打开者 → 才真正释放数据块
+3. 挂载遮盖：别把重要目录当挂载点却忘了「底下有东西」
+4. tmpfs 吃内存/swap，不占普通磁盘配额语义
+5. dentry 是**内核缓存**，不落盘
+6. 日志 ≠ 用户数据已持久化；关键写仍要 `fsync`/`fdatasync`
+7. 可移植：`statvfs`；挂载信息可解析 `/proc/mounts`
 
 ---
 
 ## 练习
 
 
-1. `statvfs` 简易 `df`  
-2. root 下 `MS_BIND` 绑定挂载再卸载  
-3. 同分区硬链接 inode 相同；跨分区对比 inode  
-4. （选）`MS_RDONLY` / `MS_NOEXEC` 行为  
-5. 解析 `/proc/mounts`  
-
----
-
+1. `statvfs` 简易 `df`
+2. root 下 `MS_BIND` 绑定挂载再卸载
+3. 同分区硬链接 inode 相同；跨分区对比 inode
+4. （选）`MS_RDONLY` / `MS_NOEXEC` 行为
+5. 解析 `/proc/mounts`
 
 ---
 
@@ -98,15 +86,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch14  
+- Kerrisk · TLPI Ch14
 - `man 2 mount` · `man 2 umount` · `man 2 umount2` · `man 3 statvfs` · `man 2 statfs` · `man 5 proc`（`mounts`）
-
 
 ---
 
@@ -150,10 +134,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

@@ -1,7 +1,7 @@
 # TLPI 第 40 章 — Login Accounting
 
-**优先级**：🟠（审计、who/last、会话可见性）  
-**前置**：[Ch39 Capabilities](../chapter-39-capabilities/README.md) · [Ch34 会话](../chapter-34-process-groups-sessions/README.md)  
+**优先级**：🟠（审计、who/last、会话可见性）
+**前置**：[Ch39 Capabilities](../chapter-39-capabilities/README.md) · [Ch34 会话](../chapter-34-process-groups-sessions/README.md)
 **后置**：[Ch41 共享库](../chapter-41-shared-libraries/README.md)
 
 ---
@@ -23,33 +23,24 @@ utmp/wtmp/btmp；`struct utmp` 与 `ut_type`；遍历 API；更新由谁做；sy
 
 ---
 
-
----
-
 ## 易错清单
 
 
-1. utmp ≠ 进程列表；一用户可多条会话  
-2. wtmp 含大量 DEAD/BOOT 历史  
-3. 用 API，别当文本读  
-4. 并发写须锁  
-5. `ut_user` 空 ≠ 一定无终端槽  
-
----
-
+1. utmp ≠ 进程列表；一用户可多条会话
+2. wtmp 含大量 DEAD/BOOT 历史
+3. 用 API，别当文本读
+4. 并发写须锁
+5. `ut_user` 空 ≠ 一定无终端槽
 
 ---
 
 ## 实验清单
 
 
-1. 简易 `who`  
-2. `utmpname(wtmp)` 扫历史  
-3. 找 `BOOT_TIME`  
-4. （选）ssh 登录前后 utmp 变化  
-
----
-
+1. 简易 `who`
+2. `utmpname(wtmp)` 扫历史
+3. 找 `BOOT_TIME`
+4. （选）ssh 登录前后 utmp 变化
 
 ---
 
@@ -66,15 +57,11 @@ utmp/wtmp/btmp；`struct utmp` 与 `ut_type`；遍历 API；更新由谁做；sy
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch40  
+- Kerrisk · TLPI Ch40
 - `man 5 utmp` · `man 3 getutent` · `man 3 utmpname`
-
 
 ---
 
@@ -126,10 +113,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

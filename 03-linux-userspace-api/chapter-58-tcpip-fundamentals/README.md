@@ -1,7 +1,7 @@
 # TLPI 第 58 章 — Sockets: Fundamentals of TCP/IP Networks
 
-**优先级**：🟡（Ch59 实战地基）  
-**前置**：[Ch57 UNIX 域](../chapter-57-sockets-unix-domain/README.md)  
+**优先级**：🟡（Ch59 实战地基）
+**前置**：[Ch57 UNIX 域](../chapter-57-sockets-unix-domain/README.md)
 **后置**：Ch59 Internet Domains
 
 ---
@@ -25,9 +25,6 @@ IPv4/端口；`sockaddr_in`；字节序；pton/ntop；TCP vs UDP；`sockaddr_sto
 
 ---
 
-
----
-
 ## 初始化模板
 
 
@@ -42,21 +39,15 @@ inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
 ---
 
-
----
-
 ## 陷阱
 
 
-1. 忘 htons/htonl  
-2. 用 inet_ntoa  
-3. 当 UDP 可靠  
-4. TCP 一次 send≠一次 recv  
-5. sin_zero 未清零  
-6. 客户端 connect `INADDR_ANY`  
-
----
-
+1. 忘 htons/htonl
+2. 用 inet_ntoa
+3. 当 UDP 可靠
+4. TCP 一次 send≠一次 recv
+5. sin_zero 未清零
+6. 客户端 connect `INADDR_ANY`
 
 ---
 
@@ -74,15 +65,11 @@ inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch58  
+- Kerrisk · TLPI Ch58
 - `man 3 htons` · `inet_pton` · `man 7 ip` · `tcp` · `udp`
-
 
 ---
 
@@ -145,10 +132,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

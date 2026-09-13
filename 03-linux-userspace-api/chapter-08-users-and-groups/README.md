@@ -1,7 +1,7 @@
 # TLPI 第 08 章 — Users and Groups
 
-**优先级**：🟡→🔴（嵌入式权限 / 安全铺垫）  
-**前置**：[Ch6 Processes](../chapter-06-processes/README.md)  
+**优先级**：🟡→🔴（嵌入式权限 / 安全铺垫）
+**前置**：[Ch6 Processes](../chapter-06-processes/README.md)
 **后置**：[Ch9 进程凭证](../chapter-09-process-credentials/README.md) · [Ch15 文件属性/权限](../chapter-15-file-attributes/README.md)
 
 ---
@@ -24,9 +24,6 @@
 
 ---
 
-
----
-
 ## Ch8 vs Ch9 速查
 
 
@@ -38,20 +35,14 @@
 
 ---
 
-
----
-
 ## 易错清单
 
 
-1. `passwd` 可读；`shadow` 严格限制。  
-2. `getpwnam`/`getpwuid`/`crypt` 静态缓冲，连续调用覆盖。  
-3. `pw_passwd` 仅占位；真密文在 shadow。  
-4. 本章 **无** RUID/EUID/saved UID / setuid 程序。  
+1. `passwd` 可读；`shadow` 严格限制。
+2. `getpwnam`/`getpwuid`/`crypt` 静态缓冲，连续调用覆盖。
+3. `pw_passwd` 仅占位；真密文在 shadow。
+4. 本章 **无** RUID/EUID/saved UID / setuid 程序。
 5. `getpwnam` 失败时先清 `errno` 再区分「不存在」vs「出错」。
-
----
-
 
 ---
 
@@ -67,9 +58,6 @@ Ch6  进程是谁在跑
 
 ---
 
-
----
-
 ## 双线提示
 
 
@@ -77,9 +65,6 @@ Ch6  进程是谁在跑
 |------|--|
 | 嵌入式 | 设备节点/配置文件属主；勿把 shadow 逻辑塞进普通服务 |
 | HFT | 少直接碰账户库；跑单用户/专用账号即可；权限切换见 Ch9 |
-
----
-
 
 ---
 
@@ -96,15 +81,11 @@ Ch6  进程是谁在跑
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk, *The Linux Programming Interface*, **Chapter 8 — Users and Groups**  
+- Kerrisk, *The Linux Programming Interface*, **Chapter 8 — Users and Groups**
 - [OUTLINE](../OUTLINE.md) · [Ch9](../chapter-09-process-credentials/README.md) · [Ch15](../chapter-15-file-attributes/README.md)
-
 
 ---
 
@@ -152,10 +133,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

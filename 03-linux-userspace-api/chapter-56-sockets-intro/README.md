@@ -1,7 +1,7 @@
 # TLPI 第 56 章 — Sockets: Introduction
 
-**优先级**：🔴（Socket API 总入口）  
-**前置**：[Ch55 文件锁](../chapter-55-file-locking/README.md) · 本地 IPC  
+**优先级**：🔴（Socket API 总入口）
+**前置**：[Ch55 文件锁](../chapter-55-file-locking/README.md) · 本地 IPC
 **后置**：[Ch57 UNIX 域](../chapter-57-sockets-unix-domain/README.md) → [Ch58 TCP/IP](../chapter-58-tcpip-fundamentals/README.md) → Ch59 Internet
 
 ---
@@ -22,9 +22,6 @@
 
 ---
 
-
----
-
 ## UNIX vs Internet（导论）
 
 
@@ -40,21 +37,15 @@
 
 ---
 
-
----
-
 ## 陷阱
 
 
-1. STREAM 无消息边界  
-2. 勿关 listener；关的是 conn fd  
-3. UNIX DGRAM ≠ UDP 可靠性  
-4. fork 复制 fd → close≠断连  
-5. backlog≠最大客户端数  
-6. addrlen 类型用 socklen_t  
-
----
-
+1. STREAM 无消息边界
+2. 勿关 listener；关的是 conn fd
+3. UNIX DGRAM ≠ UDP 可靠性
+4. fork 复制 fd → close≠断连
+5. backlog≠最大客户端数
+6. addrlen 类型用 socklen_t
 
 ---
 
@@ -72,15 +63,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch56  
+- Kerrisk · TLPI Ch56
 - `man 2 socket` · `bind` · `listen` · `accept` · `connect` · `shutdown`
-
 
 ---
 
@@ -149,10 +136,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

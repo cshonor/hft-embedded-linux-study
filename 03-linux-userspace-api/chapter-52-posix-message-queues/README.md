@@ -1,7 +1,7 @@
 # TLPI 第 52 章 — POSIX Message Queues
 
-**优先级**：🔴（epoll、优先级、notify）  
-**前置**：[Ch51 POSIX IPC 导论](../chapter-51-posix-ipc-intro/README.md)  
+**优先级**：🔴（epoll、优先级、notify）
+**前置**：[Ch51 POSIX IPC 导论](../chapter-51-posix-ipc-intro/README.md)
 **后置**：[Ch53 POSIX 信号量](../chapter-53-posix-semaphores/README.md)
 
 ---
@@ -24,9 +24,6 @@
 
 ---
 
-
----
-
 ## vs System V mq
 
 
@@ -42,21 +39,15 @@
 
 ---
 
-
----
-
 ## 陷阱
 
 
-1. receive 缓冲 < msgsize → 失败  
-2. notify 一次性 + 仅空→首条  
-3. notify ∥ epoll 竞争  
-4. timed 用绝对时间  
-5. 名不能 `/a/b`  
-6. setattr 改不了容量  
-
----
-
+1. receive 缓冲 < msgsize → 失败
+2. notify 一次性 + 仅空→首条
+3. notify ∥ epoll 竞争
+4. timed 用绝对时间
+5. 名不能 `/a/b`
+6. setattr 改不了容量
 
 ---
 
@@ -74,15 +65,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch52  
+- Kerrisk · TLPI Ch52
 - `man 3 mq_open` · `mq_notify` · `man 7 mq_overview`
-
 
 ---
 
@@ -146,10 +133,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

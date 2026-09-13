@@ -1,7 +1,7 @@
 # TLPI 第 47 章 — System V Semaphores
 
-**优先级**：🔴（同步原语；配共享内存）  
-**前置**：[Ch45 导论](../chapter-45-sysv-ipc-intro/README.md) · [Ch46 消息队列](../chapter-46-sysv-message-queues/README.md)  
+**优先级**：🔴（同步原语；配共享内存）
+**前置**：[Ch45 导论](../chapter-45-sysv-ipc-intro/README.md) · [Ch46 消息队列](../chapter-46-sysv-message-queues/README.md)
 **后置**：[Ch48 SysV 共享内存](../chapter-48-sysv-shared-memory/README.md)
 
 ---
@@ -24,20 +24,14 @@
 
 ---
 
-
----
-
 ## 思考题要点
 
 
-1. 上节安全初始化。  
-2. `SEM_UNDO` 兜底 ≠ 防死锁；无超时仍可永久阻塞。  
-3. 多 `sembuf` 原子 → 减死锁。  
-4. `IPC_RMID` → 阻塞 `semop` 失败返回（`EIDRM`）。  
+1. 上节安全初始化。
+2. `SEM_UNDO` 兜底 ≠ 防死锁；无超时仍可永久阻塞。
+3. 多 `sembuf` 原子 → 减死锁。
+4. `IPC_RMID` → 阻塞 `semop` 失败返回（`EIDRM`）。
 5. 无所有者 vs mutex。
-
----
-
 
 ---
 
@@ -55,15 +49,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch47（非「第 20 章」误标）  
+- Kerrisk · TLPI Ch47（非「第 20 章」误标）
 - `man 2 semget` · `semop` · `semctl`
-
 
 ---
 
@@ -132,10 +122,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

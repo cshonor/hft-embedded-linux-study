@@ -1,7 +1,7 @@
 # TLPI 第 21 章 — Signals: Signal Handlers
 
-**优先级**：🔴（崩溃/死锁/EINTR/僵尸回收）  
-**前置**：[Ch20 信号基础](../chapter-20-signals-fundamentals/README.md)  
+**优先级**：🔴（崩溃/死锁/EINTR/僵尸回收）
+**前置**：[Ch20 信号基础](../chapter-20-signals-fundamentals/README.md)
 **后置**：[Ch22 pause / sigsuspend](../chapter-22-signals-advanced/README.md) · [Ch24 进程创建 / wait](../chapter-24-process-creation/README.md)
 
 ---
@@ -26,9 +26,6 @@
 
 ---
 
-
----
-
 ## 易错清单
 
 1. `sa_mask` 叠加，不替换；退出即撤（由 `sigreturn` 自动恢复）
@@ -44,20 +41,14 @@
 
 ---
 
-
----
-
 ## 练习
 
 
-1. `sigaction` + `sa_mask`  
-2. 开关 `SA_RESTART` 看 `read`/`EINTR`  
-3. `SA_SIGINFO` 打印发送者 pid  
-4. `sig_atomic_t` 主循环范式  
-5. `SIGCHLD` 循环 `waitpid`  
-
----
-
+1. `sigaction` + `sa_mask`
+2. 开关 `SA_RESTART` 看 `read`/`EINTR`
+3. `SA_SIGINFO` 打印发送者 pid
+4. `sig_atomic_t` 主循环范式
+5. `SIGCHLD` 循环 `waitpid`
 
 ---
 
@@ -75,15 +66,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch21  
+- Kerrisk · TLPI Ch21
 - `man 2 sigaction` · `man 7 signal-safety` · `man 2 waitpid`
-
 
 ---
 
@@ -132,10 +119,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

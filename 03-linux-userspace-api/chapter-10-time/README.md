@@ -1,6 +1,6 @@
 # TLPI 第 10 章 — Time
 
-**优先级**：见 [OUTLINE](../OUTLINE.md) · [CHAPTER-MAP](../CHAPTER-MAP.md)  
+**优先级**：见 [OUTLINE](../OUTLINE.md) · [CHAPTER-MAP](../CHAPTER-MAP.md)
 
 ---
 
@@ -19,41 +19,23 @@
 
 ---
 
-
----
-
 ## 1. 本章目标
-
-
-
 
 ---
 
 ## 2. 核心 API / syscall
 
-
-
-
 ---
 
 ## 4. C 示例摘要
-
-
-
 
 ---
 
 ## 5. Rust 对照（`std` / `libc` / crate）
 
-
-
-
 ---
 
 ## 6. 常见坑与面试点
-
-
-
 
 ---
 
@@ -66,15 +48,10 @@
 
 ---
 
-
----
-
 ## 参考
 
 
 - Kerrisk, *The Linux Programming Interface*, Chapter 10
-
-
 
 ---
 
@@ -115,10 +92,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

@@ -1,7 +1,7 @@
 # TLPI 第 62 章 — Terminals
 
-**优先级**：🔴（shell/作业控制/交互程序）  
-**前置**：[Ch61 Socket Advanced](../chapter-61-sockets-advanced/README.md)  
+**优先级**：🔴（shell/作业控制/交互程序）
+**前置**：[Ch61 Socket Advanced](../chapter-61-sockets-advanced/README.md)
 **后置**：Ch63 Alternative I/O · [Ch64 PTY](../chapter-64-pseudoterminals/README.md)
 
 ---
@@ -24,21 +24,15 @@
 
 ---
 
-
----
-
 ## 陷阱
 
 
-1. 改属性后未恢复  
-2. 改输出用错 TCSANOW  
-3. VMIN/VTIME 搞混  
-4. 关 ISIG 后 Ctrl+C 无效  
-5. 后台读写被暂停  
-6. 对非 tty 调 tcgetattr  
-
----
-
+1. 改属性后未恢复
+2. 改输出用错 TCSANOW
+3. VMIN/VTIME 搞混
+4. 关 ISIG 后 Ctrl+C 无效
+5. 后台读写被暂停
+6. 对非 tty 调 tcgetattr
 
 ---
 
@@ -56,15 +50,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch62  
+- Kerrisk · TLPI Ch62
 - `man 3 termios` · `man 3 isatty` · `man 7 termio`
-
 
 ---
 
@@ -133,10 +123,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

@@ -1,7 +1,7 @@
 # TLPI 第 23 章 — Timers and Sleeping
 
-**优先级**：🔴（超时、周期任务、与信号/EINTR 交互）  
-**前置**：[Ch22 信号高级](../chapter-22-signals-advanced/README.md)  
+**优先级**：🔴（超时、周期任务、与信号/EINTR 交互）
+**前置**：[Ch22 信号高级](../chapter-22-signals-advanced/README.md)
 **后置**：[Ch24 Process Creation](../chapter-24-process-creation/README.md) · Ch63 多路 I/O
 
 ---
@@ -23,9 +23,6 @@
 
 ---
 
-
----
-
 ## 23.6 选型速查
 
 
@@ -39,33 +36,24 @@
 
 ---
 
-
----
-
 ## 23.7 易错清单
 
 
-1. `alarm`/`sleep`/`ITIMER_REAL` 冲突  
-2. 墙钟做定时 → NTP 回拨/快进灾难  
-3. `SIGEV_SIGNAL` + 标准信号仍可能丢事件；高频用线程通知慎开销  
-4. 定时器非硬实时，有调度延迟  
-5. `fork`/`exec` 对定时器继承/清除有特殊规则（见手册）  
-
----
-
+1. `alarm`/`sleep`/`ITIMER_REAL` 冲突
+2. 墙钟做定时 → NTP 回拨/快进灾难
+3. `SIGEV_SIGNAL` + 标准信号仍可能丢事件；高频用线程通知慎开销
+4. 定时器非硬实时，有调度延迟
+5. `fork`/`exec` 对定时器继承/清除有特殊规则（见手册）
 
 ---
 
 ## 练习
 
 
-1. `nanosleep` + `EINTR` 重试  
-2. （选）`setitimer` 周期 `SIGALRM`  
-3. `timer_create` + `CLOCK_MONOTONIC` + `SIGEV_THREAD`  
-4. （选）对比 REALTIME / MONOTONIC 在时间跳变下行为  
-
----
-
+1. `nanosleep` + `EINTR` 重试
+2. （选）`setitimer` 周期 `SIGALRM`
+3. `timer_create` + `CLOCK_MONOTONIC` + `SIGEV_THREAD`
+4. （选）对比 REALTIME / MONOTONIC 在时间跳变下行为
 
 ---
 
@@ -83,15 +71,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch23  
+- Kerrisk · TLPI Ch23
 - `man 2 nanosleep` · `man 2 clock_nanosleep` · `man 2 setitimer` · `man 2 timer_create` · `man 2 clock_gettime`
-
 
 ---
 
@@ -153,10 +137,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

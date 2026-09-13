@@ -1,7 +1,7 @@
 # TLPI 第 36 章 — Process Resources
 
-**优先级**：🔴（服务调 `NOFILE`、剖析 CPU/RSS、daemon 启动设限）  
-**前置**：[Ch35 调度](../chapter-35-process-priorities-scheduling/README.md)  
+**优先级**：🔴（服务调 `NOFILE`、剖析 CPU/RSS、daemon 启动设限）
+**前置**：[Ch35 调度](../chapter-35-process-priorities-scheduling/README.md)
 **后置**：[Ch37 Daemons](../chapter-37-daemons/README.md)
 
 ---
@@ -20,34 +20,25 @@
 
 ---
 
-
----
-
 ## 易错清单
 
 
-1. CHILDREN 必须 wait 才进账  
-2. `ru_maxrss` 是峰值  
-3. 硬限降了回不去（非特权）  
-4. `NOFILE` 与「最大 fd 编号」关系：大约 `cur-1`  
-5. 启动时主动抬软限是常见服务套路  
-
----
-
+1. CHILDREN 必须 wait 才进账
+2. `ru_maxrss` 是峰值
+3. 硬限降了回不去（非特权）
+4. `NOFILE` 与「最大 fd 编号」关系：大约 `cur-1`
+5. 启动时主动抬软限是常见服务套路
 
 ---
 
 ## 实验清单
 
 
-1. `getrusage` 看 CPU/RSS/切换  
-2. CHILDREN + wait  
-3. 打印默认 rlimit  
-4. 抬高 `RLIMIT_NOFILE`（不超硬限）  
-5. （选）硬限不可升  
-
----
-
+1. `getrusage` 看 CPU/RSS/切换
+2. CHILDREN + wait
+3. 打印默认 rlimit
+4. 抬高 `RLIMIT_NOFILE`（不超硬限）
+5. （选）硬限不可升
 
 ---
 
@@ -65,15 +56,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch36  
+- Kerrisk · TLPI Ch36
 - `man 2 getrusage` · `man 2 getrlimit` · `man 2 setrlimit` · `man 2 prlimit`
-
 
 ---
 
@@ -125,10 +112,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

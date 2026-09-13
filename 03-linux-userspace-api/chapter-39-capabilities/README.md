@@ -1,7 +1,7 @@
 # TLPI 第 39 章 — Capabilities
 
-**优先级**：🔴（最小特权、容器、替代 SUID）  
-**前置**：[Ch9 凭证](../chapter-09-process-credentials/README.md) · [Ch38 特权安全](../chapter-38-secure-privileged/README.md) · [Ch16 xattr](../chapter-16-extended-attributes/README.md)  
+**优先级**：🔴（最小特权、容器、替代 SUID）
+**前置**：[Ch9 凭证](../chapter-09-process-credentials/README.md) · [Ch38 特权安全](../chapter-38-secure-privileged/README.md) · [Ch16 xattr](../chapter-16-extended-attributes/README.md)
 **后置**：[Ch40 登录记账](../chapter-40-login-accounting/README.md)
 
 ---
@@ -23,34 +23,25 @@
 
 ---
 
-
----
-
 ## 易错清单
 
 
-1. 能力是**线程**粒度  
-2. 从 Permitted 删掉难自愈  
-3. Ambient 不服务 root exec 传递  
-4. 需 FS xattr 支持文件能力  
-5. Bounding 只减  
-6. 新项目：文件能力 > SUID-root  
-
----
-
+1. 能力是**线程**粒度
+2. 从 Permitted 删掉难自愈
+3. Ambient 不服务 root exec 传递
+4. 需 FS xattr 支持文件能力
+5. Bounding 只减
+6. 新项目：文件能力 > SUID-root
 
 ---
 
 ## 实验清单
 
 
-1. `setcap`/`getcap` 对比 SUID  
-2. libcap 临时 Effective  
-3. exec 后 `/proc/.../status`  
-4. （选）Bounding / Ambient  
-
----
-
+1. `setcap`/`getcap` 对比 SUID
+2. libcap 临时 Effective
+3. exec 后 `/proc/.../status`
+4. （选）Bounding / Ambient
 
 ---
 
@@ -68,15 +59,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch39  
+- Kerrisk · TLPI Ch39
 - `man 7 capabilities` · `man 3 libcap` · `man 8 setcap`
-
 
 ---
 
@@ -130,10 +117,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

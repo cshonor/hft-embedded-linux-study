@@ -1,8 +1,8 @@
 # TLPI 第 07 章 — Memory Allocation
 
-**优先级**：🔴（堆 / 延迟分配 / 与 mmap 分界）  
-**前置**：[Ch6 Processes](../chapter-06-processes/README.md)（堆 / BSS / 地址空间）  
-**后置**：[Ch8 用户与组](../chapter-08-users-and-groups/README.md) · [Ch49 Memory Mappings](../chapter-49-memory-mappings/README.md) · [Ch24 fork / COW](../chapter-24-process-creation/README.md)  
+**优先级**：🔴（堆 / 延迟分配 / 与 mmap 分界）
+**前置**：[Ch6 Processes](../chapter-06-processes/README.md)（堆 / BSS / 地址空间）
+**后置**：[Ch8 用户与组](../chapter-08-users-and-groups/README.md) · [Ch49 Memory Mappings](../chapter-49-memory-mappings/README.md) · [Ch24 fork / COW](../chapter-24-process-creation/README.md)
 
 ---
 
@@ -25,21 +25,15 @@
 
 ---
 
-
----
-
 ## 易错清单
 
 
-1. `brk`/`sbrk` =（或封装）**syscall**；`malloc`/`free` = **库函数**。  
-2. 虚拟 ≠ 物理；抬 break 不立刻吃物理页。  
-3. `free` 不保证还内核；别用 `sbrk(0)` 当「真实占用」仪表。  
-4. 勿写 `ptr = realloc(ptr, …)` 无临时变量。  
-5. `malloc` 返回值满足最大基本对齐。  
+1. `brk`/`sbrk` =（或封装）**syscall**；`malloc`/`free` = **库函数**。
+2. 虚拟 ≠ 物理；抬 break 不立刻吃物理页。
+3. `free` 不保证还内核；别用 `sbrk(0)` 当「真实占用」仪表。
+4. 勿写 `ptr = realloc(ptr, …)` 无临时变量。
+5. `malloc` 返回值满足最大基本对齐。
 6. 书内 mmap 章是 **Ch49**，不是 Ch48。
-
----
-
 
 ---
 
@@ -55,9 +49,6 @@ Ch6  地址空间（堆在哪）
 
 ---
 
-
----
-
 ## 双线提示
 
 
@@ -65,9 +56,6 @@ Ch6  地址空间（堆在哪）
 |------|--|
 | 嵌入式 | 控泄漏；大块/常驻慎用；理解为何 RSS ≠ 所有 `malloc` 之和 |
 | HFT | 热路径少 `malloc`；预分配 / 池；大块与 `mmap`/大页衔接 Ch49–50 |
-
----
-
 
 ---
 
@@ -84,15 +72,11 @@ Ch6  地址空间（堆在哪）
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk, *The Linux Programming Interface*, **Chapter 7 — Memory Allocation**  
+- Kerrisk, *The Linux Programming Interface*, **Chapter 7 — Memory Allocation**
 - [OUTLINE](../OUTLINE.md) · [Ch6](../chapter-06-processes/README.md) · [Ch49](../chapter-49-memory-mappings/README.md)
-
 
 ---
 
@@ -133,10 +117,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

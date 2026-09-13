@@ -1,7 +1,7 @@
 # TLPI 第 44 章 — Pipes and FIFOs
 
-**优先级**：🔴（最老 IPC、shell `|` 原理）  
-**前置**：[Ch43 IPC 综述](../chapter-43-ipc-overview/README.md)  
+**优先级**：🔴（最老 IPC、shell `|` 原理）
+**前置**：[Ch43 IPC 综述](../chapter-43-ipc-overview/README.md)
 **后置**：[Ch45 System V IPC 导论](../chapter-45-sysv-ipc-intro/README.md)
 
 ---
@@ -26,21 +26,15 @@
 
 ---
 
-
----
-
 ## 思考题要点
 
 
-1. 不关写端 → 读不到 EOF，永久阻塞。  
-2. 无读端写 → SIGPIPE/`EPIPE`；可忽略 SIGPIPE 并查 `EPIPE`。  
-3. `PIPE_BUF`≠总容量。  
-4. 消息 ≤`PIPE_BUF` 或外层加锁/协议。  
-5. FIFO `O_WRONLY|O_NONBLOCK` → `ENXIO`。  
+1. 不关写端 → 读不到 EOF，永久阻塞。
+2. 无读端写 → SIGPIPE/`EPIPE`；可忽略 SIGPIPE 并查 `EPIPE`。
+3. `PIPE_BUF`≠总容量。
+4. 消息 ≤`PIPE_BUF` 或外层加锁/协议。
+5. FIFO `O_WRONLY|O_NONBLOCK` → `ENXIO`。
 6. `popen` 走 shell；改自行 exec。
-
----
-
 
 ---
 
@@ -58,15 +52,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch44（非 Ch18）  
+- Kerrisk · TLPI Ch44（非 Ch18）
 - `man 2 pipe` · `man 3 mkfifo` · `man 3 popen` · `man 7 pipe`
-
 
 ---
 
@@ -131,10 +121,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

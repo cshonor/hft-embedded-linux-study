@@ -1,7 +1,7 @@
 # TLPI 第 26 章 — Monitoring Child Processes
 
-**优先级**：🔴（多进程服务、防僵尸耗尽 PID）  
-**前置**：[Ch25 进程终止](../chapter-25-process-termination/README.md) · [Ch24 fork](../chapter-24-process-creation/README.md) · [Ch21 SIGCHLD](../chapter-21-signal-handlers/README.md)  
+**优先级**：🔴（多进程服务、防僵尸耗尽 PID）
+**前置**：[Ch25 进程终止](../chapter-25-process-termination/README.md) · [Ch24 fork](../chapter-24-process-creation/README.md) · [Ch21 SIGCHLD](../chapter-21-signal-handlers/README.md)
 **后置**：[Ch27 exec](../chapter-27-program-execution/README.md) · [Ch37 守护进程](../chapter-37-daemons/README.md)
 
 ---
@@ -25,20 +25,14 @@
 
 ---
 
-
----
-
 ## 26.8 易错清单
 
 
-1. SIGCHLD 只 wait 一次 → 漏僵尸  
-2. 裸打 `wstatus`  
-3. 默认 waitpid **只**看终止（除非 WUNTRACED/CONTINUED）  
-4. `SA_NOCLDWAIT` 后别再指望拿退出状态/SIGCHLD  
-5. 信号杀时勿用 `WEXITSTATUS`  
-
----
-
+1. SIGCHLD 只 wait 一次 → 漏僵尸
+2. 裸打 `wstatus`
+3. 默认 waitpid **只**看终止（除非 WUNTRACED/CONTINUED）
+4. `SA_NOCLDWAIT` 后别再指望拿退出状态/SIGCHLD
+5. 信号杀时勿用 `WEXITSTATUS`
 
 ---
 
@@ -56,19 +50,13 @@
 
 ---
 
-
----
-
 ## 练习
 
 
-1. 阻塞 waitpid + 解析退出码  
-2. 子自杀 `SIGTERM`/`abort`，看 `WIFSIGNALED`  
-3. SIGCHLD 循环 `WNOHANG`  
-4. （选）`SA_NOCLDWAIT` 对比  
-
----
-
+1. 阻塞 waitpid + 解析退出码
+2. 子自杀 `SIGTERM`/`abort`，看 `WIFSIGNALED`
+3. SIGCHLD 循环 `WNOHANG`
+4. （选）`SA_NOCLDWAIT` 对比
 
 ---
 
@@ -86,15 +74,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch26  
+- Kerrisk · TLPI Ch26
 - `man 2 wait` · `man 2 waitpid` · `man 2 waitid` · `man 7 signal`（SIGCHLD）
-
 
 ---
 
@@ -158,10 +142,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

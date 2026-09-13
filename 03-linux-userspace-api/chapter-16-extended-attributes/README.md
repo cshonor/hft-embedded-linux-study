@@ -1,7 +1,7 @@
 # TLPI 第 16 章 — Extended Attributes
 
-**优先级**：🔴（ACL、capabilities、安全标签的底层载体）  
-**前置**：[Ch15 File Attributes](../chapter-15-file-attributes/README.md)  
+**优先级**：🔴（ACL、capabilities、安全标签的底层载体）
+**前置**：[Ch15 File Attributes](../chapter-15-file-attributes/README.md)
 **后置**：[Ch17 Access Control Lists](../chapter-17-access-control-lists/README.md) · [Ch39 Capabilities](../chapter-39-capabilities/README.md) · [Ch38 特权与安全](../chapter-38-secure-privileged/README.md)
 
 ---
@@ -25,9 +25,6 @@
 
 ---
 
-
----
-
 ## 16.8 速查：命名空间 · 调用族
 
 
@@ -47,34 +44,25 @@
 
 ---
 
-
----
-
 ## 16.9 易错清单
 
 
-1. 键不存在：`ENODATA`（ENOATTR）  
-2. `getxattr`/`listxattr` 先 `size=0` 探长度  
-3. list 无 value，要逐个 get  
-4. 备份丢 EA → ACL/caps 一起丢  
-5. 勿假设全 FS 支持 xattr  
-6. 默认 `setxattr` 跟随符号链接  
-
----
-
+1. 键不存在：`ENODATA`（ENOATTR）
+2. `getxattr`/`listxattr` 先 `size=0` 探长度
+3. list 无 value，要逐个 get
+4. 备份丢 EA → ACL/caps 一起丢
+5. 勿假设全 FS 支持 xattr
+6. 默认 `setxattr` 跟随符号链接
 
 ---
 
 ## 练习
 
 
-1. 对 `user.*` 做增删改查 + `listxattr`  
-2. 硬链接共享；`cp` 默认 vs `--preserve=xattr`  
-3. 非 root 写 `trusted.*` → 拒绝  
-4. （选）看目录上是否已有 `system.posix_acl_*`（有 ACL 时）  
-
----
-
+1. 对 `user.*` 做增删改查 + `listxattr`
+2. 硬链接共享；`cp` 默认 vs `--preserve=xattr`
+3. 非 root 写 `trusted.*` → 拒绝
+4. （选）看目录上是否已有 `system.posix_acl_*`（有 ACL 时）
 
 ---
 
@@ -92,15 +80,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch16  
+- Kerrisk · TLPI Ch16
 - `man 2 setxattr` · `man 2 getxattr` · `man 2 listxattr` · `man 7 xattr` · `man 1 getfattr`
-
 
 ---
 
@@ -151,10 +135,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

@@ -1,7 +1,7 @@
 # TLPI 第 51 章 — Introduction to POSIX IPC
 
-**优先级**：🟡（POSIX 三件套地图；对标 SysV）  
-**前置**：[Ch45–48 SysV](../chapter-45-sysv-ipc-intro/README.md) · [Ch49–50 mmap/VM](../chapter-49-memory-mappings/README.md)  
+**优先级**：🟡（POSIX 三件套地图；对标 SysV）
+**前置**：[Ch45–48 SysV](../chapter-45-sysv-ipc-intro/README.md) · [Ch49–50 mmap/VM](../chapter-49-memory-mappings/README.md)
 **后置**：[Ch52 mq](../chapter-52-posix-message-queues/README.md) → [Ch53 sem](../chapter-53-posix-semaphores/README.md) → [Ch54 shm](../chapter-54-posix-shared-memory/README.md)
 
 ---
@@ -22,34 +22,25 @@
 
 ---
 
-
----
-
 ## 选型（TLPI 倾向）
 
 
-1. 新 Linux → **优先 POSIX**；事件驱动 → POSIX mq  
-2. 老 UNIX / 遗留 → SysV  
-3. 大批量 → shm + POSIX sem  
-4. 简单流 → pipe / UNIX 域 socket  
-
----
-
+1. 新 Linux → **优先 POSIX**；事件驱动 → POSIX mq
+2. 老 UNIX / 遗留 → SysV
+3. 大批量 → shm + POSIX sem
+4. 简单流 → pipe / UNIX 域 socket
 
 ---
 
 ## 思考题要点
 
 
-1. unlink 删名；close 降引用；全 close 销毁。  
-2. mq 返回 fd；SysV 非 fd。  
-3. 命名：无关进程；匿名：线程/共享区。  
-4. SysV 集可原子多 op；POSIX 单计数器更简单。  
-5. unlink 后已打开句柄仍有效。  
+1. unlink 删名；close 降引用；全 close 销毁。
+2. mq 返回 fd；SysV 非 fd。
+3. 命名：无关进程；匿名：线程/共享区。
+4. SysV 集可原子多 op；POSIX 单计数器更简单。
+5. unlink 后已打开句柄仍有效。
 6. shm_open → ftruncate → mmap。
-
----
-
 
 ---
 
@@ -67,15 +58,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch51（非「第 31 章」误标）  
+- Kerrisk · TLPI Ch51（非「第 31 章」误标）
 - `man 7 mq_overview` · `sem_overview` · `shm_overview`
-
 
 ---
 
@@ -135,10 +122,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

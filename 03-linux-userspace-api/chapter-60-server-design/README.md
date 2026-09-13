@@ -1,7 +1,7 @@
 # TLPI 第 60 章 — Sockets: Server Design
 
-**优先级**：🔴（TCP 服务架构选型）  
-**前置**：Ch59 Internet Domains  
+**优先级**：🔴（TCP 服务架构选型）
+**前置**：Ch59 Internet Domains
 **后置**：[Ch61 Socket Advanced](../chapter-61-sockets-advanced/README.md)
 
 ---
@@ -24,9 +24,6 @@
 
 ---
 
-
----
-
 ## 背诵卡
 
 
@@ -41,15 +38,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch60（非「第 53 章」误标）  
+- Kerrisk · TLPI Ch60（非「第 53 章」误标）
 - `man 2 accept` · `waitpid` · `setsockopt`
-
 
 ---
 
@@ -144,10 +137,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

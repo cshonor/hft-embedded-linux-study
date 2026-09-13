@@ -1,7 +1,7 @@
 # TLPI 第 37 章 — Daemons
 
-**优先级**：🔴（后台服务、嵌入式常驻进程）  
-**前置**：[Ch34 会话/`setsid`](../chapter-34-process-groups-sessions/README.md) · [Ch36 rlimit](../chapter-36-process-resources/README.md)  
+**优先级**：🔴（后台服务、嵌入式常驻进程）
+**前置**：[Ch34 会话/`setsid`](../chapter-34-process-groups-sessions/README.md) · [Ch36 rlimit](../chapter-36-process-resources/README.md)
 **后置**：[Ch38 特权程序安全](../chapter-38-secure-privileged/README.md)
 
 ---
@@ -23,36 +23,27 @@
 
 ---
 
-
----
-
 ## 易错清单
 
 
-1. 只 fork 一次  
-2. 不 `chdir`  
-3. 只 close 012 不重定向  
-4. SIGHUP handler 里做重 IO  
-5. 靠 `daemon()`  
-6. 无 PID 锁多实例  
-7. 依赖 stdout  
-
----
-
+1. 只 fork 一次
+2. 不 `chdir`
+3. 只 close 012 不重定向
+4. SIGHUP handler 里做重 IO
+5. 靠 `daemon()`
+6. 无 PID 锁多实例
+7. 依赖 stdout
 
 ---
 
 ## 实验清单
 
 
-1. 双重 fork 后查 SID/无 tty  
-2. `becomeDaemon`  
-3. syslog  
-4. SIGHUP 标志位重载  
-5. （选）PID 文件锁  
-
----
-
+1. 双重 fork 后查 SID/无 tty
+2. `becomeDaemon`
+3. syslog
+4. SIGHUP 标志位重载
+5. （选）PID 文件锁
 
 ---
 
@@ -70,15 +61,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch37  
+- Kerrisk · TLPI Ch37
 - `man 3 daemon` · `man 3 syslog` · `man 2 setsid`
-
 
 ---
 
@@ -155,10 +142,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

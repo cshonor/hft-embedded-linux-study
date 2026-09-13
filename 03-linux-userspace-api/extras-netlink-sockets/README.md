@@ -1,6 +1,6 @@
 # TLPI 扩展 — Netlink Sockets（书中无独立章）
 
-**优先级**：⭐ / ⭐⭐ / ⭐⭐⭐（见根目录 [README.md](../README.md) 优先级表）  
+**优先级**：⭐ / ⭐⭐ / ⭐⭐⭐（见根目录 [README.md](../README.md) 优先级表）
 
 ---
 
@@ -12,36 +12,21 @@
 
 ## 1. 本章目标
 
-
-
-
 ---
 
 ## 2. 核心 API / syscall
-
-
-
 
 ---
 
 ## 4. C 示例摘要
 
-
-
-
 ---
 
 ## 5. Rust 对照（`std` / `libc` / crate）
 
-
-
-
 ---
 
 ## 6. 常见坑与面试点
-
-
-
 
 ---
 
@@ -54,15 +39,11 @@
 
 ---
 
-
----
-
 ## 8. 参考
 
 
 - 《The Linux Programming Interface》第 55 章 — Netlink Sockets
 - `man 2` / `man 3` / `man 7`
-
 
 ---
 
@@ -159,5 +140,5 @@ int main(void) {
 
 ## 参考
 
+- Kerrisk · *The Linux Programming Interface*（扩展 — Netlink Sockets（书中无独立章））
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

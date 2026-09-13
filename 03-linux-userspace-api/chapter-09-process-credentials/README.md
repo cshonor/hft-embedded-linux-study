@@ -1,7 +1,7 @@
 # TLPI 第 09 章 — Process Credentials
 
-**优先级**：🔴（权限检查 / setuid / 安全铺垫）  
-**前置**：[Ch8 Users and Groups](../chapter-08-users-and-groups/README.md) · [Ch24 fork](../chapter-24-process-creation/README.md) · [Ch27 exec](../chapter-27-program-execution/README.md)  
+**优先级**：🔴（权限检查 / setuid / 安全铺垫）
+**前置**：[Ch8 Users and Groups](../chapter-08-users-and-groups/README.md) · [Ch24 fork](../chapter-24-process-creation/README.md) · [Ch27 exec](../chapter-27-program-execution/README.md)
 **后置**：[Ch10 Times and Dates](../chapter-10-time/README.md) · [Ch38 特权程序](../chapter-38-secure-privileged/README.md) · [Ch39 Capabilities](../chapter-39-capabilities/README.md)
 
 ---
@@ -27,9 +27,6 @@
 
 ---
 
-
----
-
 ## Ch8 vs Ch9（再强调）
 
 
@@ -40,19 +37,13 @@
 
 ---
 
-
----
-
 ## 练习方向
 
 
-1. 打印 R/E/S + 补充组（本目录 Demo）  
-2. setuid 二进制内 `seteuid` 降权再提权  
-3. 对比特权 vs 非特权下 `setuid` vs `seteuid`  
-4. `exec` 前后 `getresuid`，观察 Saved-ID  
-
----
-
+1. 打印 R/E/S + 补充组（本目录 Demo）
+2. setuid 二进制内 `seteuid` 降权再提权
+3. 对比特权 vs 非特权下 `setuid` vs `seteuid`
+4. `exec` 前后 `getresuid`，观察 Saved-ID
 
 ---
 
@@ -64,9 +55,6 @@
 | Ch27 Program Execution | `execve` 再结合 setuid |
 | Ch38 Secure Privileged Programs | 凭证误用 → 漏洞 |
 | Ch39 Capabilities | 现代细粒度特权，弱化「EUID=0 一把梭」 |
-
----
-
 
 ---
 
@@ -84,15 +72,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch9 Process Credentials  
+- Kerrisk · TLPI Ch9 Process Credentials
 - `man 7 credentials` · `man 2 setresuid` · `man 2 seteuid` · `man 2 getresuid`
-
 
 ---
 
@@ -129,10 +113,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

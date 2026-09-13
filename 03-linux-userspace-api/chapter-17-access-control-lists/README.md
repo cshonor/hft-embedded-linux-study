@@ -1,7 +1,7 @@
 # TLPI 第 17 章 — Access Control Lists
 
-**优先级**：🔴（多用户共享目录、备份丢 ACL、chmod↔MASK 陷阱）  
-**前置**：[Ch16 Extended Attributes](../chapter-16-extended-attributes/README.md)  
+**优先级**：🔴（多用户共享目录、备份丢 ACL、chmod↔MASK 陷阱）
+**前置**：[Ch16 Extended Attributes](../chapter-16-extended-attributes/README.md)
 **后置**：[Ch18 Directories and Links](../chapter-18-directories-links/README.md) · [Ch38](../chapter-38-secure-privileged/README.md) · [Ch39 Capabilities](../chapter-39-capabilities/README.md)
 
 ---
@@ -21,9 +21,6 @@
 
 
 掌握 ACE 标签、最小/扩展 ACL、`ACL_MASK`、Access vs Default ACL；会用 libacl（`-lacl`）；理清内核判定顺序与 `chmod`/`umask`/`ls -l` 交互陷阱。
-
----
-
 
 ---
 
@@ -48,34 +45,25 @@
 
 ---
 
-
----
-
 ## 17.8 易错清单
 
 
-1. 备份丢 ACL → 权限「突然不对」  
-2. `chmod` + 扩展 ACL → 动的是 MASK；`ls` group 列是 MASK  
-3. 有 Default ACL 时 umask 行为改变  
-4. 硬链接共享 ACL；软链接无自身 ACL（跟目标）  
-5. NFS ACL 兼容性慎用  
-6. libacl **不可移植**到典型 BSD/macOS 同一套 API  
-
----
-
+1. 备份丢 ACL → 权限「突然不对」
+2. `chmod` + 扩展 ACL → 动的是 MASK；`ls` group 列是 MASK
+3. 有 Default ACL 时 umask 行为改变
+4. 硬链接共享 ACL；软链接无自身 ACL（跟目标）
+5. NFS ACL 兼容性慎用
+6. libacl **不可移植**到典型 BSD/macOS 同一套 API
 
 ---
 
 ## 练习
 
 
-1. 遍历打印 Access ACE（简易 getfacl）  
-2. 写扩展 ACL：命名用户 + MASK，再 `getfacl`/`ls -l+`  
-3. 目录 Default ACL → 新建文件是否继承  
-4. 带 ACL 文件 `chmod`，观察 group 列变 MASK  
-
----
-
+1. 遍历打印 Access ACE（简易 getfacl）
+2. 写扩展 ACL：命名用户 + MASK，再 `getfacl`/`ls -l+`
+3. 目录 Default ACL → 新建文件是否继承
+4. 带 ACL 文件 `chmod`，观察 group 列变 MASK
 
 ---
 
@@ -93,15 +81,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch17  
+- Kerrisk · TLPI Ch17
 - `man 3 acl_get_file` · `man 5 acl` · `man 1 getfacl` · `man 1 setfacl`
-
 
 ---
 
@@ -155,10 +139,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

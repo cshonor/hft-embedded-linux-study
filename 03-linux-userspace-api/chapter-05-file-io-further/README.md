@@ -1,8 +1,8 @@
 # TLPI 第 05 章 — File I/O: Further Details
 
-**优先级**：🟡→🔴（HFT：非阻塞、`pread`/`pwrite`、偏移共享）  
-**前置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/README.md)  
-**后置**：[Ch6 Processes](../chapter-06-processes/README.md) · [Ch13 File I/O Buffering](../chapter-13-file-io-buffering/README.md)  
+**优先级**：🟡→🔴（HFT：非阻塞、`pread`/`pwrite`、偏移共享）
+**前置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/README.md)
+**后置**：[Ch6 Processes](../chapter-06-processes/README.md) · [Ch13 File I/O Buffering](../chapter-13-file-io-buffering/README.md)
 
 ---
 
@@ -38,21 +38,15 @@
 
 ---
 
-
----
-
 ## 易错清单
 
 
-1. 偏移在 **打开文件描述**；`dup` 共享，独立 `open` 独立。  
-2. `FD_CLOEXEC` = fd 标志；`O_APPEND`/`O_NONBLOCK` = 文件状态标志。  
-3. `pread` ≠ `lseek`+`read`（原子性 + 不改全局偏移）。  
-4. `O_EXCL` 须配 `O_CREAT`。  
-5. `fcntl(F_SETFL)` **改不了** 读写模式。  
+1. 偏移在 **打开文件描述**；`dup` 共享，独立 `open` 独立。
+2. `FD_CLOEXEC` = fd 标志；`O_APPEND`/`O_NONBLOCK` = 文件状态标志。
+3. `pread` ≠ `lseek`+`read`（原子性 + 不改全局偏移）。
+4. `O_EXCL` 须配 `O_CREAT`。
+5. `fcntl(F_SETFL)` **改不了** 读写模式。
 6. `O_NONBLOCK` 对普通磁盘文件通常无效。
-
----
-
 
 ---
 
@@ -69,9 +63,6 @@
 
 ---
 
-
----
-
 ## 章节链路
 
 
@@ -84,9 +75,6 @@ Ch4 会用 fd 数字
 
 ---
 
-
----
-
 ## 双线提示
 
 
@@ -94,9 +82,6 @@ Ch4 会用 fd 数字
 |------|--|
 | 嵌入式 | `dup2` 重定向；`O_CLOEXEC` 防 exec 泄漏；设备 fd 的 `fcntl` |
 | HFT | `pread`/`pwrite` 并发；少 `lseek` 竞态；非阻塞多用于 socket/管道 |
-
----
-
 
 ---
 
@@ -113,15 +98,11 @@ Ch4 会用 fd 数字
 
 ---
 
-
----
-
 ## 参考
 
 
-- 《The Linux Programming Interface》**第 05 章** — File I/O: Further Details  
+- 《The Linux Programming Interface》**第 05 章** — File I/O: Further Details
 - [OUTLINE](../OUTLINE.md) · [Ch4](../chapter-04-file-io-universal/README.md) · [Ch13](../chapter-13-file-io-buffering/README.md) · [LKD §3.8](../../05-linux-kernel/chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md)
-
 
 ---
 
@@ -163,10 +144,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

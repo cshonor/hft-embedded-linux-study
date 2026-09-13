@@ -1,7 +1,7 @@
 # TLPI 第 34 章 — Process Groups, Sessions, and Job Control
 
-**优先级**：🔴（Shell 作业控制、`setsid`、SIGHUP、daemon 地基）  
-**前置**：[Ch33 线程收束](../chapter-33-threads-further/README.md) · [Ch20–22 信号](../chapter-20-signals-fundamentals/README.md)  
+**优先级**：🔴（Shell 作业控制、`setsid`、SIGHUP、daemon 地基）
+**前置**：[Ch33 线程收束](../chapter-33-threads-further/README.md) · [Ch20–22 信号](../chapter-20-signals-fundamentals/README.md)
 **后置**：[Ch35 调度](../chapter-35-process-priorities-scheduling/README.md) · [Ch37 Daemons](../chapter-37-daemons/README.md)
 
 ---
@@ -24,33 +24,24 @@
 
 ---
 
-
----
-
 ## 易错清单
 
 
-1. Leader 禁 `setsid` → fork 后子调  
-2. exec 后不能再 `setpgid` 该子  
-3. `kill(-pgid)` 整组；`kill(pid)` 单个  
-4. Ctrl+C 只打**前台**组  
-5. daemon：双重 fork + `setsid`（Ch37）  
-
----
-
+1. Leader 禁 `setsid` → fork 后子调
+2. exec 后不能再 `setpgid` 该子
+3. `kill(-pgid)` 整组；`kill(pid)` 单个
+4. Ctrl+C 只打**前台**组
+5. daemon：双重 fork + `setsid`（Ch37）
 
 ---
 
 ## 实验清单
 
 
-1. 打印 PID/PGID/SID  
-2. fork + 子 `setsid`，对比父子 SID  
-3. （选）Shell 下 Ctrl+Z / fg 观察  
-4. （选）`kill(-pgid, …)`  
-
----
-
+1. 打印 PID/PGID/SID
+2. fork + 子 `setsid`，对比父子 SID
+3. （选）Shell 下 Ctrl+Z / fg 观察
+4. （选）`kill(-pgid, …)`
 
 ---
 
@@ -68,15 +59,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch34  
+- Kerrisk · TLPI Ch34
 - `man 2 setpgid` · `man 2 setsid` · `man 3 tcgetpgrp` · `man 7 signal`（作业控制信号）
-
 
 ---
 
@@ -129,10 +116,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

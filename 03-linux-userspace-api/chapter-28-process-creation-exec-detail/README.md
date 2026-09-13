@@ -1,7 +1,7 @@
 # TLPI 第 28 章 — Process Creation and Program Execution in More Detail
 
-**优先级**：🔴（多线程 fork、信号/fd 生命周期、clone 关系）  
-**前置**：[Ch24](../chapter-24-process-creation/README.md) · [Ch25](../chapter-25-process-termination/README.md) · [Ch26](../chapter-26-monitoring-child-processes/README.md) · [Ch27](../chapter-27-program-execution/README.md)  
+**优先级**：🔴（多线程 fork、信号/fd 生命周期、clone 关系）
+**前置**：[Ch24](../chapter-24-process-creation/README.md) · [Ch25](../chapter-25-process-termination/README.md) · [Ch26](../chapter-26-monitoring-child-processes/README.md) · [Ch27](../chapter-27-program-execution/README.md)
 **后置**：[Ch29 线程导论](../chapter-29-threads-intro/README.md)（同步见 [Ch30](../chapter-30-thread-synchronization/README.md)）· 凭证见 [Ch9](../chapter-09-process-credentials/README.md)
 
 ---
@@ -26,35 +26,26 @@
 
 ---
 
-
----
-
 ## 28.9 易错清单
 
 
-1. fork：掩码继承、pending 清；exec：handler→DFL、掩码保留  
-2. 多线程 fork → 立刻 exec  
-3. 勿用 vfork  
-4. CLOEXEC 只对 exec  
-5. exec 成功不返回；失败 `_exit`  
-6. clone 是 fork/线程共同底座  
-
----
-
+1. fork：掩码继承、pending 清；exec：handler→DFL、掩码保留
+2. 多线程 fork → 立刻 exec
+3. 勿用 vfork
+4. CLOEXEC 只对 exec
+5. exec 成功不返回；失败 `_exit`
+6. clone 是 fork/线程共同底座
 
 ---
 
 ## 实验清单
 
 
-1. COW：改全局变量互不影响（见 Ch24 `fork_basic`）  
-2. （选）多线程 fork 风险  
-3. CLOEXEC（Ch27）  
-4. fork+exec 重定向模板  
-5. fork/exec 信号状态对比（本目录 demo）  
-
----
-
+1. COW：改全局变量互不影响（见 Ch24 `fork_basic`）
+2. （选）多线程 fork 风险
+3. CLOEXEC（Ch27）
+4. fork+exec 重定向模板
+5. fork/exec 信号状态对比（本目录 demo）
 
 ---
 
@@ -72,15 +63,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch28  
+- Kerrisk · TLPI Ch28
 - `man 2 fork` · `man 2 vfork` · `man 2 clone` · `man 2 execve` · `man 3 pthread_atfork`
-
 
 ---
 
@@ -148,10 +135,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

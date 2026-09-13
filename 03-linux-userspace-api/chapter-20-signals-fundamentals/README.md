@@ -1,7 +1,7 @@
 # TLPI 第 20 章 — Signals: Fundamental Concepts
 
-**优先级**：🔴（进程控制、daemon、可靠异步事件的理论地基）  
-**前置**：[Ch19 inotify](../chapter-19-monitoring-file-events/README.md)（同属异步事件，机制不同）  
+**优先级**：🔴（进程控制、daemon、可靠异步事件的理论地基）
+**前置**：[Ch19 inotify](../chapter-19-monitoring-file-events/README.md)（同属异步事件，机制不同）
 **后置**：[Ch21 Signal Handlers](../chapter-21-signal-handlers/README.md) · [Ch22 高级信号](../chapter-22-signals-advanced/README.md)
 
 ---
@@ -34,22 +34,16 @@
 
 ---
 
-
----
-
 ## 20.8 易错清单
 
 
-1. `SIGKILL`/`SIGSTOP` 不可捕/忽/阻  
-2. 标准信号不排队；实时信号可排队  
-3. 掩码是**线程**属性  
-4. 阻塞 ≠ 忽略（pending 待递送 vs 直接丢）  
-5. `kill(pid,0)` 探测存活  
-6. 标准信号 pending 看不出“来了几次”  
-7. handler 内只调异步信号安全函数（Ch21 展开）  
-
----
-
+1. `SIGKILL`/`SIGSTOP` 不可捕/忽/阻
+2. 标准信号不排队；实时信号可排队
+3. 掩码是**线程**属性
+4. 阻塞 ≠ 忽略（pending 待递送 vs 直接丢）
+5. `kill(pid,0)` 探测存活
+6. 标准信号 pending 看不出“来了几次”
+7. handler 内只调异步信号安全函数（Ch21 展开）
 
 ---
 
@@ -68,19 +62,13 @@
 
 ---
 
-
----
-
 ## 练习
 
 
-1. `sigprocmask` 阻塞 `SIGINT`，Ctrl+C 暂无效  
-2. `sigpending` 再解除，观察递送  
-3. （选）对比 `signal()` 局限  
-4. `kill(pid,0)` 探测  
-
----
-
+1. `sigprocmask` 阻塞 `SIGINT`，Ctrl+C 暂无效
+2. `sigpending` 再解除，观察递送
+3. （选）对比 `signal()` 局限
+4. `kill(pid,0)` 探测
 
 ---
 
@@ -98,15 +86,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch20  
+- Kerrisk · TLPI Ch20
 - `man 7 signal` · `man 2 sigprocmask` · `man 2 kill` · `man 2 sigpending`
-
 
 ---
 
@@ -154,10 +138,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

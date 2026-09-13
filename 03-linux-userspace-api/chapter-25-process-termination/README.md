@@ -1,7 +1,7 @@
 # TLPI 第 25 章 — Process Termination
 
-**优先级**：🔴（fork 后退出选型、退出码、僵尸衔接）  
-**前置**：[Ch24 fork](../chapter-24-process-creation/README.md)  
+**优先级**：🔴（fork 后退出选型、退出码、僵尸衔接）
+**前置**：[Ch24 fork](../chapter-24-process-creation/README.md)
 **后置**：[Ch26 wait / 僵尸](../chapter-26-monitoring-child-processes/README.md) · [Ch27 exec](../chapter-27-program-execution/README.md)
 
 ---
@@ -26,20 +26,14 @@
 
 ---
 
-
----
-
 ## 25.9 易错清单
 
 
-1. fork 子用 `exit` → atexit 双跑  
-2. `_exit` 不刷 stdio → 输出可能丢  
-3. 退出码截断到 8 位  
-4. 信号杀跳过全部用户清理；`SIGKILL` 尤甚  
-5. `on_exit` 不可移植；优先 `atexit`  
-
----
-
+1. fork 子用 `exit` → atexit 双跑
+2. `_exit` 不刷 stdio → 输出可能丢
+3. 退出码截断到 8 位
+4. 信号杀跳过全部用户清理；`SIGKILL` 尤甚
+5. `on_exit` 不可移植；优先 `atexit`
 
 ---
 
@@ -54,19 +48,13 @@
 
 ---
 
-
----
-
 ## 练习
 
 
-1. atexit 逆序  
-2. `exit` vs `_exit` 缓冲差异  
-3. fork + `exit` 复现双 atexit；改 `_exit`  
-4. `waitpid` + `WEXITSTATUS`  
-
----
-
+1. atexit 逆序
+2. `exit` vs `_exit` 缓冲差异
+3. fork + `exit` 复现双 atexit；改 `_exit`
+4. `waitpid` + `WEXITSTATUS`
 
 ---
 
@@ -84,15 +72,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch25  
+- Kerrisk · TLPI Ch25
 - `man 3 exit` · `man 2 _exit` · `man 3 atexit` · `man 3 abort`
-
 
 ---
 
@@ -138,10 +122,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

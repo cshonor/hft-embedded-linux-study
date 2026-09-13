@@ -1,6 +1,6 @@
 # TLPI 第 01 章 — History and Standards
 
-**优先级**：🟡 选读（理清脉络；不必死记年表）  
+**优先级**：🟡 选读（理清脉络；不必死记年表）
 
 ---
 
@@ -18,41 +18,32 @@
 ## 章节定位
 
 
-历史通识章：**无代码**。建立标准概念共识；快速通读即可。  
-贯穿全书要分清：**POSIX 标准接口（跨 UNIX）** vs **Linux 独有扩展 API**。  
-**Syscall 对外长什么样：** [1.x · 接口是 C / libc≠内核](./1.x-syscall-interface-is-c.md)  
+历史通识章：**无代码**。建立标准概念共识；快速通读即可。
+贯穿全书要分清：**POSIX 标准接口（跨 UNIX）** vs **Linux 独有扩展 API**。
+**Syscall 对外长什么样：** [1.x · 接口是 C / libc≠内核](./1.x-syscall-interface-is-c.md)
 **别和 Rust 普通库混：** [1.x · libc ≠ crate](./1.x-libc-vs-rust-crate.md)（表层像预制库，本质是 syscall 桥）
 
 → 全书定位：[../README.md](../README.md) · 下一章：[../chapter-02-basic-concepts/](../chapter-02-basic-concepts/)
 
 ---
 
-
----
-
 ## 7. 避坑
 
 
-1. 本章无实操 — 理解「标准化意义」即可，勿深挖年表。  
-2. **macOS 基于 BSD/XNU，不是 Linux**；POSIX 有重合，专属 API / 实现不同。  
+1. 本章无实操 — 理解「标准化意义」即可，勿深挖年表。
+2. **macOS 基于 BSD/XNU，不是 Linux**；POSIX 有重合，专属 API / 实现不同。
 3. `epoll` 代码 **不能** 直接当可移植写法搬到 macOS。
-
----
-
 
 ---
 
 ## 8. 自检
 
 
-1. **用了 `epoll` 的代码能否直接在 macOS 编译运行？**  
+1. **用了 `epoll` 的代码能否直接在 macOS 编译运行？**
    **不能。** `epoll` 是 Linux 特有；macOS 需用 `kqueue` 等另写。
 
-2. **`pthread` 是 POSIX 还是 Linux 独有？**  
+2. **`pthread` 是 POSIX 还是 Linux 独有？**
    **POSIX 标准**（Linux/macOS/BSD 均有实现；细节与扩展可不同）。
-
----
-
 
 ---
 
@@ -69,15 +60,11 @@
 
 ---
 
-
----
-
 ## 10. 参考
 
 
-- 《The Linux Programming Interface》第 01 章 — History and Standards  
+- 《The Linux Programming Interface》第 01 章 — History and Standards
 - [OUTLINE](../OUTLINE.md) · [模块 README](../README.md)
-
 
 ---
 
@@ -117,5 +104,5 @@ int main(void) {
 
 ## 参考
 
+- Kerrisk · *The Linux Programming Interface* Ch01
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

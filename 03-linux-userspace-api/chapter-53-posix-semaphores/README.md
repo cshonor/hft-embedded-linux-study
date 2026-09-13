@@ -1,7 +1,7 @@
 # TLPI 第 53 章 — POSIX Semaphores
 
-**优先级**：🔴（进程/线程同步）  
-**前置**：[Ch52 POSIX mq](../chapter-52-posix-message-queues/README.md) · [Ch47 SysV sem](../chapter-47-sysv-semaphores/README.md)  
+**优先级**：🔴（进程/线程同步）
+**前置**：[Ch52 POSIX mq](../chapter-52-posix-message-queues/README.md) · [Ch47 SysV sem](../chapter-47-sysv-semaphores/README.md)
 **后置**：[Ch54 POSIX 共享内存](../chapter-54-posix-shared-memory/README.md)
 
 ---
@@ -24,22 +24,16 @@
 
 ---
 
-
----
-
 ## 陷阱
 
 
-1. 跨进程匿名：`pshared`+共享内存  
-2. API 混用 destroy/close  
-3. 无 SEM_UNDO  
-4. timed 绝对时间  
-5. getvalue TOCTOU  
-6. pshared=0 fork 后不可跨进程  
-7. 名 `/a/b` 非法  
-
----
-
+1. 跨进程匿名：`pshared`+共享内存
+2. API 混用 destroy/close
+3. 无 SEM_UNDO
+4. timed 绝对时间
+5. getvalue TOCTOU
+6. pshared=0 fork 后不可跨进程
+7. 名 `/a/b` 非法
 
 ---
 
@@ -57,15 +51,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch53  
+- Kerrisk · TLPI Ch53
 - `man 3 sem_overview` · `sem_open` · `sem_init`
-
 
 ---
 
@@ -125,10 +115,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

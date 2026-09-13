@@ -1,7 +1,7 @@
 # TLPI 第 54 章 — POSIX Shared Memory
 
-**优先级**：🔴（POSIX IPC 终章；无关进程高速区）  
-**前置**：[Ch53 POSIX sem](../chapter-53-posix-semaphores/README.md) · [Ch48 SysV shm](../chapter-48-sysv-shared-memory/README.md) · [Ch49 mmap](../chapter-49-memory-mappings/README.md)  
+**优先级**：🔴（POSIX IPC 终章；无关进程高速区）
+**前置**：[Ch53 POSIX sem](../chapter-53-posix-semaphores/README.md) · [Ch48 SysV shm](../chapter-48-sysv-shared-memory/README.md) · [Ch49 mmap](../chapter-49-memory-mappings/README.md)
 **后置**：[Ch55 File Locking](../chapter-55-file-locking/README.md)
 
 ---
@@ -22,32 +22,23 @@
 
 ---
 
-
----
-
 ## IPC 路线收束（Ch43–54）
 
 
-Pipe/FIFO → SysV 三件套 → mmap/VM → POSIX 三件套。  
+Pipe/FIFO → SysV 三件套 → mmap/VM → POSIX 三件套。
 下一章地图：**Ch55 文件锁** → 再进 Socket（Ch56+）。
-
----
-
 
 ---
 
 ## 陷阱
 
 
-1. 忘 ftruncate → SIGBUS  
-2. `MAP_PRIVATE` 不共享  
-3. 无同步竞态  
-4. 名格式错误  
-5. 混淆匿名共享 mmap  
-6. 忘 unlink → `/dev/shm` 残留  
-
----
-
+1. 忘 ftruncate → SIGBUS
+2. `MAP_PRIVATE` 不共享
+3. 无同步竞态
+4. 名格式错误
+5. 混淆匿名共享 mmap
+6. 忘 unlink → `/dev/shm` 残留
 
 ---
 
@@ -65,15 +56,11 @@ Pipe/FIFO → SysV 三件套 → mmap/VM → POSIX 三件套。
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch54  
+- Kerrisk · TLPI Ch54
 - `man 3 shm_open` · `man 7 shm_overview`
-
 
 ---
 
@@ -134,10 +121,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

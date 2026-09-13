@@ -1,7 +1,7 @@
 # TLPI 第 55 章 — File Locking
 
-**优先级**：🔴（文件同步；单实例 pid 文件）  
-**前置**：[Ch54 POSIX shm](../chapter-54-posix-shared-memory/README.md) · 文件 I/O  
+**优先级**：🔴（文件同步；单实例 pid 文件）
+**前置**：[Ch54 POSIX shm](../chapter-54-posix-shared-memory/README.md) · 文件 I/O
 **后置**：[Ch56 Sockets 导论](../chapter-56-sockets-intro/README.md)
 
 ---
@@ -23,21 +23,15 @@
 
 ---
 
-
----
-
 ## 陷阱
 
 
-1. fcntl：关「无关」fd 也放全锁  
-2. flock：dup 后 close 放锁  
-3. flock+fcntl 混用失效  
-4. GETLK 非原子获取  
-5. stdio：锁内外 `fflush`；关键路径用 `read`/`write`  
-6. NFS 锁不可靠  
-
----
-
+1. fcntl：关「无关」fd 也放全锁
+2. flock：dup 后 close 放锁
+3. flock+fcntl 混用失效
+4. GETLK 非原子获取
+5. stdio：锁内外 `fflush`；关键路径用 `read`/`write`
+6. NFS 锁不可靠
 
 ---
 
@@ -55,15 +49,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch55（非「第 14 章」误标）  
+- Kerrisk · TLPI Ch55（非「第 14 章」误标）
 - `man 2 flock` · `fcntl` · `man 3 lockf`
-
 
 ---
 
@@ -151,10 +141,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

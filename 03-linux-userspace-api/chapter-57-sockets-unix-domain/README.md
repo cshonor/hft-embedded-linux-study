@@ -1,7 +1,7 @@
 # TLPI 第 57 章 — Sockets: UNIX Domain
 
-**优先级**：🔴（本机低延迟 IPC）  
-**前置**：[Ch56 Socket 导论](../chapter-56-sockets-intro/README.md)  
+**优先级**：🔴（本机低延迟 IPC）
+**前置**：[Ch56 Socket 导论](../chapter-56-sockets-intro/README.md)
 **后置**：[Ch58 TCP/IP 基础](../chapter-58-tcpip-fundamentals/README.md)
 
 ---
@@ -24,31 +24,22 @@
 
 ---
 
-
----
-
 ## 选型（嵌入式 + HFT）
 
 
-1. 本机组件通信 → UDS（优先于 127.0.0.1 TCP）  
-2. 守护进程 → 抽象名（Linux）  
-3. 父子临时双向 → `socketpair`  
-4. 要消息边界且本机 → UNIX DGRAM  
-
----
-
+1. 本机组件通信 → UDS（优先于 127.0.0.1 TCP）
+2. 守护进程 → 抽象名（Linux）
+3. 父子临时双向 → `socketpair`
+4. 要消息边界且本机 → UNIX DGRAM
 
 ---
 
 ## 思考题要点
 
 
-1. 崩溃残留：启动 `unlink` 或改用抽象名。  
-2. 抽象不受 umask/文件权限。  
+1. 崩溃残留：启动 `unlink` 或改用抽象名。
+2. 抽象不受 umask/文件权限。
 3. fork 后关无用 fd；需半关闭用 `shutdown`。
-
----
-
 
 ---
 
@@ -66,15 +57,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch57  
+- Kerrisk · TLPI Ch57
 - `man 7 unix` · `man 2 socketpair`
-
 
 ---
 
@@ -173,10 +160,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

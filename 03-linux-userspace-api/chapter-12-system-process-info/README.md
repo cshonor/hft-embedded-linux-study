@@ -1,8 +1,8 @@
 # TLPI 第 12 章 — System and Process Information
 
-**优先级**：🔴（监控 / 调试 / 嵌入式与 HFT 观测常读 `/proc`）  
-**前置**：[Ch11 System Limits](../chapter-11-system-limits/README.md)（`sysconf` 的补充来源）  
-**后置**：[Ch13 File I/O Buffering](../chapter-13-file-io-buffering/README.md) · 读 `/proc` 依赖的 **open/read** 见 [Ch4](../chapter-04-file-io-universal/README.md)  
+**优先级**：🔴（监控 / 调试 / 嵌入式与 HFT 观测常读 `/proc`）
+**前置**：[Ch11 System Limits](../chapter-11-system-limits/README.md)（`sysconf` 的补充来源）
+**后置**：[Ch13 File I/O Buffering](../chapter-13-file-io-buffering/README.md) · 读 `/proc` 依赖的 **open/read** 见 [Ch4](../chapter-04-file-io-universal/README.md)
 
 ---
 
@@ -27,9 +27,6 @@
 
 ---
 
-
----
-
 ## `/proc` 速查（背诵）
 
 
@@ -46,9 +43,6 @@
 
 ---
 
-
----
-
 ## 与前后章
 
 
@@ -61,20 +55,14 @@
 
 ---
 
-
----
-
 ## 练习
 
 
-1. `uname` 打印系统信息  
-2. 解析 `/proc/self/status`（UID、VmRSS…）  
-3. 遍历 `/proc` 数字目录 → 迷你 `ps`  
-4. `loadavg` + `meminfo` 简易监控  
-5. 枚举 `/proc/self/fd`  
-
----
-
+1. `uname` 打印系统信息
+2. 解析 `/proc/self/status`（UID、VmRSS…）
+3. 遍历 `/proc` 数字目录 → 迷你 `ps`
+4. `loadavg` + `meminfo` 简易监控
+5. 枚举 `/proc/self/fd`
 
 ---
 
@@ -92,15 +80,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch12  
+- Kerrisk · TLPI Ch12
 - `man 2 uname` · `man 5 proc` · `man 2 sysinfo` · `man 7 sysctl`
-
 
 ---
 
@@ -143,10 +127,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

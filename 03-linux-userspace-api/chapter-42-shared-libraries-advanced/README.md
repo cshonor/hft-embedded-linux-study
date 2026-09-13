@@ -1,8 +1,8 @@
 # TLPI 第 42 章 — Advanced Features of Shared Libraries
 
-**优先级**：🔴（插件架构、符号可见性）  
-**前置**：[Ch41 共享库基础](../chapter-41-shared-libraries/README.md)  
-**后置**：[Ch43 IPC 综述](../chapter-43-ipc-overview/README.md)  
+**优先级**：🔴（插件架构、符号可见性）
+**前置**：[Ch41 共享库基础](../chapter-41-shared-libraries/README.md)
+**后置**：[Ch43 IPC 综述](../chapter-43-ipc-overview/README.md)
 
 ---
 
@@ -23,35 +23,26 @@
 
 ---
 
-
----
-
 ## 易错清单
 
 
-1. 忘 `-ldl`  
-2. C++ 无 `extern "C"`  
-3. `dlclose` 后仍调插件  
-4. 插件互依赖却全用 `RTLD_LOCAL`  
-5. 不查 `dlerror`  
-6. 生产逻辑绑死 `LD_PRELOAD`  
-
----
-
+1. 忘 `-ldl`
+2. C++ 无 `extern "C"`
+3. `dlclose` 后仍调插件
+4. 插件互依赖却全用 `RTLD_LOCAL`
+5. 不查 `dlerror`
+6. 生产逻辑绑死 `LD_PRELOAD`
 
 ---
 
 ## 实验清单
 
 
-1. `dlopen` + `dlsym` 调插件  
-2. `RTLD_LAZY` vs `RTLD_NOW`  
-3. constructor/destructor 观察  
-4. `dladdr` 打印符号  
-5. （选）`RTLD_NODELETE` / visibility  
-
----
-
+1. `dlopen` + `dlsym` 调插件
+2. `RTLD_LAZY` vs `RTLD_NOW`
+3. constructor/destructor 观察
+4. `dladdr` 打印符号
+5. （选）`RTLD_NODELETE` / visibility
 
 ---
 
@@ -69,15 +60,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch42  
+- Kerrisk · TLPI Ch42
 - `man 3 dlopen` · `man 3 dladdr` · `man 8 ld.so`
-
 
 ---
 
@@ -143,10 +130,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

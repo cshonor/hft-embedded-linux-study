@@ -1,7 +1,7 @@
 # TLPI 第 27 章 — Program Execution
 
-**优先级**：🔴（shell、服务拉起外部程序、fork+exec 标准模型）  
-**前置**：[Ch24 fork](../chapter-24-process-creation/README.md) · [Ch25 终止](../chapter-25-process-termination/README.md) · [Ch26 wait](../chapter-26-monitoring-child-processes/README.md)  
+**优先级**：🔴（shell、服务拉起外部程序、fork+exec 标准模型）
+**前置**：[Ch24 fork](../chapter-24-process-creation/README.md) · [Ch25 终止](../chapter-25-process-termination/README.md) · [Ch26 wait](../chapter-26-monitoring-child-processes/README.md)
 **后置**：[Ch28 fork/exec 细节](../chapter-28-process-creation-exec-detail/README.md) · [Ch9 凭证 / SUID](../chapter-09-process-credentials/README.md)（SUID 在 exec 时生效）
 
 ---
@@ -24,9 +24,6 @@
 
 ---
 
-
----
-
 ## 27.6 工业范式：fork + exec
 
 
@@ -44,36 +41,27 @@ waitpid(pid, &st, 0);    /* 父 */
 
 ---
 
-
----
-
 ## 27.8 易错清单
 
 
-1. exec 成功后无后续业务代码  
-2. handler 重置；掩码保留  
-3. CLOEXEC 只对 exec  
-4. root + `execvp` PATH 风险  
-5. 失败用 `_exit`  
-6. exec **不改 PID**；新进程靠 fork  
-7. `argv[0]` 约定为名，内核不强制  
-
----
-
+1. exec 成功后无后续业务代码
+2. handler 重置；掩码保留
+3. CLOEXEC 只对 exec
+4. root + `execvp` PATH 风险
+5. 失败用 `_exit`
+6. exec **不改 PID**；新进程靠 fork
+7. `argv[0]` 约定为名，内核不强制
 
 ---
 
 ## 练习 / 实验清单
 
 
-1. `execvp` / `execl`  
-2. `FD_CLOEXEC` 跨 exec  
-3. （选）shebang  
-4. fork+exec+重定向模板  
-5. （选）exec 前后 handler 对比  
-
----
-
+1. `execvp` / `execl`
+2. `FD_CLOEXEC` 跨 exec
+3. （选）shebang
+4. fork+exec+重定向模板
+5. （选）exec 前后 handler 对比
 
 ---
 
@@ -91,15 +79,11 @@ waitpid(pid, &st, 0);    /* 父 */
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch27  
+- Kerrisk · TLPI Ch27
 - `man 3 exec` · `man 2 execve` · `man 2 fcntl`（`FD_CLOEXEC`）
-
 
 ---
 
@@ -164,10 +148,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

@@ -1,7 +1,7 @@
 # TLPI 第 43 章 — Interprocess Communication Overview
 
-**优先级**：🟡（IPC 全书地图）  
-**前置**：[Ch42 共享库高级 / dlopen](../chapter-42-shared-libraries-advanced/README.md)  
+**优先级**：🟡（IPC 全书地图）
+**前置**：[Ch42 共享库高级 / dlopen](../chapter-42-shared-libraries-advanced/README.md)
 **后置**：[Ch44 管道与 FIFO](../chapter-44-pipes-fifos/README.md)
 
 ---
@@ -23,9 +23,6 @@
 
 ---
 
-
----
-
 ## 后续阅读路线
 
 
@@ -40,19 +37,13 @@
 
 ---
 
-
----
-
 ## 思考题（43.6）
 
 
-1. 匿名管道无路径名，只能靠继承 fd → 仅相关进程。  
-2. 进程持久 vs 内核持久；SysV 忘删 → 泄漏。  
-3. 共享内存可见同一数据，无原子/序保证 → 需同步。  
+1. 匿名管道无路径名，只能靠继承 fd → 仅相关进程。
+2. 进程持久 vs 内核持久；SysV 忘删 → 泄漏。
+3. 共享内存可见同一数据，无原子/序保证 → 需同步。
 4. 无名 sem 无名字可打开，须放在双方都能看见的共享区。
-
----
-
 
 ---
 
@@ -70,15 +61,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch43（非 Ch17）  
+- Kerrisk · TLPI Ch43（非 Ch17）
 - 后续各章 `man` 页见对应笔记
-
 
 ---
 
@@ -130,10 +117,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

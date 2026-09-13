@@ -1,7 +1,7 @@
 # TLPI 第 38 章 — Writing Secure Privileged Programs
 
-**优先级**：🔴（SUID、daemon 降权、攻击面）  
-**前置**：[Ch9 凭证](../chapter-09-process-credentials/README.md) · [Ch37 Daemons](../chapter-37-daemons/README.md)  
+**优先级**：🔴（SUID、daemon 降权、攻击面）
+**前置**：[Ch9 凭证](../chapter-09-process-credentials/README.md) · [Ch37 Daemons](../chapter-37-daemons/README.md)
 **后置**：[Ch39 Capabilities](../chapter-39-capabilities/README.md)
 
 ---
@@ -21,33 +21,24 @@ SUID/SGID 安全模型；`setuid` vs `seteuid`；临时/永久丢权；TOCTOU、
 
 ---
 
-
----
-
 ## 易错清单
 
 
-1. root 下用 `setuid`「临时」降权 → 回不去  
-2. `system` + 脏 PATH  
-3. `stat`→`open` TOCTOU  
-4. 全程持 root 跑复杂逻辑  
-5. fork 继承 UID；SUID 行为在 exec 时生效  
-
----
-
+1. root 下用 `setuid`「临时」降权 → 回不去
+2. `system` + 脏 PATH
+3. `stat`→`open` TOCTOU
+4. 全程持 root 跑复杂逻辑
+5. fork 继承 UID；SUID 行为在 exec 时生效
 
 ---
 
 ## 实验清单
 
 
-1–2. Ch9 临时/永久降权  
-3. `open`+`fstat` vs TOCTOU  
-4. （选）PATH 劫持对比  
-5. `O_NOFOLLOW`  
-
----
-
+1–2. Ch9 临时/永久降权
+3. `open`+`fstat` vs TOCTOU
+4. （选）PATH 劫持对比
+5. `O_NOFOLLOW`
 
 ---
 
@@ -65,15 +56,11 @@ SUID/SGID 安全模型；`setuid` vs `seteuid`；临时/永久丢权；TOCTOU、
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch38  
+- Kerrisk · TLPI Ch38
 - [Ch9 notes](../chapter-09-process-credentials/README.md) · `man 7 credentials` · `man 2 seteuid`
-
 
 ---
 
@@ -124,10 +111,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

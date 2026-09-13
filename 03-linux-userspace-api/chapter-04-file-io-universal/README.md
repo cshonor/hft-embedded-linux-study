@@ -1,7 +1,7 @@
 # TLPI 第 04 章 — File I/O: The Universal I/O Model
 
-**优先级**：🟡→🔴（嵌入式 / HFT 文件与设备 I/O 地基）  
-**前置**：Ch2 基本概念（fd）· Ch3 系统编程概念（错误处理等）  
+**优先级**：🟡→🔴（嵌入式 / HFT 文件与设备 I/O 地基）
+**前置**：Ch2 基本概念（fd）· Ch3 系统编程概念（错误处理等）
 **后置**：书内 Ch5 Further Details → [`../chapter-05-file-io-further/`](../chapter-05-file-io-further/)
 
 ---
@@ -33,9 +33,6 @@ open() → read() / write() → close()
 
 ---
 
-
----
-
 ## 示例：通用拷贝（Listing 4-1 精神）
 
 
@@ -50,21 +47,15 @@ cc -Wall -o copy code/copy.c
 
 ---
 
-
----
-
 ## 易错清单
 
 
-1. **fd** 在进程 fd 表；**偏移** 在打开文件描述（open file description）— Ch5 三层结构。  
-2. `close(fd)` 释放槽位；进程退出自动关全部 fd。  
-3. 管道/socket **不要**假设可 `lseek`。  
-4. 短读、部分写是 **正常现象**，必须处理。  
-5. `umask` 影响新建权限；`mode` 仅配合 `O_CREAT`。  
+1. **fd** 在进程 fd 表；**偏移** 在打开文件描述（open file description）— Ch5 三层结构。
+2. `close(fd)` 释放槽位；进程退出自动关全部 fd。
+3. 管道/socket **不要**假设可 `lseek`。
+4. 短读、部分写是 **正常现象**，必须处理。
+5. `umask` 影响新建权限；`mode` 仅配合 `O_CREAT`。
 6. `write` 成功 ≠ 落盘。
-
----
-
 
 ---
 
@@ -75,9 +66,6 @@ cc -Wall -o copy code/copy.c
 |------|------|
 | 嵌入式 | `/dev` 设备也走同一套 open/read/write；专属控制靠 ioctl |
 | HFT | 短读/部分写；热路径少 syscall；落盘语义与缓冲要清楚 |
-
----
-
 
 ---
 
@@ -94,15 +82,11 @@ cc -Wall -o copy code/copy.c
 
 ---
 
-
----
-
 ## 参考
 
 
-- 《The Linux Programming Interface》**第 04 章** — File I/O: The Universal I/O Model  
+- 《The Linux Programming Interface》**第 04 章** — File I/O: The Universal I/O Model
 - [OUTLINE](../OUTLINE.md) · 下一内容：书内 Ch5 → [`../chapter-05-file-io-further/`](../chapter-05-file-io-further/)
-
 
 ---
 
@@ -141,10 +125,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

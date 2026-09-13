@@ -1,7 +1,7 @@
 # TLPI 第 45 章 — Introduction to System V IPC
 
-**优先级**：🟡（SysV 三机制共用模型）  
-**前置**：[Ch44 管道与 FIFO](../chapter-44-pipes-fifos/README.md)  
+**优先级**：🟡（SysV 三机制共用模型）
+**前置**：[Ch44 管道与 FIFO](../chapter-44-pipes-fifos/README.md)
 **后置**：[Ch46 SysV 消息队列](../chapter-46-sysv-message-queues/README.md) → [Ch47 信号量](../chapter-47-sysv-semaphores/README.md) → [Ch48 共享内存](../chapter-48-sysv-shared-memory/README.md)
 
 ---
@@ -25,21 +25,15 @@
 
 ---
 
-
----
-
 ## 思考题要点
 
 
-1. `IPC_PRIVATE`：亲缘；`ftok`：无关进程约定路径。  
-2. `ftok`：固定路径文件勿删；或固定 key + 约定文档。  
-3. key≠id；id 非 fd → 无 epoll。  
-4. `CREAT|EXCL`：独占创建。  
-5. 内核持久 + 忘 RMID → 泄漏占限额。  
+1. `IPC_PRIVATE`：亲缘；`ftok`：无关进程约定路径。
+2. `ftok`：固定路径文件勿删；或固定 key + 约定文档。
+3. key≠id；id 非 fd → 无 epoll。
+4. `CREAT|EXCL`：独占创建。
+5. 内核持久 + 忘 RMID → 泄漏占限额。
 6. shm 的 RMID 须等 detach。
-
----
-
 
 ---
 
@@ -57,15 +51,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI **Ch45**（非中文分册「第 10 章」）  
+- Kerrisk · TLPI **Ch45**（非中文分册「第 10 章」）
 - `man 3 ftok` · `man 1 ipcs` · `man 1 ipcrm`
-
 
 ---
 
@@ -127,10 +117,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

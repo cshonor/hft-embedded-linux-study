@@ -1,7 +1,7 @@
 # TLPI 第 64 章 — Pseudoterminals
 
-**优先级**：🔴（ssh / 终端模拟器 / expect）  
-**前置**：[Ch62 Terminals](../chapter-62-terminals/README.md) · Ch63 Alternative I/O  
+**优先级**：🔴（ssh / 终端模拟器 / expect）
+**前置**：[Ch62 Terminals](../chapter-62-terminals/README.md) · Ch63 Alternative I/O
 **后置**：地图内 TLPI 主线结束；附录/其他模块另见仓库路线
 
 ---
@@ -23,20 +23,14 @@
 
 ---
 
-
----
-
 ## 陷阱
 
 
-1. 忘 `unlockpt`  
-2. 无 `setsid` → 无控制终端 / 作业控制失效  
-3. 在 master 调 tcgetattr  
-4. 子未关 master → PTY 不销毁  
-5. 用 pipe 冒充交互终端  
-
----
-
+1. 忘 `unlockpt`
+2. 无 `setsid` → 无控制终端 / 作业控制失效
+3. 在 master 调 tcgetattr
+4. 子未关 master → PTY 不销毁
+5. 用 pipe 冒充交互终端
 
 ---
 
@@ -54,15 +48,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch64  
+- Kerrisk · TLPI Ch64
 - `man 3 posix_openpt` · `ptsname` · `man 4 pts`
-
 
 ---
 
@@ -148,10 +138,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

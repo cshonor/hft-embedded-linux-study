@@ -1,8 +1,8 @@
 # TLPI 第 03 章 — System Programming Concepts
 
-**优先级**：🔴 必读  
-**前置**：[Ch2 Fundamental Concepts](../chapter-02-basic-concepts/README.md)  
-**后置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/README.md)（第一个实战 syscall 集）  
+**优先级**：🔴 必读
+**前置**：[Ch2 Fundamental Concepts](../chapter-02-basic-concepts/README.md)
+**后置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/README.md)（第一个实战 syscall 集）
 
 ---
 
@@ -37,9 +37,6 @@
 
 ---
 
-
----
-
 ## 3.6 原书示例清单（man7 源码）
 
 
@@ -52,20 +49,14 @@
 
 ---
 
-
----
-
 ## 易混淆考点
 
 
-1. `errno` 现代多为 **TLS**；成功不清零。  
-2. 库函数失败 **不一定** 设 `errno`（看 man NOTES）。  
-3. 多数 syscall 失败返回 `-1`；**少数 API 合法返回值可为负** — 以 man 为准。  
-4. C 里的 `open()` 是 **包装**，不是直接陷阱指令。  
+1. `errno` 现代多为 **TLS**；成功不清零。
+2. 库函数失败 **不一定** 设 `errno`（看 man NOTES）。
+3. 多数 syscall 失败返回 `-1`；**少数 API 合法返回值可为负** — 以 man 为准。
+4. C 里的 `open()` 是 **包装**，不是直接陷阱指令。
 5. 用户态 **不能** 直接访问内核地址；只能靠 syscall。
-
----
-
 
 ---
 
@@ -76,9 +67,6 @@
 |------|--|
 | 嵌入式 | 严格返回值+`errno`；功能测试宏保证 API 可见 |
 | HFT | 少 syscall；测延迟时区分包装成本与真陷入 |
-
----
-
 
 ---
 
@@ -95,15 +83,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- 《The Linux Programming Interface》第 03 章 — System Programming Concepts  
+- 《The Linux Programming Interface》第 03 章 — System Programming Concepts
 - [OUTLINE](../OUTLINE.md) · [Ch4](../chapter-04-file-io-universal/README.md)
-
 
 ---
 
@@ -137,10 +121,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)

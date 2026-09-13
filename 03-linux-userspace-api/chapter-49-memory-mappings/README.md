@@ -1,7 +1,7 @@
 # TLPI 第 49 章 — Memory Mappings
 
-**优先级**：🔴（文件 IO / 分配 / IPC 交汇）  
-**前置**：[Ch48 SysV 共享内存](../chapter-48-sysv-shared-memory/README.md)  
+**优先级**：🔴（文件 IO / 分配 / IPC 交汇）
+**前置**：[Ch48 SysV 共享内存](../chapter-48-sysv-shared-memory/README.md)
 **后置**：[Ch50 虚拟内存操作](../chapter-50-virtual-memory/README.md) · [Ch51 POSIX IPC](../chapter-51-posix-ipc-intro/README.md)
 
 > 源码核验基准：Linux v6.6 · `mm/mmap.c` · `mm/msync.c` · `mm/mremap.c`（2026-09-05 实测）

@@ -1,7 +1,7 @@
 # TLPI 第 11 章 — System Limits and Options
 
-**优先级**：🟡→🔴（可移植 / 路径 / 管道缓冲）  
-**前置**：[Ch10 Times and Dates](../chapter-10-time/README.md)（`_SC_CLK_TCK` ↔ `times()`）  
+**优先级**：🟡→🔴（可移植 / 路径 / 管道缓冲）
+**前置**：[Ch10 Times and Dates](../chapter-10-time/README.md)（`_SC_CLK_TCK` ↔ `times()`）
 **后置**：[Ch12 System and Process Information](../chapter-12-system-process-info/README.md) · [Ch15 文件属性](../chapter-15-file-attributes/README.md) · [Ch44 管道](../chapter-44-pipes-fifos/README.md) · [Ch36 资源限制](../chapter-36-process-resources/README.md)
 
 ---
@@ -25,9 +25,6 @@
 
 ---
 
-
----
-
 ## 与前后章
 
 
@@ -41,19 +38,13 @@
 
 ---
 
-
----
-
 ## 练习
 
 
-1. 封装安全 `sysconf`：区分错误 / indeterminate；批量打印常用限制  
-2. 对不同目录 `pathconf(_PC_NAME_MAX)`（如 `/` vs `/tmp`）  
-3. 静态 `PATH_MAX` vs 动态扩容  
-4. `getconf` 与程序结果交叉验证  
-
----
-
+1. 封装安全 `sysconf`：区分错误 / indeterminate；批量打印常用限制
+2. 对不同目录 `pathconf(_PC_NAME_MAX)`（如 `/` vs `/tmp`）
+3. 静态 `PATH_MAX` vs 动态扩容
+4. `getconf` 与程序结果交叉验证
 
 ---
 
@@ -71,15 +62,11 @@
 
 ---
 
-
----
-
 ## 参考
 
 
-- Kerrisk · TLPI Ch11  
+- Kerrisk · TLPI Ch11
 - `man 3 sysconf` · `man 3 fpathconf` · `man 1 getconf` · `man 7 posixoptions`
-
 
 ---
 
@@ -112,10 +99,3 @@ int main(void) {
 }
 
 ```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)
