@@ -1623,7 +1623,72 @@ rb_set_parent(y, old_parent_of_x); /* 3. y 上位 */
 <li><strong>染色与旋转谁先谁后无所谓</strong> —— 旋转只改指针、不碰颜色，两种顺序结果完全相同（CLRS 的写法是先染色后旋转）。</li>
 </ol>
 <blockquote>
-<p><strong>插入的最好情况是 O(1)</strong>：父节点是黑时规则 4 无从违反、规则 5 不受影响（红不贡献黑高），修复循环一次都不进。判据就是那句 <code class="c">while (parent &amp;&amp; rb_is_red(parent))</code>。CFS 的大部分 enqueue 走这条快路径。</p>
+<p><strong>插入的最好情况是 O(1)</strong>：父节点是黑时规则 4 无从违反、规则 5 不受影响（红不贡献黑高），修复循环一次都不进。判据就是那句 <code class="c">if (rb_is_black(parent)) break;</code>。CFS 的大部分 enqueue 走这条快路径。</p>
+</blockquote>
+<h4>插入的黑高账本：只有"根染黑"那一步能动全局 bh</h4>
+<p>三个情形对<strong>黑高</strong>的实际影响，和"要不要往上传递"是两件事，容易混在一起：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th>局部 bh</th>
+<th>结构</th>
+<th>是否上溯</th>
+<th>全局 bh</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 叔叔红：P、U 染黑，G 染红</td>
+<td><strong>净不变</strong>（+1 与 −1 抵消）</td>
+<td>不动</td>
+<td>✅ 把 G 当新节点继续</td>
+<td>仅当传到根时 +1</td>
+</tr>
+<tr>
+<td>② 叔叔黑 + 内侧：左旋 P</td>
+<td>不变（旋转不碰黑高）</td>
+<td>动</td>
+<td>❌ 直接转 ③</td>
+<td>不变</td>
+</tr>
+<tr>
+<td>③ 叔叔黑 + 外侧：右旋 G + P黑/G红</td>
+<td>不变</td>
+<td>动</td>
+<td>❌ 收工</td>
+<td>不变</td>
+</tr>
+</tbody>
+</table></div>
+<p>一句话：<strong>插入的每一步局部操作都不改变黑高</strong>（① 是 +1/−1 抵消，②③ 是纯粹换形状）；
+<strong>唯一能让整棵树黑高变化的是收尾那句 <code class="c">rb_set_black(root)</code>，且只有 Case 1 一路传到根时它才真的起作用。</strong></p>
+<pre class="code" data-label="code"><code class="c">        G(B)              G(R)               G(B)      ← 强制染黑
+       /    \   变色     /    \             /    \
+     P(R)  U(R) ───►  P(B)  U(B)  ───►   P(B)  U(B)
+     /                /                  /
+   N(R)             N(R)               N(R)
+
+ bh = 2            bh = 2              bh = 3  ← +1，但树高一点没变
+</code></pre>
+<p>⚠️ 注意这里有个反直觉的点：<strong>bh +1 而树高不变</strong> —— 一个节点都没加，只是根从红变回黑、P/U 由红变黑。
+黑高不是高度，它是"路径上黑节点的计数"，会随重染色单独漂移。</p>
+<p><strong>为什么根可以随便染黑而不破坏规则 5？</strong> 因为根是<strong>唯一位于所有路径上</strong>的节点：改它的颜色给每条路统一 ±1，"各路黑高相等"这个等式不可能被打破。换任何其他节点都不行（只影响部分路径）。也正因如此，它不必引起后续修复 —— 变黑只会更保守，不可能造出新的红红相连。</p>
+<p>内核源码里这一步连注释都写明了（<code class="c">lib/rbtree.c</code> <code class="c">__rb_insert()</code>）：</p>
+<pre class="code" data-label="C"><code class="c">if (unlikely(!parent)) {
+        /*
+         * The inserted node is root. Either this is the
+         * first node, or we recursed at Case 1 below and
+         * are no longer violating 4).
+         */
+        rb_set_parent_color(node, NULL, RB_BLACK);   /* 一条指令同时写父指针 + 颜色位 */
+        break;
+}
+</code></pre>
+<blockquote>
+<p>顺带一个常见误读：<strong>"叔叔黑"里包含了"没有叔叔"</strong>。内核判据是 <code class="c">if (tmp &amp;&amp; rb_is_red(tmp))</code> ——
+<code class="c">tmp</code> 为 NULL 时直接落到 Case 2/3，即 <strong>NULL 叔叔按黑处理</strong>（与 NIL 哨兵等价）。
+内核没有 NIL 对象，空子树就是 <code class="c">NULL</code>，颜色语义上算黑。</p>
 </blockquote>
 <hr />
 <h2>删除：颜色为什么最难</h2>
@@ -1831,7 +1896,21 @@ rb_set_parent(y, old_parent_of_x); /* 3. y 上位 */
 <p>路径 1（A → 黑孩子 → NIL）= 黑孩子 + NIL = <strong>2 个黑</strong>；路径 2（A → NIL）= <strong>1 个黑</strong>。2 ≠ 1 → <strong>违反规则 5</strong>，不是合法红黑树。这正是"红节点不可能只有单侧孩子"的实例。（本题起点 A 是红色、不计入黑高，所以"含起点"口径与 CLRS 口径结果相同 —— 差异只在起点为黑时才体现。）</p>
 </blockquote>
 <p><strong>Q11:</strong> CLRS 的 <code class="c">bh(x)</code> 计不计起点 x 自身？这个差别为什么重要？</p>
-<h2>&gt; <strong>不计</strong>（但计入 NIL）。差别只在推公式时致命：定理"以 x 为根的子树至少含 <code class="c">2^bh(x) − 1</code> 个内部节点"依赖这个口径；若改用"含起点"的口径，公式要写成 <code class="c">2^(bh−1) − 1</code>。反过来，若只是判断一棵树是否合法（比的是各路径"相等"），任意一致口径都可以。另注：<strong>内核里根本没有黑高这个量</strong>（<code class="c">grep NIL</code> 零命中、无 bh 字段），它靠修复算法隐式维持性质 5。</h2>
+<blockquote>
+<p><strong>不计</strong>（但计入 NIL）。差别只在推公式时致命：定理"以 x 为根的子树至少含 <code class="c">2^bh(x) − 1</code> 个内部节点"依赖这个口径；若改用"含起点"的口径，公式要写成 <code class="c">2^(bh−1) − 1</code>。反过来，若只是判断一棵树是否合法（比的是各路径"相等"），任意一致口径都可以。另注：<strong>内核里根本没有黑高这个量</strong>（<code class="c">grep NIL</code> 零命中、无 bh 字段），它靠修复算法隐式维持性质 5。</p>
+</blockquote>
+<p><strong>Q12:</strong> Case 1 一路把红冲突推到根、根被染红之后，为什么最后强制把根改成黑色？会影响什么？</p>
+<blockquote>
+<p>三层理由：① 规则 2 是红黑树定义的一部分，硬性的；② <strong>安全</strong> —— 根是唯一位于所有路径上的节点，改它的颜色给每条路统一 ±1，规则 5 的"各路黑高相等"不可能被打破，换任何其他节点都只影响部分路径而破坏等式；③ 变黑只会更保守，不可能造出新的红红相连，因此它是<strong>无条件可终止的收尾</strong>，不需要再检查。
+影响只有一个：整棵树黑高 <strong>+1</strong>。而且它不改变树高 —— 一个节点都没加，只是根由红变回黑、P/U 由红变黑，这是"bh +1 而高度不变"的典型例子（黑高不是高度）。每次插入最多发生一次，O(1)。内核落点：<code class="c">__rb_insert()</code> 里那个 <code class="c">if (unlikely(!parent))</code> 分支，注释原文 "Either this is the first node, or we recursed at Case 1 below"。</p>
+</blockquote>
+<p><strong>Q13:</strong> 插入三情形里，哪些会改变（局部/全局）黑高？</p>
+<blockquote>
+<p><strong>局部：一个都不改。</strong> 情形 ① 是 +1（P、U 染黑）与 −1（G 染红）抵消，净零；情形 ② 旋转不碰黑高；情形 ③ 旋转 + 换色同样净零（G 侧路径由"G 黑 + U 黑"变成"P 黑 + G 红 + U 黑"，计数相同）。
+<strong>全局：只有收尾那次根染黑</strong>，且需 Case 1 真的传到根才生效。所以插入全程 bh 单调不减，且每次最多 +1。
+对照删除：双黑传到根时由根<strong>吸收</strong>，全局 bh −1 —— 根是黑高的"总闸门"，增减都在这里结算。</p>
+</blockquote>
+<hr />
       </section>
       <section class="section" id="s-08">
         <div class="sec-head"><div class="sec-no">08</div><h2>实时调度类 — FIFO / RR / DEADLINE 与 CFS 的边界</h2></div>
