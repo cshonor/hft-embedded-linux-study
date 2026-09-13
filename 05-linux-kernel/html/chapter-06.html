@@ -329,7 +329,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <p><strong>Linux Kernel Development 3rd</strong> · Robert Love · <strong>选读</strong></p>
 <p>本章定位：内核内置 <strong>链表 / 队列 / 映射 / 红黑树</strong> — <strong>别重新发明轮子</strong>。<br />
 读 Ch 3 <code class="c">task_struct</code> 链表、<strong>Ch 4 CFS <code class="c">rbtree</code>（按 <code class="c">vruntime</code>，最左先跑）</strong>、驱动与 IPC 时的词汇表。<br />
-§6.5 钉死：内嵌 <code class="c">rb_node</code> + <code class="c">container_of</code>；<code class="c">rb_first</code> = CFS 下一个候选。</p>
+§6.5 钉死：内嵌 <code class="c">rb_node</code> + <code class="c">container_of</code>；<code class="c">rb_first</code> = CFS 下一个候选；NIL 哨兵只是教科书约定、内核用裸 <code class="c">NULL</code>。</p>
 </blockquote>
 <hr />
 <h2>本节结构</h2>
@@ -1088,7 +1088,7 @@ CFS 里 <strong>key = <code class="c">vruntime</code></strong> → <strong>最�
 <ol>
 <li>每个节点非黑即红；  </li>
 <li><strong>根一定是黑色</strong>；  </li>
-<li><strong>所有叶子（NIL）都是黑色</strong>；  </li>
+<li><strong>所有叶子（NIL）都是黑色</strong>（“叶子” = NIL 哨兵，<strong>不是</strong>存数据的真实节点）；  </li>
 <li>红节点的两个子节点必须黑（<strong>不能连续红</strong>）；  </li>
 <li>任意节点到其所有后代叶子，路径上 <strong>黑色节点数相等</strong>（黑高一致）。</li>
 </ol>
@@ -1109,15 +1109,281 @@ CFS 里 <strong>key = <code class="c">vruntime</code></strong> → <strong>最�
 </table></div>
 <p>插入/删除破坏规则时：靠 <strong>变色 + 左旋/右旋</strong> 修复。内核 <code class="c">rbtree.c</code> 核心就是这套逻辑。</p>
 <hr />
+<h3>NIL 哨兵 · 黑高 · 插入修复（教科书版 vs 内核版）</h3>
+<p>上面五条是<strong>定义</strong>；这一段是<strong>实现</strong>。最容易被一句话带过、也最该讲清的是三件事：空孩子怎么表示、黑高怎么数、“不能连续红”到底在防什么。</p>
+<p>同一件事，两种相反写法：</p>
+<pre class="code" data-label="C"><code class="c">/* ① 教科书（CLRS / 多数算法书）:一个哨兵对象 */
+typedef struct Node {
+    int           key;
+    int           color;            /* RED / BLACK */
+    struct Node  *left, *right, *parent;
+} Node;
+
+static Node NIL_NODE = { .color = BLACK };   /* 唯一的哨兵，全树共享 */
+#define NIL (&amp;NIL_NODE)
+
+/* 叶子写 NIL 而不是 NULL —— 于是这类函数可以直接吃 NIL，
+   不用到处 if (p == NULL) */
+static int is_red(Node *n) { return n-&gt;color == RED; }
+
+/* ② Linux 内核 v6.6:根本没有哨兵 */
+struct rb_node {
+    unsigned long  __rb_parent_color;        /* 父指针 + 颜色 → 一个字段 */
+    struct rb_node *rb_right;
+    struct rb_node *rb_left;
+} __attribute__((aligned(sizeof(long))));
+</code></pre>
+<p>（内核结构见 <code class="c">include/linux/rbtree_types.h:5-8</code>。）</p>
+<h4>教学版 vs 内核版：逐条对上</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>教科书（CLRS）写法</th>
+<th>Linux 内核 v6.6</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>空孩子怎么表示</td>
+<td>全部指向唯一的哨兵 <code class="c">T.nil</code></td>
+<td>就是 <strong><code class="c">NULL</code></strong></td>
+</tr>
+<tr>
+<td>哨兵是真实对象吗</td>
+<td><strong>是</strong>——一个真实分配的节点，但不存业务数据</td>
+<td><strong>不存在</strong>。<code class="c">RB_EMPTY_ROOT(root)</code> 就是 <code class="c">root-&gt;rb_node == NULL</code>（<code class="c">rbtree.h:30</code>）</td>
+</tr>
+<tr>
+<td>颜色存哪</td>
+<td>独立字段 <code class="c">color</code></td>
+<td><strong>没有独立字段</strong>——塞进 <code class="c">__rb_parent_color</code> 低 2 位（<code class="c">rbtree_augmented.h:171-172</code>）</td>
+</tr>
+<tr>
+<td>红/黑怎么编码</td>
+<td>各家不一（<code class="c">RED=1</code>、<code class="c">RED=0</code> 都有）</td>
+<td><strong><code class="c">RB_RED 0</code> / <code class="c">RB_BLACK 1</code></strong> —— 红 = 0</td>
+</tr>
+<tr>
+<td>新节点初始色</td>
+<td>显式 <code class="c">color = RED</code></td>
+<td><code class="c">rb_link_node()</code> 只写 <code class="c">__rb_parent_color = (unsigned long)parent</code>，<strong>低 2 位天然为 0 = 红</strong>（<code class="c">rbtree.h:59-66</code>）</td>
+</tr>
+<tr>
+<td>“未插入”怎么标</td>
+<td>哨兵兼任</td>
+<td><code class="c">RB_EMPTY_NODE(node)</code>：<code class="c">__rb_parent_color == (unsigned long)node</code>（<strong>自指</strong>，<code class="c">rbtree.h:33-34</code>）</td>
+</tr>
+<tr>
+<td>官方自述的理由</td>
+<td>统一边界、少写判空</td>
+<td><em>"one less layer of indirection (and better cache locality) than more traditional tree implementations"</em>（<code class="c">Documentation/core-api/rbtree.rst:50-53</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ 所以“红黑树都用 NIL 哨兵、不用裸 NULL”是<strong>教学版的约定，不是红黑树的性质</strong>。内核和 libstdc++ 的<strong>空孩子都是裸 <code class="c">NULL</code></strong>。
+另一个高频记混点：<strong>“红 = 0”才是主流</strong>——libstdc++ 也是 <code class="c">enum _Rb_tree_color { _S_red = false, _S_black = true };</code>（<code class="c">bits/stl_tree.h:95</code>）。“0 = 黑、1 = 红”是反的。</p>
+<p><strong>补充：libstdc++ 是第三种写法</strong>——不用叶子哨兵，但另有<strong>一个 <code class="c">_M_header</code> 结点</strong>：<code class="c">end()</code> 指向它，它的 <code class="c">_M_parent</code> 是根、<code class="c">_M_left</code> 是最左、<code class="c">_M_right</code> 是最右（<code class="c">stl_tree.h:709/994</code>，重置在 <code class="c">_M_reset</code> :201-207），而且它的颜色被刻意设成<strong>红</strong>（:171）。这和内核把最左结点缓存在 <code class="c">rb_root_cached.rb_leftmost</code>（<code class="c">rbtree.h:105-106</code>，<code class="c">rb_first_cached</code> 因此 O(1)）是<strong>同一个优化动机，只是载体不同</strong>。</p>
+</blockquote>
+<h4>“红 = 0”不是随手选的</h4>
+<pre class="code" data-label="C"><code class="c">/* 红节点的 __rb_parent_color 低 2 位本来就是 0 —— 直接当裸指针用 */
+static inline struct rb_node *rb_red_parent(struct rb_node *red)
+{
+    return (struct rb_node *)red-&gt;__rb_parent_color;
+}                                          /* lib/rbtree.c:64-67 */
+
+/* 黑节点低位是 1，才需要把低 2 位抹掉 */
+#define rb_parent(r)  ((struct rb_node *)((r)-&gt;__rb_parent_color &amp; ~3))   /* rbtree.h:26 */
+</code></pre>
+<p><code class="c">rb_node</code> 至少按 <code class="c">sizeof(long)</code> 对齐 → 父指针低 3 位恒为 0。于是<strong>取红节点的父指针一次运算都不用</strong>，取黑节点的才要 <code class="c">&amp; ~3</code>。这是“把颜色塞进指针低位”的副作用，也是它值得塞的原因。</p>
+<h4>黑高到底怎么数</h4>
+<p>CLRS 原文：</p>
+<blockquote>
+<p>We call the number of black nodes on any path from, but <strong>not including</strong>, a node x to a leaf the <strong>black-height</strong> of the node, denoted bh(x).
+⋯ All NILs have black-height 0, and the black-height of the tree in Figure 13.1 is 3.</p>
+</blockquote>
+<p>三条：</p>
+<ol>
+<li><strong>起点（x 自己）不算</strong> —— 原文 “but not including”；</li>
+<li>路径终点是<strong>叶子</strong>，而 CLRS 的“叶子”就是 NIL、NIL 是黑的 → 走到底那个 NIL <strong>也算一个黑</strong>；</li>
+<li>“NILs have black-height 0” 说的是 <strong>NIL 自己当起点时为 0</strong>，不能反推“父节点的路径上不含 NIL”。</li>
+</ol>
+<p>⚠️ 也有教材把 NIL 排除在计数之外。<strong>口径只让数值差 1，不影响“各路径相等”这个不变量</strong>——同一棵树、同一道题里保持一致即可。</p>
+<p>按上面的口径，一棵 7 节点树：</p>
+<pre class="code" data-label="code"><code class="c">        B   ← 根
+      /   \
+     R     R
+    / \   / \
+   B   B B   B
+  / \ / \ / \ / \
+ N   N N N N N  N
+</code></pre>
+<p>路径 <code class="c">B(根) → R → B → NIL</code> 的黑节点 = 中间那个 <strong>B</strong> + <strong>NIL</strong> = <strong>2</strong>（不是 3——3 是“把起点根也算上”的口径）。两种口径都对，<strong>但别在同一个例子里混用</strong>。</p>
+<h4>“不能连续两个红”到底在防什么</h4>
+<p>常见说法是“红红相连会破坏黑高”。<strong>这句不准确</strong>——存在黑高完全相等、却连着两个红的树。最小反例（下面枚举器的第一个命中）：</p>
+<pre class="code" data-label="code"><code class="c">B          ← 根黑，② ✅
+ \
+  R        ← 红
+   \
+    R      ← 红，④ ❌
+</code></pre>
+<p>四条路径 <code class="c">B→NIL</code> / <code class="c">B→R→NIL</code> / <code class="c">B→R→R→NIL</code>（×2）的黑节点数（不含根、含 NIL）<strong>全是 1</strong> → ⑤ 满足，④ 被违反。</p>
+<p>那 ④ 的真正作用是什么：<strong>把高度压住</strong>。⑤ 只管“各路径相等”，而一条纯链的每一层子树都只有一条路径 → ⑤ 恒真、完全没有约束力。枚举全部 n 节点二叉树 × 全部 2ⁿ 种着色（高度按“根到 NIL 的层数”计，即 <code class="c">height(NIL) = 0</code> 的递归口径）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>n</th>
+<th>满足 ②③⑤ 的树</th>
+<th>其中违反 ④</th>
+<th>②③⑤ 允许的最大高度</th>
+<th>②③④⑤ 允许的最大高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3</td>
+<td>6</td>
+<td><strong>4</strong></td>
+<td>3</td>
+<td>2</td>
+</tr>
+<tr>
+<td>4</td>
+<td>18</td>
+<td>14</td>
+<td>4</td>
+<td>3</td>
+</tr>
+<tr>
+<td>5</td>
+<td>58</td>
+<td>50</td>
+<td>5</td>
+<td>3</td>
+</tr>
+<tr>
+<td>6</td>
+<td>192</td>
+<td>176</td>
+<td>6</td>
+<td>4</td>
+</tr>
+<tr>
+<td>7</td>
+<td>654</td>
+<td>621</td>
+<td>7</td>
+<td>4</td>
+</tr>
+<tr>
+<td>8</td>
+<td>2270</td>
+<td>2214</td>
+<td><strong>8</strong></td>
+<td><strong>4</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>读法：<strong>去掉 ④，最大高度随 n 线性增长（n = 8 时就是一条 8 节点链）；加上 ④ 才压到 ~2·log₂(n+1)。</strong></p>
+<blockquote>
+<p>正确表述：⑤ 保证“各路径黑节点数相同”，④ 保证“红不连续” → <strong>两件事合起来</strong>才推出
+「最长路径 ≤ 2 × 最短路径」→ 树高 ≤ 2·log₂(n+1)。
+<strong>④ 不是 ⑤ 的推论</strong>，它俩是并列的两条。</p>
+</blockquote>
+<h4>插入修复：内核源码里的 Case 1 / 2 / 3</h4>
+<p>新节点一定是红的——内核里连“涂红”这行都不用写（<code class="c">rb_link_node()</code> 那个赋值的低 2 位天然是 0）：</p>
+<pre class="code" data-label="C"><code class="c">static inline void rb_link_node(struct rb_node *node, struct rb_node *parent,
+                struct rb_node **rb_link)
+{
+    node-&gt;__rb_parent_color = (unsigned long)parent;   /* 低 2 位 = 0 → 红 */
+    node-&gt;rb_left = node-&gt;rb_right = NULL;
+    *rb_link = node;
+}                                    /* include/linux/rbtree.h:59-66 */
+</code></pre>
+<p><code class="c">lib/rbtree.c</code> 的 <code class="c">__rb_insert()</code> 就是教科书那三情形，注释里 ASCII 图都画好了：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th>条件</th>
+<th>动作</th>
+<th>源码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>父黑</td>
+<td><code class="c">rb_is_black(parent)</code></td>
+<td><strong>直接结束</strong>（④ 没破）</td>
+<td><code class="c">rbtree.c:110-111</code></td>
+</tr>
+<tr>
+<td><strong>Case 1</strong></td>
+<td>叔叔是<strong>红</strong></td>
+<td>父、叔涂黑、祖父涂红；<strong>把祖父当新起点继续上溯</strong></td>
+<td><code class="c">rbtree.c:117-137</code> / <code class="c">185-193</code></td>
+</tr>
+<tr>
+<td><strong>Case 2</strong></td>
+<td>叔黑，且 node 是父的<strong>内侧</strong>孩子（之字形）</td>
+<td>在<strong>父</strong>处旋转一次 → <strong>转成 Case 3</strong>（本身不解决问题）</td>
+<td><code class="c">rbtree.c:140-164</code> / <code class="c">196-208</code></td>
+</tr>
+<tr>
+<td><strong>Case 3</strong></td>
+<td>叔黑，且 node 是父的<strong>外侧</strong>孩子（一字形）</td>
+<td>在<strong>祖父</strong>处旋转；父变黑、祖父变红 → <strong>结束</strong></td>
+<td><code class="c">rbtree.c:166-182</code> / <code class="c">210-217</code></td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>Case 1 是唯一会循环的一支</strong>：变色后 <code class="c">node = gparent; continue;</code>——祖父的新父亲可能又是红的，上溢继续传。</li>
+<li><strong>Case 2 → Case 3 走完就 <code class="c">break</code></strong>：所以<strong>插入修复最多 2 次旋转</strong>（“之”字形一次 + 祖父处一次）。</li>
+<li>旋转用 <code class="c">__rb_rotate_set_parents(gparent, parent, root, RB_RED)</code>（<code class="c">rbtree.c:180</code> / <code class="c">215</code>）——把祖父的身份交给父，同时把祖父涂红。</li>
+</ul>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>名词</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NIL 哨兵</td>
+<td>教科书用<strong>真实对象</strong>代表空孩子；内核<strong>不用</strong>，<code class="c">NULL</code> 就够</td>
+</tr>
+<tr>
+<td>黑高 bh</td>
+<td>某节点（不含自己）到叶子路径上的黑节点数；每条路径相等</td>
+</tr>
+<tr>
+<td>④ 不能连续红</td>
+<td><strong>不被 ⑤ 蕴含</strong>；把高度从 O(n) 压到 O(log n) 的是它</td>
+</tr>
+<tr>
+<td>新节点颜色</td>
+<td>红；内核里“红 = 0”，<code class="c">rb_link_node()</code> 一次赋值同时写好父指针和颜色</td>
+</tr>
+<tr>
+<td>插入修复</td>
+<td>叔红 → 变色上溯（可循环）；叔黑 → 先转（Case 2）再旋（Case 3），最多 2 次旋转</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h3>内核 <code class="c">rbtree</code> 特点（源码阅读重点）</h3>
 <p>路径：<code class="c">include/linux/rbtree.h</code>（及实现 <code class="c">lib/rbtree.c</code> 等）。</p>
 <p>和教科书常见实现的细微差别：</p>
 <h4>1. 节点里不存业务数据 — 内嵌 + <code class="c">container_of</code></h4>
-<pre class="code" data-label="C"><code class="c">struct rb_node {
-    unsigned long  rb_parent_color;
+<pre class="code" data-label="C"><code class="c">/* include/linux/rbtree_types.h:5-8 (v6.6) */
+struct rb_node {
+    unsigned long  __rb_parent_color;   /* 父指针 + 颜色(低 2 位), 一个字段 */
     struct rb_node *rb_right;
     struct rb_node *rb_left;
-};
+} __attribute__((aligned(sizeof(long))));
 
 /* 概念：rb_node 嵌进 sched_entity */
 struct sched_entity {
@@ -1129,7 +1395,9 @@ struct sched_entity {
 <p>由 <code class="c">rb_node *</code> 反推外层 <code class="c">sched_entity *</code>，靠 <strong><code class="c">container_of</code></strong>（依赖 GCC <code class="c">typeof</code> 等扩展）。</p>
 <p>→ <a href="#s-6-2">§6.2 <code class="c">container_of</code></a> · <a href="chapter-02.html#s-2-4">Ch2 §2.4 GNU C</a></p>
 <h4>2. 无专门 NIL 哨兵对象</h4>
-<p>统一用 <strong>NULL</strong> 代表叶子。</p>
+<p>统一用 <strong>NULL</strong> 代表叶子——<strong>没有</strong>教科书那种 <code class="c">T.nil</code> 哨兵对象。
+完整对照（含“颜色为什么塞进指针低位”）见上文《NIL 哨兵 · 黑高 · 插入修复（教科书版 vs 内核版）》。
+一句话：内核宁可多写几处判空，也不愿为哨兵多付一层间接——官方理由见 <code class="c">Documentation/core-api/rbtree.rst:50-53</code>。</p>
 <h4>3. 标准接口（手写比较）</h4>
 <p>C <strong>无泛型</strong> → <strong>没有</strong>「插入任意类型」的万能函数；开发者用 <code class="c">rb_*</code> 辅助 <strong>自己写</strong> 比较/插入/删除。</p>
 <div class="tbl-wrap"><table>
@@ -1197,12 +1465,15 @@ struct sched_entity {
 <li>CFS：key = <code class="c">vruntime</code>，管就绪 <code class="c">sched_entity</code>；  </li>
 <li><strong>最左 = 下一个要跑的进程</strong>；  </li>
 <li>内核：内嵌 <strong><code class="c">rb_node</code> + <code class="c">container_of</code></strong>；  </li>
-<li>约束核心：禁连续红、黑高均衡。</li>
+<li>约束核心：禁连续红、黑高均衡；</li>
+<li><strong>NIL 哨兵只是教学约定</strong>——内核与 libstdc++ 的空孩子都是裸 <code class="c">NULL</code>，颜色塞进指针低位的写法比教科书少见。</li>
 </ol>
 <hr />
 <h3>自检</h3>
 <p><strong><code class="c">rb_first(cfs_rq-&gt;rb_root)</code> 拿到的是什么？</strong></p>
 <p>→ 该 CPU 上 CFS 就绪树里 <strong><code class="c">vruntime</code> 最小</strong> 的那个 <code class="c">rb_node</code>（再 <code class="c">container_of</code> 成 <code class="c">sched_entity</code> / 任务）— 即 <strong>下一个（或当前应优先）被 CFS 选中运行的调度实体</strong>。</p>
+<p><strong>黑高的“起点”算不算？</strong> 按 CLRS：不算（"but not including"），但走到底的 NIL 要算。口径差 1，不影响“各路径相等”。</p>
+<p><strong>为什么“不能连续红”不是“黑高相等”推出来的？</strong> 因为纯链每层子树只有一条路径，黑高恒相等——④ 必须单独规定，它才是把高度压到 O(log n) 的那条。</p>
 <hr />
 <h3>选型对照</h3>
 <p>→ <a href="#s-6-6">§6.6</a> · <a href="#s-6-7">§6.7 复杂度</a> · <a href="chapter-04.html#s-4-3">Ch4 CFS</a></p>
@@ -1217,6 +1488,28 @@ struct sched_entity {
 <details>
 <summary>答案</summary>
 <p>rbtree：内存中、少量数据（万级）、频繁插入/删除。B+ 树：磁盘上、大量数据（百万级）、顺序扫描多。内核 VFS 的目录项用 rbtree（内存）；数据库索引用 B+ 树（磁盘，减少 IO 次数）。HFT 的限价单簿在内存中，通常用 rbtree 或哈希表。</p>
+</details>
+<p><strong>Q3.</strong> NIL 哨兵是真实存在的“数据节点”吗？Linux 内核里有这个哨兵吗？</p>
+<details>
+<summary>答案</summary>
+<p>分两层答：</p>
+<ul>
+<li><strong>教学版（CLRS）</strong>：<code class="c">T.nil</code> <strong>是一个真实存在的对象</strong>（真实分配的一个节点），但它<strong>不是数据节点</strong>——不存 key/value，只当边界标记；全树共享同一个。</li>
+<li><strong>Linux 内核 v6.6</strong>：<strong>根本没有哨兵</strong>。空孩子就是 <code class="c">NULL</code>（<code class="c">rb_link_node()</code> 里 <code class="c">rb_left = rb_right = NULL</code>），<code class="c">RB_EMPTY_ROOT()</code> 就是判 <code class="c">rb_node == NULL</code>。</li>
+</ul>
+<p>所以“红黑树用 NIL 哨兵”是<strong>教学实现的选择</strong>，不是红黑树的性质。</p>
+</details>
+<p><strong>Q4.</strong> 只要求“根黑 + 叶子黑 + 黑高相等”（去掉“不能连续红”），树高还有 O(log n) 上界吗？</p>
+<details>
+<summary>答案</summary>
+<p><strong>没有了。</strong> 纯链（每个节点只有一个孩子）的每层子树都只有一条路径，黑高天然相等，⑤ 完全不起约束作用 → 高度可到 O(n)。
+实测枚举：n = 8 时满足 ②③⑤ 的树最大高度是 <strong>8</strong>（一条 8 节点链），加上 ④ 才降到 <strong>4</strong>。</p>
+</details>
+<p><strong>Q5.</strong> 内核里新插入的节点，是在哪一行被“涂成红色”的？</p>
+<details>
+<summary>答案</summary>
+<p><strong>没有单独的一行。</strong> <code class="c">rb_link_node()</code> 里 <code class="c">node-&gt;__rb_parent_color = (unsigned long)parent;</code> —— 因为 <code class="c">RB_RED = 0</code> 且父指针低 2 位为 0，这一次赋值就同时写好了父指针和“红”。
+（若新节点成为根，<code class="c">__rb_insert()</code> 第一个分支 <code class="c">rb_set_parent_color(node, NULL, RB_BLACK)</code> 再给它涂黑。）</p>
 </details>
 </details>
 <hr />
