@@ -1424,6 +1424,9 @@ cfs_rq-&gt;min_vruntime = max(cfs_rq-&gt;min_vruntime, curr-&gt;vruntime); /* �
 </code></pre>
 <blockquote>
 <p>指针低 bits 藏标志是内核通用技巧：buddy allocator 的 page flags、slab freelist 都这么白嫖对齐填充。</p>
+<p><strong>常见误区（全错）：</strong> 黑 = 重要、红 = 不重要；红节点数值更小；红黑代表优先级或冷热。
+颜色只有一个目的 —— 标记"这算不算一层"，把最长路径压到最短路径的 2 倍以内，保证 O(log n)。
+好用的比喻：黑色节点是<strong>台阶骨架</strong>，每条路的台阶数必须一样；红色节点是<strong>插在台阶之间的缓冲</strong>，可以拉长路径但不能连续拉长。</p>
 </blockquote>
 <p><strong>直觉层面：颜色是"到父节点的边"的颜色。</strong></p>
 <div class="tbl-wrap"><table>
@@ -1447,12 +1450,82 @@ cfs_rq-&gt;min_vruntime = max(cfs_rq-&gt;min_vruntime, curr-&gt;vruntime); /* �
 <p>规则 5 翻译过来就是 <strong>所有叶子同深度</strong>——一棵真平衡树藏在红黑树里，红节点是同层挤不下、暂挂黑节点边上的成员。把红节点与黑父亲"粘"成超级节点，红黑树即 <strong>2-3-4 B 树</strong>，黑高 = B 树高；全部旋转/变色规则对应 B 树的节点分裂/合并。</p>
 <p><strong>一句话：红黑不是内容，是坐标——标记"这算不算一层"。</strong></p>
 <hr />
+<h2>遍历顺序：先 / 中 / 后（"先中后" = 根何时被访问）</h2>
+<p>一棵二叉树只涉及三件事：<strong>访问根</strong>、<strong>遍历左子树</strong>、<strong>遍历右子树</strong>。名字里的先/中/后，指的就是<strong>根在第几个被访问</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>访问次序</th>
+<th>例子（根 5，左 3，右 7）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>先序</td>
+<td>根 → 左 → 右</td>
+<td>5 → 3 → 7</td>
+</tr>
+<tr>
+<td>中序</td>
+<td>左 → 根 → 右</td>
+<td><strong>3 → 5 → 7（有序！）</strong></td>
+</tr>
+<tr>
+<td>后序</td>
+<td>左 → 右 → 根</td>
+<td>3 → 7 → 5</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键结论：BST 的中序遍历 = 从小到大有序序列。</strong> 红黑树继承 BST，中序同样有序。推论直接连回 CFS：</p>
+<ul>
+<li>中序的第一个节点 = <strong>树的最左节点</strong> = key 最小</li>
+<li>CFS 缓存的 <code class="c">rb_leftmost</code> / <code class="c">rb_first()</code> 拿的就是它 → <strong>下一个该跑的任务</strong></li>
+</ul>
+<blockquote>
+<p>遍历顺序是旋转操作的"安全带"：旋转会改变树的形状，但<strong>中序顺序恒定不变</strong>，所以 BST 语义在旋转后依然成立。</p>
+</blockquote>
+<hr />
 <h2>坏了规矩怎么修：变色 + 旋转</h2>
-<p>插入默认染红（不动黑高），可能造出"红红相连"；删除可能让某路径少一个黑节点。修复只有两招：</p>
+<p>插入默认染红（不动黑高），可能造出"红红相连"；删除可能让某路径少一个黑节点。</p>
+<blockquote>
+<p><strong>染红的唯一例外：空树。</strong> 新节点成为根，规则 2 要求根必须黑 → 直接染黑，一条规则都没破（全树就它一个，黑高自然一致）。准确说法是 <strong>"除空树外，新插入节点一律染红"</strong>。内核 <code class="c">rb_insert_color()</code> 开头判断无父节点即置黑，走的就是这条。</p>
+</blockquote>
+<p>修复只有两招：</p>
 <ul>
 <li><strong>变色</strong>：调整红黑分布，平衡两边的黑节点计数</li>
-<li><strong>旋转</strong>：父子上位换位 + 中间子树过继。左旋/右旋 = <strong>O(1) 的几次指针改写</strong>，中序顺序不变（BST 性质保持）</li>
+<li><strong>旋转</strong>：父子上位换位 + 中间子树过继。左旋/右旋 = <strong>O(1) 的几次指针改写</strong>，中序顺序不变（BST 性质保持）。展开见下。</li>
 </ul>
+<h3>旋转到底改了哪几个指针</h3>
+<p>记 <code class="c">x = y-&gt;rb_left</code>，<strong>右旋 y</strong> 就是让 x 上位、y 降为 x 的右孩子，x 原来的右子树 B <strong>过继</strong>给 y 当左孩子：</p>
+<pre class="code" data-label="code"><code class="c">        y                      x
+       / \                    / \
+      x   C    右旋 y  →     A   y
+     / \                        / \
+    A   B                      B   C
+</code></pre>
+<p>只动三个链接（父指针另算）：</p>
+<pre class="code" data-label="C"><code class="c">/* 概念伪代码，真实实现见 lib/rbtree.c: __rb_rotate_right() */
+y-&gt;left  = x-&gt;right;               /* 1. B 过继给 y 当左孩子 */
+x-&gt;right = y;                      /* 2. y 下降为 x 的右孩子 */
+rb_set_parent(x, old_parent_of_y); /* 3. x 上位，接管 y 原来的位置 */
+</code></pre>
+<p><strong>左旋完全镜像</strong> —— <code class="c">y = x-&gt;rb_right</code> 上位，x 降为 y 的左孩子，y 原来的左子树 B 过继给 x 当右孩子：</p>
+<pre class="code" data-label="code"><code class="c">      x                        y
+     / \      左旋 x  →       / \
+    A   y                    x   C
+       / \                  / \
+      B   C                A   B
+</code></pre>
+<pre class="code" data-label="C"><code class="c">x-&gt;right = y-&gt;left;                /* 1. B 过继给 x 当右孩子 */
+y-&gt;left  = x;                      /* 2. x 下降为 y 的左孩子 */
+rb_set_parent(y, old_parent_of_x); /* 3. y 上位 */
+</code></pre>
+<p>两种旋转的中序都是 <strong>A → x → B → y → C</strong>，前后完全一致 —— <strong>旋转重排形态，不重排顺序</strong>，这是它敢被用在 BST 上的底气。</p>
+<blockquote>
+<p>这也是"能变色就不旋转"的原因：变色一个指针都不动；旋转要改子树链接 + 父指针 + 祖父指向，cache 与指针 chase 都有成本。内核 <code class="c">lib/rbtree.c</code> 里 <code class="c">__rb_rotate_left()</code> / <code class="c">__rb_rotate_right()</code> 共用 <code class="c">__rb_rotate_set_parents()</code> 统一处理父指针与颜色。</p>
+</blockquote>
 <p>策略：看叔叔节点——红叔叔 → 变色上移递归；黑叔叔 → 旋转 1-2 次收尾。
 <strong>插入最多 2 次旋转，删除最多 3 次</strong>，其余靠变色。</p>
 <h3>插入修复的三个具体情形</h3>
@@ -1598,8 +1671,12 @@ cfs_rq-&gt;min_vruntime = max(cfs_rq-&gt;min_vruntime, curr-&gt;vruntime); /* �
 <blockquote>
 <p>插 1 → 根，染黑。插 2 → 1 的右孩子，红（此时合法）。插 3 → 2 的右孩子，红，与 2 红红相连。此时 N=3、P=2、G=1、<strong>U = 1 的左孩子 = NIL（黑）</strong>，且 N 在外侧（RR）→ 情形 ②：1 染红、2 染黑、对 1 左旋。结果 <strong>2 为根（黑），左孩子 1（红）、右孩子 3（红）</strong>。一次旋转收尾，无需递归。</p>
 </blockquote>
-</details>
-<hr />
+<p><strong>Q6:</strong> 新插入的节点如果染成<strong>黑色</strong>会怎样？为什么默认染红？</p>
+<blockquote>
+<p>插黑必然破坏规则 5：插入点所在路径黑高 +1，其余路径一个数都没变，且从插入点到根的所有祖先的黑高都被破坏；没有任何局部操作能凭空减掉其他路径上的黑节点，修复要动到整棵树的结构。染红不碰黑高，最坏只是规则 4 的红红相连，变色或 1~2 次旋转就能在局部收尾。唯一例外是空树插入 —— 新节点就是根，按规则 2 必须染黑。</p>
+</blockquote>
+<p><strong>Q7:</strong> 旋转会不会破坏 BST 的性质？</p>
+<h2>&gt; 不会。旋转只重排父子关系并把中间子树过继，中序遍历顺序（A → x → B → y → C）旋转前后完全一致，BST 的"左 &lt; 根 &lt; 右"语义保持。所以旋转是纯粹的几何操作：压低偏高的一侧，不动排序。</h2>
       </section>
       <section class="section" id="s-08">
         <div class="sec-head"><div class="sec-no">08</div><h2>实时调度类 — FIFO / RR / DEADLINE 与 CFS 的边界</h2></div>
