@@ -21,6 +21,7 @@ gcc -g -O0 -o orderbook orderbook.c   # -g 生成调试信息，-O0 关优化（
 | 无 `-g` | 无调试信息 | 只有反汇编 + 裸地址，`bt` 看不到源码行 |
 | `-g` | 生成 DWARF（默认 DWARF4/5） | 断点/单步/变量/行号全部可用 ✅ |
 | `-g -O0` | 关优化 | 每行源码精确对应，变量值真实可读 ✅✅ |
+| `-g -Og` | 轻度优化（GCC 推荐给调试用） | 行号与变量基本可用，执行路径更接近真实 ✅✅ |
 | `-g -O2` | 开优化 | 变量可能被优化掉（`<optimized out>`），行号可能错位 ⚠️ |
 | `-g3` | 额外含宏定义信息 | 可 `p MACRO` 展开宏（`-g` 默认不带宏） |
 | `-ggdb` | gdb 专有扩展格式 | 与 `-g` 几乎等价，历史遗留，用 `-g` 即可 |
@@ -36,7 +37,7 @@ gdb orderbook_o2
 $1 = <optimized out>   # ← 变量被寄存器化/消除，读不到了
 ```
 
-这是调试「性能版」二进制时的常态。**规则：调试阶段用 `-O0 -g`；出 release 前再做优化**。若必须在优化版上调试，优先看反汇编 + 寄存器（2.3 节的 `disassemble` + `info registers`）。
+这是调试「性能版」二进制时的常态。**规则：调试阶段用 `-O0 -g`；出 release 前再做优化**——至于「release 模式」到底动了哪些旗标、为什么它能让 `-O0` 下测不出问题的程序在上线后崩，见 [2.7 Debug 构建 vs Release 构建](07-debug-vs-release-build.md)。若必须在优化版上调试，优先看反汇编 + 寄存器（2.3 节的 `disassemble` + `info registers`）。
 
 ## 检查二进制是否带调试信息
 
@@ -165,7 +166,7 @@ gcc -g -O0 -o orderbook orderbook.c
 
 交易进程崩溃时，你往往只有一句 `Segmentation fault` 和一堆日志。gdb 加载 core 文件 + `bt` 是**第一现场**：
 
-1. **发行版编译规范**：调试阶段 `-O0 -g` 全量生成；发布前单独出 `-O2` 优化版，但**必须保留一份带符号的副本**（`objcopy --only-keep-debug` 或直接存未 strip 的构建产物），否则线上 core 拿回来没法回溯。
+1. **发行版编译规范**：调试阶段 `-O0 -g` 全量生成；发布前单独出 `-O2` 优化版，但**必须保留一份带符号的副本**（`objcopy --only-keep-debug` 或直接存未 strip 的构建产物），否则线上 core 拿回来没法回溯。→ 为什么不该「为了性能把 `-g` 也去掉」、以及发行版在你不知情时加的加固旗标，见 [2.7](07-debug-vs-release-build.md)。
 2. **attach 能力**：交易进程通常 7×24 运行、不能随便重启，`gdb -p <PID>` 现场 attach 看死循环/阻塞卡在哪，比重启复现高效得多。
 3. **debuginfo 包**：`bt` 要穿透 glibc / libstdc++，务必在开发机装 `libc6-dbg`、`libstdc++6-...-dbg`，否则栈回溯断在库边界。
 4. **gdbserver 远程**：树莓派 5 上的用户态程序（配合 eBPF/驱动），用 gdbserver 暴露端口、本地 gdb 远程连，免去在板端装全套工具链。
