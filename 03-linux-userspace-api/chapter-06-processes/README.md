@@ -101,7 +101,7 @@ Ch3–5  fd 表 / 文件描述符（stdin/out/err 已经挂在进程上）
 
 ---
 
-## 本章代码
+## 代码示例
 
 8 个 demo 与 10 篇笔记一一对应，**全部经 Compiler Explorer（gcc 13.3）真实编译并运行过**，输出原样贴在各篇笔记里。源码在 [`code/`](code/README.md)。
 
