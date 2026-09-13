@@ -92,7 +92,8 @@ vruntime += Δt × (1024 / weight)
     最左 = 最小 vruntime ──► 下次运行
 ```
 
-→ **[Ch6 §6.5](../../chapter-06-kernel-data-structures/notes/section-6.5-二叉树.md)**
+→ **[Ch6 §6.5](../../chapter-06-kernel-data-structures/notes/section-6.5-二叉树.md)**（内核 `rb_node` 实现细节）
+→ **[05.5 Ch2 §2.7 红黑树原理](../../../../05.5-modern-kernel/chapter-02-scheduler/notes/07-red-black-tree.md)**（五条性质 / 为何 ≤2 倍高 / 插入修复三情形 / 为何不用 AVL — 前置专章）
 
 ---
 
