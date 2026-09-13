@@ -333,10 +333,14 @@ def rewrite_links(body, cur_html_rel):
         repo_rel = re.sub(r"^(\.\./)+", "", norm)
 
         # 1) 章内裸 section 引用（无 chapter 前缀，且指向当前章）
+        #    ⚠️ 必须先确认 repo_rel 不属于别的书：跨书链接形如 "../../../05-linux-kernel/…"，
+        #       剥掉 ../ 后以数字目录名开头，"05-linux-kernel" 的 "05" 会被下面的正则误判成
+        #       章内小节号；若当前页恰好存在同名 anchor（如 05-task-list-vs-runqueue.md → s-05），
+        #       就会生成同页锚点 href="#s-05"，把跨书链接静默指向本页无关小节。
         m_sec_bare = re.match(r"(?:section[-_])?(\d+(?:\.\d+|[xX]+)?)[-_]", repo_rel)
         if m_sec_bare and cur_chno is not None:
             anchor = "s-" + m_sec_bare.group(1).replace(".", "-").lower()
-            if anchor in intra_sections:
+            if anchor in intra_sections and resolve_target(repo_rel)[0] == cur_book_root:
                 return f'<a href="#{anchor}">{label}</a>'
 
         # 2) README.md 引用 → 目标章 #intro
