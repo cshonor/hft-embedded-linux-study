@@ -1418,6 +1418,57 @@ cfs_rq-&gt;min_vruntime = max(cfs_rq-&gt;min_vruntime, curr-&gt;vruntime); /* �
 枚举验证与最小反例 → <a href="../../05-linux-kernel/html/chapter-06.html#s-6-5">05 Ch6 §6.5</a></p>
 </blockquote>
 <p>→ 树高 ≤ 2·log₂(n+1)。10 亿节点高最多 ~60。查/插/删稳定 O(log n)，<strong>无退化情况</strong>。</p>
+<h4>黑高的计数口径（易错点，附内核源码证据）</h4>
+<p>规则 5 只要求"各路径黑节点数相等"，所以<strong>判定合法性时任意一致口径都行</strong>；但推公式必须统一到 CLRS，否则定理对不上：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>CLRS / 算法导论</th>
+<th>常见"含起点"口径</th>
+<th>Linux 内核</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>计入<strong>起点 x 自身</strong>？</td>
+<td><strong>不计</strong></td>
+<td>计</td>
+<td>无此概念</td>
+</tr>
+<tr>
+<td>计入 <strong>NIL</strong>？</td>
+<td><strong>计</strong>（NIL 是黑）</td>
+<td>计</td>
+<td>无 NIL，空子树是 <code class="c">NULL</code></td>
+</tr>
+<tr>
+<td>有没有"黑高"这个量</td>
+<td>有：<code class="c">bh(x)</code></td>
+<td>—</td>
+<td><strong>没有</strong>，内核不计算也不存储</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么必须统一到 CLRS 口径</strong>：核心定理"以 x 为根的子树至少含 <code class="c">2^bh(x) − 1</code> 个内部节点"依赖 bh <strong>不含 x</strong>；换成"含起点"的口径，公式要改写成 <code class="c">2^(bh−1) − 1</code>。</p>
+<p><strong>内核侧硬事实</strong>（<code class="c">include/linux/rbtree_augmented.h</code>、<code class="c">include/linux/rbtree.h</code>、<code class="c">lib/rbtree.c</code>）：</p>
+<ol>
+<li><code class="c">grep NIL rbtree.c rbtree.h rbtree_augmented.h</code> → <strong>零命中</strong>。内核没有 NIL 哨兵对象，也没有任何"黑高"计算。空子树就是 <code class="c">NULL</code>，颜色语义上等价黑。⚠️ 所以"内核黑高不计 NIL"是错误表述 —— <strong>这个量在内核里根本不存在</strong>，不是口径差别。</li>
+<li><code class="c">RB_RED = 0</code>、<code class="c">RB_BLACK = 1</code>（<code class="c">rbtree_augmented.h:171-172</code>）—— <strong>与多数教材相反</strong>，教材习惯写 RED=1。</li>
+<li><code class="c">rb_link_node()</code> 里没有一句染色代码，颜色位取自 parent 指针对齐后恒为 0 的低位，而 0 就是 <code class="c">RB_RED</code>：</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">static inline void rb_link_node(struct rb_node *node, struct rb_node *parent,
+                                struct rb_node **rb_link)
+{
+        node-&gt;__rb_parent_color = (unsigned long)parent;   /* 颜色位 = 0 = RB_RED */
+        node-&gt;rb_left = node-&gt;rb_right = NULL;             /* 空子树 = NULL，无哨兵 */
+        *rb_link = node;
+}
+</code></pre>
+<ol start="4">
+<li><code class="c">rb_red_parent(red)</code> 直接把 <code class="c">__rb_parent_color</code> 当指针返回 —— 只有该节点确实是红（颜色位 0）时才成立，是个自检式 API。</li>
+<li><code class="c">__rb_insert()</code> 循环的 <code class="c">if (unlikely(!parent))</code> 分支 = 空树或 Case 1 递归到根，用 <code class="c">rb_set_parent_color(node, NULL, RB_BLACK)</code> 强制染黑收尾 —— 规则 2（根必黑）就落在这里。</li>
+</ol>
 <hr />
 <h2>红与黑到底是什么</h2>
 <p><strong>物理层面：只是一个 bit。</strong> 颜色没有任何独立语义，是给修复算法看的记账位。Linux 内核连这 1 位都不单独存——塞进父指针的低位：</p>
@@ -1772,7 +1823,15 @@ rb_set_parent(y, old_parent_of_x); /* 3. y 上位 */
 <p>不需要，一个 bit 都不用动。父是黑 → 规则 4 无从违反；红节点不贡献黑高 → 规则 5 不变；新节点的两个孩子是 NIL 本就算黑；根不是它。五条全满足，修复循环一次都不进 —— 判据就是 <code class="c">while (parent &amp;&amp; rb_is_red(parent))</code>。<strong>插入的最好情况是 O(1)。</strong></p>
 </blockquote>
 <p><strong>Q9:</strong> 删除一个红色节点为什么不用修复？直接说"红不影响黑高"够不够？</p>
-<h2>&gt; 结论对但理由不完整，还差一步：红节点<strong>不可能只有单个孩子</strong> —— 有孩子就必是黑的（规则 4），而这个黑孩子会让本路径黑高 +1、另一侧 NIL 路径不变，当场违反规则 5。所以红节点要么无孩子，要么有两个黑孩子（后者删除时真正被摘掉的是中序后继）。<strong>被摘掉的红节点必然是叶子</strong>，摘掉后黑高一个不变，因此无需修复。</h2>
+<blockquote>
+<p>结论对但理由不完整，还差一步：红节点<strong>不可能只有单个孩子</strong> —— 有孩子就必是黑的（规则 4），而这个黑孩子会让本路径黑高 +1、另一侧 NIL 路径不变，当场违反规则 5。所以红节点要么无孩子，要么有两个黑孩子（后者删除时真正被摘掉的是中序后继）。<strong>被摘掉的红节点必然是叶子</strong>，摘掉后黑高一个不变，因此无需修复。</p>
+</blockquote>
+<p><strong>Q10:</strong> 红色节点 A，左边挂一个黑孩子（再往下是 NIL），右边直接是 NIL。两条路径各几个黑？合法吗？</p>
+<blockquote>
+<p>路径 1（A → 黑孩子 → NIL）= 黑孩子 + NIL = <strong>2 个黑</strong>；路径 2（A → NIL）= <strong>1 个黑</strong>。2 ≠ 1 → <strong>违反规则 5</strong>，不是合法红黑树。这正是"红节点不可能只有单侧孩子"的实例。（本题起点 A 是红色、不计入黑高，所以"含起点"口径与 CLRS 口径结果相同 —— 差异只在起点为黑时才体现。）</p>
+</blockquote>
+<p><strong>Q11:</strong> CLRS 的 <code class="c">bh(x)</code> 计不计起点 x 自身？这个差别为什么重要？</p>
+<h2>&gt; <strong>不计</strong>（但计入 NIL）。差别只在推公式时致命：定理"以 x 为根的子树至少含 <code class="c">2^bh(x) − 1</code> 个内部节点"依赖这个口径；若改用"含起点"的口径，公式要写成 <code class="c">2^(bh−1) − 1</code>。反过来，若只是判断一棵树是否合法（比的是各路径"相等"），任意一致口径都可以。另注：<strong>内核里根本没有黑高这个量</strong>（<code class="c">grep NIL</code> 零命中、无 bh 字段），它靠修复算法隐式维持性质 5。</h2>
       </section>
       <section class="section" id="s-08">
         <div class="sec-head"><div class="sec-no">08</div><h2>实时调度类 — FIFO / RR / DEADLINE 与 CFS 的边界</h2></div>
