@@ -1418,6 +1418,18 @@ cfs_rq-&gt;min_vruntime = max(cfs_rq-&gt;min_vruntime, curr-&gt;vruntime); /* �
 枚举验证与最小反例 → <a href="../../05-linux-kernel/html/chapter-06.html#s-6-5">05 Ch6 §6.5</a></p>
 </blockquote>
 <p>→ 树高 ≤ 2·log₂(n+1)。10 亿节点高最多 ~60。查/插/删稳定 O(log n)，<strong>无退化情况</strong>。</p>
+<p><strong>一条路径上最多能塞几个红节点？</strong> 设某路径有 b 个黑节点（黑高 = b）。因为根是黑、且红色不能相连，<strong>每个黑节点后面最多挂一个红</strong>，所以红 ≤ b，路径总长 ≤ 2b。取最坏情况：</p>
+<pre class="code" data-label="code"><code class="c">最短路径：  B → B → B → B → NIL              4 个节点（全黑）
+最长路径：  B → R → B → R → B → R → B → R → NIL   8 个节点（黑红交替）
+                                              ↑ 最后这个红是【红叶子】，合法
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>最长路径可以以红色结尾</strong> —— 这是 2b 这个上界能取满的关键，很多人误以为必须以黑结尾。
+红叶子是合法的：它的两个孩子是 NIL（黑），规则 4 满足；它不贡献黑高，规则 5 不受影响。
+最简单的例子：插入 1（根，黑）→ 插入 2（红色右孩子，叶子），这就是一棵合法红黑树，且 2 是红叶子。</p>
+</blockquote>
+<p>数字例子（黑高 b = 4）：最短 4 个节点，最长 <strong>8</strong> 个节点，8 ≤ 2×4 ✔。
+注意这是<strong>红黑规则强制的最坏上界</strong>，现实里极少拉满 —— 需要存在一条全黑路径和一条满红交替路径同时在树里。</p>
 <h4>黑高的计数口径（易错点，附内核源码证据）</h4>
 <p>规则 5 只要求"各路径黑节点数相等"，所以<strong>判定合法性时任意一致口径都行</strong>；但推公式必须统一到 CLRS，否则定理对不上：</p>
 <div class="tbl-wrap"><table>
@@ -1773,22 +1785,73 @@ rb_set_parent(y, old_parent_of_x); /* 3. y 上位 */
 <tbody>
 <tr>
 <td>平衡严格度</td>
-<td>高（高度差 ≤1），树更矮</td>
-<td>松（最长 ≤2×最短）</td>
+<td>高（左右高度差 ≤ 1），树最矮</td>
+<td>松（最长 ≤ 2 × 最短）</td>
+</tr>
+<tr>
+<td>树高上界</td>
+<td>≈ 1.44·log₂n</td>
+<td>≈ 2·log₂n（<strong>平均</strong>两者都接近 log₂n，差距通常只有百分之几）</td>
 </tr>
 <tr>
 <td>查找</td>
-<td>更快</td>
-<td>略慢（树稍高）</td>
+<td>更快（路径短 → cache miss 少）</td>
+<td>略慢</td>
 </tr>
 <tr>
-<td>插入/删除</td>
-<td>旋转可能一路传到根</td>
-<td>最多 2/3 次旋转</td>
+<td><strong>插入</strong>旋转</td>
+<td>最多 1 次再平衡（单旋 / 双旋），且<strong>不向上传播</strong></td>
+<td>最多 2 次</td>
+</tr>
+<tr>
+<td><strong>删除</strong>旋转</td>
+<td><strong>可能一路旋到根，最坏 O(log n) 次</strong></td>
+<td><strong>最多 3 次</strong></td>
+</tr>
+<tr>
+<td>额外存储</td>
+<td>2 bit 平衡因子</td>
+<td>1 bit 颜色（内核白嫖父指针低位）</td>
 </tr>
 </tbody>
 </table></div>
 <p>内核容器是<strong>写密集</strong>的：CFS 每次 tick / 唤醒 / 休眠都插树删树。红黑树用"松一点的平衡"换"更低的修改成本"。工程取舍，不是谁绝对更好。</p>
+<p>⚠️ 三个常见误读：</p>
+<ol>
+<li><strong>"AVL 插入也要 2 次旋转、很贵" —— 不对。</strong> AVL 插入做完那一次旋转后，子树高度<strong>回到插入前的值</strong>，所有祖先高度不变，传播立刻停止。所以<strong>插入上两者打平</strong>（红黑树有时还更多）。真正的分水岭是<strong>删除</strong>：AVL 删除后子树高度可能 −1，这个收缩会一路传到根，最坏 O(log n) 次旋转；红黑树恒为 ≤ 3 次。</li>
+<li><strong>"AVL 要多存平衡因子"不是主因。</strong> 2 bit 一样能塞进对齐后空闲的指针低位（红黑树的颜色位就是这么白嫖的）。真正的代价是<strong>写放大</strong>：变色只写<strong>当前节点那一条 cache line</strong>（内核里颜色位和父指针在同一个 word，<code class="c">rb_set_parent_color()</code> 一次 store 完成）；旋转要改子 / 父 / 祖父三个节点的链接和父指针 —— 至少 3 条 cache line 变脏，外加指针 chase。所以"能变色就不旋转"的物理含义是<strong>少弄脏几条 cache line</strong>，不是"1 bit 比 8 字节便宜"。</li>
+<li><strong>旋转还有个隐藏代价</strong>：它重排结构，会让正在 RCU 读侧的并发读者看到不一致的树形态（需额外同步）；纯变色不影响结构，对读者友好得多。</li>
+</ol>
+<blockquote>
+<p>顺带纠正一处：<strong>文件描述符不是红黑树</strong> —— <code class="c">struct fdtable</code> 是 <code class="c">struct file *fd[]</code> 数组。
+内核里真正的红黑树用例：CFS/EEVDF 的 <code class="c">cfs_rq.tasks_timeline</code>、epoll 的监听集合 <code class="c">eventpoll.rbr</code>（<code class="c">rb_root_cached</code>）、定时器 <code class="c">timerqueue_head</code>、<code class="c">address_space-&gt;i_mmap</code> 的 interval tree 等。</p>
+</blockquote>
+<h3>版本更新：两处已经变了</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>变化</th>
+<th>版本</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>VMA 不再是红黑树</strong></td>
+<td>6.1+</td>
+<td><code class="c">mm_struct</code> 的 <code class="c">mm_rb</code>（红黑树）+ <code class="c">mmap</code>（链表）被 <strong>maple tree</strong> 取代（<code class="c">mm_mt</code>，commit <code class="c">d4af56c5c7c6</code>）。原因恰好是红黑树的两个短板：顺序遍历要按 <code class="c">vm_next</code> / <code class="c">rb_node</code> 逐节点指针 chase（一个 VMA 一条 cache line）；旋转改结构不利于 RCU 无锁读。maple tree 是 256B 对齐的 B 树变体，一个节点 16 个 slot，<strong>一次 cache line 能做多次比较</strong></td>
+</tr>
+<tr>
+<td><strong>CFS 被 EEVDF 取代</strong></td>
+<td>6.6+</td>
+<td>commit <code class="c">147f3efaa241</code> / <code class="c">5e963f2bd465</code>，<code class="c">SCHED_NORMAL</code> 的"选谁"逻辑换成 EEVDF（Earliest Eligible Virtual Deadline First）：lag ≥ 0 才合格，合格集合里取虚拟截止时间最早的，于是"延迟"成了模型里的一等公民（可用 <code class="c">sched_setattr()</code> 声明 slice）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>但红黑树留下来了</strong> —— EEVDF 仍用 <code class="c">cfs_rq.tasks_timeline</code>，而且升级成了<strong>增广红黑树</strong>：每个节点缓存子树的 <code class="c">min_deadline</code>，<code class="c">__pick_eevdf()</code> 在树上做带剪枝的 O(log n) 搜索。这正是 <code class="c">include/linux/rbtree_augmented.h</code> 与 <code class="c">__rb_insert_augmented()</code> 的真实用例 —— 对比前面读过的 <code class="c">rb_insert_color()</code> 传 <code class="c">dummy_rotate</code>，增广版本传的是 <code class="c">augment_rotate</code>，旋转时顺带把 <code class="c">min_deadline</code> 一路更新到根。</p>
+<blockquote>
+<p>一句话：换掉的是"选谁的规则"和"VMA 的索引结构"，<strong>红黑树本身没被换掉</strong> —— 只是从"按 key 排序的普通 rb-tree"升级成"带子树聚合信息的 augmented rb-tree"。</p>
+</blockquote>
 <hr />
 <h2>落回 CFS</h2>
 <pre class="code" data-label="C"><code class="c">struct rb_root_cached {
@@ -1909,6 +1972,18 @@ rb_set_parent(y, old_parent_of_x); /* 3. y 上位 */
 <p><strong>局部：一个都不改。</strong> 情形 ① 是 +1（P、U 染黑）与 −1（G 染红）抵消，净零；情形 ② 旋转不碰黑高；情形 ③ 旋转 + 换色同样净零（G 侧路径由"G 黑 + U 黑"变成"P 黑 + G 红 + U 黑"，计数相同）。
 <strong>全局：只有收尾那次根染黑</strong>，且需 Case 1 真的传到根才生效。所以插入全程 bh 单调不减，且每次最多 +1。
 对照删除：双黑传到根时由根<strong>吸收</strong>，全局 bh −1 —— 根是黑高的"总闸门"，增减都在这里结算。</p>
+</blockquote>
+<p><strong>Q14:</strong> 黑高 H = 4 的红黑树，最长路径最多几个节点？最短路径几个？</p>
+<blockquote>
+<p>最短 = <strong>4</strong>（全黑）；最长 = <strong>8</strong>（4 黑 + 4 红，黑红交替），8 ≤ 2 × 4 ✔。
+关键点：最长路径<strong>可以以红叶子结尾</strong> —— 红节点的孩子是 NIL，NIL 算黑，规则 4 与规则 5 都不破。若误以为"路径必须以黑结尾"，上界只能取到 2H−1，就推不出 2H。
+实例：只插 1（根，黑）和 2（右孩子，红叶子），这就是一棵合法红黑树，2 就是红叶子。
+另注：这是<strong>强制的最坏上界</strong>，现实里极少拉满（需要一条全黑路径与一条满红交替路径同时存在）。</p>
+</blockquote>
+<p><strong>Q15:</strong> AVL 插入也最多 2 次旋转，凭什么说红黑树更适合内核？</p>
+<blockquote>
+<p>分水岭不在插入，在<strong>删除</strong>：AVL 插入后子树高度回到插入前的值，祖先高度全不变，传播立即停止（最多 1 次再平衡），与红黑树打平；而 AVL <strong>删除</strong>后子树高度可能 −1，这个收缩会一路传到根，最坏 <strong>O(log n) 次旋转</strong>，红黑树恒为 <strong>≤ 3 次</strong>。
+另外内核的代价模型是<strong>脏 cache line 的数量</strong>，不是"改几个字节"：变色只脏 1 条（颜色位与父指针在同一个 word，<code class="c">rb_set_parent_color()</code> 一次 store），旋转要动子 / 父 / 祖父 ≥ 3 条，还要指针 chase。</p>
 </blockquote>
 <hr />
       </section>
