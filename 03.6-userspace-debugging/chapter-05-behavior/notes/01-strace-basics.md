@@ -279,6 +279,7 @@ recvfrom(5,
 
 ## 交叉引用
 
+- [1.5 从源码到断点：gcc -g / gdb / strace 全链路](../../chapter-01-methodology/notes/05-build-to-debug-pipeline.md) —— strace 与 gdb 同走 ptrace、为何不需要 `-g`、以及两者的接力分工
 - [5.2 strace 实战分析](02-strace-practical-analysis.md)
 - [5.3 ltrace 库调用追踪](03-ltrace-library-calls.md)
 - [2.5 加载 core 回溯](../../chapter-02-crash/notes/05-load-core-backtrace.md)

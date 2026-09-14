@@ -16,6 +16,7 @@
 | `c1_2_shrink_demo.c` | 1.3 | **最小复现的起点**：读 N 条行情算均价，第 7 条 `volume=0` → 除零 SIGFPE。输入走 stdin，于是「砍输入」是改文件而不是改代码 | 无 |
 | `c1_3_auto_bisect.c` | 1.3 | **把「数据二分」写成程序**：16 条记录、4 次判定自动收敛到那条坏记录。顺带演示 `sigsetjmp/siglongjmp` 把「崩了」变成可返回的布尔值 | 无 |
 | `c1_4_hypothesis_div.c` | 1.4 / 3.3 | **一个被证伪的假设**：三种除零写法各跑一次，`1 / volatile-zero`（常量分子）**不崩、打出 0、退出 0**。用来演示「实测打脸直觉时该信数据」以及「UB ≠ 一定崩」 | 无 |
+| `c1_5_pipeline.c` | 1.5 | **全链路标本**：测 `-g` 前后体积、`dsymutil` 生成 `.dSYM`、`llvm-dwarfdump --debug-line` 摊开行号表（第 20 行 → `0x100003efc`）。⚠️ 本 demo 实测环境是**本机 macOS / clang 23.1.0（Mach-O）**，不是 CE 的 Linux ELF——正因如此它才能演示「macOS 的 DWARF 不在可执行文件里」这个平台差异 | 本机 `clang` + `dsymutil` + `llvm-dwarfdump`；编链接需保留 `.o`（见 1.5 笔记实测说明） |
 
 ## 输入数据（喂给 `c1_2_shrink_demo`）
 

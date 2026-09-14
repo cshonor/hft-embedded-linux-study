@@ -211,6 +211,7 @@ q              退出
 
 ## 交叉引用
 
+- [1.5 从源码到断点：gcc -g / gdb / strace 全链路](../../chapter-01-methodology/notes/05-build-to-debug-pipeline.md) —— 本章各零件如何串成一条线（DWARF 映射表 / int3 断点原理 / 与 strace 同走 ptrace）
 - [2.1 gdb 入门与调试信息（-g / debuginfo / 加载方式）](01-gdb-intro-build.md)
 - [2.2 断点与观察点](02-breakpoints.md)
 - [2.3 栈帧与回溯](03-stack-backtrace.md)
