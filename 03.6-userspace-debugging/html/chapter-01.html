@@ -318,6 +318,41 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <p>工具手册（gdb / strace / valgrind 的官方文档）教你「怎么用」，但<strong>不教你「遇到问题时该用哪个、按什么顺序」</strong>。这正是 LDD Ch4（Greg Kroah-Hartman 合著）把调试分成 <code class="c">Printing → Querying → Watching → System Faults → Debuggers</code> 五类方法的原因：<strong>先分类，再选工具</strong>。</p>
 <p>本模块后面 5 个问题类型章，每章开头都会先写一句「<strong>这一章解决什么症状</strong>」，让你从症状反查工具，而不是背完工具清单却不知道何时用。</p>
 <hr />
+<h2>可跑的 demo（<code class="c">code/</code>）</h2>
+<p>四篇笔记原本全是表格和口诀，<code class="c">code/</code> 把它们落成能跑的东西（Compiler Explorer · gcc 13.3.0 实测）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>对应节</th>
+<th>演示什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">code/c1_1_three_bugs.c</code></td>
+<td>1.1 / 1.2</td>
+<td>一份程序装三类雷：崩溃（139）/ 内存（泄漏）/ 并发（数据竞争），同一病人在不同工具下不同症状</td>
+</tr>
+<tr>
+<td><code class="c">code/c1_2_shrink_demo.c</code></td>
+<td>1.3</td>
+<td>最小复现的起点：10 条行情，第 7 条 <code class="c">volume=0</code> → 除零 SIGFPE；输入走 stdin，「砍输入」不用改代码</td>
+</tr>
+<tr>
+<td><code class="c">code/c1_3_auto_bisect.c</code></td>
+<td>1.3</td>
+<td>把「数据二分」写成程序：16 条记录 4 步收敛，<code class="c">sigsetjmp</code> 把「崩了」变成布尔值</td>
+</tr>
+<tr>
+<td><code class="c">code/c1_4_hypothesis_div.c</code></td>
+<td>1.4</td>
+<td>一个被证伪的假设：<code class="c">1 / volatile-zero</code> <strong>不崩、打出 0、退出 0</strong> —— 演示「实测打脸直觉时该信数据」</td>
+</tr>
+</tbody>
+</table></div>
+<p>编译、运行与期望退出码见 <a href="#intro"><code class="c">code/README.md</code></a>。</p>
+<hr />
 <h2>HFT 关联</h2>
 <ul>
 <li><strong>快速分诊</strong>：生产环境报错时，先判断「崩了 / 内存涨了 / 结果时对时错 / 卡住 / 太慢」五选一，决定上 coredump / valgrind / TSan / strace / perf——比「上来就 gdb」高效得多；</li>
@@ -463,6 +498,102 @@ perf 只能看见性能 ────────→ 看不见逻辑错误
 </tr>
 </tbody>
 </table></div>
+<h2>动手：把三类雷装进一个程序（实测）</h2>
+<p>分类学不用背，<strong>跑一遍就有体感</strong>。下面这份程序把「崩溃 / 内存 / 并发」三颗雷装在一起，用 argv 选：</p>
+<pre class="code" data-label="C"><code class="c">/* code/c1_1_three_bugs.c 节选 */
+static long g_orders_matched = 0;
+
+static void *match_worker(void *arg)          /* 并发：非原子读改写 */
+{
+    long n = (long)arg;
+    for (long i = 0; i &lt; n; i++)
+        g_orders_matched++;
+    return NULL;
+}
+
+static int crash_null_deref(void)             /* 崩溃：解引用 NULL */
+{
+    struct order { long id; long qty; };
+    struct order *o = NULL;
+
+    printf(&quot;case 1: 准备解引用一个 NULL 订单指针\n&quot;);
+    fflush(stdout);
+    o-&gt;qty = 100;                             /* ← SIGSEGV 在这里 */
+    return 0;
+}
+
+static int leak_orders(void)                  /* 内存：只借不还 */
+{
+    for (int i = 0; i &lt; 100; i++) {
+        char *fill = malloc(400);             /* 40000 B，全部未 free */
+        if (!fill) return 1;
+        memset(fill, 0, 400);
+    }
+    printf(&quot;case 2: 100 个 400 字节的订单快照已分配（全部未释放）\n&quot;);
+    return 0;
+}
+</code></pre>
+<p>完整源码见 <code class="c">code/c1_1_three_bugs.c</code>（含 <code class="c">case 3</code> 的双线程计数）。<strong>三种症状、三种编译方式，实测结果如下</strong>（gcc 13.3.0 / clang 18.1.0，基础参数 <code class="c">-g -O0 -Wall -Wextra</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>case</th>
+<th>类别</th>
+<th>编译方式</th>
+<th>实测退出码</th>
+<th>实测输出（关键行）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>崩溃</td>
+<td>裸编译</td>
+<td><strong>139</strong></td>
+<td><code class="c">Program terminated with signal SIGSEGV (11)</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>内存</td>
+<td><code class="c">-fsanitize=address</code></td>
+<td><strong>1</strong></td>
+<td><code class="c">ERROR: LeakSanitizer: detected memory leaks</code><br><code class="c">Direct leak of 40000 byte(s) in 100 object(s) allocated from:</code><br><code class="c">SUMMARY: AddressSanitizer: 40000 byte(s) leaked in 100 allocation(s).</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>内存</td>
+<td>裸编译</td>
+<td><strong>0</strong></td>
+<td><code class="c">case 2: 100 个 400 字节的订单快照已分配（全部未释放）</code> ← 一声不吭</td>
+</tr>
+<tr>
+<td>3</td>
+<td>并发</td>
+<td><code class="c">clang -fsanitize=thread</code></td>
+<td><strong>66</strong></td>
+<td><code class="c">WARNING: ThreadSanitizer: data race (pid=2)</code><br><code class="c">Location is global 'g_orders_matched' of size 8 at 0x5555569dc658</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>并发</td>
+<td>裸编译</td>
+<td><strong>0</strong></td>
+<td><code class="c">case 3: 期望撮合 200000 笔，实际记到 200000 笔</code> ← 计数居然一分不差</td>
+</tr>
+</tbody>
+</table></div>
+<p>三件事一眼可见：</p>
+<ol>
+<li><strong>退出码 = 128 + 信号号</strong>：SIGSEGV(11) → 139、SIGFPE(8) → 136。这是 shell 里判断「怎么死的」最快的办法（<code class="c">./prog; echo $?</code>）。TSan 检出问题则用自己的约定 <strong>66</strong>。</li>
+<li><strong>内存类和并发类在裸编译下「完全正常」</strong>：case 2 退出 0 还打印了成功信息；case 3 的计数甚至 <strong>200000 分毫不差</strong>（竞争存在 ≠ 一定丢更新，这正是竞态「偶发」的物理来源）。<strong>「看起来没问题」不等于没问题</strong>——这就是这两类问题必须上专用工具的原因。</li>
+<li><strong>工具是分类学的执行者</strong>：同一份程序，<code class="c">-fsanitize=address</code> 让它吐泄漏，<code class="c">-fsanitize=thread</code> 让它吐竞态，裸编译让它一声不吭。「问题类型 ↔ 工具」的对应在这里是硬的。</li>
+</ol>
+<blockquote>
+<p>⚠️ <strong>踩坑提醒</strong>：并发那颗雷必须用 <strong>clang</strong> 的 TSan。gcc 13.3 的 TSan 在云编译环境（Compiler Explorer 容器）里直接起不来：
+<code class="c">text
+FATAL: ThreadSanitizer: unexpected memory mapping 0x7153d7872000-0x7153d7d00000</code>
+退出码也是 66，但<strong>没有任何 race 报告</strong>——看到这行 FATAL 要意识到「是环境不支持 ASLR 固定映射」，不是「程序没有竞态」。换 clang 立刻正常。</p>
+</blockquote>
 <h2>HFT 关联</h2>
 <ol>
 <li><strong>分诊决定响应速度</strong>：交易进程在生产出问题时，第一句话先问「崩了 / 慢了 / 卡了 / 结果错了 / 内存涨了」——这五选一定位了该 dump core、上 perf、上 strace 还是上 TSan，而不是盲目重启掩盖问题。</li>
@@ -487,6 +618,10 @@ perf 只能看见性能 ────────→ 看不见逻辑错误
 <p><strong>Q4:</strong> 「分类学」和「工具清单」的学习顺序应该是什么？为什么？</p>
 <blockquote>
 <p>应该<strong>先学分类学、再学工具</strong>。因为分类学是「地图」，告诉你有哪些问题类型、每种该往哪走；工具清单是「路标」，具体教某条路怎么走。没有地图，路标再多也不知道该去哪个。这就是本章（Ch1 方法论）放在所有工具章前面的原因。</p>
+</blockquote>
+<p><strong>Q5:</strong> 上面实测里 case 3 的计数是 <code class="c">200000</code>，一分不差，为什么 TSan 却报 data race？「结果对」能证明「没有 bug」吗？</p>
+<blockquote>
+<p>不能。<code class="c">g_orders_matched++</code> 在机器层面是「读 → 加 → 写」三条指令，两个线程可能交错成「都读到 N，都写回 N+1」，丢更新。但<strong>丢不丢取决于当时的交错</strong>——两次运行都是 200000，只说明这两次恰好没交错到丢失的那一步（10 万次循环里窗口极小）。TSan 看的是<strong>有没有形成竞争的内存访问对</strong>（<code class="c">Location is global 'g_orders_matched'</code>），与「这次恰好有没有丢」无关。所以竞态是「偶发」的：裸编译下表现为 99.99% 正常 + 0.01% 错单，这才是它在 HFT 里最可怕的地方。</p>
 </blockquote>
 </details>
 <h2>交叉引用</h2>
@@ -599,6 +734,64 @@ perf 只能看见性能 ────────→ 看不见逻辑错误
 <blockquote>
 <p>稳定 bug 靠「打断点定位」，偶发 bug 靠「抓现场 + 全量检测」。前者是 gdb 的主场，后者是 core/ASan/TSan/rr 的主场。<strong>先判断偶发性，再选工具</strong>，能少做大量无用功。</p>
 </blockquote>
+<h2>动手：踩一遍决策树的四个分支（实测）</h2>
+<p>光看树不会用，走一遍才长记性。用 Ch1 的两份 demo（<code class="c">code/c1_1_three_bugs.c</code>、<code class="c">code/c1_2_shrink_demo.c</code>），把决策树的四个分支各踩一次，看<strong>症状 → 你看到的 → 选哪个工具 → 工具吐什么</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>症状（你看到的）</th>
+<th>决策树走法</th>
+<th>实测命令</th>
+<th>工具吐出的关键行</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>进程死了，<code class="c">echo $?</code> = <strong>139</strong></td>
+<td>崩溃分支 → 拿 bt</td>
+<td><code class="c">gcc -g -O0 -o b c1_1_three_bugs.c -pthread &amp;&amp; ./b 1</code></td>
+<td><code class="c">Program terminated with signal SIGSEGV (11)</code></td>
+</tr>
+<tr>
+<td>进程死了，<code class="c">echo $?</code> = <strong>136</strong></td>
+<td>崩溃分支，但信号是 SIGFPE → 先看算法有没有除零</td>
+<td><code class="c">./c1_2_shrink_demo &lt; ticks_10.txt</code></td>
+<td>前 6 条正常，<strong>第 7 条</strong>打出 <code class="c">ts=7 vol=0 turnover=10700</code> 后死</td>
+</tr>
+<tr>
+<td>跑得好好的，<code class="c">echo $?</code> = <strong>0</strong></td>
+<td>不在这棵树上 → <strong>但内存可能有问题</strong>，换 ASan 重编</td>
+<td><code class="c">gcc -g -O0 -fsanitize=address -o b c1_1_three_bugs.c -pthread &amp;&amp; ./b 2</code></td>
+<td><code class="c">Direct leak of 40000 byte(s) in 100 object(s)</code></td>
+</tr>
+<tr>
+<td>跑得好好的，<code class="c">echo $?</code> = <strong>0</strong>，结果也对</td>
+<td>同上 → 怀疑并发，换 TSan 重编</td>
+<td><code class="c">clang -g -O1 -fsanitize=thread -pthread -o b c1_1_three_bugs.c &amp;&amp; ./b 3</code></td>
+<td><code class="c">WARNING: ThreadSanitizer: data race</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>三点从实测里读出来的结论：</p>
+<ol>
+<li><strong>退出码是决策树的第一个路标</strong>。<code class="c">echo $?</code> 一个数字就把「崩溃类（128+N）」和「非崩溃类（0/1）」分开了。139/136/134 分别对应 SIGSEGV/SIGFPE/SIGABRT——<strong>不用 gdb 就能知道「怎么死的」</strong>。</li>
+<li><strong>「正常退出」是决策树里最危险的岔口</strong>。后面两个分支（内存、并发）<strong>症状全都是「看起来正常」</strong>：exit 0、结果正确。所以新手最容易卡在这里——按照「没崩就不用查」的直觉，这两类 bug 永远查不出来。</li>
+<li><strong>同一条命令换个开关，就是另一棵树</strong>。<code class="c">-fsanitize=address</code> 和 <code class="c">-fsanitize=thread</code> 是把「正常的程序」变成「有症状的程序」——决策树里那些「要重编译」的分支，本质是在<strong>人为制造症状</strong>。</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># 一张嘴就把四条路都问一遍（开发期自检脚本的雏形）
+gcc -g -O0 -Wall -Wextra -pthread -o b0 c1_1_three_bugs.c
+gcc -g -O0 -fsanitize=address -pthread -o b_asan c1_1_three_bugs.c
+clang -g -O1 -fsanitize=thread -pthread -o b_tsan c1_1_three_bugs.c
+for c in 1 2 3; do
+  echo &quot;--- case $c ---&quot;
+  ./b0 $c;     echo &quot;  plain: exit=$?&quot;
+  ./b_asan $c; echo &quot;  asan : exit=$?&quot;
+  ./b_tsan $c; echo &quot;  tsan : exit=$?&quot;
+done
+</code></pre>
+<blockquote>
+<p>这份脚本就是「决策树自动化」：把三类问题各配一个专用构建，一次跑完，谁有问题谁非零退出。HFT 团队 CI 里的 <code class="c">-asan</code> / <code class="c">-tsan</code> 双构建，本质就是它。</p>
+</blockquote>
 <h2>HFT 关联</h2>
 <ol>
 <li><strong>生产偶发崩溃 → 必须先开 core</strong>：交易进程 7×24 跑，崩溃不可复现，唯一证据是 core。上线前必须配好 <code class="c">ulimit -c</code> + <code class="c">core_pattern</code>（见 Ch2），否则崩溃了连现场都没有。</li>
@@ -623,6 +816,10 @@ perf 只能看见性能 ────────→ 看不见逻辑错误
 <p><strong>Q4:</strong> 「卡住」和「太慢」都表现为「程序没反应」，怎么快速区分该上 strace 还是 perf？</p>
 <blockquote>
 <p>看<strong>是不是永久卡住</strong>：如果进程「永久不动」（等一个永远不会来的事件），是行为/并发问题，用 <code class="c">strace -p</code> 看它停在哪（等 IO 还是等锁）；如果进程「还在跑但慢」（CPU 有活动、只是吞吐低），是性能问题，用 perf 采样找热点。「永久卡住」和「缓慢推进」是两类完全不同的病。</p>
+</blockquote>
+<p><strong>Q5:</strong> 一个程序 exit code 是 0、输出结果也正确，能不能收工不查了？决策树怎么处理这种情况？</p>
+<blockquote>
+<p>不能。决策树里「正常退出」恰恰是最危险的岔口：内存类（泄漏、越界写、UAF）和并发类（数据竞争）在裸编译下<strong>症状就是「一切正常」</strong>——实测里 <code class="c">c1_1_three_bugs.c</code> 的 case 2 退出 0 且打印成功信息，case 3 计数 200000 一分不差。处理办法是<strong>主动换分支</strong>：怀疑内存就 <code class="c">-fsanitize=address</code> 重编，怀疑并发就 <code class="c">-fsanitize=thread</code> 重编。这两类只能靠「人为制造症状」，等不到自然暴露。</p>
 </blockquote>
 </details>
 <h2>交叉引用</h2>
@@ -748,6 +945,152 @@ git bisect reset
 </table></div>
 <blockquote>
 <p>偶发 bug 无法直接二分，因为它「判定不稳定」。这时要先想办法把它变稳定（缩小 + 提高触发频率 + rr 录像），再二分。</p>
+</blockquote>
+<h2>动手：把「缩小复现」和「数据二分」真跑一遍（实测）</h2>
+<p>方法论光看是记不住的，下面用两份 demo 把上面的四步砍法和二分亲手走一遍。</p>
+<h3>第一步：造一个「只在特定记录上炸」的复现</h3>
+<p><code class="c">code/c1_2_shrink_demo.c</code> —— 读一批行情，对每条算均价 = 成交额 / 成交量，<strong>其中有一条成交量是 0</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* code/c1_2_shrink_demo.c 节选 */
+struct tick { long ts_ms; long volume; long turnover; };
+
+while (scanf(&quot;%ld %ld %ld&quot;, &amp;t.ts_ms, &amp;t.volume, &amp;t.turnover) == 3) {
+    seq++;
+    printf(&quot;record %ld: ts=%ld vol=%ld turnover=%ld\n&quot;,
+           seq, t.ts_ms, t.volume, t.turnover);
+    fflush(stdout);                     /* ← 关键：让「崩在第几条」肉眼可见 */
+
+    long vwap = t.turnover / t.volume;  /* vol == 0 → 除零 */
+    printf(&quot;            vwap = %ld\n&quot;, vwap);
+}
+</code></pre>
+<p>两个设计要点值得学：<strong>① 每条处理前先打印进度</strong>（否则崩了不知道崩在哪）；<strong>② 输入走 stdin</strong>（这样「砍输入」是写文件，不是改代码——这正是后面能自动二分的物理基础）。</p>
+<p>输入 <code class="c">code/ticks_10.txt</code>（10 条，第 7 条 <code class="c">volume = 0</code>）：</p>
+<pre class="code" data-label="text"><code class="c">1  100  10100
+2  100  10200
+...
+7  0    10700      ← 雷在这里
+8  100  10800
+...
+10 100  11000
+</code></pre>
+<p>实测（gcc 13.3.0 <code class="c">-g -O0 -Wall -Wextra</code>，退出码 <strong>136</strong> = 128 + SIGFPE(8)）：</p>
+<pre class="code" data-label="text"><code class="c">record 1: ts=1 vol=100 turnover=10100
+            vwap = 101
+record 2: ts=2 vol=100 turnover=10200
+            vwap = 102
+record 3: ts=3 vol=100 turnover=10300
+            vwap = 103
+record 4: ts=4 vol=100 turnover=10400
+            vwap = 104
+record 5: ts=5 vol=100 turnover=10500
+            vwap = 105
+record 6: ts=6 vol=100 turnover=10600
+            vwap = 106
+record 7: ts=7 vol=0 turnover=10700
+--- stderr ---
+Program terminated with signal SIGFPE (8)
+</code></pre>
+<p><strong>第 6 条打完 vwap、第 7 条只打了输入行就死了</strong>——「崩点在记录 7」这个事实已经被打印出来了。这就是「可判定」：不需要人肉看，脚本比对「最后打印到第几条」就能判定。</p>
+<h3>第二步：砍输入——10 条 → 1 条（实测）</h3>
+<p>按 1.3 的四步砍法，这里只需要砍<strong>输入</strong>（代码已经是最小形态）。两次实测：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>输入</th>
+<th>条数</th>
+<th>实测退出码</th>
+<th>实测输出</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">ticks_first6.txt</code>（前 6 条，全好）</td>
+<td>6</td>
+<td><strong>0</strong></td>
+<td><code class="c">全部 6 条记录处理完毕，未触发问题</code></td>
+<td>bug <strong>消失</strong> → 第 7 条是关键</td>
+</tr>
+<tr>
+<td><code class="c">ticks_only_bad.txt</code>（只留第 7 条 → <code class="c">1  0  10700</code>）</td>
+<td>1</td>
+<td><strong>136</strong></td>
+<td><code class="c">record 1: ts=1 vol=0 turnover=10700</code> 后 SIGFPE</td>
+<td><strong>最小复现：1 条记录</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>从 10 条砍到 1 条，bug 依然稳定复现</strong>——这就是「最小可复现用例」。它现在小到可以贴进 issue、可以交给任何工具自动跑、可以直接写进回归测试：</p>
+<pre class="code" data-label="shell"><code class="c"># 最小复现固化成回归测试（crash → 非零退出）
+echo '1 0 10700' | ./c1_2_shrink_demo &gt; /dev/null 2&gt;&amp;1
+test $? -eq 0 &amp;&amp; echo &quot;PASS&quot; || echo &quot;FAIL: 仍会除零崩溃&quot;   # → FAIL
+</code></pre>
+<blockquote>
+<p>「砍掉后 bug 消失 / 只剩一条还崩」<strong>这个减法过程本身就在定位根因</strong>——你已经知道问题出在「volume = 0 的那条行情」，接下来只需去修 <code class="c">vwap</code> 的除法，不用读整个链路。</p>
+</blockquote>
+<h3>第三步：数据二分——把「找哪条」写成程序（实测）</h3>
+<p>人肉二分会累、会抄错区间。<code class="c">code/c1_3_auto_bisect.c</code> 把二分写成程序，16 条记录 4 步收敛。它有三个可直接观察的点：</p>
+<pre class="code" data-label="C"><code class="c">/* code/c1_3_auto_bisect.c 节选 */
+static sigjmp_buf g_jmp;
+
+static void on_sigfpe(int sig)              /* 把「崩了」变成可返回的信号 */
+{
+    (void)sig;
+    g_caught = 1;
+    siglongjmp(g_jmp, 1);
+}
+
+static int batch_ok(int lo, int hi)         /* 判定函数：必须纯布尔 */
+{
+    if (sigsetjmp(g_jmp, 1) != 0)
+        return 0;                           /* 从 SIGFPE 跳回来 = 这一批坏 */
+
+    for (int i = lo; i &lt;= hi; i++) {
+        volatile long vol  = volume_of(i);  /* volatile 逼编译器真做除法 */
+        volatile long turn = turnover_of(i);
+        volatile long vwap = turn / vol;    /* ← 命中坏记录才除零 */
+        (void)vwap;
+    }
+    return 1;
+}
+</code></pre>
+<p>实测输出（退出码 <strong>0</strong>）：</p>
+<pre class="code" data-label="text"><code class="c">共 16 条记录，先确认「整批是坏的」
+  判定 [0, 15] -&gt; BAD
+开始二分（每次砍半）：
+  第 1 步: [ 0,  7] good  -&gt; 嫌疑落在右半 [ 8, 15]
+  第 2 步: [ 8, 11] BAD   -&gt; 嫌疑落在左半 [ 8, 11]
+  第 3 步: [ 8,  9] good  -&gt; 嫌疑落在右半 [10, 11]
+  第 4 步: [10, 10] good  -&gt; 嫌疑落在右半 [11, 11]
+收敛：坏记录是第 12 条（下标 11）—— 16 条记录共 4 步，因为 log2(16) = 4
+该记录 volume = 0，turnover = 1011 —— 除零的根因就在这里
+</code></pre>
+<p>对照 1.3 的三条前提，这份程序一条不落地满足了：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>前提</th>
+<th>在这份程序里怎么落地</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>可自动判定</strong></td>
+<td><code class="c">batch_ok(lo, hi)</code> 返回 1/0，不需要人看输出</td>
+</tr>
+<tr>
+<td><strong>判定快</strong></td>
+<td>一批最多 16 次除法，微秒级</td>
+</tr>
+<tr>
+<td><strong>判定稳定</strong></td>
+<td>同样的区间每次必得同样结果（volume 是纯函数）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong><code class="c">sigsetjmp</code> 这个技巧值得记住</strong>：正常业务代码不会把「进程崩了」当返回值用，但<strong>在构建自动判定器时</strong>它是标准做法——把 SIGFPE（或 SIGSEGV）抓成布尔值，二分循环就能在一个进程内跑完，不用 fork 16 个子进程。生产上等价的做法是「跑一遍测试脚本看退出码」。</p>
+<p>还有个小反直觉点：<strong>整数除零在 Linux 上发的是 <code class="c">SIGFPE</code>（名字叫 Floating-Point Exception）</strong>——「浮点异常」这名字是历史遗留，整数除零、整数溢出都走它。别被名字骗了。</p>
 </blockquote>
 <h2>HFT 关联</h2>
 <ol>
@@ -909,6 +1252,152 @@ free(buf);             // 改 3：加 free
 <blockquote>
 <p>原则：<strong>先用工具观测（零侵入），不够再用断点，最后才加打印</strong>。打印是「最后手段」，因为它要改代码、重编译、还可能改变时序（尤其并发 bug）。</p>
 </blockquote>
+<h2>动手：一个假设被证伪的全过程（实测）</h2>
+<p>上面讲的是道理，下面走一遍<strong>真实的循环</strong>。这个例子的价值在于：<strong>第一个假设是错的，而且错得很典型</strong>——它是「人人都信的常识」。</p>
+<h3>① 观察现象</h3>
+<p>写一份探针 <code class="c">code/c1_4_hypothesis_div.c</code>，三种除零写法各跑一次：</p>
+<pre class="code" data-label="C"><code class="c">static volatile int g_zero = 0;
+static volatile int g_one  = 1;
+
+if (argv[3][0] == 'A') {          /* A: 常量分子 / volatile 除零 */
+    int c = 1 / g_zero;
+    printf(&quot;A: 1 / volatile-zero = %d\n&quot;, c);
+} else if (argv[3][0] == 'B') {   /* B: 两个 volatile */
+    int c = g_one / g_zero;
+    printf(&quot;B: volatile-one / volatile-zero = %d\n&quot;, c);
+} else {                          /* C: argv 传来的运行时值 */
+    int c = a / b;
+    printf(&quot;C: %d / %d = %d\n&quot;, a, b, c);
+}
+</code></pre>
+<p>gcc 13.3.0 <code class="c">-g -O0 -Wall -Wextra</code> 实测：</p>
+<pre class="code" data-label="text"><code class="c">$ ./c1_4_hypothesis_div 1 0 A
+A: 1 / volatile-zero = 0
+没有崩，正常退出
+$ echo $?
+0
+
+$ ./c1_4_hypothesis_div 1 0 B
+Program terminated with signal SIGFPE (8)
+$ echo $?
+136
+
+$ ./c1_4_hypothesis_div 1 0 C
+Program terminated with signal SIGFPE (8)
+$ echo $?
+136
+</code></pre>
+<p><strong>A 没崩。</strong> 退出码 0，还打印了 <code class="c">= 0</code>。</p>
+<h3>② 提出假设（H1）</h3>
+<blockquote>
+<p><strong>H1</strong>：整数除零是 UB，UB 会发 SIGFPE 终止进程。<strong>三个写法都应该是 136。</strong></p>
+</blockquote>
+<h3>③ 设计验证</h3>
+<p>如果 H1 成立，A/B/C 三次运行的退出码应该全是 136。<strong>实测 A = 0</strong>。</p>
+<h3>假设不成立 → 修正假设</h3>
+<p><strong>H1 被证伪了。</strong> 注意这里最容易犯的错：<em>「可能是我哪里写错了 / 再跑一次试试 / 大概是编译器 bug」</em>——这都是<strong>拒绝修正假设</strong>。正确的动作是：<strong>信数据，改假设</strong>。</p>
+<p>那 A 和 B 的差别在哪？逐字对比：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>分子</th>
+<th>分母</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td><strong>字面量 <code class="c">1</code></strong></td>
+<td><code class="c">volatile int g_zero</code></td>
+<td>不崩，打出 0</td>
+</tr>
+<tr>
+<td>B</td>
+<td><code class="c">volatile int g_one</code></td>
+<td><code class="c">volatile int g_zero</code></td>
+<td>SIGFPE</td>
+</tr>
+<tr>
+<td>C</td>
+<td>argv 运行时值 <code class="c">a</code></td>
+<td>argv 运行时值 <code class="c">b</code></td>
+<td>SIGFPE</td>
+</tr>
+</tbody>
+</table></div>
+<p>唯一的结构差别是<strong>分子是不是编译期已知的常量</strong>。于是修正假设：</p>
+<blockquote>
+<p><strong>H2</strong>：当分子是编译期常量时，gcc 会把 <code class="c">1 / x</code> 折成一段<strong>不含除法指令</strong>的等价序列；只有两个操作数都是运行时值时才真的生成 <code class="c">idiv</code>，才可能发 SIGFPE。</p>
+</blockquote>
+<h3>④ 验证 H2：去看汇编</h3>
+<p>假设 H2 是<strong>可证伪的、且能直接观测</strong>的——去看 A 和 B 生成了什么指令。用 <code class="c">-S</code> 或编译器浏览服务取汇编（<code class="c">-O0</code>，节选）：</p>
+<pre class="code" data-label="asm"><code class="c">div_const_numerator:            ; 对应 A：1 / z
+        mov     eax, DWORD PTR z[rip]
+        mov     edx, eax
+        add     edx, 1
+        cmp     edx, 2
+        setbe   dl
+        mov     ecx, 0
+        test    dl, dl
+        cmove   eax, ecx
+        pop     rbp
+        ret                     ; ← 整段里没有一条 idiv
+
+div_two_volatiles:              ; 对应 B：one / z
+        mov     eax, DWORD PTR one[rip]
+        mov     ecx, DWORD PTR z[rip]
+        cdq                     ; 把 eax 符号扩展到 edx:eax
+        idiv    ecx             ; ← 真除法：ecx == 0 → #DE → SIGFPE
+        pop     rbp
+        ret
+</code></pre>
+<p><strong>H2 被证实</strong>：A 那段汇编里<strong>一条 <code class="c">idiv</code> 都没有</strong>，全是比较和条件搬移，所以它永远不会触发 <code class="c">#DE</code>（除零异常）——它「算出」的 0 只是这段无分支序列对「除数为 0」这种 UB 输入的任意产物。B 才有 <code class="c">idiv</code>。</p>
+<h3>⑤ 收敛：这条循环教了什么</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>环节</th>
+<th>本例中的具体动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>观察</td>
+<td><code class="c">1 / volatile-zero</code> 打印 0 且 exit 0（不是 SIGFPE）</td>
+</tr>
+<tr>
+<td>假设 H1</td>
+<td>「除零都发 SIGFPE」——来自日常经验的常识</td>
+</tr>
+<tr>
+<td>验证 H1</td>
+<td>三种写法跑一遍 → <strong>A = 0，H1 死</strong></td>
+</tr>
+<tr>
+<td>修正 H2</td>
+<td>「常量分子会被折成不含除法的序列」</td>
+</tr>
+<tr>
+<td>验证 H2</td>
+<td>取汇编 → A 无 <code class="c">idiv</code>、B 有 <code class="c">idiv</code> → <strong>H2 活</strong></td>
+</tr>
+<tr>
+<td>收敛</td>
+<td>结论 = 「整数除零是否崩，取决于编译器有没有生成除法指令」——<strong>UB 不是「一定崩」，是「没有保证」</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>对照 1.4 的三个陷阱，这次循环恰好绕开了全部三个：</p>
+<ol>
+<li><strong>没有确认偏误</strong>：H1 被实测打脸时，信数据而不是信直觉（没有「再跑一次看看」）。</li>
+<li><strong>一次只改一处</strong>：A/B/C 是<strong>三个独立变体</strong>，不是「改了 A 又改 B」——每个变体只变化一个维度（分子是不是常量），所以能干净地归因。</li>
+<li><strong>没有改症状</strong>：没有人去「在除法前加 <code class="c">if (z == 0) return;</code>」把症状盖掉——那是掩盖 UB，不是修它（正确做法见 3.3 的 <code class="c">__builtin_add_overflow</code> 一节）。</li>
+</ol>
+<blockquote>
+<p><strong>这条经验比结论本身更重要</strong>：调试中最贵的不是「不会用 gdb」，而是<strong>实测结果和你的假设冲突时，你选择怀疑数据</strong>。UB 的整个「隐形」性格（见 3.3）就建立在这个反直觉性上——<strong>UB 的典型表现恰恰是「不崩、还给你一个看起来合理的数」</strong>。</p>
+</blockquote>
 <h2>HFT 关联</h2>
 <ol>
 <li><strong>「碰巧能跑」在交易系统里是灾难</strong>：改了时序、加了条日志，竞态暂时不出现了，你上线后它照样偶发错单。必须用 TSan/ASan <strong>证实</strong>根因，而不是「看起来好了」。</li>
@@ -933,6 +1422,10 @@ free(buf);             // 改 3：加 free
 <p><strong>Q4:</strong> 验证假设的手段（打印/断点/工具观测）应该按什么顺序选？为什么？</p>
 <blockquote>
 <p>应该<strong>先工具观测（零侵入）→ 不够再断点 → 最后加打印</strong>。因为工具（strace/valgrind/TSan）不用改代码、不改时序；断点要 attach 但会扰动并发时序；打印最重——要改代码、重编译、还可能改变时序（尤其并发 bug，加打印往往让竞态「消失」）。所以打印是最后手段。</p>
+</blockquote>
+<p><strong>Q5:</strong> 上面「假设被证伪」的例子里，H1 错在哪？为什么说「信数据、改假设」比「再跑一次试试」重要？</p>
+<blockquote>
+<p>H1 错在把「UB」等同于「一定崩」。UB 的真实含义是<strong>「没有任何保证」</strong>——编译器可以（并且确实会）基于「除数非零」的假设，把 <code class="c">1 / 常量分母</code> 折成一段不含 <code class="c">idiv</code> 的序列，于是既不崩也不报错。这类「实测打脸直觉」的时刻是调试的分水岭：<strong>「再跑一次试试」属于拒绝修正假设</strong>（若结果是稳定可复现的，重跑不产生新信息）；正确动作是信数据，把假设改成能被观测证伪的 H2（「常量分子不生成除法指令」），然后去汇编里找证据。</p>
 </blockquote>
 </details>
 <h2>交叉引用</h2>

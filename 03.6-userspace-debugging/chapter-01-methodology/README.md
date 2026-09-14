@@ -25,6 +25,21 @@
 
 ---
 
+## 可跑的 demo（`code/`）
+
+四篇笔记原本全是表格和口诀，`code/` 把它们落成能跑的东西（Compiler Explorer · gcc 13.3.0 实测）：
+
+| 文件 | 对应节 | 演示什么 |
+|------|--------|----------|
+| `code/c1_1_three_bugs.c` | 1.1 / 1.2 | 一份程序装三类雷：崩溃（139）/ 内存（泄漏）/ 并发（数据竞争），同一病人在不同工具下不同症状 |
+| `code/c1_2_shrink_demo.c` | 1.3 | 最小复现的起点：10 条行情，第 7 条 `volume=0` → 除零 SIGFPE；输入走 stdin，「砍输入」不用改代码 |
+| `code/c1_3_auto_bisect.c` | 1.3 | 把「数据二分」写成程序：16 条记录 4 步收敛，`sigsetjmp` 把「崩了」变成布尔值 |
+| `code/c1_4_hypothesis_div.c` | 1.4 | 一个被证伪的假设：`1 / volatile-zero` **不崩、打出 0、退出 0** —— 演示「实测打脸直觉时该信数据」 |
+
+编译、运行与期望退出码见 [`code/README.md`](code/README.md)。
+
+---
+
 ## HFT 关联
 
 - **快速分诊**：生产环境报错时，先判断「崩了 / 内存涨了 / 结果时对时错 / 卡住 / 太慢」五选一，决定上 coredump / valgrind / TSan / strace / perf——比「上来就 gdb」高效得多；

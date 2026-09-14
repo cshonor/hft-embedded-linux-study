@@ -315,11 +315,40 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <p><strong>这一章解决什么症状</strong>：进程卡住不动、打开的文件不对、绑定的端口不对、热路径里有多余的系统调用——「程序到底让内核和库做了什么」这一类行为问题。行为类问题不需要改代码、不需要符号，strace/ltrace 直接看「运行全程的调用流」。</p>
 <p>本章四个工具：strace（5.1–5.2）追踪<strong>系统调用</strong>，ltrace（5.3）追踪<strong>库函数调用</strong>，attach（5.4）追踪<strong>已经在跑的进程</strong>。</p>
 <hr />
+<h2>可跑的 demo（<code class="c">code/</code>）</h2>
+<blockquote>
+<p>⚠️ <strong>strace / ltrace 在本仓库的验证环境跑不了</strong>（容器不给 <code class="c">ptrace</code>），笔记里的 strace 输出是<strong>手册格式示意</strong>。但<strong>输出的语义可以实测</strong> —— 下面三份 demo 把 strace 的每一行翻译成程序自己能打印的事实（Compiler Explorer · gcc 13.3.0 实测）：</p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>演示什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">code/c5_1_write_buffering.c</code></td>
+<td><strong>write 什么时候发生</strong>：<code class="c">nobuf</code>/<code class="c">line</code>/<code class="c">buf</code> 三种缓冲模式各跑一次，结尾 SIGFPE。<code class="c">buf</code> 模式下 <strong>stdout 完全为空</strong> —— 缓冲区还没刷到内核进程就死了</td>
+</tr>
+<tr>
+<td><code class="c">code/c5_2_syscall_map.c</code></td>
+<td><strong>把 C 语句翻译成 strace 行</strong>：自己打印每次 syscall 的返回值与 errno（<code class="c">open</code>→fd 3、不存在→<code class="c">-1 ENOENT(2)</code>、关闭的 fd→<code class="c">-1 EBADF(9)</code>）</td>
+</tr>
+<tr>
+<td><code class="c">code/c5_3_read_semantics.c</code></td>
+<td><strong>read 的三种返回值</strong>：16 字节小缓冲逐轮读 stdin，打印 <code class="c">=16 / =7（部分读）/ =0（EOF）</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>编译、运行与期望退出码见 <a href="#intro"><code class="c">code/README.md</code></a>。</p>
+<hr />
 <h2>HFT 关联</h2>
 <ul>
 <li><strong>定位卡死</strong>：行情/下单进程卡住，<code class="c">strace -p</code> 看它停在 <code class="c">recv</code>（等数据）还是 <code class="c">futex</code>（等锁），一步区分「网络问题」和「死锁」；</li>
 <li><strong>发现多余 syscall</strong>：热路径里本可避免的 <code class="c">gettimeofday</code>/<code class="c">read</code>/系统调用是延迟杀手，<code class="c">strace -c</code> 一眼暴露；</li>
-<li><strong>审计调用链</strong>：追踪 socket 建连、<code class="c">send</code>/<code class="c">recv</code> 时序，还原下单链路是否按预期走。</li>
+<li><strong>审计调用链</strong>：追踪 socket 建连、<code class="c">send</code>/<code class="c">recv</code> 时序，还原下单链路是否按预期走；</li>
+<li><strong>别把缓冲当没输出</strong>：<code class="c">printf</code> 后进程被信号杀死时输出会丢（见 <code class="c">code/c5_1_write_buffering.c</code>），生产日志要关注刷盘时机，别让「最后几行日志」永远查不到。</li>
 </ul>
       </section>
       <section class="section" id="s-01">
@@ -508,6 +537,154 @@ close(3)                                     = 0
 exit_group(0)                                 = ?
 </code></pre>
 <p>关键洞察：<strong>C 的 <code class="c">fopen</code>/<code class="c">fgets</code> 都是库函数，底层要落成 <code class="c">openat</code>/<code class="c">read</code>/<code class="c">write</code> 这些 syscall</strong>。strace 让你看到库函数背后真正的内核交互——这是理解「用户态 API vs 系统调用」的绝佳视角（也是 TLPI 反复强调的分层）。</p>
+<blockquote>
+<p>📌 上面这段 strace 输出是<strong>按格式给出的示意</strong>（本环境跑不了 strace）。想拿到<strong>实测的</strong>返回值语义，用本节「动手」里的 <code class="c">code/c5_2_syscall_map.c</code>——它把 <code class="c">open</code> 拿到 fd 3、<code class="c">ENOENT=2</code>、<code class="c">EBADF=9</code> 这些数字真跑出来给你看。</p>
+</blockquote>
+<h2>动手：不用 strace，也能把「一行 syscall」跑出来（实测）</h2>
+<p>⚠️ <strong>先说清楚限制</strong>：本仓库的验证环境跑不了 strace —— 它靠 <code class="c">ptrace</code> 接管目标进程，而编译服务容器里既没有 strace 也不允许 ptrace（真实 Linux 主机上没问题）。所以本节下面的 <strong>strace 输出格式示例是手册格式</strong>。</p>
+<p>但<strong>输出的语义可以实测</strong>。我写了三份 demo，把「strace 那一行到底在说什么」变成能真跑、真看的事实：</p>
+<h3>① 返回值与 errno：<code class="c">= -1 ENOENT</code> 是什么感觉</h3>
+<p><code class="c">code/c5_2_syscall_map.c</code> 每做一件事，就把「这条语句会产生什么 syscall、返回值是多少、errno 是什么」自己打印出来。实测（gcc 13.3.0）：</p>
+<pre class="code" data-label="text"><code class="c">【1】openat —— 创建/打开文件（strace 里最常见的第一行）
+  open(O_CREAT|O_WRONLY|O_TRUNC, 0644)             -&gt; 返回 3    errno=0(-)
+【2】write —— 真正把数据交给内核
+  write(fd, &quot;hello\n&quot;, 6)                          -&gt; 返回 6    errno=0(-)
+【3】打开一个不存在的文件 —— 学会读 `= -1 ENOENT`
+  open(&quot;/tmp/definitely_not_here_12345&quot;, O_RDONLY) -&gt; 返回 -1   errno=2(No such file or directory)
+【4】读回刚写的文件 —— read 的返回值是「字节数」，不是 0/成功
+  open(path, O_RDONLY)                             -&gt; 返回 3    errno=0(-)
+  read(fd, buf, 63)                                -&gt; 返回 6    errno=0(-)  内容=hello
+【5】对一个已经关闭的 fd 操作 —— 学会读 EBADF
+  write(已关闭的 fd, &quot;x&quot;, 1)                       -&gt; 返回 -1   errno=9(Bad file descriptor)
+【6】写 /dev/full —— 学会读 ENOSPC
+  open(&quot;/dev/full&quot;, O_WRONLY)                      -&gt; 打不开（本环境无 /dev/full），跳过
+【7】unlink —— 删除文件
+  unlink(path)                                     -&gt; 返回 0    errno=0(-)
+</code></pre>
+<p>把这张表和上面的「输出格式解读」对着看，就发现<strong>它和 strace 的输出是一一对应的</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>demo 打印的</th>
+<th>对应的 strace 行</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">open(...) -&gt; 返回 3</code></td>
+<td><code class="c">openat(AT_FDCWD, "...", O_CREAT\|O_WRONLY\|O_TRUNC, 0644) = 3</code></td>
+<td>fd = <strong>3</strong>（0/1/2 被 stdin/out/err 占了）</td>
+</tr>
+<tr>
+<td><code class="c">open(...) -&gt; 返回 -1 errno=2</code></td>
+<td><code class="c">openat(AT_FDCWD, "...", O_RDONLY) = -1 ENOENT (No such file or directory)</code></td>
+<td>ENOENT = <strong>2</strong></td>
+</tr>
+<tr>
+<td><code class="c">write(已关闭的 fd, "x", 1) -&gt; -1 errno=9</code></td>
+<td><code class="c">write(3, "x", 1) = -1 EBADF (Bad file descriptor)</code></td>
+<td>EBADF = <strong>9</strong></td>
+</tr>
+<tr>
+<td><code class="c">unlink(path) -&gt; 返回 0</code></td>
+<td><code class="c">unlinkat(AT_FDCWD, "...", 0) = 0</code></td>
+<td>0 = 成功</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>三条从实测里读出来的结论</strong>：</p>
+<ol>
+<li><strong><code class="c">= -1</code> 必须配 errno 才有意义</strong>。<code class="c">-1</code> 只说「失败」，是 <code class="c">ENOENT(2)</code>（路径不存在）还是 <code class="c">EACCES(13)</code>（没权限）还是 <code class="c">EBADF(9)</code>（fd 非法）<strong>决定了完全不同的排查方向</strong>。这就是本节说的「grep 所有 <code class="c">= -1</code> 行」之后要做的第二件事：<strong>读 errno</strong>。</li>
+<li><strong><code class="c">errno</code> 只在返回 -1 时可信</strong>。demo 里每步都先 <code class="c">errno = 0</code> 再看，源码注释里也写了同一条口诀：<strong>返回 ≥0 时 errno 的值是历史残留</strong>，别去看它。strace 同样如此——它只在 <code class="c">-1</code> 后面打 <code class="c">[errno]</code>。</li>
+<li><strong>fd 从 3 开始</strong>是常态：0/1/2 已被 stdin/stdout/stderr 占用，所以程序里第一个 <code class="c">open</code> 拿到的就是 3。看到 <code class="c">= 3</code> 而不是 <code class="c">= 1</code>，不是 bug。</li>
+</ol>
+<h3>② write 什么时候发生：stdio 缓冲（新手读 strace 的第一大困惑）</h3>
+<p>新手读 strace 最常见的疑问是：<strong>「我 printf 了 5 次，为什么只有一条 <code class="c">write(1, ...)</code>？」</strong> 答案在 <code class="c">code/c5_1_write_buffering.c</code> 里——三种缓冲模式各跑一次，用一个必然 SIGFPE 的结尾把差别变成<strong>看得见的事实</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th><code class="c">setvbuf</code> 参数</th>
+<th>实测输出</th>
+<th>退出码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">nobuf</code></td>
+<td><code class="c">_IONBF</code>（无缓冲）</td>
+<td>3 行全打出来</td>
+<td>136</td>
+</tr>
+<tr>
+<td><code class="c">line</code></td>
+<td><code class="c">_IOLBF</code>（行缓冲）</td>
+<td>3 行全打出来</td>
+<td>136</td>
+</tr>
+<tr>
+<td><code class="c">buf</code></td>
+<td>不动（默认，非 tty 时全缓冲）</td>
+<td><strong>一行都没有</strong></td>
+<td>136</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c">./c5_1_write_buffering nobuf   # → mode=nobuf ... 第 1/2/3 行都在
+./c5_1_write_buffering buf     # → stdout 完全为空，直接 SIGFPE
+</code></pre>
+<p><strong>为什么 <code class="c">buf</code> 模式下程序「什么都没输出」？</strong> 因为 <code class="c">printf</code> 只是把数据放进<strong>用户态缓冲区</strong>，真正调 <code class="c">write(2)</code> 的时刻由缓冲模式决定。全缓冲下那 3 行还躺在缓冲区里，进程就被 SIGFPE 杀了——<strong>缓冲区随进程一起消失</strong>。</p>
+<p>反过来看 strace，你就明白那一条 <code class="c">write</code> 从哪来了：</p>
+<pre class="code" data-label="text"><code class="c"># nobuf：每次 printf 都立刻落到内核 → strace 里看到 3 条 write
+write(1, &quot;mode=nobuf  stdout_isatty=0 ...\n&quot;, 62) = 62
+write(1, &quot;第 1 行：printf 已经把数据放进用户态缓冲区\n&quot;, 52) = 52
+write(1, &quot;第 2 行：这时进程还没调用过 write(2)\n&quot;, 46) = 46
+
+# buf（重定向到文件/管道）：3 次 printf 攒在缓冲区，一条 write 都没发出去就死了
+#   → strace 里【看不到任何 write(1, ...)】
+</code></pre>
+<blockquote>
+<p>📌 <strong>顺带解释了另一个经典现象</strong>：「同一个程序，输出到终端正常、重定向到文件就没输出了」——因为 tty 让 stdout 默认变成<strong>行缓冲</strong>（每条 <code class="c">\n</code> 刷一次），重定向到文件/管道则变成<strong>全缓冲</strong>（攒满 4096 字节才刷）。demo 里 <code class="c">stdout_isatty=0</code> 这一行就是把这个前提打出来给你看。<code class="c">c1_2_shrink_demo.c</code> 每条记录后写 <code class="c">fflush(stdout)</code>，也是在对抗这件事。</p>
+</blockquote>
+<h3>③ read 的三种返回值：「卡住」的现场就是一行没返回值的 read</h3>
+<p><code class="c">code/c5_3_read_semantics.c</code> 故意用 16 字节的小缓冲区逐轮读 stdin，把 <code class="c">read</code> 的返回值原样打印。实测（喂一个 40 字节的文件）：</p>
+<pre class="code" data-label="text"><code class="c">第 1 轮: read(0, buf, 16) = 16   请求 16 得到 16   内容=&quot;Hello, this is a&quot;
+第 2 轮: read(0, buf, 16) = 16   请求 16 得到 16   内容=&quot; 40-byte test pa&quot;
+第 3 轮: read(0, buf, 16) =  7   请求 16 得到 7 ← 部分读（不足请求值，正常！）  内容=&quot;yload!
+&quot;
+第 4 轮: read(0, buf, 16) =  0   ← EOF（对端关闭 / 数据读完）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>返回值</th>
+<th>含义</th>
+<th>别误判成</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">N &gt; 0</code></td>
+<td>读到 N 字节，<strong>可能远小于请求值</strong>（第 3 轮的 7 &lt; 16）</td>
+<td>❌「一次读完」——必须循环读</td>
+</tr>
+<tr>
+<td><code class="c">N == 0</code></td>
+<td><strong>EOF</strong>：对端关闭 / 文件读完</td>
+<td>❌「读失败」——这是正常结束</td>
+</tr>
+<tr>
+<td><code class="c">N == -1</code></td>
+<td>失败，看 errno（<code class="c">EINTR</code> 被打断 / <code class="c">EAGAIN</code> 暂无可读）</td>
+<td>❌ 一律当致命错误退出</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>而 strace 里「进程卡住」的现场长什么样</strong>——就是一行<strong>只有前半截、没有 <code class="c">=</code> 的</strong> read：</p>
+<pre class="code" data-label="text"><code class="c">recvfrom(5, 
+</code></pre>
+<p>它没有返回值，因为<strong>它还没返回</strong>。这正是本节的判据：strace 的最后一行就是卡住的位置；<code class="c">recvfrom</code>/<code class="c">read</code> 是等数据（行为类），<code class="c">futex</code> 是等锁（并发类），两者排查方向不同（回想 1.2 的决策树）。</p>
 <h2>HFT 关联</h2>
 <ol>
 <li><strong>启动自检</strong>：新进程上线前 <code class="c">strace</code> 一遍，确认它打开的文件、绑定的端口、读的配置都对，<code class="c">= -1</code> 行全扫一遍，能提前暴露权限/路径/配置问题。</li>
@@ -535,7 +712,19 @@ exit_group(0)                                 = ?
 </blockquote>
 <p><strong>Q5:</strong> 进程「卡住不动」，用 strace 看最后一行是 <code class="c">recvfrom(5,</code>，能得出什么结论？</p>
 <blockquote>
-<p>说明进程阻塞在<strong>等 socket fd 5 收数据</strong>——要么对端没发数据，要么网络断了但 TCP 没感知。这是「等 IO」而非「死循环/死锁」（死循环会看到大量重复 syscall，死锁会看到 <code class="c">futex</code> 等待）。strace 的最后一行往往就是卡住的位置。</p>
+<p>说明进程阻塞在<strong>等 socket fd 5 收数据</strong>——要么对端没发数据，要么网络断了但 TCP 没感知。这是「等 IO」而非「死循环/死锁」（死循环会看到大量重复 syscall，死锁会看到 <code class="c">futex</code> 等待）。strace 的最后一行往往就是卡住的位置。注意那一行<strong>只有前半截、没有 <code class="c">=</code></strong>——因为它还没返回，这正是「卡住」的视觉标志。</p>
+</blockquote>
+<p><strong>Q6:</strong> 为什么「我 printf 了 5 次，strace 里只有一条 write」？</p>
+<blockquote>
+<p>因为 <code class="c">printf</code> 是 stdio 库函数，只把数据写进<strong>用户态缓冲区</strong>，真正调 <code class="c">write(2)</code> 的时机由缓冲模式决定：无缓冲（<code class="c">_IONBF</code>）每次立刻 write、行缓冲（<code class="c">_IOLBF</code>）见 <code class="c">\n</code> 就 write、全缓冲（默认用于文件/管道，4096 字节）攒满才 write。所以 5 次 <code class="c">printf</code> 完全可能只对应 1 条 <code class="c">write(1, ...)</code>。实测见 <code class="c">code/c5_1_write_buffering.c</code>：<code class="c">buf</code> 模式下进程被 SIGFPE 杀死时，缓冲区里 3 行输出<strong>全部丢失</strong>，stdout 为空——这就是「缓冲区还没刷到内核」的直接证据。</p>
+</blockquote>
+<p><strong>Q7:</strong> <code class="c">read</code> 返回 <code class="c">0</code> 和返回 <code class="c">-1</code> 有什么区别？</p>
+<blockquote>
+<p>完全不同，必须分清。返回 <strong>0 = EOF</strong>（对端关闭 / 文件读完），是<strong>正常的结束条件</strong>，循环该退出；返回 <strong>-1 = 失败</strong>，要看 <code class="c">errno</code>：<code class="c">EINTR</code>（被信号打断，应该重试）、<code class="c">EAGAIN</code>（非阻塞下暂时没数据，也是重试）、其余（如 <code class="c">EBADF</code>）才是真错误。把 EOF 当错误处理会导致「读完了却报错」，把错误当 EOF 处理会导致「静默截断数据」。实测对照见 <code class="c">code/c5_3_read_semantics.c</code>。</p>
+</blockquote>
+<p><strong>Q8:</strong> 实测里 <code class="c">open</code> 成功返回的 fd 是 <code class="c">3</code>，为什么不是 <code class="c">1</code>？</p>
+<blockquote>
+<p>因为 0/1/2 已被占用：0=stdin、1=stdout、2=stderr，进程启动时就由 shell 配好了。内核分配 fd 时总是取<strong>当前最小可用的非负整数</strong>，所以程序里第一个 <code class="c">open</code>/<code class="c">socket</code> 拿到的通常是 3。看到 <code class="c">= 3</code> 不是异常；但如果 <code class="c">open</code> 返回 <code class="c">= -1 EBADF</code>，那才是 fd 非法。</p>
 </blockquote>
 </details>
 <h2>交叉引用</h2>

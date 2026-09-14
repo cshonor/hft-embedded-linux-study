@@ -21,6 +21,50 @@ core dump 是进程收到**无法处理的信号**（`SIGSEGV`/`SIGABRT`/`SIGBUS
 
 > 只有「程序自身错误」导致的异常终止才 dump；被 `kill` 发 `SIGTERM` 优雅退出是不 dump 的。
 
+## 动手：亲手把六种崩溃跑出来（实测）
+
+上表是「哪些信号会 dump」，但**「它到底怎么死的」不能靠背**。`code/c2_1_crash_types.c` 把六种最常见的崩溃各做一次，每次给一个不同的信号——于是 `139 / 134 / 136` 这几个神秘数字变成可复现的事实，同时你也拿到了「哪种死法会留下什么遗言」。
+
+编译（`-fstack-protector-all` 必须显式加，见 case 5）：
+
+```bash
+gcc -g -O0 -Wall -Wextra -fstack-protector-all -o c2_1_crash_types c2_1_crash_types.c
+./c2_1_crash_types <1..6>
+```
+
+实测（gcc 13.3.0，退出码列是 shell 里 `echo $?` 的真实值）：
+
+| case | 代码在做什么 | 信号 | 退出码 | 实测的「遗言」（stderr） |
+|------|-------------|------|--------|------------------------|
+| 1 | 解引用 `NULL` 订单指针 | `SIGSEGV(11)` | **139** | `Program terminated with signal SIGSEGV (11)` |
+| 2 | 主动 `abort()` | `SIGABRT(6)` | **134** | `Program terminated with signal SIGABRT (6)` |
+| 3 | `assert(qty > 0)` 失败 | `SIGABRT(6)` | **134** | `c2_1_crash_types.c:59: crash_assert: Assertion 'qty > 0' failed.` |
+| 4 | 成交量为 0 时算均价 | `SIGFPE(8)` | **136** | `Program terminated with signal SIGFPE (8)` |
+| 5 | `strcpy` 写穿 `char sym[8]` | `SIGABRT(6)` | **134** | `*** stack smashing detected ***: terminated` |
+| 6 | 无限递归爆栈 | `SIGSEGV(11)` | **139** | `Program terminated with signal SIGSEGV (11)` |
+
+三条从实测里读出来的结论：
+
+1. **退出码 = 128 + 信号号，这是崩溃分诊的第一把钥匙**。不用 gdb、不用 core，光 `echo $?` 就能把「怎么死的」分成三堆：**139 = 访问了非法内存**、**134 = 程序主动放弃（abort / 断言 / 栈保护）**、**136 = 算术异常**。生产环境脚本里第一件事就该打这个数。
+2. **同样是 134，遗言完全不同**。case 2（`abort()`）什么都不说，case 3（`assert`）告诉你**文件:行号:函数:条件**，case 5（栈保护）告诉你 `*** stack smashing detected ***`。**这三种都进同一个 `SIGABRT`，但排查方向差得远**——一个是设计上主动退出，一个是断言被违反，一个是栈被写坏了（后面往往是缓冲区溢出）。
+3. **case 5 是关键的教学点**：`char sym[8]` 里拷进 20 字节，程序**没有立刻崩**——是函数返回时检查金丝雀不匹配，才报 `stack smashing detected` 并 abort。这说明「写坏栈」和「因此崩溃」之间有延迟；**如果没有 `-fstack-protector-all`，这一段可能一路静默写坏调用者的栈**，然后过一会儿在完全无关的地方崩。那才是最难的形态，也是 2.6「分析被破坏的内存」要处理的东西。
+
+```c
+/* case 5：栈保护金丝雀怎么被发现 */
+static int crash_stack(void)
+{
+    char sym[8];
+    strcpy(sym, "AAPL240621C00150000");   /* 20 字节 > 8，写穿局部数组 */
+    g_sink = sym[0];
+    return 0;                             /* ← 返回时检查金丝雀：不匹配 → __stack_chk_fail → abort */
+}
+```
+
+> ⚠️ **本节能实测到哪、实测不到哪，说清楚**：
+> - **实测到了**：六种信号的**退出码**、以及 `assert` / 栈保护的**真实错误消息**（这些在任意 Linux/容器里都一样）。
+> - **没实测到**：**core 文件本身的生成**。上面那些 `ulimit -c` / `core_pattern` / `systemd-coredump` / `suid_dumpable` 的配置需要在**真实 Linux 主机**上改内核参数并观察落盘结果，本仓库的验证环境（Windows 本地 + 编译服务容器）拿不到 —— 容器里的执行器不允许改 `/proc/sys`，也没有 systemd。这一节的配置命令请按官方文档在你的 Linux 机器上验证。
+> - **替代验证**：你可以在自己机器上跑一遍这个 demo，配好 `ulimit -c unlimited` 后确认 case 1 输出 `Segmentation fault (core dumped)`（**多出的 `(core dumped)` 就是成功标志**），再 `gdb ./c2_1_crash_types core` 看 `bt`。这条链路就是下一节 2.5 的内容。
+
 ## 第一道闸：ulimit -c
 
 `ulimit -c` 控制 core 文件的**大小上限**，默认常是 `0`（彻底禁用）：
@@ -36,8 +80,8 @@ ulimit -c 1073741824   # 限制 1GB（避免 core 撑爆磁盘）
 ```bash
 # 测试：开了 ulimit 后，段错误会生成 core
 ulimit -c unlimited
-./orderbook
-# Segmentation fault (core dumped)   ← "core dumped" 说明成功
+./c2_1_crash_types 1        # 本节 demo：空指针解引用
+# Segmentation fault (core dumped)   ← "core dumped" 说明成功（少了 (core dumped) 就说明没落盘）
 ls -la core*
 # -rw------- 1 user user 245760 Sep 3 17:30 core
 ```
@@ -161,6 +205,14 @@ cat /proc/sys/fs/suid_dumpable
 **Q5:** core 文件和带调试符号的二进制为什么必须「成对」保存？
 
 > core 是纯内存快照，本身不含符号信息；要把地址翻译回函数名/源码行，必须加载**崩溃时那一版**的二进制（带 `-g` 调试信息）。二进制版本对不上（改了代码重新编译），地址就错位，回溯全是垃圾。所以 CI 归档 release 时必须同时留符号。
+
+**Q6:** 实测里退出码 134 有三种完全不同的成因，为什么必须区分？各自的「遗言」是什么？
+
+> 因为排查方向完全不同。三种 134 分别是：① `abort()` —— **设计上主动退出**（代码里就有这句，查调用它的条件即可）；② `assert` 失败 —— **不变量被违反**，遗言带 `文件:行号:函数: Assertion 'x' failed`，直接指向出问题的断言；③ 栈保护金丝雀不匹配 —— `*** stack smashing detected ***: terminated`，**说明栈被写坏了**（通常是缓冲区溢出），要顺着「谁写穿了哪个局部数组」查。单看 `134` 只能确定「程序主动放弃」，必须看 stderr 才分得清。
+
+**Q7:** 为什么 case 5 里 `strcpy` 写穿 `char sym[8]` 之后程序没有立刻崩？
+
+> 因为越界写的目标是**自己栈帧里的相邻字节**（保存的寄存器、金丝雀），那块内存物理上是可写的，CPU 不会报错。真正让它变成 `SIGABRT` 的是**函数返回时的金丝雀检查**：编译器在序言里把一份随机值（canary）存进栈帧，返回前比对——`strcpy` 写穿了它，比对失败就调 `__stack_chk_fail` 并 abort。所以「写坏栈」和「因此崩溃」之间有延迟；如果没开栈保护（`-fstack-protector-all`），可能一路静默写坏调用者的栈，过一会儿在无关的地方崩——那是最难查的形态（见 2.6）。
 
 </details>
 

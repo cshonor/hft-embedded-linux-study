@@ -319,6 +319,30 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <p><strong>这一章解决什么症状</strong>：段错误（SIGSEGV）、SIGABRT、非法指令（SIGILL）、浮点异常（SIGFPE）、栈溢出——程序「崩溃」这一类问题。崩溃的本质是「访问了不该访问的内存 / 执行了不该执行的指令」，而 coredump + gdb 是还原崩溃现场的唯一硬证据。</p>
 <p>本章 2.0 先划清 gdb 的<strong>能力边界</strong>（能干什么、与 ASAN 的冲突、看不到内核）；前半（2.1–2.3）学 gdb 基础——断点、单步、栈回溯，是<strong>活体调试</strong>（程序还在跑）；后半（2.4–2.6）学 coredump——崩溃后从内存快照<strong>尸检</strong>。两者互补：能复现就 gdb 活体调，偶发崩溃就抓 core 尸检。末节 2.7 补上<strong>构建配置</strong>这一前置：线上那个 release 二进制到底被改了什么（断言消失、<code class="c">-O2</code> 让 UB 显形、发行版加固旗标激活），这解释了「<code class="c">-O0</code> 下怎么测都对、一上线就崩」。</p>
 <hr />
+<h2>可跑的 demo（<code class="c">code/</code>）</h2>
+<blockquote>
+<p>⚠️ <strong>gdb 交互式会话与 core 文件的生成/加载在本仓库的验证环境跑不了</strong>（容器没有 gdb、不能改内核参数、没有 systemd），2.4/2.5 里的 gdb 会话与 <code class="c">core_pattern</code> 配置是<strong>手册格式示意</strong>。但<strong>「它是怎么死的」和「调用栈长什么样」可以实测</strong>：</p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>演示什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">code/c2_1_crash_types.c</code></td>
+<td><strong>六种崩溃，六个信号</strong>：空指针(139)/abort(134)/assert(134)/除零(136)/写穿栈数组(134 + <code class="c">*** stack smashing detected ***</code>)/无限递归爆栈(139)</td>
+</tr>
+<tr>
+<td><code class="c">code/c2_2_backtrace.c</code></td>
+<td><strong>进程内真实回溯</strong>（<code class="c">backtrace()</code>，即 <code class="c">bt</code> 的底层机制）：<code class="c">main → layer_a..d</code>。★ <code class="c">-O0</code> 得 <strong>10 帧</strong>、<code class="c">-O2</code> 得 <strong>6 帧</strong>（<code class="c">layer_a~d</code> 被内联进 <code class="c">main</code>）——2.7「debug vs release」的硬证据</td>
+</tr>
+</tbody>
+</table></div>
+<p>编译、运行与期望退出码见 <a href="#intro"><code class="c">code/README.md</code></a>。</p>
+<hr />
 <h2>HFT 关联</h2>
 <ul>
 <li><strong>崩溃是交易系统的红线</strong>：一个段错误可能让整个下单链路中断，定位速度决定损失。<code class="c">bt</code> + core 回溯是「崩溃后 5 分钟定位到行」的标准动作；</li>
@@ -1139,6 +1163,102 @@ gdb ./orderbook core
 (gdb) bt 3             # 只看最内层 3 帧
 (gdb) bt -3            # 只看最外层 3 帧
 </code></pre>
+<h2>动手：不用 gdb 也能看见调用栈（实测）</h2>
+<p><code class="c">bt</code> 听起来很神秘，但它底层就是<strong>遍历栈帧</strong>。<code class="c">code/c2_2_backtrace.c</code> 用 glibc 的 <code class="c">backtrace()</code> / <code class="c">backtrace_symbols_fd()</code> 在<strong>进程内</strong>把同一份信息打出来——于是「调用栈长什么样」不用想象：</p>
+<pre class="code" data-label="C"><code class="c">/* code/c2_2_backtrace.c 节选 */
+#define BT_DEPTH 32
+
+static void on_crash(int sig)              /* 收到 SIGSEGV 时，进程内打印「穷人版 bt」 */
+{
+    void *frames[BT_DEPTH];
+    int   n = backtrace(frames, BT_DEPTH);
+    char  hdr[128];
+
+    /* ⚠️ 信号处理函数里只能用 async-signal-safe 函数：
+     *    printf / malloc 都可能死锁，write() / backtrace_symbols_fd() 才是安全的 */
+    int len = snprintf(hdr, sizeof hdr,
+                       &quot;\n--- 捕获信号 %d(%s)，进程内 backtrace 共 %d 帧 ---\n&quot;,
+                       sig, strsignal(sig), n);
+    if (len &gt; 0)
+        (void)!write(STDERR_FILENO, hdr, (size_t)len);
+
+    backtrace_symbols_fd(frames, n, STDERR_FILENO);   /* _fd 版不 malloc，安全 */
+    _exit(128 + sig);
+}
+
+/* 一串刻意分层、方便观察栈帧的调用链 */
+static int layer_d(int x) { int *p = NULL; *p = x; return *p; }   /* ← SIGSEGV */
+static int layer_c(int x) { return layer_d(x + 1); }
+static int layer_b(int x) { return layer_c(x + 1); }
+static int layer_a(int x) { return layer_b(x + 1); }
+</code></pre>
+<p>实测（gcc 13.3.0）。<strong>这是本节最重要的一个实验</strong>：同一份源码，只改优化档位，回溯的帧数就从 10 变成 6。</p>
+<p><strong><code class="c">-O0</code>：10 帧</strong>（<code class="c">gcc -g -O0 -rdynamic -o bt_O0 c2_2_backtrace.c</code>，退出码 139）</p>
+<pre class="code" data-label="text"><code class="c">调用链 main → layer_a → layer_b → layer_c → layer_d → 崩溃
+layer_d: 准备解引用 NULL（x=3）
+--- 捕获信号 11(Segmentation fault)，进程内 backtrace 共 10 帧 ---
+./bt_O0[0x4011fb]                                ← on_crash 自己
+/lib/x86_64-linux-gnu/libc.so.6(+0x45330)         ← 内核转交给用户态的信号 trampoline
+./bt_O0[0x4012c6]                                ← layer_d
+./bt_O0[0x4012e8]                                ← layer_c
+./bt_O0[0x401302]                                ← layer_b
+./bt_O0[0x40131c]                                ← layer_a
+./bt_O0(main+0x9e)[0x4013bc]                     ← main
+/lib/x86_64-linux-gnu/libc.so.6(+0x2a1ca)         ← __libc_start_call_main
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x8b)
+./bt_O0(_start+0x25)[0x401115]
+</code></pre>
+<p><strong><code class="c">-O2</code>：6 帧</strong>（<code class="c">gcc -g -O2 -rdynamic -o bt_O2 c2_2_backtrace.c</code>，退出码同样 139）</p>
+<pre class="code" data-label="text"><code class="c">--- 捕获信号 11(Segmentation fault)，进程内 backtrace 共 6 帧 ---
+./bt_O2[0x40128d]
+/lib/x86_64-linux-gnu/libc.so.6(+0x45330)
+./bt_O2(main+0x85)[0x401165]                     ← layer_a/b/c/d 全被内联进 main，4 帧变 1 帧
+/lib/x86_64-linux-gnu/libc.so.6(+0x2a1ca)
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x8b)
+./bt_O2(_start+0x25)[0x4011a5]
+</code></pre>
+<p><strong>10 − 6 = 4，正好是 <code class="c">layer_a</code>~<code class="c">layer_d</code> 四帧</strong>。<code class="c">-O2</code> 把它们全部内联进 <code class="c">main</code>，于是「谁调了谁」这条信息<strong>在程序里已经不存在了</strong>——不是 gdb 读数不灵，而是栈上真的没有那四帧。</p>
+<p>这直接解释了 2.7 的核心结论：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">-O0</code></th>
+<th><code class="c">-O2</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>回溯帧数</td>
+<td>10</td>
+<td>6</td>
+</tr>
+<tr>
+<td>能不能看到 <code class="c">layer_d</code> 这一层</td>
+<td>✅ 独立帧</td>
+<td>❌ 已被内联，只剩 <code class="c">main+0x85</code> 一个偏移</td>
+</tr>
+<tr>
+<td>局部变量 <code class="c">x</code> 的值</td>
+<td>每帧都能看</td>
+<td>优化进了寄存器，可能看不到</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>优化版崩溃为什么难查，这里给出了机制</strong>：不是符号丢了，是<strong>函数边界本身没了</strong>。线上 core 拿到的 <code class="c">bt</code> 会比开发期「浅」，读的时候要意识到这一点。</p>
+</blockquote>
+<h3>顺带一个真实细节：为什么只有 <code class="c">main</code> / <code class="c">_start</code> 显示了函数名</h3>
+<p>上面 <code class="c">-O0</code> 的 10 帧里，<code class="c">layer_d</code>~<code class="c">layer_a</code> 和 <code class="c">on_crash</code> 只显示成 <code class="c">./bt_O0[0x4012c6]</code>（裸地址），而 <code class="c">main</code> 和 <code class="c">_start</code> 却有名字。原因很实在：</p>
+<ul>
+<li><code class="c">-rdynamic</code> 只把<strong>动态符号表（<code class="c">.dynsym</code>）</strong>导出给 <code class="c">backtrace_symbols</code> 用；</li>
+<li><code class="c">main</code> / <code class="c">_start</code> 是全局符号（要给出动态链接器），所以在表里；</li>
+<li>而 <code class="c">layer_a</code>~<code class="c">layer_d</code> / <code class="c">on_crash</code> 都是 <strong><code class="c">static</code> 函数</strong>，不进 <code class="c">.dynsym</code>，于是只剩地址。</li>
+</ul>
+<p><strong>但 gdb 不会有这个问题</strong>：gdb 直接读 ELF 的 <strong><code class="c">.symtab</code></strong>（完整符号表），<code class="c">static</code> 函数的名字它全看得到。这也是「gdb 的 <code class="c">bt</code> 比 <code class="c">backtrace()</code> 好看」的确切原因。</p>
+<blockquote>
+<p>📌 另外注意 <code class="c">on_crash</code> 里用的是 <code class="c">write()</code> 和 <code class="c">backtrace_symbols_fd()</code>，<strong>不是 <code class="c">printf</code> / <code class="c">backtrace_symbols</code></strong>——信号处理函数里能安全调用的只有 async-signal-safe 函数（<code class="c">printf</code> 会拿 stdio 锁、<code class="c">backtrace_symbols</code> 会 <code class="c">malloc</code>，都可能死锁）。这是个很容易踩的坑，本 demo 的注释里专门标了。</p>
+</blockquote>
 <h2>栈帧布局：回溯为什么能工作</h2>
 <p>函数调用时，CPU 用<strong>栈</strong>来保存「返回地址 + 上一帧的帧指针 + 局部变量」。x86_64 上，<code class="c">rbp</code>（frame pointer）是回溯的关键：</p>
 <pre class="code" data-label="code"><code class="c">高地址
@@ -1336,6 +1456,14 @@ rax            0x0                 0
 <blockquote>
 <p><code class="c">print</code> 指针得到指针值（一个十六进制地址）。要看它指向的结构体内容，用 <code class="c">print *head</code> 解引用，会展开所有字段；想只看单个字段用 <code class="c">print head-&gt;price</code>。类型信息用 <code class="c">ptype head</code>（看类型定义）或 <code class="c">whatis head</code>（看声明）。</p>
 </blockquote>
+<p><strong>Q6:</strong> 实测里 <code class="c">-O2</code> 比 <code class="c">-O0</code> 少 4 帧，是符号信息丢了吗？</p>
+<blockquote>
+<p>不是符号的问题，是<strong>栈上真的没有那 4 帧了</strong>。<code class="c">-O2</code> 把 <code class="c">layer_a</code>~<code class="c">layer_d</code> 全部内联进 <code class="c">main</code>，函数调用不再发生，自然不产生新的栈帧。所以回溯只能给出 <code class="c">main+0x85</code> 一个偏移，无法还原「谁调了谁」。区别在于：<code class="c">-fomit-frame-pointer</code> 是「帧还在、回溯方式变了」，而内联是「帧根本不在了」——后者任何回溯工具都救不回来。这也是为什么要归档<strong>带调试符号的 release 二进制</strong>，以及线上 <code class="c">bt</code> 会比开发期浅的原因。</p>
+</blockquote>
+<p><strong>Q7:</strong> 为什么 <code class="c">backtrace_symbols</code> 打出的 <code class="c">static</code> 函数只有地址、而 gdb 能显示函数名？</p>
+<blockquote>
+<p>因为两者读的符号表不同。<code class="c">backtrace_symbols</code> 依赖 <code class="c">-rdynamic</code> 导出的<strong>动态符号表 <code class="c">.dynsym</code></strong>，而 <code class="c">static</code> 函数只在编译单元内可见，不进 <code class="c">.dynsym</code>（只有全局符号如 <code class="c">main</code>/<code class="c">_start</code> 才进），所以只能回落成裸地址。gdb 直接读 ELF 的 <strong><code class="c">.symtab</code></strong>（完整符号表），<code class="c">static</code> 函数的名字一样能看到——这就是「gdb 的 bt 比 <code class="c">backtrace()</code> 好看」的确切原因。</p>
+</blockquote>
 </details>
 <h2>交叉引用</h2>
 <ul>
@@ -1397,6 +1525,89 @@ rax            0x0                 0
 <blockquote>
 <p>只有「程序自身错误」导致的异常终止才 dump；被 <code class="c">kill</code> 发 <code class="c">SIGTERM</code> 优雅退出是不 dump 的。</p>
 </blockquote>
+<h2>动手：亲手把六种崩溃跑出来（实测）</h2>
+<p>上表是「哪些信号会 dump」，但<strong>「它到底怎么死的」不能靠背</strong>。<code class="c">code/c2_1_crash_types.c</code> 把六种最常见的崩溃各做一次，每次给一个不同的信号——于是 <code class="c">139 / 134 / 136</code> 这几个神秘数字变成可复现的事实，同时你也拿到了「哪种死法会留下什么遗言」。</p>
+<p>编译（<code class="c">-fstack-protector-all</code> 必须显式加，见 case 5）：</p>
+<pre class="code" data-label="shell"><code class="c">gcc -g -O0 -Wall -Wextra -fstack-protector-all -o c2_1_crash_types c2_1_crash_types.c
+./c2_1_crash_types &lt;1..6&gt;
+</code></pre>
+<p>实测（gcc 13.3.0，退出码列是 shell 里 <code class="c">echo $?</code> 的真实值）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>case</th>
+<th>代码在做什么</th>
+<th>信号</th>
+<th>退出码</th>
+<th>实测的「遗言」（stderr）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>解引用 <code class="c">NULL</code> 订单指针</td>
+<td><code class="c">SIGSEGV(11)</code></td>
+<td><strong>139</strong></td>
+<td><code class="c">Program terminated with signal SIGSEGV (11)</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>主动 <code class="c">abort()</code></td>
+<td><code class="c">SIGABRT(6)</code></td>
+<td><strong>134</strong></td>
+<td><code class="c">Program terminated with signal SIGABRT (6)</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">assert(qty &gt; 0)</code> 失败</td>
+<td><code class="c">SIGABRT(6)</code></td>
+<td><strong>134</strong></td>
+<td><code class="c">c2_1_crash_types.c:59: crash_assert: Assertion 'qty &gt; 0' failed.</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>成交量为 0 时算均价</td>
+<td><code class="c">SIGFPE(8)</code></td>
+<td><strong>136</strong></td>
+<td><code class="c">Program terminated with signal SIGFPE (8)</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code class="c">strcpy</code> 写穿 <code class="c">char sym[8]</code></td>
+<td><code class="c">SIGABRT(6)</code></td>
+<td><strong>134</strong></td>
+<td><code class="c">*** stack smashing detected ***: terminated</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>无限递归爆栈</td>
+<td><code class="c">SIGSEGV(11)</code></td>
+<td><strong>139</strong></td>
+<td><code class="c">Program terminated with signal SIGSEGV (11)</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>三条从实测里读出来的结论：</p>
+<ol>
+<li><strong>退出码 = 128 + 信号号，这是崩溃分诊的第一把钥匙</strong>。不用 gdb、不用 core，光 <code class="c">echo $?</code> 就能把「怎么死的」分成三堆：<strong>139 = 访问了非法内存</strong>、<strong>134 = 程序主动放弃（abort / 断言 / 栈保护）</strong>、<strong>136 = 算术异常</strong>。生产环境脚本里第一件事就该打这个数。</li>
+<li><strong>同样是 134，遗言完全不同</strong>。case 2（<code class="c">abort()</code>）什么都不说，case 3（<code class="c">assert</code>）告诉你<strong>文件:行号:函数:条件</strong>，case 5（栈保护）告诉你 <code class="c">*** stack smashing detected ***</code>。<strong>这三种都进同一个 <code class="c">SIGABRT</code>，但排查方向差得远</strong>——一个是设计上主动退出，一个是断言被违反，一个是栈被写坏了（后面往往是缓冲区溢出）。</li>
+<li><strong>case 5 是关键的教学点</strong>：<code class="c">char sym[8]</code> 里拷进 20 字节，程序<strong>没有立刻崩</strong>——是函数返回时检查金丝雀不匹配，才报 <code class="c">stack smashing detected</code> 并 abort。这说明「写坏栈」和「因此崩溃」之间有延迟；<strong>如果没有 <code class="c">-fstack-protector-all</code>，这一段可能一路静默写坏调用者的栈</strong>，然后过一会儿在完全无关的地方崩。那才是最难的形态，也是 2.6「分析被破坏的内存」要处理的东西。</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">/* case 5：栈保护金丝雀怎么被发现 */
+static int crash_stack(void)
+{
+    char sym[8];
+    strcpy(sym, &quot;AAPL240621C00150000&quot;);   /* 20 字节 &gt; 8，写穿局部数组 */
+    g_sink = sym[0];
+    return 0;                             /* ← 返回时检查金丝雀：不匹配 → __stack_chk_fail → abort */
+}
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>本节能实测到哪、实测不到哪，说清楚</strong>：
+- <strong>实测到了</strong>：六种信号的<strong>退出码</strong>、以及 <code class="c">assert</code> / 栈保护的<strong>真实错误消息</strong>（这些在任意 Linux/容器里都一样）。
+- <strong>没实测到</strong>：<strong>core 文件本身的生成</strong>。上面那些 <code class="c">ulimit -c</code> / <code class="c">core_pattern</code> / <code class="c">systemd-coredump</code> / <code class="c">suid_dumpable</code> 的配置需要在<strong>真实 Linux 主机</strong>上改内核参数并观察落盘结果，本仓库的验证环境（Windows 本地 + 编译服务容器）拿不到 —— 容器里的执行器不允许改 <code class="c">/proc/sys</code>，也没有 systemd。这一节的配置命令请按官方文档在你的 Linux 机器上验证。
+- <strong>替代验证</strong>：你可以在自己机器上跑一遍这个 demo，配好 <code class="c">ulimit -c unlimited</code> 后确认 case 1 输出 <code class="c">Segmentation fault (core dumped)</code>（<strong>多出的 <code class="c">(core dumped)</code> 就是成功标志</strong>），再 <code class="c">gdb ./c2_1_crash_types core</code> 看 <code class="c">bt</code>。这条链路就是下一节 2.5 的内容。</p>
+</blockquote>
 <h2>第一道闸：ulimit -c</h2>
 <p><code class="c">ulimit -c</code> 控制 core 文件的<strong>大小上限</strong>，默认常是 <code class="c">0</code>（彻底禁用）：</p>
 <pre class="code" data-label="shell"><code class="c">ulimit -c              # 查看当前限制
@@ -1407,8 +1618,8 @@ ulimit -c 1073741824   # 限制 1GB（避免 core 撑爆磁盘）
 </code></pre>
 <pre class="code" data-label="shell"><code class="c"># 测试：开了 ulimit 后，段错误会生成 core
 ulimit -c unlimited
-./orderbook
-# Segmentation fault (core dumped)   ← &quot;core dumped&quot; 说明成功
+./c2_1_crash_types 1        # 本节 demo：空指针解引用
+# Segmentation fault (core dumped)   ← &quot;core dumped&quot; 说明成功（少了 (core dumped) 就说明没落盘）
 ls -la core*
 # -rw------- 1 user user 245760 Sep 3 17:30 core
 </code></pre>
@@ -1564,6 +1775,14 @@ coredumpctl dump 12345 -o /tmp/core.orderbook   # 导出成独立 core 文件
 <p><strong>Q5:</strong> core 文件和带调试符号的二进制为什么必须「成对」保存？</p>
 <blockquote>
 <p>core 是纯内存快照，本身不含符号信息；要把地址翻译回函数名/源码行，必须加载<strong>崩溃时那一版</strong>的二进制（带 <code class="c">-g</code> 调试信息）。二进制版本对不上（改了代码重新编译），地址就错位，回溯全是垃圾。所以 CI 归档 release 时必须同时留符号。</p>
+</blockquote>
+<p><strong>Q6:</strong> 实测里退出码 134 有三种完全不同的成因，为什么必须区分？各自的「遗言」是什么？</p>
+<blockquote>
+<p>因为排查方向完全不同。三种 134 分别是：① <code class="c">abort()</code> —— <strong>设计上主动退出</strong>（代码里就有这句，查调用它的条件即可）；② <code class="c">assert</code> 失败 —— <strong>不变量被违反</strong>，遗言带 <code class="c">文件:行号:函数: Assertion 'x' failed</code>，直接指向出问题的断言；③ 栈保护金丝雀不匹配 —— <code class="c">*** stack smashing detected ***: terminated</code>，<strong>说明栈被写坏了</strong>（通常是缓冲区溢出），要顺着「谁写穿了哪个局部数组」查。单看 <code class="c">134</code> 只能确定「程序主动放弃」，必须看 stderr 才分得清。</p>
+</blockquote>
+<p><strong>Q7:</strong> 为什么 case 5 里 <code class="c">strcpy</code> 写穿 <code class="c">char sym[8]</code> 之后程序没有立刻崩？</p>
+<blockquote>
+<p>因为越界写的目标是<strong>自己栈帧里的相邻字节</strong>（保存的寄存器、金丝雀），那块内存物理上是可写的，CPU 不会报错。真正让它变成 <code class="c">SIGABRT</code> 的是<strong>函数返回时的金丝雀检查</strong>：编译器在序言里把一份随机值（canary）存进栈帧，返回前比对——<code class="c">strcpy</code> 写穿了它，比对失败就调 <code class="c">__stack_chk_fail</code> 并 abort。所以「写坏栈」和「因此崩溃」之间有延迟；如果没开栈保护（<code class="c">-fstack-protector-all</code>），可能一路静默写坏调用者的栈，过一会儿在无关的地方崩——那是最难查的形态（见 2.6）。</p>
 </blockquote>
 </details>
 <h2>交叉引用</h2>

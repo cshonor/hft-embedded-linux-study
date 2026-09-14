@@ -59,6 +59,38 @@
 
 > 稳定 bug 靠「打断点定位」，偶发 bug 靠「抓现场 + 全量检测」。前者是 gdb 的主场，后者是 core/ASan/TSan/rr 的主场。**先判断偶发性，再选工具**，能少做大量无用功。
 
+## 动手：踩一遍决策树的四个分支（实测）
+
+光看树不会用，走一遍才长记性。用 Ch1 的两份 demo（`code/c1_1_three_bugs.c`、`code/c1_2_shrink_demo.c`），把决策树的四个分支各踩一次，看**症状 → 你看到的 → 选哪个工具 → 工具吐什么**：
+
+| 症状（你看到的） | 决策树走法 | 实测命令 | 工具吐出的关键行 |
+|------------------|-----------|----------|------------------|
+| 进程死了，`echo $?` = **139** | 崩溃分支 → 拿 bt | `gcc -g -O0 -o b c1_1_three_bugs.c -pthread && ./b 1` | `Program terminated with signal SIGSEGV (11)` |
+| 进程死了，`echo $?` = **136** | 崩溃分支，但信号是 SIGFPE → 先看算法有没有除零 | `./c1_2_shrink_demo < ticks_10.txt` | 前 6 条正常，**第 7 条**打出 `ts=7 vol=0 turnover=10700` 后死 |
+| 跑得好好的，`echo $?` = **0** | 不在这棵树上 → **但内存可能有问题**，换 ASan 重编 | `gcc -g -O0 -fsanitize=address -o b c1_1_three_bugs.c -pthread && ./b 2` | `Direct leak of 40000 byte(s) in 100 object(s)` |
+| 跑得好好的，`echo $?` = **0**，结果也对 | 同上 → 怀疑并发，换 TSan 重编 | `clang -g -O1 -fsanitize=thread -pthread -o b c1_1_three_bugs.c && ./b 3` | `WARNING: ThreadSanitizer: data race` |
+
+三点从实测里读出来的结论：
+
+1. **退出码是决策树的第一个路标**。`echo $?` 一个数字就把「崩溃类（128+N）」和「非崩溃类（0/1）」分开了。139/136/134 分别对应 SIGSEGV/SIGFPE/SIGABRT——**不用 gdb 就能知道「怎么死的」**。
+2. **「正常退出」是决策树里最危险的岔口**。后面两个分支（内存、并发）**症状全都是「看起来正常」**：exit 0、结果正确。所以新手最容易卡在这里——按照「没崩就不用查」的直觉，这两类 bug 永远查不出来。
+3. **同一条命令换个开关，就是另一棵树**。`-fsanitize=address` 和 `-fsanitize=thread` 是把「正常的程序」变成「有症状的程序」——决策树里那些「要重编译」的分支，本质是在**人为制造症状**。
+
+```bash
+# 一张嘴就把四条路都问一遍（开发期自检脚本的雏形）
+gcc -g -O0 -Wall -Wextra -pthread -o b0 c1_1_three_bugs.c
+gcc -g -O0 -fsanitize=address -pthread -o b_asan c1_1_three_bugs.c
+clang -g -O1 -fsanitize=thread -pthread -o b_tsan c1_1_three_bugs.c
+for c in 1 2 3; do
+  echo "--- case $c ---"
+  ./b0 $c;     echo "  plain: exit=$?"
+  ./b_asan $c; echo "  asan : exit=$?"
+  ./b_tsan $c; echo "  tsan : exit=$?"
+done
+```
+
+> 这份脚本就是「决策树自动化」：把三类问题各配一个专用构建，一次跑完，谁有问题谁非零退出。HFT 团队 CI 里的 `-asan` / `-tsan` 双构建，本质就是它。
+
 ## HFT 关联
 
 1. **生产偶发崩溃 → 必须先开 core**：交易进程 7×24 跑，崩溃不可复现，唯一证据是 core。上线前必须配好 `ulimit -c` + `core_pattern`（见 Ch2），否则崩溃了连现场都没有。
@@ -85,6 +117,10 @@
 **Q4:** 「卡住」和「太慢」都表现为「程序没反应」，怎么快速区分该上 strace 还是 perf？
 
 > 看**是不是永久卡住**：如果进程「永久不动」（等一个永远不会来的事件），是行为/并发问题，用 `strace -p` 看它停在哪（等 IO 还是等锁）；如果进程「还在跑但慢」（CPU 有活动、只是吞吐低），是性能问题，用 perf 采样找热点。「永久卡住」和「缓慢推进」是两类完全不同的病。
+
+**Q5:** 一个程序 exit code 是 0、输出结果也正确，能不能收工不查了？决策树怎么处理这种情况？
+
+> 不能。决策树里「正常退出」恰恰是最危险的岔口：内存类（泄漏、越界写、UAF）和并发类（数据竞争）在裸编译下**症状就是「一切正常」**——实测里 `c1_1_three_bugs.c` 的 case 2 退出 0 且打印成功信息，case 3 计数 200000 一分不差。处理办法是**主动换分支**：怀疑内存就 `-fsanitize=address` 重编，怀疑并发就 `-fsanitize=thread` 重编。这两类只能靠「人为制造症状」，等不到自然暴露。
 
 </details>
 

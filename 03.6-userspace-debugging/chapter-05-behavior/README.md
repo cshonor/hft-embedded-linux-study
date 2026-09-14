@@ -19,8 +19,23 @@
 
 ---
 
+## 可跑的 demo（`code/`）
+
+> ⚠️ **strace / ltrace 在本仓库的验证环境跑不了**（容器不给 `ptrace`），笔记里的 strace 输出是**手册格式示意**。但**输出的语义可以实测** —— 下面三份 demo 把 strace 的每一行翻译成程序自己能打印的事实（Compiler Explorer · gcc 13.3.0 实测）：
+
+| 文件 | 演示什么 |
+|------|----------|
+| `code/c5_1_write_buffering.c` | **write 什么时候发生**：`nobuf`/`line`/`buf` 三种缓冲模式各跑一次，结尾 SIGFPE。`buf` 模式下 **stdout 完全为空** —— 缓冲区还没刷到内核进程就死了 |
+| `code/c5_2_syscall_map.c` | **把 C 语句翻译成 strace 行**：自己打印每次 syscall 的返回值与 errno（`open`→fd 3、不存在→`-1 ENOENT(2)`、关闭的 fd→`-1 EBADF(9)`） |
+| `code/c5_3_read_semantics.c` | **read 的三种返回值**：16 字节小缓冲逐轮读 stdin，打印 `=16 / =7（部分读）/ =0（EOF）` |
+
+编译、运行与期望退出码见 [`code/README.md`](code/README.md)。
+
+---
+
 ## HFT 关联
 
 - **定位卡死**：行情/下单进程卡住，`strace -p` 看它停在 `recv`（等数据）还是 `futex`（等锁），一步区分「网络问题」和「死锁」；
 - **发现多余 syscall**：热路径里本可避免的 `gettimeofday`/`read`/系统调用是延迟杀手，`strace -c` 一眼暴露；
-- **审计调用链**：追踪 socket 建连、`send`/`recv` 时序，还原下单链路是否按预期走。
+- **审计调用链**：追踪 socket 建连、`send`/`recv` 时序，还原下单链路是否按预期走；
+- **别把缓冲当没输出**：`printf` 后进程被信号杀死时输出会丢（见 `code/c5_1_write_buffering.c`），生产日志要关注刷盘时机，别让「最后几行日志」永远查不到。

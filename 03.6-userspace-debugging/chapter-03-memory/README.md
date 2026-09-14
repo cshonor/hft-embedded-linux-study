@@ -28,6 +28,20 @@
 
 ---
 
+## 可跑的 demo（`code/`）
+
+三篇笔记共用同一批「病人」，全部在 Compiler Explorer（gcc 13.3.0）上真跑过，输出原样抄进笔记：
+
+| 文件 | 演示什么 |
+|------|----------|
+| `code/c3_1_mem_bugs.c` | 五个内存错误一个程序（argv 选 1..5）：堆越界 / 栈越界 / UAF / double free / 泄漏 |
+| `code/c3_2_uninit_read.c` | 未初始化读：ASan 看不见（exit 0），valgrind / MSan 才看得见 |
+| `code/c3_3_ubsan_ops.c` | 四种 UBSan 能抓的 UB：溢出 / 移位（`1<<40` 实测得 **256**）/ 取负 / 除零 |
+
+编译与期望退出码见 [`code/README.md`](code/README.md)。**注意 `-O0` 是前提**——实测 `-O1` 下 case 3（UAF）会被优化掉、exit 0、零报告。
+
+---
+
 ## HFT 关联
 
 - **7×24 长跑进程最怕慢泄漏**：交易进程内存缓慢增长，几周后 OOM 崩溃，`valgrind memcheck` 定位到具体分配点；

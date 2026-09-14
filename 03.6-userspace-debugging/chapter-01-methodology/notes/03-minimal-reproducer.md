@@ -93,6 +93,140 @@ git bisect reset
 
 > 偶发 bug 无法直接二分，因为它「判定不稳定」。这时要先想办法把它变稳定（缩小 + 提高触发频率 + rr 录像），再二分。
 
+## 动手：把「缩小复现」和「数据二分」真跑一遍（实测）
+
+方法论光看是记不住的，下面用两份 demo 把上面的四步砍法和二分亲手走一遍。
+
+### 第一步：造一个「只在特定记录上炸」的复现
+
+`code/c1_2_shrink_demo.c` —— 读一批行情，对每条算均价 = 成交额 / 成交量，**其中有一条成交量是 0**：
+
+```c
+/* code/c1_2_shrink_demo.c 节选 */
+struct tick { long ts_ms; long volume; long turnover; };
+
+while (scanf("%ld %ld %ld", &t.ts_ms, &t.volume, &t.turnover) == 3) {
+    seq++;
+    printf("record %ld: ts=%ld vol=%ld turnover=%ld\n",
+           seq, t.ts_ms, t.volume, t.turnover);
+    fflush(stdout);                     /* ← 关键：让「崩在第几条」肉眼可见 */
+
+    long vwap = t.turnover / t.volume;  /* vol == 0 → 除零 */
+    printf("            vwap = %ld\n", vwap);
+}
+```
+
+两个设计要点值得学：**① 每条处理前先打印进度**（否则崩了不知道崩在哪）；**② 输入走 stdin**（这样「砍输入」是写文件，不是改代码——这正是后面能自动二分的物理基础）。
+
+输入 `code/ticks_10.txt`（10 条，第 7 条 `volume = 0`）：
+
+```text
+1  100  10100
+2  100  10200
+...
+7  0    10700      ← 雷在这里
+8  100  10800
+...
+10 100  11000
+```
+
+实测（gcc 13.3.0 `-g -O0 -Wall -Wextra`，退出码 **136** = 128 + SIGFPE(8)）：
+
+```text
+record 1: ts=1 vol=100 turnover=10100
+            vwap = 101
+record 2: ts=2 vol=100 turnover=10200
+            vwap = 102
+record 3: ts=3 vol=100 turnover=10300
+            vwap = 103
+record 4: ts=4 vol=100 turnover=10400
+            vwap = 104
+record 5: ts=5 vol=100 turnover=10500
+            vwap = 105
+record 6: ts=6 vol=100 turnover=10600
+            vwap = 106
+record 7: ts=7 vol=0 turnover=10700
+--- stderr ---
+Program terminated with signal SIGFPE (8)
+```
+
+**第 6 条打完 vwap、第 7 条只打了输入行就死了**——「崩点在记录 7」这个事实已经被打印出来了。这就是「可判定」：不需要人肉看，脚本比对「最后打印到第几条」就能判定。
+
+### 第二步：砍输入——10 条 → 1 条（实测）
+
+按 1.3 的四步砍法，这里只需要砍**输入**（代码已经是最小形态）。两次实测：
+
+| 输入 | 条数 | 实测退出码 | 实测输出 | 结论 |
+|------|------|-----------|----------|------|
+| `ticks_first6.txt`（前 6 条，全好） | 6 | **0** | `全部 6 条记录处理完毕，未触发问题` | bug **消失** → 第 7 条是关键 |
+| `ticks_only_bad.txt`（只留第 7 条 → `1  0  10700`） | 1 | **136** | `record 1: ts=1 vol=0 turnover=10700` 后 SIGFPE | **最小复现：1 条记录** |
+
+**从 10 条砍到 1 条，bug 依然稳定复现**——这就是「最小可复现用例」。它现在小到可以贴进 issue、可以交给任何工具自动跑、可以直接写进回归测试：
+
+```bash
+# 最小复现固化成回归测试（crash → 非零退出）
+echo '1 0 10700' | ./c1_2_shrink_demo > /dev/null 2>&1
+test $? -eq 0 && echo "PASS" || echo "FAIL: 仍会除零崩溃"   # → FAIL
+```
+
+> 「砍掉后 bug 消失 / 只剩一条还崩」**这个减法过程本身就在定位根因**——你已经知道问题出在「volume = 0 的那条行情」，接下来只需去修 `vwap` 的除法，不用读整个链路。
+
+### 第三步：数据二分——把「找哪条」写成程序（实测）
+
+人肉二分会累、会抄错区间。`code/c1_3_auto_bisect.c` 把二分写成程序，16 条记录 4 步收敛。它有三个可直接观察的点：
+
+```c
+/* code/c1_3_auto_bisect.c 节选 */
+static sigjmp_buf g_jmp;
+
+static void on_sigfpe(int sig)              /* 把「崩了」变成可返回的信号 */
+{
+    (void)sig;
+    g_caught = 1;
+    siglongjmp(g_jmp, 1);
+}
+
+static int batch_ok(int lo, int hi)         /* 判定函数：必须纯布尔 */
+{
+    if (sigsetjmp(g_jmp, 1) != 0)
+        return 0;                           /* 从 SIGFPE 跳回来 = 这一批坏 */
+
+    for (int i = lo; i <= hi; i++) {
+        volatile long vol  = volume_of(i);  /* volatile 逼编译器真做除法 */
+        volatile long turn = turnover_of(i);
+        volatile long vwap = turn / vol;    /* ← 命中坏记录才除零 */
+        (void)vwap;
+    }
+    return 1;
+}
+```
+
+实测输出（退出码 **0**）：
+
+```text
+共 16 条记录，先确认「整批是坏的」
+  判定 [0, 15] -> BAD
+开始二分（每次砍半）：
+  第 1 步: [ 0,  7] good  -> 嫌疑落在右半 [ 8, 15]
+  第 2 步: [ 8, 11] BAD   -> 嫌疑落在左半 [ 8, 11]
+  第 3 步: [ 8,  9] good  -> 嫌疑落在右半 [10, 11]
+  第 4 步: [10, 10] good  -> 嫌疑落在右半 [11, 11]
+收敛：坏记录是第 12 条（下标 11）—— 16 条记录共 4 步，因为 log2(16) = 4
+该记录 volume = 0，turnover = 1011 —— 除零的根因就在这里
+```
+
+对照 1.3 的三条前提，这份程序一条不落地满足了：
+
+| 前提 | 在这份程序里怎么落地 |
+|------|---------------------|
+| **可自动判定** | `batch_ok(lo, hi)` 返回 1/0，不需要人看输出 |
+| **判定快** | 一批最多 16 次除法，微秒级 |
+| **判定稳定** | 同样的区间每次必得同样结果（volume 是纯函数） |
+
+> **`sigsetjmp` 这个技巧值得记住**：正常业务代码不会把「进程崩了」当返回值用，但**在构建自动判定器时**它是标准做法——把 SIGFPE（或 SIGSEGV）抓成布尔值，二分循环就能在一个进程内跑完，不用 fork 16 个子进程。生产上等价的做法是「跑一遍测试脚本看退出码」。
+>
+> 还有个小反直觉点：**整数除零在 Linux 上发的是 `SIGFPE`（名字叫 Floating-Point Exception）**——「浮点异常」这名字是历史遗留，整数除零、整数溢出都走它。别被名字骗了。
+
 ## HFT 关联
 
 1. **复现 = 破案关键**：交易所/券商报一个「偶发错单」，你第一时间要做的不是读代码，而是**想办法在本地复现**——用当天的行情数据回放（replay），缩小到最小触发序列，否则连问题都看不见。

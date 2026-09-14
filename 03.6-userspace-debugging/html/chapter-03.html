@@ -353,6 +353,32 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <p>分工口诀：ASan 管「地址」、valgrind 管「地址+值」（兜底）、UBSan 管「运算语义」。开发期默认 ASan+UBSan 全家桶，无源码二进制用 valgrind 定性。</p>
 </blockquote>
 <hr />
+<h2>可跑的 demo（<code class="c">code/</code>）</h2>
+<p>三篇笔记共用同一批「病人」，全部在 Compiler Explorer（gcc 13.3.0）上真跑过，输出原样抄进笔记：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>演示什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">code/c3_1_mem_bugs.c</code></td>
+<td>五个内存错误一个程序（argv 选 1..5）：堆越界 / 栈越界 / UAF / double free / 泄漏</td>
+</tr>
+<tr>
+<td><code class="c">code/c3_2_uninit_read.c</code></td>
+<td>未初始化读：ASan 看不见（exit 0），valgrind / MSan 才看得见</td>
+</tr>
+<tr>
+<td><code class="c">code/c3_3_ubsan_ops.c</code></td>
+<td>四种 UBSan 能抓的 UB：溢出 / 移位（<code class="c">1&lt;&lt;40</code> 实测得 <strong>256</strong>）/ 取负 / 除零</td>
+</tr>
+</tbody>
+</table></div>
+<p>编译与期望退出码见 <a href="#intro"><code class="c">code/README.md</code></a>。<strong>注意 <code class="c">-O0</code> 是前提</strong>——实测 <code class="c">-O1</code> 下 case 3（UAF）会被优化掉、exit 0、零报告。</p>
+<hr />
 <h2>HFT 关联</h2>
 <ul>
 <li><strong>7×24 长跑进程最怕慢泄漏</strong>：交易进程内存缓慢增长，几周后 OOM 崩溃，<code class="c">valgrind memcheck</code> 定位到具体分配点；</li>
@@ -366,81 +392,70 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <p>🔴 精读 · 内存错误的「金标准」——慢，但准，且无需重编译</p>
 </blockquote>
 <h2>本节要点</h2>
-<p>valgrind 是 Linux 下最权威的动态内存分析工具，其默认子工具 <strong>memcheck</strong> 能在程序运行时抓到四类内存错误：<strong>越界读写、use-after-free、内存泄漏、未初始化值</strong>。它最独特的地方是<strong>不需要重新编译</strong>——直接 <code class="c">valgrind ./prog</code> 就能对现有二进制做全量检查。代价是慢（约 20–50×），所以定位在「开发期定性」而不是「生产期测速」。本节讲清它的原理、命令、报告解读，并用贯穿示例 <code class="c">mem_bugs.c</code> 逐条对照。</p>
+<p>valgrind 是 Linux 下最权威的动态内存分析工具，其默认子工具 <strong>memcheck</strong> 能在程序运行时抓到四类内存错误：<strong>越界读写、use-after-free、内存泄漏、未初始化值</strong>。它最独特的地方是<strong>不需要重新编译</strong>——直接 <code class="c">valgrind ./prog</code> 就能对现有二进制做全量检查。代价是慢（约 20–50×），所以定位在「开发期定性」而不是「生产期测速」。本节讲清它的原理、命令、报告解读，并用贯穿示例 <code class="c">c3_1_mem_bugs.c</code> 逐条对照。</p>
 <h2>先看贯穿示例</h2>
-<p>下面这个文件埋了四类内存雷（越界写 / UAF / 泄漏 / 未初始化读）+ 两个 UB 雷（溢出 / 移位，留给 3.3）。Ch3 三节都用它：</p>
-<pre class="code" data-label="C"><code class="c">// mem_bugs.c —— Ch3 贯穿示例：内存错误 + 未定义行为
-#include &lt;stdio.h&gt;
-#include &lt;stdlib.h&gt;
-#include &lt;string.h&gt;
+<p>本节和 3.2 共用同一份「病人」：<code class="c">code/c3_1_mem_bugs.c</code>。它埋了五类内存雷，用 argv 选哪一颗 —— 这样「一个 bug、多种工具」的对照才有意义（同一份源码，valgrind 与 ASan 两套报告可以逐字段比）：</p>
+<pre class="code" data-label="C"><code class="c">/* code/c3_1_mem_bugs.c —— 五个内存错误，一个程序，用 argv 选 */
+static volatile int g_sink;         /* 让「读」这件事真发生，别被优化掉 */
 
-// 雷 1：堆越界写（heap buffer overflow）
-void bug_heap_overflow(void) {
-    char *buf = malloc(8);          // 只分配 8 字节
-    strcpy(buf, &quot;0123456789ABCDEF&quot;); // 16 字节写进去 → 越界 8 字节
-    printf(&quot;buf=%s\n&quot;, buf);
+/* ---- case 1：堆越界写 ---- */
+static void bug_heap_overflow(void)
+{
+    char *buf = malloc(8);          /* 申请 8 字节 */
+    if (!buf) return;
+    memset(buf, 'A', 8);
+    buf[8] = 'X';                   /* ← 第 9 个字节：踩进 malloc 块右侧的红区 */
+    g_sink = buf[0];
+    printf(&quot;case 1: 写了 buf[8]（块只有 8 字节），程序继续跑\n&quot;);
     free(buf);
 }
 
-// 雷 2：use-after-free（free 后再读）
-void bug_uaf(void) {
-    char *p = malloc(16);
-    strcpy(p, &quot;order-12345&quot;);
-    free(p);                        // 释放
-    printf(&quot;after free: %s\n&quot;, p);  // UAF：free 后再解引用
+/* ---- case 2：栈越界写 ---- */
+static void bug_stack_overflow(void)
+{
+    char src[32];
+    char dst[8];
+
+    memset(src, 'B', sizeof(src));
+    memcpy(dst, src, sizeof(src));  /* ← 32 字节塞进 8 字节的栈数组 */
+    g_sink = dst[0];
+    printf(&quot;case 2: 把 32 字节 memcpy 进 char dst[8]，程序继续跑\n&quot;);
 }
 
-// 雷 3：内存泄漏（分配后从不 free）
-void bug_leak(void) {
-    for (int i = 0; i &lt; 100; i++) {
-        int *x = malloc(sizeof(int)); // 从不 free，100 次 → 慢泄漏
-        *x = i;
-    }
-}
-
-// 雷 4：未初始化读（读栈上未初始化的局部变量）
-void bug_uninit(void) {
-    int x;               // 未初始化
-    if (x &gt; 0)           // 读未初始化值 → 结果取决于垃圾值
-        printf(&quot;positive\n&quot;);
-}
-
-// 雷 5：有符号整数溢出（UB，valgrind 不报，3.3 UBSan 报）
-void bug_signed_overflow(void) {
-    int x = 2147483647;  // INT_MAX
-    int y = x + 1;       // 有符号溢出 → 未定义行为
-    printf(&quot;y=%d\n&quot;, y);
-}
-
-// 雷 6：移位越界（UB，3.3 UBSan 报）
-void bug_shift(void) {
-    int x = 1 &lt;&lt; 40;     // 移位数 &gt;= 位宽(32) → 未定义行为
-    printf(&quot;x=%d\n&quot;, x);
-}
-
-int main(void) {
-    bug_heap_overflow();
-    bug_uaf();
-    bug_leak();
-    bug_uninit();
-    bug_signed_overflow();
-    bug_shift();
-    return 0;
+/* ---- case 3：use-after-free ---- */
+static void bug_use_after_free(void)
+{
+    int *p = malloc(4 * sizeof(int));
+    if (!p) return;
+    p[0] = 42;
+    free(p);
+    p[0] = 7;                       /* ← 释放后再写：踩进已中毒的隔离区 */
+    g_sink = p[0];
+    printf(&quot;case 3: free 后又写了 p[0]，程序继续跑\n&quot;);
 }
 </code></pre>
-<p>普通编译运行，前四个雷<strong>要么不崩、要么崩得毫无线索</strong>：</p>
-<pre class="code" data-label="shell"><code class="c">gcc -g -O0 -o mem_bugs mem_bugs.c
-./mem_bugs
-# buf=0123456789ABCDEF        ← 越界写「成功」了，没崩
-# after free: order-12345     ← UAF 读了已释放内存，没崩
-# y=-2147483648               ← 溢出悄悄回绕成负数，没崩
-# x=0                         ← 移位 UB 悄悄给了 0，没崩
-# (可能某次运行在这里崩，也可能不崩——这就是内存 bug 的阴险)
+<p>（<code class="c">case 4</code> = double free、<code class="c">case 5</code> = 100 × 400 字节泄漏，完整源码见 <code class="c">code/c3_1_mem_bugs.c</code>。）</p>
+<p>⚠️ <strong>本节的报告是「格式示意」，不是实测输出。</strong> 原因说清楚：本仓库的验证环境（Windows 本地 + Compiler Explorer 容器）<strong>都装不了 valgrind</strong> —— 本地没有 Linux 环境，CE 只提供编译器和执行，不提供 valgrind 这类重型动态插桩工具。所以下面 valgrind 报告的<strong>字段布局、措辞、行号体系依据 valgrind 官方手册与真实使用经验给出</strong>，报告里的<strong>地址、PID、行号是我按 <code class="c">c3_1_mem_bugs.c</code> 的真实行号对齐的</strong>，方便你上 Linux 机器时逐字段对上。</p>
+<blockquote>
+<p><strong>同一份病人在 ASan 下的报告是逐字实测的</strong>（见 <a href="chapter-07.html#s-02">3.2</a>）。两套报告结构同构（错误类型 → 读/写方栈 → 越界程度 → 分配方栈），所以「先读格式、再看真实样本」的组合阅读是成立的——<strong>别把这里的地址当成可以复现的常量</strong>。</p>
+</blockquote>
+<p><strong>第一件事：裸编译先把「不崩」看一遍。</strong> 加 <code class="c">-Wall -Wextra</code> 编译运行：</p>
+<pre class="code" data-label="shell"><code class="c">gcc -g -O0 -Wall -Wextra -o c3_1_mem_bugs c3_1_mem_bugs.c
+./c3_1_mem_bugs 1        # 堆越界
 </code></pre>
-<p><strong>注意：什么都没崩</strong>，但程序里埋着 6 个雷。这就是内存 bug 的可怕——它「潜伏」，等你上线几周后才在别处爆。valgrind 登场：</p>
-<pre class="code" data-label="shell"><code class="c">valgrind ./mem_bugs
+<p>实测输出（退出码 <strong>0</strong>）：</p>
+<pre class="code" data-label="text"><code class="c">case 1: 写了 buf[8]（块只有 8 字节），程序继续跑
+case 1 跑完了 main（没有崩，也没有任何提示 —— 这正是内存 bug 阴险的地方）
 </code></pre>
-<p>下面逐段解读它的报告。</p>
+<p><strong>什么都没崩。</strong> 但编译器其实已经警告了——这就是为什么 <code class="c">-Wall -Wextra</code> 是零成本的第一道防线（实测诊断 27 条，关键三条）：</p>
+<pre class="code" data-label="text"><code class="c">&lt;source&gt;:64:10: warning: pointer 'p' used after 'free' [-Wuse-after-free]          ← case 3
+&lt;source&gt;:65:15: warning: pointer 'p' used after 'free' [-Wuse-after-free]          ← case 3
+&lt;source&gt;:76:5:  warning: pointer 'p' used after 'free' [-Wuse-after-free]          ← case 4
+&lt;source&gt;:51:5:  warning: 'memcpy' writing 32 bytes into a region of size 8
+                overflows the destination [-Wstringop-overflow=]                  ← case 2（栈越界）
+</code></pre>
+<p>注意编译器<strong>抓到了 3 颗雷（case 2/3/4）却抓不到 case 1（堆越界写 <code class="c">buf[8]='X'</code>）和 case 5（泄漏）</strong>——原因很实在：<code class="c">buf[8]</code> 越界写、<code class="c">malloc</code> 后不 <code class="c">free</code>，都不是「编译期可判定的静态事实」，需要<strong>运行时</strong>才知道（堆块边界、生命周期）。<strong>编译器看得懂的交给编译器，看不懂的才需要 valgrind/ASan</strong> —— 这就是动态工具不可替代的位置。</p>
+<p>下面逐段解读 valgrind 的报告（格式示意）。</p>
 <h2>原理：影子内存（shadow memory）</h2>
 <p>valgrind 不是「插桩编译」而是「动态二进制翻译」（Dynamic Binary Instrumentation, DBI）：它把程序的机器码切成基本块，翻译成等价但<strong>额外带检查</strong>的代码，在一个「虚拟 CPU」上执行。程序自己完全不知道自己跑在 valgrind 里。</p>
 <p>memcheck 的核心是<strong>影子内存</strong>——为程序的每个 bit 维护两份元数据：</p>
@@ -475,44 +490,49 @@ V bit       [  1 ][  1 ][  0 ][  0 ] ...        ← 0 = 未初始化
 <h2>四类报告逐条解读</h2>
 <h3>① 越界写：<code class="c">Invalid write</code></h3>
 <pre class="code" data-label="text"><code class="c">==1234== Invalid write of size 1
-==1234==    at 0x48C7B3E: bug_heap_overflow (mem_bugs.c:11)
-==1234==    by 0x48C7B52: main (mem_bugs.c:42)
-==1234==  Address 0x4a4a048 is 8 bytes after a block of size 8 alloc'd
+==1234==    at 0x48C7B3E: bug_heap_overflow (c3_1_mem_bugs.c:38)
+==1234==    by 0x48C7B52: main (c3_1_mem_bugs.c:97)
+==1234==  Address 0x4a4a048 is 0 bytes after a block of size 8 alloc'd
 ==1234==    at 0x483B7F3: malloc (vg_replace_malloc.c:393)
-==1234==    by 0x48C7B2E: bug_heap_overflow (mem_bugs.c:10)
+==1234==    by 0x48C7B2E: bug_heap_overflow (c3_1_mem_bugs.c:34)
 </code></pre>
 <p>读报告的四步法：</p>
 <ol>
-<li><strong>错误类型 + 大小</strong>：<code class="c">Invalid write of size 1</code> —— 往不可访问地址写了 1 字节（<code class="c">strcpy</code> 逐字节拷，所以报 size 1 而不是 size 16）。</li>
-<li><strong>发生位置</strong>（写方）：<code class="c">at bug_heap_overflow (mem_bugs.c:11)</code> —— 越界发生在第 11 行。</li>
-<li><strong>越界程度</strong>：<code class="c">8 bytes after a block of size 8</code> —— 写到 malloc(8) 块<strong>之后</strong> 8 字节处，即恰好写满了一倍。</li>
-<li><strong>分配位置</strong>（块归属）：<code class="c">malloc ... by bug_heap_overflow (mem_bugs.c:10)</code> —— 这块内存是第 10 行 malloc 的。</li>
+<li><strong>错误类型 + 大小</strong>：<code class="c">Invalid write of size 1</code> —— 往不可访问地址写了 1 字节。case 1 写的是 <code class="c">buf[8] = 'X'</code>（一个 char 赋值），所以是 size 1 而不是 size 16。</li>
+<li><strong>发生位置</strong>（写方）：<code class="c">at bug_heap_overflow (c3_1_mem_bugs.c:38)</code> —— 越界发生在第 38 行。</li>
+<li><strong>越界程度</strong>：<code class="c">0 bytes after a block of size 8</code> —— 地址正好落在 <code class="c">malloc(8)</code> 块的<strong>末尾之外第一个字节</strong>。<strong>只越界了 1 字节</strong>——所以裸编译时「什么都没发生」（对比 case 2 一次越界 24 字节，往往当场就出事）。</li>
+<li><strong>分配位置</strong>（块归属）：<code class="c">malloc ... by bug_heap_overflow (c3_1_mem_bugs.c:34)</code> —— 这块内存是第 34 行 <code class="c">malloc(8)</code> 的。</li>
 </ol>
 <blockquote>
 <p><strong>定位口诀</strong>：<code class="c">at</code> 是「谁写的」，<code class="c">alloc'd</code> 是「谁分配的」，两者夹击就能看出「某函数分配了 N 字节，却写了 N+k 字节」。</p>
+<p>📌 <strong>和 3.2 的实测逐字对照</strong>：ASan 对<strong>同一行</strong>（<code class="c">c3_1_mem_bugs.c:38</code>）的措辞是 <code class="c">WRITE of size 1</code> + <code class="c">0 bytes after 8-byte region [0x602000000010,0x602000000018)</code>——两套工具连「0 bytes」的计数口径都一致（都指「块末尾之后第一个字节」），只有前缀格式不同（<code class="c">Invalid write of size 1</code> vs <code class="c">WRITE of size 1</code>）。</p>
 </blockquote>
-<h3>② use-after-free：<code class="c">Invalid read</code> + <code class="c">Address is on heap</code></h3>
-<pre class="code" data-label="text"><code class="c">==1234== Invalid read of size 1
-==1234==    at 0x48C7C8E: bug_uaf (mem_bugs.c:19)
-==1234==    by 0x48C7B57: main (mem_bugs.c:43)
+<h3>② use-after-free：<code class="c">Invalid write</code> + <code class="c">Address is ... inside a block ... free'd</code></h3>
+<pre class="code" data-label="text"><code class="c">==1234== Invalid write of size 4
+==1234==    at 0x48C7C8E: bug_use_after_free (c3_1_mem_bugs.c:64)
+==1234==    by 0x48C7B57: main (c3_1_mem_bugs.c:99)
 ==1234==  Address 0x4a4a0a0 is 0 bytes inside a block of size 16 free'd
 ==1234==    at 0x483C9F4: free (vg_replace_malloc.c:540)
-==1234==    by 0x48C7C80: bug_uaf (mem_bugs.c:18)
+==1234==    by 0x48C7C80: bug_use_after_free (c3_1_mem_bugs.c:63)
 </code></pre>
-<p>关键句 <code class="c">0 bytes inside a block of size 16 free'd</code>：读的地址在<strong>一个已 free 的 16 字节块内部</strong>（偏移 0）。最后一段 <code class="c">free ... by bug_uaf (mem_bugs.c:18)</code> 告诉你这个块是第 18 行 free 的。<strong>第 19 行读了第 18 行刚 free 的东西</strong>——UAF 实锤。</p>
+<p>关键句 <code class="c">0 bytes inside a block of size 16 free'd</code>：访问的地址在<strong>一个已 free 的 16 字节块内部</strong>（偏移 0）。最后一段 <code class="c">free ... by bug_use_after_free (c3_1_mem_bugs.c:63)</code> 告诉你这个块是第 63 行释放的。<strong>第 64 行写了第 63 行刚 free 的东西</strong>——UAF 实锤。</p>
+<blockquote>
+<p>注意 case 3 是<strong>写</strong>（<code class="c">p[0] = 7</code>）不是读，所以报 <code class="c">Invalid write of size 4</code>（<code class="c">int</code> 4 字节）。ASan 对同一行的措辞同样是 <code class="c">WRITE of size 4</code>。<strong>「释放后再写」比「释放后再读」更危险</strong>——写会污染可能已被别人复用的内存，正是 HFT 里「偶发错单」的典型形态。</p>
+</blockquote>
 <h3>③ 泄漏：<code class="c">LEAK SUMMARY</code></h3>
 <pre class="code" data-label="text"><code class="c">==1234== HEAP SUMMARY:
-==1234==     in use at exit: 408 bytes in 101 blocks
-==1234==   total heap usage: 106 allocs, 5 frees, 8,704 bytes allocated
+==1234==     in use at exit: 40,000 bytes in 100 blocks
+==1234==   total heap usage: 100 allocs, 0 frees, 40,000 bytes allocated
 ==1234==
 ==1234== LEAK SUMMARY:
-==1234==    definitely lost: 400 bytes in 100 blocks
+==1234==    definitely lost: 40,000 bytes in 100 blocks
 ==1234==    indirectly lost: 0 bytes in 0 blocks
 ==1234==      possibly lost: 0 bytes in 0 blocks
-==1234==    still reachable: 8 bytes in 1 blocks
+==1234==    still reachable: 0 bytes in 0 blocks
 ==1234==         suppressed: 0 bytes in 0 blocks
 ==1234== Rerun with --leak-check=full to see details of leaked memory
 </code></pre>
+<p>（这是 <code class="c">./c3_1_mem_bugs 5</code> 单跑 case 5 的样子：<code class="c">100 allocs, 0 frees</code>——<strong>贷了 100 笔，一笔没还</strong>，正是 case 5 代码里那个循环。ASan/LSan 对同一份代码的实测汇总完全对得上：<code class="c">SUMMARY: AddressSanitizer: 40000 byte(s) leaked in 100 allocation(s).</code>）</p>
 <p>泄漏的四种定性（<strong>必须分清</strong>，否则会误判）：</p>
 <div class="tbl-wrap"><table>
 <thead>
@@ -546,24 +566,63 @@ V bit       [  1 ][  1 ][  0 ][  0 ] ...        ← 0 = 未初始化
 </tbody>
 </table></div>
 <p>加 <code class="c">--leak-check=full --show-leak-kinds=all</code> 看每个泄漏块的分配栈：</p>
-<pre class="code" data-label="shell"><code class="c">valgrind --leak-check=full --show-leak-kinds=all ./mem_bugs
-# ==1234== 400 bytes in 100 blocks are definitely lost in loss record 1 of 2
-# ==1234==    at 0x483B7F3: malloc (vg_replace_malloc.c:393)
-# ==1234==    by 0x48C7D1E: bug_leak (mem_bugs.c:26)   ← 泄漏点：第 26 行 malloc
-# ==1234==    by 0x48C7D30: main (mem_bugs.c:44)
+<pre class="code" data-label="text"><code class="c">==1234== 40,000 bytes in 100 blocks are definitely lost in loss record 1 of 1
+==1234==    at 0x483B7F3: malloc (vg_replace_malloc.c:393)
+==1234==    by 0x48C7D1E: bug_leak (c3_1_mem_bugs.c:84)   ← 泄漏点：第 84 行 malloc(400)
+==1234==    by 0x48C7D30: main (c3_1_mem_bugs.c:101)
 </code></pre>
+<blockquote>
+<p><strong>对照实测</strong>：ASan/LSan 给出的分配栈是 <code class="c">#1 0x40152c in bug_leak /app/example.c:84</code> / <code class="c">#2 0x4015ef in main /app/example.c:101</code> —— <strong>行号 84/101 与 valgrind 格式示意里的完全一致</strong>（因为就是同一份源码的同一行），只是地址与调用栈符号化风格不同。这说明两套报告在「定位到哪一行」这件事上是等价的，差别只在措辞。</p>
+</blockquote>
 <h3>④ 未初始化读：<code class="c">Conditional jump depends on uninitialised value</code></h3>
+<p>这一条用独立 demo <code class="c">code/c3_2_uninit_read.c</code>（未初始化读要从「内存错误」里单独拎出来讲——它和越界/UAF 是<strong>不同维度</strong>的问题）：</p>
+<pre class="code" data-label="C"><code class="c">/* code/c3_2_uninit_read.c 节选 */
+struct order { long id; long qty; long price; };
+
+static volatile long g_sink;
+
+int main(void)
+{
+    int stack_var;                       /* 未初始化：值 = 栈上的残留 */
+    struct order *o = malloc(sizeof *o); /* 未初始化：值 = 堆上的残留 */
+    if (!o) return 1;
+
+    o-&gt;id = 1;
+    /* 注意：qty / price 故意不赋值 */
+
+    printf(&quot;stack_var = %d\n&quot;, stack_var);
+    printf(&quot;o-&gt;qty = %ld, o-&gt;price = %ld\n&quot;, o-&gt;qty, o-&gt;price);
+
+    g_sink = stack_var + o-&gt;qty;
+
+    if (o-&gt;qty &gt; 0)                      /* 用垃圾值做分支：行为不可预测 */
+        printf(&quot;qty &gt; 0 分支被走到（这完全取决于栈/堆里剩了什么）\n&quot;);
+    else
+        printf(&quot;qty &gt; 0 分支没走到（同上）\n&quot;);
+
+    free(o);
+    return 0;
+}
+</code></pre>
+<p>valgrind 报告格式示意（用 <code class="c">--track-origins=yes</code> 才能追到源头）：</p>
 <pre class="code" data-label="text"><code class="c">==1234== Conditional jump depends on uninitialised value(s)
-==1234==    at 0x48C7D90: bug_uninit (mem_bugs.c:33)
-==1234==    by 0x48C7D45: main (mem_bugs.c:45)
+==1234==    at 0x48C7D90: main (c3_2_uninit_read.c:40)
+==1234==  Uninitialised value was created by a heap allocation
+==1234==    at 0x483B7F3: malloc (vg_replace_malloc.c:393)
+==1234==    by 0x48C7D45: main (c3_2_uninit_read.c:28)   ← 源头：第 28 行的 malloc 块从未写全
 </code></pre>
-<p>这里只告诉你「第 33 行的 if 依赖了未初始化值」，但<strong>没告诉你是谁污染了这个值</strong>。要追溯来源，加 <code class="c">--track-origins=yes</code>（代价是更慢）：</p>
-<pre class="code" data-label="shell"><code class="c">valgrind --track-origins=yes ./mem_bugs
-# ==1234== Conditional jump depends on uninitialised value(s)
-# ==1234==    at 0x...: bug_uninit (mem_bugs.c:33)
-# ==1234==  Uninitialised value was created by a stack allocation
-# ==1234==    at 0x...: bug_uninit (mem_bugs.c:30)   ← 第 30 行 int x; 是源头
-</code></pre>
+<p>这里只告诉你「第 40 行的 <code class="c">if (o-&gt;qty &gt; 0)</code> 依赖了未初始化值」，但<strong>没告诉你是谁污染了这个值</strong>。要追溯来源，必须加 <code class="c">--track-origins=yes</code>（代价是更慢）——加了之后报告末尾会多一段 <code class="c">Uninitialised value was created by ...</code>，指出第 28 行的 <code class="c">malloc</code> 是源头（<code class="c">qty</code> 从没被赋值过）。</p>
+<blockquote>
+<p>⚠️ <strong>这一条也是本模块里唯一没能拿到实测输出的</strong> —— 如实说明：
+- <strong>ASan 抓不到它</strong>（实测：<code class="c">gcc -g -O0 -fsanitize=address</code> 跑 <code class="c">c3_2_uninit_read.c</code>，<strong>退出码 0、零报告</strong>）。ASan 只查「地址是否可访问」，不查「值是否已初始化」——这正是本节和 3.2 的分工边界。
+- <strong>MSan 才是它的对口工具</strong>（<code class="c">clang -fsanitize=memory</code>），但 MSan 要求<strong>整条依赖链</strong>（包括 libc）都用 MSan 重编，且需要 <code class="c">-fsanitize-memory-track-origins</code> 才有「来源追溯」。我在 Compiler Explorer 的容器里实测 MSan 跑这份程序得到的是 <code class="c">Program terminated with signal SIGSEGV (11)</code> 而<strong>不是</strong> MSan 的 <code class="c">use-of-uninitialized-value</code> 报告——判断是该容器的 C++/libc 没做 MSan 插桩导致的假失败，<strong>因此我不把 MSan 的输出写进本节</strong>。你在自己的 Linux 机器上按上面命令跑能得到真实报告。
+- <strong>可确认的部分</strong>：源码第 35/36 行会直接打印出未初始化值，实测（ASan 构建）打出的是
+  <code class="c">text
+  stack_var = 0
+  o-&gt;qty = -4702111234474983746, o-&gt;price = -4702111234474983746
+  qty &gt; 0 分支没走到（同上）</code>
+  这串 <code class="c">-4702111234474983746</code>（十六进制 <code class="c">0xBEBEBEBEBEBEBEBE</code>）就是栈/堆里的残留垃圾——<strong>「值不对」这件事被实测坐实了，只是抓不到它的工具不在本环境</strong>。</p>
+</blockquote>
 <h2>常用命令选项</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -613,14 +672,23 @@ V bit       [  1 ][  1 ][  0 ][  0 ] ...        ← 0 = 未初始化
 </table></div>
 <p>CI 里跑泄漏检查的推荐组合：</p>
 <pre class="code" data-label="shell"><code class="c">valgrind --leak-check=full --errors-for-leak-kinds=definite \
-         --error-exitcode=1 ./mem_bugs
+         --error-exitcode=1 ./c3_1_mem_bugs 5
 # 只有「确定泄漏」才导致 CI 失败，still reachable 不拦
 </code></pre>
 <h2>valgrind 的局限（必须诚实评估）</h2>
 <ol>
 <li><strong>慢</strong>：20–50× 开销，程序里跑 1 秒的路径，valgrind 下要 30 秒。<strong>绝不能拿它测延迟/吞吐</strong>（测出来的数字毫无意义，见 Ch6 性能类）。</li>
 <li><strong>只认「可执行指令」</strong>：它是 DBI，只能看到实际执行的代码路径。不执行的 <code class="c">if</code> 分支里的 bug 它看不见（所以要用测试用例覆盖到）。</li>
-<li><strong>对栈越界盲</strong>：memcheck 抓<strong>堆</strong>越界很准，但对<strong>栈</strong>数组越界（<code class="c">char buf[8]; strcpy(buf, "...")</code>）历史上抓不到，因为它没给栈变量做 redzone（ASan 能抓，见 3.2）。</li>
+<li><strong>对栈越界盲</strong>：memcheck 抓<strong>堆</strong>越界很准，但对<strong>栈</strong>数组越界（<code class="c">char dst[8]; memcpy(dst, src, 32)</code>）历史上抓不到，因为它没给栈变量做 redzone。<strong>这条有实测对照</strong>：同一条 <code class="c">c3_1_mem_bugs.c</code> 的 case 2（<code class="c">char dst[8]</code> 被 <code class="c">memcpy</code> 灌 32 字节），ASan 精确报出
+   <code class="c">text
+   ERROR: AddressSanitizer: stack-buffer-overflow ... WRITE of size 32
+       #1 bug_stack_overflow (c3_1_mem_bugs.c:51)
+   Address ... is located in stack of thread T0 at offset 40 in frame
+       #0 bug_stack_overflow (c3_1_mem_bugs.c:46)
+     This frame has 2 object(s):
+       [32, 40) 'dst' (line 48)
+       [64, 96) 'src' (line 47) &lt;== Memory access at offset 40 partially underflows this variable</code>
+   连「栈帧里两个对象各占哪段地址、越界落在哪个对象的边界」都画出来了——<strong>这是 ASan 存在的核心理由之一</strong>（见 3.2）。</li>
 <li><strong>不查数据竞争</strong>：内存错误和并发竞态是两个维度，valgrind 另有 <code class="c">helgrind</code> / <code class="c">drd</code> 子工具（Ch4 并发类），memcheck 不管。</li>
 <li><strong>对 UB 无感</strong>：有符号溢出、移位越界这些「未定义行为但不算内存错误」，memcheck 完全没反应（3.3 UBSan 的活）。</li>
 </ol>
@@ -659,6 +727,10 @@ grep &quot;definitely lost&quot; engine_leak.log   # 非 0 就有人泄漏
 <blockquote>
 <p>memcheck 主要给<strong>堆</strong>分配做红区标记，对<strong>栈</strong>上的局部数组（<code class="c">char buf[8]</code>）默认不做细粒度 redzone，所以 <code class="c">strcpy(buf, "长字符串")</code> 这种栈溢出它常抓不到。这类问题交给 <strong>ASan</strong>（3.2），ASan 在编译期给栈变量也插入了 redzone，能精确抓到栈越界。</p>
 </blockquote>
+<p><strong>Q6:</strong> 本节里哪些内容是「实测」，哪些是「格式示意」？为什么要区分？</p>
+<blockquote>
+<p><strong>实测</strong>：裸编译 <code class="c">-Wall -Wextra</code> 的诊断 27 条、case 1 退出 0 且打印「程序继续跑」、ASan/LSan 对 case 1/2/3/4/5 的报告、<code class="c">c3_2_uninit_read.c</code> 在 ASan 下退出 0（零报告）及打印出的垃圾值。<strong>格式示意</strong>：所有 <code class="c">==1234==</code> 开头的 valgrind 报告（本环境装不了 valgrind，行号按真实源码对齐、措辞按官方手册）。区分的理由是：<strong>「工具能抓到什么」是知识（可引用手册），「在你这台机器上抓到什么」是证据（必须真跑）</strong>。把示意当实测，就会在别人机器上等一份永远不会出现的报告——这正是 1.4 讲的「信数据」的反面。</p>
+</blockquote>
 </details>
 <h2>交叉引用</h2>
 <ul>
@@ -676,28 +748,262 @@ grep &quot;definitely lost&quot; engine_leak.log   # 非 0 就有人泄漏
 <h2>本节要点</h2>
 <p>AddressSanitizer（ASan）是 Google 出品的编译期内存错误检测器，集成在 GCC / Clang 里，加 <code class="c">-fsanitize=address</code> 即可。它和 valgrind 抓的是<strong>同一类</strong>内存错误（越界 / UAF / 泄漏 / 未初始化），但实现思路相反：<strong>编译时把检查代码插进程序</strong>，运行时靠「红区（redzone）+ 影子内存」高速判断。代价是必须重编译，换来约 <strong>2× 开销</strong>（valgrind 是 20–50×），快到可以在 CI 里每次提交都跑。本节讲原理、报错解读、与 valgrind 的取舍。</p>
 <h2>编译与运行</h2>
-<pre class="code" data-label="shell"><code class="c">gcc -g -O1 -fsanitize=address -o mem_bugs_asan mem_bugs.c
-./mem_bugs_asan
+<p>本节所有输出都是<strong>实测</strong>（gcc 13.3.0，Compiler Explorer 容器）。同一份病人 <code class="c">code/c3_1_mem_bugs.c</code>，五个 case 各跑一次：</p>
+<pre class="code" data-label="shell"><code class="c"># 五个 case 都编译成 ASan 版本（用 -O0，原因见下）
+gcc -g -O0 -fsanitize=address -o c3_1_asan c3_1_mem_bugs.c
+./c3_1_asan 1        # 堆越界
+./c3_1_asan 2        # 栈越界
+./c3_1_asan 3        # use-after-free
+./c3_1_asan 4        # double free
+./c3_1_asan 5        # 泄漏
 </code></pre>
 <blockquote>
-<p>注意：<code class="c">-g</code> 必须有（报错要显示源码行号），优化建议 <code class="c">-O1</code> 而非 <code class="c">-O0</code>（ASan 官方推荐 <code class="c">-O1</code>，<code class="c">-O0</code> 下插桩代码和检查逻辑混在一起反而更慢、报告更啰嗦）。</p>
+<p><code class="c">-g</code> 必须有（报错要显示源码行号）。<strong>优化档位是本节第一个大坑</strong>：ASan 官方推荐 <code class="c">-O1</code>，但这套 demo 必须用 <code class="c">-O0</code> —— 实测 <code class="c">-O1</code> 下 <strong>case 3 的 UAF 会被优化掉（exit 0、零报告）</strong>，详见本节末尾「优化会改变 bug 的存在性」。</p>
+<p>📎 <strong>关于报告里的文件名</strong>：Compiler Explorer 会把上传的源码落成 <code class="c">/app/example.c</code>，所以下面的栈里显示 <code class="c">example.c:38</code>——<strong>行号对应我们的 <code class="c">c3_1_mem_bugs.c</code></strong>（两者内容逐字节相同）。</p>
 </blockquote>
-<p>跑 3.1 那个 <code class="c">mem_bugs.c</code>，第一个雷（堆越界写）的报错：</p>
+<p>五个 case 的实测总览：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>case</th>
+<th>错误类型（实测 SUMMARY 行）</th>
+<th>触发行</th>
+<th>退出码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code class="c">AddressSanitizer: heap-buffer-overflow /app/example.c:38 in bug_heap_overflow</code></td>
+<td>38</td>
+<td><strong>1</strong></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code class="c">AddressSanitizer: stack-buffer-overflow ... in __interceptor_memcpy</code></td>
+<td>51</td>
+<td><strong>1</strong></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">AddressSanitizer: heap-use-after-free /app/example.c:64 in bug_use_after_free</code></td>
+<td>64</td>
+<td><strong>1</strong></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">AddressSanitizer: double-free ...</code></td>
+<td>76</td>
+<td><strong>1</strong></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code class="c">AddressSanitizer: 40000 byte(s) leaked in 100 allocation(s).</code>（LSan）</td>
+<td>84</td>
+<td><strong>1</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>ASan 用退出码 1 表示「检出问题」</strong>（不是 139/136 那套信号码）——CI 里判失败直接看 <code class="c">$?</code>。</p>
+<h3>case 1：堆越界写（实测原文）</h3>
 <pre class="code" data-label="text"><code class="c">=================================================================
-==5678==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x602000000018 at pc 0x55c1a2b4c3e4 bp 0x7fff1234 sp 0x7fff122c
-WRITE of size 8 at 0x602000000018 thread T0
-    #0 0x55c1a2b4c3e3 in bug_heap_overflow mem_bugs.c:11
-    #1 0x55c1a2b4c4f2 in main mem_bugs.c:42
-    #2 0x7f2a3b4c5d6e in __libc_start_main
+==2==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x602000000018 at pc 0x000000401295 bp 0x7ffcf92ecb80 sp 0x7ffcf92ecb78
+WRITE of size 1 at 0x602000000018 thread T0
+    #0 0x401294 in bug_heap_overflow /app/example.c:38
+    #1 0x4015d0 in main /app/example.c:97
+    #2 0x73678942a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #3 0x73678942a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #4 0x401164 in _start (/app/output.s+0x401164) (BuildId: baf7d14ac9ea8e1c22e3d3263d14e7b1e80e43f2)
 
-0x602000000018 is located 8 bytes to the right of 8-byte region [0x602000000010,0x602000000018)
+0x602000000018 is located 0 bytes after 8-byte region [0x602000000010,0x602000000018)
 allocated by thread T0 here:
-    #0 0x55c1a2b4a1a0 in malloc
-    #1 0x55c1a2b4c3c0 in bug_heap_overflow mem_bugs.c:10
+    #0 0x73678989704f in malloc (/opt/compiler-explorer/gcc-13.3.0/lib64/libasan.so.8+0xdc04f) (BuildId: 95d2dfcd183a2b9107b34fd25c40252c37aaa56d)
+    #1 0x401237 in bug_heap_overflow /app/example.c:34
+    #2 0x4015d0 in main /app/example.c:97
+    ...
 
-SUMMARY: AddressSanitizer: heap-buffer-overflow mem_bugs.c:11 in bug_heap_overflow
+SUMMARY: AddressSanitizer: heap-buffer-overflow /app/example.c:38 in bug_heap_overflow
+Shadow bytes around the buggy address:
+  0x601fffffff80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=&gt;0x602000000000: fa fa 00[fa]fa fa fa fa fa fa fa fa fa fa fa fa
+  0x602000000080: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  ...
 </code></pre>
-<p>和 valgrind 报告同构（错误类型 → 读写方栈 → 越界程度 → 分配方栈），但多了最后一段 <strong>shadow bytes 图</strong>（篇幅略），它把出问题地址附近的影子内存状态画出来，精确定位「越界了几个字节」。</p>
+<p>和 valgrind 报告同构（错误类型 → 读写方栈 → 越界程度 → 分配方栈），但 <code class="c">SUMMARY</code> 前面多了最后一段 <strong>shadow bytes 图</strong>，它把出问题地址附近的影子内存状态画出来，精确定位「越界了几个字节」。</p>
+<p><strong>读这张影子图</strong>（这是 ASan 最独有的信息）：<code class="c">0x602000000000</code> 那一行，每个影子字节代表 8 字节应用内存，带方括号的那个是「出错地址所在的影子字节」：</p>
+<pre class="code" data-label="text"><code class="c">=&gt;0x602000000000: fa fa 00[fa]fa fa fa fa ...
+                   ↑  ↑  ↑  ↑
+                   │  │  │  └─ 第 24~31 字节：堆红区（0xfa）← 我们写到了这里
+                   │  │  └──── 第 16~23 字节：堆红区（0xfa）
+                   │  └─────── 第 8~15 字节：可访问（0x00）← malloc(8) 的有效区间
+                   └────────── 第 0~7 字节：堆左侧红区（0xfa）
+</code></pre>
+<p><code class="c">malloc(8)</code> 给了 8 字节可用（影子 <code class="c">00</code>），前后各铺红区（<code class="c">fa</code>）。<code class="c">buf[8]</code> 越界到第 9 个字节，落在<strong>第一个 <code class="c">fa</code> 里</strong>——方括号标出的正是它。<strong>「越界 1 字节」这件事被画出来了</strong>，比报错文字更直观。</p>
+<h3>case 2：栈越界写（实测原文）</h3>
+<pre class="code" data-label="text"><code class="c">=================================================================
+==2==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7d6127200028 at pc 0x7d612989474f bp 0x7ffe6a79b0f0 sp 0x7ffe6a79a8b0
+WRITE of size 32 at 0x7d6127200028 thread T0
+    #0 0x7d612989474e in __interceptor_memcpy (/opt/compiler-explorer/gcc-13.3.0/lib64/libasan.so.8+0x7174e) (BuildId: 95d2dfcd183a2b9107b34fd25c40252c37aaa56d)
+    #1 0x401370 in bug_stack_overflow /app/example.c:51
+    #2 0x4015da in main /app/example.c:98
+    ...
+
+Address 0x7d6127200028 is located in stack of thread T0 at offset 40 in frame
+    #0 0x4012d2 in bug_stack_overflow /app/example.c:46
+
+  This frame has 2 object(s):
+    [32, 40) 'dst' (line 48)
+    [64, 96) 'src' (line 47) &lt;== Memory access at offset 40 partially underflows this variable
+HINT: this may be a false positive if your program uses some custom stack unwind mechanism, swapcontext or vfork
+      (longjmp and C++ exceptions *are* supported)
+SUMMARY: AddressSanitizer: stack-buffer-overflow (/opt/compiler-explorer/gcc-13.3.0/lib64/libasan.so.8+0x7174e) (BuildId: 95d2dfcd183a2b9107b34fd25c40252c37aaa56d) in __interceptor_memcpy
+Shadow bytes around the buggy address:
+  0x7d61271fff80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=&gt;0x7d6127200000: f1 f1 f1 f1 00[f2]f2 f2 00 00 00 00 f3 f3 f3 f3
+  0x7d6127200080: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  ...
+</code></pre>
+<p>这段报告含金量最高，逐条读：</p>
+<ol>
+<li><strong><code class="c">This frame has 2 object(s)</code></strong> —— ASan 把<strong>栈帧里两个局部变量的地址区间</strong>都列出来了：<code class="c">dst</code> 在 <code class="c">[32,40)</code>（8 字节，第 48 行声明），<code class="c">src</code> 在 <code class="c">[64,96)</code>（32 字节，第 47 行）。<strong>valgrind 给不出这个</strong>。</li>
+<li><strong><code class="c">Memory access at offset 40 partially underflows this variable</code></strong> —— 出事的偏移 40 正好是 <code class="c">dst</code> 的<strong>末尾之外第一个字节</strong>，同时落进 <code class="c">src</code> 的区间里。所以 ASan 的措辞是「部分越过了这个变量」。</li>
+<li><strong>影子图读法</strong>：<code class="c">f1 f1 f1 f1 00[f2]f2 f2 00 00 00 00 f3 f3 f3 f3</code>
+   - <code class="c">f1</code>×4 = 栈<strong>左</strong>红区（函数序言铺的）
+   - <code class="c">00</code> = <code class="c">dst</code> 的 8 字节有效区
+   - <code class="c">[f2]f2 f2</code> = 栈<strong>中</strong>红区（两个对象之间的守卫）← <strong>方括号就落在这里</strong>，<code class="c">memcpy</code> 的 32 字节写穿了 <code class="c">dst</code>、冲进了中间红区
+   - <code class="c">00 00 00 00</code> = <code class="c">src</code> 的 32 字节有效区
+   - <code class="c">f3</code>×4 = 栈<strong>右</strong>红区</li>
+<li><strong><code class="c">WRITE of size 32</code></strong> —— 一次 <code class="c">memcpy</code> 写 32 字节，所以是 size 32（不是逐字节的 size 1）。</li>
+</ol>
+<blockquote>
+<p><strong>这就是「ASan 能抓栈越界、valgrind 抓不到」的确切形态</strong>：ASan 在编译期给每个栈对象两侧都插了红区（<code class="c">f1</code>/<code class="c">f2</code>/<code class="c">f3</code>），所以越界一字节也躲不过；而且它能把栈帧布局打印出来。见 <a href="chapter-07.html#s-01">3.1 局限第 3 条</a>。</p>
+</blockquote>
+<h3>case 3：use-after-free（实测原文）</h3>
+<pre class="code" data-label="text"><code class="c">=================================================================
+==2==ERROR: AddressSanitizer: heap-use-after-free on address 0x602000000010 at pc 0x0000004014a9 bp 0x7ffe302ec8a0 sp 0x7ffe302ec898
+WRITE of size 4 at 0x602000000010 thread T0
+    #0 0x4014a8 in bug_use_after_free /app/example.c:64
+    #1 0x4015e1 in main /app/example.c:99
+    ...
+
+0x602000000010 is located 0 bytes inside of 16-byte region [0x602000000010,0x602000000020)
+freed by thread T0 here:
+    #0 0x72dadca25d18  (/opt/compiler-explorer/gcc-13.3.0/lib64/libasan.so.8+0xdad18) (BuildId: 95d2dfcd183a2b9107b34fd25c40252c37aaa56d)
+    #1 0x401471 in bug_use_after_free /app/example.c:63
+    #2 0x4015e1 in main /app/example.c:99
+    ...
+
+previously allocated by thread T0 here:
+    #0 0x72dadca2704f in malloc (/opt/compiler-explorer/gcc-13.3.0/lib64/libasan.so.8+0xdc04f) (BuildId: 95d2dfcd183a2b9107b34fd25c40252c37aaa56d)
+    #1 0x401415 in bug_use_after_free /app/example.c:59
+    #2 0x4015e1 in main /app/example.c:99
+    ...
+
+SUMMARY: AddressSanitizer: heap-use-after-free /app/example.c:64 in bug_use_after_free
+Shadow bytes around the buggy address:
+  0x601fffffff80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=&gt;0x602000000000: fa fa[fd]fd fa fa fa fa fa fa fa fa fa fa fa fa
+  0x602000000080: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  ...
+</code></pre>
+<p><strong>三段栈 = UAF 的完整故事</strong>：<code class="c">freed by ... example.c:63</code>（谁释放的）→ <code class="c">previously allocated by ... example.c:59</code>（谁最初申请的）→ 报错点 <code class="c">example.c:64</code>（谁在释放后又用了）。<strong>第 64 行写了第 63 行刚 free 的东西</strong>。</p>
+<p>影子图 <code class="c">fa fa[fd]fd fa fa ...</code> 里的 <code class="c">fd</code> 就是<strong>「已释放的堆块」编码</strong>——free 之后这块 16 字节（两个影子字节）被标成 <code class="c">fd</code>，隔离区里等着被复用。第 64 行的写落进 <code class="c">[fd]</code>，报错。</p>
+<h3>case 4：double free（实测原文）</h3>
+<pre class="code" data-label="text"><code class="c">=================================================================
+==2==ERROR: AddressSanitizer: attempting double-free on 0x602000000010 in thread T0:
+    #0 0x77269dd91d18  (/opt/compiler-explorer/gcc-13.3.0/lib64/libasan.so.8+0xdad18) (BuildId: 95d2dfcd183a2b9107b34fd25c40252c37aaa56d)
+    #1 0x401502 in bug_double_free /app/example.c:76
+    #2 0x4015e8 in main /app/example.c:100
+    ...
+
+0x602000000010 is located 0 bytes inside of 16-byte region [0x602000000010,0x602000000020)
+freed by thread T0 here:
+    #0 0x77269dd91d18  (/opt/compiler-explorer/gcc-13.3.0/lib64/libasan.so.8+0xdad18) (BuildId: 95d2dfcd183a2b9107b34fd25c40252c37aaa56d)
+    #1 0x4014f6 in bug_double_free /app/example.c:75
+    ...
+
+previously allocated by thread T0 here:
+    #0 0x77269dd9304f in malloc (/opt/compiler-explorer/gcc-13.3.0/lib64/libasan.so.8+0xdc04f) (BuildId: 95d2dfcd183a2b9107b34fd25c40252c37aaa56d)
+    #1 0x4014df in bug_double_free /app/example.c:72
+    ...
+
+SUMMARY: AddressSanitizer: double-free (/opt/compiler-explorer/gcc-13.3.0/lib64/libasan.so.8+0xdad18) (BuildId: 95d2dfcd183a2b9107b34fd25c40252c37aaa56d)
+==2==ABORTING
+</code></pre>
+<p>注意 <code class="c">double-free</code> 这条<strong>没有 shadow bytes 段</strong>——因为缺的不是「哪块内存不可访问」，而是「这个 <code class="c">free</code> 调用本身非法」。它的三段栈是 <code class="c">:76</code>（第二次 free，报错点）/ <code class="c">:75</code>（第一次 free）/ <code class="c">:72</code>（最初 malloc）。<strong><code class="c">==2==ABORTING</code></strong> 表示 ASan 直接终止进程（double free 会破坏 allocator 内部结构，没有安全继续的可能）。</p>
+<h3>case 5：内存泄漏（LSan，实测原文）</h3>
+<pre class="code" data-label="text"><code class="c">=================================================================
+==2==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 40000 byte(s) in 100 object(s) allocated from:
+    #0 0x76239fc7504f in malloc (/opt/compiler-explorer/gcc-13.3.0/lib64/libasan.so.8+0xdc04f) (BuildId: 95d2dfcd183a2b9107b34fd25c40252c37aaa56d)
+    #1 0x40152c in bug_leak /app/example.c:84
+    #2 0x4015ef in main /app/example.c:101
+    #3 0x76239f82a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #4 0x76239f82a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #5 0x401164 in _start (/app/output.s+0x401164) (BuildId: baf7d14ac9ea8e1c22e3d3263d14e7b1e80e43f2)
+
+SUMMARY: AddressSanitizer: 40000 byte(s) leaked in 100 allocation(s).
+</code></pre>
+<p>100 次 <code class="c">malloc(400)</code> = 40000 字节，一次没 <code class="c">free</code>。<strong>注意 <code class="c">#1 ... example.c:84</code></strong> —— 泄漏点被精确指到第 84 行那一句 <code class="c">malloc(400)</code>，这就是 LSan 的价值：不用你猜「哪块内存漏了」。</p>
+<h2>优化会改变 bug 的「存在性」（实测，重要）</h2>
+<p>ASan 官方推荐 <code class="c">-O1</code>，本节却坚持 <code class="c">-O0</code>。原因不是「-O1 报告啰嗦」，而是一个更硬的事实：<strong>优化会把某些内存错误直接从程序里删掉</strong>。实测 <code class="c">-O1 -fsanitize=address</code> 跑同一份 <code class="c">c3_1_mem_bugs.c</code>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>case</th>
+<th><code class="c">-O0 -fsanitize=address</code></th>
+<th><code class="c">-O1 -fsanitize=address</code></th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 堆越界</td>
+<td>✅ 检出（exit 1）</td>
+<td>✅ 检出</td>
+<td><code class="c">free(buf)</code> 让 <code class="c">malloc</code> 无法被消除</td>
+</tr>
+<tr>
+<td>2 栈越界</td>
+<td>✅ 检出</td>
+<td>✅ 检出（但<strong>栈帧归到 <code class="c">main</code>、写方变成 <code class="c">memset</code></strong>）</td>
+<td><code class="c">bug_stack_overflow</code> 被内联进 <code class="c">main</code>，且 <code class="c">memset(src)+memcpy(dst,src)</code> 被合并成一次 <code class="c">memset(dst)</code></td>
+</tr>
+<tr>
+<td>3 UAF</td>
+<td>✅ 检出（exit 1）</td>
+<td>❌ <strong>检不出（exit 0、零报告）</strong></td>
+<td><code class="c">p[0] = 7</code> 与紧随的 <code class="c">g_sink = p[0]</code> 一起成了死代码，被整段删除</td>
+</tr>
+<tr>
+<td>4 double free</td>
+<td>✅ 检出</td>
+<td>✅ 检出</td>
+<td><code class="c">free()</code> 调用有副作用，不能被消除</td>
+</tr>
+<tr>
+<td>5 泄漏</td>
+<td>✅ 检出</td>
+<td>✅ 检出</td>
+<td><code class="c">malloc</code> 结果必须产生，否则后面的 <code class="c">free</code> 无对象</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>case 3 那一行是整个模块最该记住的反直觉结论之一</strong>：</p>
+<blockquote>
+<p><strong><code class="c">-O1</code> 下 UAF「不存在」了——不是 ASan 变瞎了，而是这段代码真的被编译器删掉了。</strong> 于是同一份源码在 <code class="c">-O0</code> 下是「有 UAF 的程序」，在 <code class="c">-O1</code> 下是「没有 UAF 的程序」。你在 <code class="c">-O2</code> release 构建里看到「内存错误消失了」，很可能只是<strong>测试用例被优化没了</strong>。</p>
+</blockquote>
+<p>case 2 那一行则展示了另一半：优化不仅改变「有没有 bug」，还改变<strong>报告的措辞</strong>——栈帧名从 <code class="c">bug_stack_overflow</code> 变成 <code class="c">main</code>，写方从 <code class="c">__interceptor_memcpy</code> 变成 <code class="c">memset</code>。<strong>读 ASan 报告时要意识到「报告描述的是优化后的代码」</strong>，别拿源码逐字对。</p>
+<pre class="code" data-label="shell"><code class="c"># 所以验证内存 bug 的标准姿势是两段式：
+# 1) -O0 把病因看清（五个 case 全部现形）
+gcc -g -O0 -fsanitize=address -o prog_asan_O0 prog.c &amp;&amp; ./prog_asan_O0
+# 2) 再用接近生产的 -O2 复跑一遍（看哪些 bug 在 release 下&quot;隐身&quot;了）
+gcc -g -O2 -fsanitize=address -o prog_asan_O2 prog.c &amp;&amp; ./prog_asan_O2
+</code></pre>
+<blockquote>
+<p>⚠️ 还有一条实测的对照：<strong>不带 sanitizer 时，<code class="c">-O0</code> 和 <code class="c">-O1</code>/<code class="c">-O2</code> 都不会告诉你任何事</strong>。case 1 在 <code class="c">gcc -g -O0 -Wall -Wextra</code>、<code class="c">-O1</code>、<code class="c">-O2</code> 三种档位下<strong>都是 exit 0</strong>，只留下编译期警告（<code class="c">-O0</code> 有 27 条、<code class="c">-O1</code> 20 条、<code class="c">-O2</code> 28 条）。<strong>警告数量和检出能力不成正比</strong>——别以为警告多就查得全。</p>
+</blockquote>
 <h2>原理：红区 + 影子内存</h2>
 <p>ASan 的核心是<strong>编译期插桩</strong>：编译器在<strong>每一次</strong>内存访问（load/store）指令前后，插入一段「检查目标地址是否中毒」的代码。而「中毒」由 malloc 时布下的<strong>红区</strong>标记。</p>
 <pre class="code" data-label="code"><code class="c">+---------+  redzone (0xfa，中毒)  ← 写到这里 → 报错
@@ -709,14 +1015,21 @@ SUMMARY: AddressSanitizer: heap-buffer-overflow mem_bugs.c:11 in bug_heap_overfl
 <li><strong>影子内存（shadow memory）</strong>：把每 8 字节应用内存映射到 1 字节 shadow，用编码记录「这 8 字节里哪些可访问」。检查时只需一条位运算 + 一次内存读，所以快。</li>
 <li><strong>隔离区（quarantine）</strong>：free 后的块不立刻还给 OS，而是放进 quarantine 延迟复用。这样 use-after-free 在「复用之前」就会被抓到——因为那段内存还被标着「已 free、中毒」。</li>
 </ol>
-<pre class="code" data-label="text"><code class="c">shadow 字节编码（部分）：
-0x00 = 8 字节全可访问
-0x01..0x07 = 前 N 字节可访问（部分）
-0xfa = 堆 redzone（中毒）
-0xfd = 已 free 的堆块（中毒，隔离区）
-0xf1 = 栈 redzone
+<pre class="code" data-label="text"><code class="c">shadow 字节编码（录自上面 case 1/2/3 报告的 &quot;Shadow byte legend&quot; 原文）：
+0x00        = Addressable（8 字节全可访问）
+0x01..0x07  = Partially addressable（前 N 字节可访问）
+0xfa        = Heap left redzone（堆红区）
+0xfd        = Freed heap region（已 free 的堆块 = 隔离区）
+0xf1        = Stack left redzone（栈左红区）
+0xf2        = Stack mid redzone（栈中红区 ← 两对象之间的守卫）
+0xf3        = Stack right redzone（栈右红区）
+0xf5        = Stack after return
+0xf8        = Stack use after scope
+0xf9        = Global redzone
+0xbb        = Intra object redzone
+（完整表见报告末尾的 legend，共 15 项）
 </code></pre>
-<p><strong>为什么 ASan 能抓栈越界而 valgrind 不行</strong>：编译器给<strong>栈上每个数组</strong>也插入了 redzone（<code class="c">0xf1</code>），所以 <code class="c">char buf[8]; strcpy(buf, "长字符串")</code> 这种栈溢出 ASan 精确抓到，这正是它对 valgrind 的关键补强。</p>
+<p><strong>为什么 ASan 能抓栈越界而 valgrind 不行</strong>：编译器给<strong>栈上每个对象</strong>都插了红区，而且是<strong>分段</strong>的——<code class="c">f1</code>（左）、<code class="c">f2</code>（对象之间）、<code class="c">f3</code>（右）。所以 <code class="c">char dst[8]</code> 被 <code class="c">memcpy</code> 灌 32 字节时，ASan 不但报错，还能画出「越界正好冲进 <code class="c">dst</code> 与 <code class="c">src</code> 之间的 <code class="c">f2</code> 中红区」（见上面 case 2 的影子图）。这正是它对 valgrind 的关键补强。</p>
 <h2>报错类型一览</h2>
 <p>ASan 报错格式统一为 <code class="c">ERROR: AddressSanitizer: &lt;类型&gt; on address ...</code>：</p>
 <div class="tbl-wrap"><table>
@@ -775,19 +1088,18 @@ SUMMARY: AddressSanitizer: heap-buffer-overflow mem_bugs.c:11 in bug_heap_overfl
 </tr>
 </tbody>
 </table></div>
-<p>跑 <code class="c">mem_bugs.c</code> 会依次报 <code class="c">heap-buffer-overflow</code>（雷1）、<code class="c">heap-use-after-free</code>（雷2）、<code class="c">detected memory leaks</code>（雷3）。<strong>注意雷 4 未初始化读 ASan 默认不报</strong>——那是 MemorySanitizer（MSan）的活，ASan 只管「地址合法性」不管「值合法性」。</p>
+<p><strong>表里前 9 项里有 5 项已在上面被实测打中</strong>（<code class="c">heap-buffer-overflow</code> / <code class="c">stack-buffer-overflow</code> / <code class="c">heap-use-after-free</code> / <code class="c">double-free</code> / <code class="c">detected memory leaks</code>）——对应 <code class="c">c3_1_mem_bugs.c</code> 的 case 1~5。</p>
+<blockquote>
+<p>⚠️ <strong>「未初始化读」不在上表里，因为 ASan 抓不到它</strong>：ASan 只检查「地址是否可访问」（addressability），不检查「值是否被初始化」（validity）。<code class="c">c3_2_uninit_read.c</code> 在 <code class="c">-fsanitize=address</code> 下实测<strong>退出码 0、零报告</strong>。未初始化读是 <strong>MemorySanitizer（MSan，<code class="c">-fsanitize=memory</code>）</strong> 的职责，valgrind memcheck 也能抓（V bit 机制）。三者分工：ASan 管地址、MSan 管值、TSan 管并发。</p>
+</blockquote>
 <h2>LeakSanitizer（LSan）集成</h2>
-<p>ASan 内置 LeakSanitizer，程序退出时自动查泄漏：</p>
-<pre class="code" data-label="text"><code class="c">=================================================================
-==5678==ERROR: LeakSanitizer: detected memory leaks
-
-Direct leak of 400 byte(s) in 100 object(s) allocated from:
-    #0 0x... in malloc
-    #1 0x... in bug_leak mem_bugs.c:26
-
-SUMMARY: AddressSanitizer: 400 byte(s) leaked in 100 allocation(s).
+<p>ASan <strong>内置</strong> LeakSanitizer，程序退出时自动查泄漏——不用额外开关（<code class="c">-fsanitize=address</code> 就带上了）。实测输出见上面 <strong>case 5</strong>，结构是「<code class="c">detected memory leaks</code> → <code class="c">Direct leak of N byte(s) in M object(s) allocated from:</code> → 分配栈 → <code class="c">SUMMARY</code>」。</p>
+<p>只报 <strong>direct leak</strong>（和 valgrind 的 <code class="c">definitely lost</code> 对应），且默认不逐个列 100 个对象，只汇总 + 给一个代表栈。要更细可设环境变量：</p>
+<pre class="code" data-label="shell"><code class="c"># 关掉泄漏检查，只查越界/UAF（避免泄漏报告淹没主要问题）
+ASAN_OPTIONS=detect_leaks=0 ./c3_1_asan 1
+# 保留隔离区细节（每条泄漏都给完整分配栈）
+ASAN_OPTIONS=detect_leaks=1:fast_unwind_on_malloc=0 ./c3_1_asan 5
 </code></pre>
-<p>只报 <strong>direct leak</strong>（和 valgrind 的 definitely lost 对应），且默认不逐个列 100 个对象，只汇总 + 给一个代表栈。要更细可设环境变量。</p>
 <h2>ASAN_OPTIONS 常用项</h2>
 <p>ASan 运行时行为通过环境变量 <code class="c">ASAN_OPTIONS</code> 调（用冒号分隔）：</p>
 <div class="tbl-wrap"><table>
@@ -829,7 +1141,7 @@ SUMMARY: AddressSanitizer: 400 byte(s) leaked in 100 allocation(s).
 </tbody>
 </table></div>
 <pre class="code" data-label="shell"><code class="c"># 调试场景：报错即停，交给 gdb 看现场
-ASAN_OPTIONS=abort_on_error=1 gdb ./mem_bugs_asan
+ASAN_OPTIONS=abort_on_error=1 gdb ./c3_1_asan
 # 运行到第一个雷就 abort，gdb 停在崩溃点，可 bt 看完整栈
 </code></pre>
 <h2>valgrind vs ASan 取舍</h2>
@@ -897,8 +1209,15 @@ ASAN_OPTIONS=abort_on_error=1 gdb ./mem_bugs_asan
 <pre class="code" data-label="shell"><code class="c"># HFT 场景：CI 里对撮合引擎跑 ASan 回归
 gcc -g -O1 -fsanitize=address -o engine_asan matching_engine.c ...
 ASAN_OPTIONS=abort_on_error=1:detect_leaks=1 ./engine_asan --sim data.csv
-# 任一内存错误 → 非零退出 → CI 判失败
+# 任一内存错误 → 非零退出（ASan 检出即 exit 1）→ CI 判失败
+
+# 更完整的门禁：加一档 -O0，保证「写完就死」的 bug 不被优化掉
+gcc -g -O0 -fsanitize=address -o engine_asan_O0 matching_engine.c ...
+ASAN_OPTIONS=abort_on_error=1:detect_leaks=1 ./engine_asan_O0 --sim data.csv
 </code></pre>
+<blockquote>
+<p>⚠️ <strong>别只挂 <code class="c">-O1</code>/<code class="c">-O2</code> 一档</strong>：上面实测过，<code class="c">-O1</code> 会把「写完就死」的 UAF 整段优化掉，于是 CI 全绿、线上偶发。<strong>CI 用 <code class="c">-O0</code> 保证检出率，生产档位再单独复跑一档作对照</strong>——两档都跑才是完整门禁。</p>
+</blockquote>
 <hr />
 <details>
 <summary>自测题（点击展开）</summary>
@@ -922,6 +1241,10 @@ ASAN_OPTIONS=abort_on_error=1:detect_leaks=1 ./engine_asan --sim data.csv
 <blockquote>
 <p>先上 <strong>ASan</strong>。因为偶发段错误大概率是越界或 UAF（压力下分配/释放更频繁、边界条件更容易触发），ASan 快（约 2×），能在压力场景接近真实负载下复现；valgrind 慢 20–50×，压力测试根本跑不动。如果 ASan 复现不了（比如问题出在没有源码的第三方库里），再退回 valgrind 对现成二进制定性。若怀疑是并发竞态（偶发 + 多线程），则直接上 TSan（Ch4）。</p>
 </blockquote>
+<p><strong>Q6:</strong> 实测里 <code class="c">-O1 -fsanitize=address</code> 跑 case 3（UAF）得到 exit 0、零报告。是 ASan 失灵了吗？这对 CI 配置意味着什么？</p>
+<blockquote>
+<p><strong>不是 ASan 失灵，是那段代码真的不存在了</strong>。<code class="c">-O1</code> 下 <code class="c">p[0] = 7</code> 与紧随其后的 <code class="c">g_sink = p[0]</code> 构成一对「写了没人用」的死代码，被编译器整段删除——程序里已经没有 UAF 可检。对照实测：同一次 <code class="c">-O1</code> 下 case 1/2/4/5 都能检出（<code class="c">free</code> 和 <code class="c">malloc</code> 有副作用，删不掉），只有 case 3 消失。对 CI 的意义：<strong>只挂 <code class="c">-O1</code>/<code class="c">-O2</code> 一档的 ASan 门禁会漏检这类 bug</strong>，必须加一档 <code class="c">-O0</code> 保证检出率。更一般的教训是「优化会改变 bug 的存在性，不只是改变报告的措辞」——<code class="c">-O2</code> release 里「内存错误消失了」，往往只是测试用例被优化没了。</p>
+</blockquote>
 </details>
 <h2>交叉引用</h2>
 <ul>
@@ -937,34 +1260,101 @@ ASAN_OPTIONS=abort_on_error=1:detect_leaks=1 ./engine_asan --sim data.csv
 <p>🔴 精读 · 抓「不是内存错误、但同样致命」的未定义行为（UB）</p>
 </blockquote>
 <h2>本节要点</h2>
-<p>valgrind 抓内存错误，ASan 抓内存地址合法性，但有一类 bug 两者都<strong>无感</strong>：<strong>未定义行为（Undefined Behavior, UB）</strong>——有符号整数溢出、移位越界、除零、空指针解引用、类型转换越界等。UB 的可怕之处在于：程序「看似正常」甚至「debug 版正常、release 版诡异」，因为编译器会基于「UB 不会发生」的假设做激进优化。UndefinedBehaviorSanitizer（UBSan，<code class="c">-fsanitize=undefined</code>）专治这类，本节讲它抓什么、怎么配、为什么 UB 是 HFT 的隐形杀手。</p>
-<h2>先看 UB 的两张「丑脸」</h2>
-<p>用 3.1 的 <code class="c">mem_bugs.c</code> 里的雷 5、雷 6：</p>
-<pre class="code" data-label="C"><code class="c">void bug_signed_overflow(void) {
-    int x = 2147483647;  // INT_MAX
-    int y = x + 1;       // 有符号溢出 → UB
-    printf(&quot;y=%d\n&quot;, y);
-}
+<p>valgrind 抓内存错误，ASan 抓内存地址合法性，但有一类 bug 两者都<strong>无感</strong>：<strong>未定义行为（Undefined Behavior, UB）</strong>——有符号整数溢出、移位越界、除零、空指针解引用、类型转换越界等。UB 的可怕之处在于：程序「看似正常」——<strong>不崩、不报错，只是给你一个看起来合理的错值</strong>（实测 <code class="c">1 &lt;&lt; 40</code> 得到 <code class="c">256</code>，不是 0）。更深一层，编译器会基于「UB 不会发生」的假设做变换，把「利用 UB 写的逻辑」<strong>等价改写成完全不同的东西</strong>（实测把「靠回绕检测溢出」的 <code class="c">if (a+b&lt;a)</code> 改成 <code class="c">if (b&lt;0)</code>，而且 <code class="c">-O0</code> 就改写）。UndefinedBehaviorSanitizer（UBSan，<code class="c">-fsanitize=undefined</code>）专治这类，本节讲它抓什么、怎么配、为什么 UB 是 HFT 的隐形杀手。<strong>本节所有输出均为 gcc 13.3.0 实测。</strong></p>
+<h2>先看 UB 的四种「丑脸」（实测）</h2>
+<p><code class="c">code/c3_3_ubsan_ops.c</code> 把四类最值得先查的 UB 装进一个程序（都用 <code class="c">volatile</code> 逼编译器<strong>真去执行</strong>这些运算，否则会被常量折叠掉）：</p>
+<pre class="code" data-label="C"><code class="c">/* code/c3_3_ubsan_ops.c 节选 */
+static volatile int  v_int_max = 2147483647;                /* INT_MAX */
+static volatile int  v_one = 1;
+static volatile int  v_shift = 40;
+static volatile int  v_zero = 0;
+static volatile long v_min = -9223372036854775807L - 1;     /* LONG_MIN */
 
-void bug_shift(void) {
-    int x = 1 &lt;&lt; 40;     // 移位数 &gt;= 位宽(32) → UB
-    printf(&quot;x=%d\n&quot;, x);
-}
+int a = v_int_max;
+int overflow = a + v_one;                     /* ① 有符号溢出：UB */
+printf(&quot;① INT_MAX + 1 = %d   （数学上是 2147483648，int 装不下）\n&quot;, overflow);
+fflush(stdout);
+
+int b = v_one &lt;&lt; v_shift;                     /* ② 移位量 ≥ 位宽：UB */
+printf(&quot;② 1 &lt;&lt; 40 = %d          （int 只有 32 位）\n&quot;, b);
+fflush(stdout);
+
+long d = v_min;
+long negate = -d;                             /* ③ 对 LONG_MIN 取负：UB */
+printf(&quot;③ -LONG_MIN = %ld\n&quot;, negate);
+fflush(stdout);
+
+volatile int one = v_one;
+volatile int zero = v_zero;
+int c = one / zero;                           /* ④ 除零：UB（唯一当场送命的） */
+printf(&quot;④ 1 / 0 = %d           （能打出来才怪）\n&quot;, c);
 </code></pre>
-<p>普通 <code class="c">-O0</code> 编译运行，这两个雷<strong>都不报错</strong>，还给了你「看似合理」的结果：</p>
-<pre class="code" data-label="shell"><code class="c">gcc -g -O0 -o mem_bugs mem_bugs.c &amp;&amp; ./mem_bugs
-# y=-2147483648   ← 溢出「回绕」成最小负数
-# x=0             ← 移位「悄悄」给了 0
+<p><strong>不加 sanitizer</strong>（<code class="c">gcc -g -O0 -Wall -Wextra</code>）——<strong>编译器一条警告都不给</strong>，程序还给了你四个「看似合理」的结果，退出码 <strong>136</strong>：</p>
+<pre class="code" data-label="text"><code class="c">① INT_MAX + 1 = -2147483648   （数学上是 2147483648，int 装不下）
+② 1 &lt;&lt; 40 = 256          （int 只有 32 位）
+③ -LONG_MIN = -9223372036854775808
+对照：1L &lt;&lt; 40 = 1099511627776（合法，没有 UB）
+--- stderr ---
+Program terminated with signal SIGFPE (8)
 </code></pre>
-<p>问题来了：<code class="c">-O0</code> 下溢出回绕，<code class="c">-O2</code> 下编译器可能因为「UB 不可能发生」而<strong>假设 <code class="c">x+1 &gt; x</code> 恒成立</strong>，做出完全不同的优化，导致 debug/release 行为不一致。这就是 UB 的阴险——<strong>它在 <code class="c">-O0</code> 下"装没事"，在 <code class="c">-O2</code> 下"原形毕露"</strong>。</p>
-<p>UBSan 登场：</p>
-<pre class="code" data-label="shell"><code class="c">gcc -g -O1 -fsanitize=undefined -o mem_bugs_ubsan mem_bugs.c
-./mem_bugs_ubsan
+<p><strong>四条里三条「装没事」，而且第二条的错法尤其阴</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>UB</th>
+<th>你以为会是</th>
+<th>实测输出</th>
+<th>真实原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① <code class="c">INT_MAX + 1</code></td>
+<td>崩溃</td>
+<td><code class="c">-2147483648</code></td>
+<td>补码回绕</td>
+</tr>
+<tr>
+<td>② <code class="c">1 &lt;&lt; 40</code></td>
+<td><code class="c">0</code>（「移出去了」）</td>
+<td><strong><code class="c">256</code></strong></td>
+<td>x86 的 <code class="c">shl</code> 对 32 位操作数<strong>只用移位数低 5 位</strong>：<code class="c">40 &amp; 31 = 8</code>，等于 <code class="c">1 &lt;&lt; 8</code></td>
+</tr>
+<tr>
+<td>③ <code class="c">-LONG_MIN</code></td>
+<td><code class="c">9223372036854775808</code></td>
+<td><code class="c">-9223372036854775808</code></td>
+<td>取负后回绕成自己</td>
+</tr>
+<tr>
+<td>④ <code class="c">1 / 0</code></td>
+<td>崩溃</td>
+<td>（无输出）</td>
+<td>只有它真发 SIGFPE</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>📌 <strong>② 那条值得单独记住</strong>：它给出的不是「一看就不对」的 0，而是 <code class="c">256</code>——一个<strong>看起来完全正常的数</strong>。如果这个移位是算掩码（<code class="c">mask = 1 &lt;&lt; bits</code>），你会拿到一个「合法但错」的掩码，然后<strong>错误地置上/清掉标志位</strong>。UB 最危险的形态就是「还给你一个合理的数」。</p>
+</blockquote>
+<p><strong>加上 UBSan</strong>（<code class="c">gcc -g -O1 -fsanitize=undefined</code>）——四条 UB 被逐条点名，退出码仍是 <strong>136</strong>：</p>
+<pre class="code" data-label="text"><code class="c">--- stdout ---
+① INT_MAX + 1 = -2147483648   （数学上是 2147483648，int 装不下）
+② 1 &lt;&lt; 40 = 256          （int 只有 32 位）
+③ -LONG_MIN = -9223372036854775808
+对照：1L &lt;&lt; 40 = 1099511627776（合法，没有 UB）
+--- stderr ---
+/app/example.c:31:9: runtime error: signed integer overflow: 1 + 2147483647 cannot be represented in type 'int'
+/app/example.c:35:19: runtime error: shift exponent 40 is too large for 32-bit type 'int'
+/app/example.c:40:10: runtime error: negation of -9223372036854775808 cannot be represented in type 'long int'; cast to an unsigned type to negate this value to itself
+/app/example.c:54:17: runtime error: division by zero
+Program terminated with signal SIGFPE (8)
 </code></pre>
-<pre class="code" data-label="text"><code class="c">mem_bugs.c:29:34: runtime error: signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'
-mem_bugs.c:35:15: runtime error: shift exponent 40 is too large for 32-bit type 'int'
-</code></pre>
-<p>报告直接给<strong>文件:行:列</strong> + 一句话说清 UB 是什么。比「猜为什么 y 变成负数」强太多。</p>
+<p>报告直接给<strong>文件:行:列</strong> + 一句话说清 UB 是什么。比「猜为什么 <code class="c">1&lt;&lt;40</code> 变成 256」强太多。</p>
+<blockquote>
+<p>⚠️ <strong>为什么 stdout 里那四行还能看见？</strong> 因为源码里每条 <code class="c">printf</code> 后面都跟了 <code class="c">fflush(stdout)</code>。这不是啰嗦——<strong>④ 除零会发 SIGFPE 直接杀进程，而 stdout 接管道时是全缓冲的</strong>：不刷的话前面四条「错值」全留在缓冲区里随进程一起消失，你只能看到一份 UBSan 报告、看不到任何程序输出。<code class="c">c1_2_shrink_demo.c</code> 里那句 <code class="c">fflush(stdout)</code> 是同一个道理。</p>
+<p>同一个坑还解释了下面 <code class="c">-fno-sanitize-recover=all</code> 那次运行：<strong>stdout 是空的</strong>——因为第一个 UB（第 31 行的溢出）就在第一次 <code class="c">printf</code> <strong>之前</strong>，UBSan 当场 abort，什么都还没来得及刷。</p>
+</blockquote>
 <h2>UBSan 抓什么：UB 清单</h2>
 <p><code class="c">-fsanitize=undefined</code> 是一组检查的合集，GCC/Clang 支持以下子项（可单独开关）：</p>
 <div class="tbl-wrap"><table>
@@ -1051,58 +1441,150 @@ mem_bugs.c:35:15: runtime error: shift exponent 40 is too large for 32-bit type 
 <blockquote>
 <p>完整清单看编译器手册 <code class="c">man gcc</code> 搜 <code class="c">-fsanitize</code>。核心记忆：<strong>有符号溢出 + 移位 + 除零</strong> 是最值得先查的三项，它们覆盖了 HFT 里 90% 的 UB 事故。</p>
 </blockquote>
+<h2>⚠️ 反直觉实测：<code class="c">integer-divide-by-zero</code> 不一定「发得出来」</h2>
+<p>上表里 <code class="c">integer-divide-by-zero</code> 看着最「实」——除零不就是硬件异常吗？实测告诉你<strong>不一定</strong>。同一份 <code class="c">probe</code>，两种写法在 <code class="c">-O0</code> 下行为完全不同：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>生成指令</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">g_one / g_zero</code>（两个运行时值）</td>
+<td><code class="c">cdq</code> + <code class="c">idiv ecx</code></td>
+<td><strong>SIGFPE，退出 136</strong></td>
+</tr>
+<tr>
+<td><code class="c">1 / g_zero</code>（<strong>分子是编译期常量</strong>）</td>
+<td>一段<strong>不含任何除法</strong>的比较/条件搬移序列</td>
+<td><strong>不崩，打出 0，退出 0</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">idiv</code> 才是发 <code class="c">#DE</code>（除零异常）的那条指令；常量分子被折掉后程序里<strong>根本没有除法</strong>，自然也就没有除零异常——它「算出」的 0 只是那段无分支序列对 UB 输入的任意产物。</p>
+<p><strong>这条对 UBSan 使用者有个实际影响</strong>：既然「除零」在编译期就可能被折叠掉，那 <code class="c">-fsanitize=integer-divide-by-zero</code> 也就<strong>未必能报出来</strong>（UBSan 是运行时检查，没有除法指令就没有检查点）。本节的 <code class="c">c3_3_ubsan_ops.c</code> 之所以能稳定报出 <code class="c">division by zero</code>（第 54 行），正是因为它<strong>特意用了两个 volatile</strong>（<code class="c">one</code> / <code class="c">zero</code>）逼编译器保留 <code class="c">idiv</code>。</p>
+<pre class="code" data-label="C"><code class="c">/* 想稳定复现除零 UB，两个操作数都必须是运行时值 */
+volatile int one  = v_one;
+volatile int zero = v_zero;
+int c = one / zero;        /* ← 这样才有 idiv，才发得出 SIGFPE */
+</code></pre>
+<blockquote>
+<p>完整推演（含两种写法的汇编对照、以及「假设被证伪」的调试循环）见 <a href="chapter-07.html#s-04">1.4 调试元流程</a> 的「动手」一节，源码 <code class="c">chapter-01-methodology/code/c1_4_hypothesis_div.c</code>。</p>
+</blockquote>
 <h2>关键配置：让 UB「报错即停」而非「报完继续」</h2>
 <p>UBSan 默认行为是：打印报告后<strong>继续运行</strong>（可恢复）。这在「多个 UB 连锁」时会把报告淹没，也不利于 gdb 抓现场。用 <code class="c">-fno-sanitize-recover</code> 让 UB 直接终止：</p>
 <pre class="code" data-label="shell"><code class="c"># 方式 1：所有 UBSan 检查遇到 UB 就 abort
-gcc -g -O1 -fsanitize=undefined -fno-sanitize-recover=all -o mem_bugs_ubsan mem_bugs.c
+gcc -g -O1 -fsanitize=undefined -fno-sanitize-recover=all -o c3_3_ubsan_stop c3_3_ubsan_ops.c
 
 # 方式 2：只让「溢出」这一个检查 abort，其余照常恢复
-gcc -g -O1 -fsanitize=undefined -fno-sanitize-recover=signed-integer-overflow -o mem_bugs_ubsan mem_bugs.c
+gcc -g -O1 -fsanitize=undefined -fno-sanitize-recover=signed-integer-overflow \
+    -o c3_3_ubsan_ovf c3_3_ubsan_ops.c
 </code></pre>
+<p>实测方式 1（退出码 <strong>1</strong>，注意 <strong>stdout 是空的</strong>）：</p>
+<pre class="code" data-label="text"><code class="c">--- stdout ---
+（空）
+--- stderr ---
+/app/example.c:31:9: runtime error: signed integer overflow: 1 + 2147483647 cannot be represented in type 'int'
+</code></pre>
+<p>对比默认（recover）模式报出 4 条后仍跑到 SIGFPE，这里<strong>只报第一条就 abort 了</strong>。而 stdout 为空正是上面说过的缓冲问题：第一个 UB（第 31 行的溢出）出现在第一次 <code class="c">printf</code> <strong>之前</strong>，进程在刷缓冲前就死了。</p>
 <p>abort 后配合 gdb：</p>
-<pre class="code" data-label="shell"><code class="c">gdb ./mem_bugs_ubsan
+<pre class="code" data-label="shell"><code class="c">gdb ./c3_3_ubsan_stop
 (gdb) run
 # Program received signal SIGABRT ...   ← 停在第一个 UB
 (gdb) bt        # 看完整调用栈，定位是哪个调用路径触发了溢出
 </code></pre>
 <h2>与 ASan 组合：<code class="c">-fsanitize=address,undefined</code></h2>
 <p>内存错误 + UB 常同时存在，两者可以一起开：</p>
-<pre class="code" data-label="shell"><code class="c">gcc -g -O1 -fsanitize=address,undefined -o mem_bugs_both mem_bugs.c
-./mem_bugs_both
-# 依次报 heap-buffer-overflow（ASan）→ signed integer overflow（UBSan）→ ...
+<pre class="code" data-label="shell"><code class="c">gcc -g -O1 -fsanitize=address,undefined -o prog_both prog.c
+./prog_both
+# ASan 报内存问题（exit 1），UBSan 报运算 UB（默认继续跑，遇到 SIGFPE 才死）
 </code></pre>
 <p>这是开发期最省事的「全家桶」配置。注意：<strong>不能和 TSan 同时开</strong>（Ch4 会讲，TSan 需要独占），但 ASan+UBSan 兼容。</p>
-<h2>为什么 UB 是「隐形杀手」：编译器优化</h2>
-<p>很多人以为 UB「最多是结果不对」，低估了它的破坏力。实际上 UB 给了编译器<strong>免责声明</strong>：编译器有权假设 UB 永不发生，并基于此做「合法但反直觉」的优化。</p>
-<p>经典例子——<strong>溢出检查被优化掉</strong>：</p>
-<pre class="code" data-label="C"><code class="c">// 程序员想写的「安全加法」：检查溢出
-int safe_add(int a, int b) {
-    if (a + b &lt; a)      // 靠溢出回绕来检测溢出（错误做法）
-        return -1;      // 认为溢出了
+<blockquote>
+<p>📌 <strong>退出码要分开理解</strong>：ASan 检出问题 → <strong>exit 1</strong>（它主动 <code class="c">_exit(1)</code>）；UBSan 默认只是<strong>打印</strong>（不影响退出码），除非 UB 本身引发了硬件异常（除零 → SIGFPE → <strong>136</strong>）或你开了 <code class="c">-fno-sanitize-recover</code>（→ exit 1 / SIGABRT）。三种退出码混在一起时，先看 stderr 是「谁」在报。</p>
+</blockquote>
+<h2>为什么 UB 是「隐形杀手」：编译器优化（实测）</h2>
+<p>很多人以为 UB「最多是结果不对」，低估了它的破坏力。实际上 UB 给了编译器<strong>免责声明</strong>：编译器有权假设 UB 永不发生，并基于此做「合法但反直觉」的变换。</p>
+<p>经典例子——<strong>「靠溢出回绕检测溢出」的写法</strong>：</p>
+<pre class="code" data-label="C"><code class="c">int safe_add_wrap(int a, int b) {
+    if (a + b &lt; a)      /* 靠溢出回绕来检测溢出（错误做法） */
+        return -1;
     return a + b;
 }
 </code></pre>
-<p><code class="c">a + b</code> 若溢出是 UB，编译器据此<strong>假设 <code class="c">a+b</code> 永不溢出 → 假设 <code class="c">a+b &gt;= a</code> 恒成立 → 把 <code class="c">if</code> 优化成恒假 → 直接删掉检查</strong>。在 <code class="c">-O2</code> 下，你精心写的「溢出保护」被编译器当死代码删了：</p>
-<pre class="code" data-label="shell"><code class="c">gcc -O2 -S safe_add.c -o - | grep -A5 safe_add
-# 你会在汇编里看到 if 分支整个消失，只剩 return a + b
+<p><code class="c">a + b</code> 若溢出是 UB，编译器据此<strong>假设 <code class="c">a+b</code> 永不溢出</strong>。于是 <code class="c">a+b &lt; a</code> ⟺ <code class="c">b &lt; 0</code>——<strong>整个检查被等价改写成「b 是不是负数」</strong>。实测 gcc 13.3 的 <code class="c">-O2</code> 汇编（<code class="c">code</code> 见 <code class="c">probe36/p_safeadd.c</code>）：</p>
+<pre class="code" data-label="asm"><code class="c">safe_add_wrap:
+        test    esi, esi          ; 测 b 的符号
+        js      .L3               ; b &lt; 0 → 返回 -1
+        lea     eax, [rsi+rdi]    ; 否则返回 a + b（溢出了也不管）
+        ret
+.L3:
+        mov     eax, -1
+        ret
 </code></pre>
-<p><strong>这就是 debug 版正常、release 版出错的根本机制</strong>。所以：
-1. 不要「利用」UB 来做逻辑（比如用溢出回绕检测溢出）——编译器会反噬你。
-2. 要用 <code class="c">__builtin_add_overflow(a,b,&amp;r)</code> 这类编译器提供的<strong>无 UB 溢出检测</strong>内建函数。
-3. 开 UBSan 在开发期把 UB 钉死。</p>
+<p><strong>注意措辞：检查没有「消失」，它变成了另一个东西。</strong> 很多教材说「<code class="c">if</code> 分支被删掉」（原文本节也这么写），但实测 gcc 13.3 是<strong>等价改写</strong>——分支还在，语义已经不是溢出检测了。更狠的是：<strong>这个改写连 <code class="c">-O0</code> 都做</strong>（<code class="c">cmp DWORD PTR [rbp-8], 0</code> / <code class="c">jns</code>，同样是「b &lt; 0」）。它不是优化级别的行为，是<strong>前端就完成的 UB 折叠</strong>。</p>
+<p>后果是<strong>双向错误</strong>。实测运行结果（<code class="c">-O0</code> 和 <code class="c">-O2</code> 完全一致）：</p>
+<pre class="code" data-label="text"><code class="c">safe_add_wrap(INT_MAX, 1)   = -2147483648   （真溢出了，应该报 -1）
+safe_add_wrap(5, -3)        = -1   （根本没溢出，不该拦）
+----
+safe_add_builtin(INT_MAX, 1)= -1   （内建版：正确拦住）
+safe_add_builtin(5, -3)     = 2   （内建版：正常放行）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>输入</th>
+<th>这个「保护」的判定</th>
+<th>应该的判定</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">(INT_MAX, 1)</code></td>
+<td>放行，返回回绕值 <code class="c">-2147483648</code></td>
+<td>拦住（真溢出）</td>
+<td><strong>漏报</strong>：天价错单的来源</td>
+</tr>
+<tr>
+<td><code class="c">(5, -3)</code></td>
+<td>拦住，返回 <code class="c">-1</code></td>
+<td>放行（没溢出）</td>
+<td><strong>误报</strong>：正常交易被拒</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>保护逻辑变成了「b 是不是负数」——它和溢出已经完全无关。</strong></p>
+<p>正确做法是编译器内建 <code class="c">__builtin_add_overflow</code>（<code class="c">-O2</code> 下用 CPU 的溢出标志 <code class="c">cmovno</code>，一次 <code class="c">add</code> + 一条条件搬移搞定）：</p>
+<pre class="code" data-label="asm"><code class="c">safe_add_builtin:
+        add     edi, esi          ; 真正的加法，CPU 同时置 OF 标志
+        mov     eax, -1
+        cmovno  eax, edi          ; 没溢出（OF=0）才取和，否则保留 -1
+        ret
+</code></pre>
+<p>所以三条结论：</p>
+<ol>
+<li><strong>不要「利用」UB 做逻辑</strong>（用溢出回绕检测溢出、用移位当掩码边界）——编译器会反噬你，而且<strong>在 <code class="c">-O0</code> 就反噬</strong>。</li>
+<li><strong>要用 <code class="c">__builtin_add_overflow(a,b,&amp;r)</code></strong>（或 C23 的 <code class="c">&lt;stdckdint.h&gt;</code> / <code class="c">ckd_add</code>），它内部用无 UB 的方式检测并返回布尔结果，不受优化影响。</li>
+<li><strong>开 UBSan 在开发期把 UB 钉死</strong>——因为这类改写「不报错、不崩溃、结果还像个正常数」，你不开工具根本发现不了。</li>
+</ol>
 <h2>HFT 关联</h2>
 <ol>
 <li><strong>价格/数量的累计溢出是错单根源</strong>：<code class="c">total_qty += order.qty</code> 这种累加，一旦 qty 或累计值超出 <code class="c">int</code>/<code class="c">long</code> 范围就 UB。HFT 里价格常用定点整数（如 <code class="c">price * 10000</code> 存 <code class="c">long</code>），溢出一个 <code class="c">long</code> 就是一笔天价错单。UBSan 在仿真阶段就能抓出「哪个计算路径会溢出」。</li>
-<li><strong>移位是算掩码/位域的常见雷</strong>：<code class="c">1 &lt;&lt; bits</code> 里 <code class="c">bits</code> 若等于 32（或负）就是 UB，可能导致掩码全 0 或全 1，进而错误地清掉/置上标志位。UBSan 的 <code class="c">shift</code> 检查直接点名。</li>
-<li><strong>除零导致 NaN/Inf 传播</strong>：撮合引擎里 <code class="c">avg = total / count</code>，count 为 0 时整数除零直接 SIGFPE 崩，浮点除零产生 NaN 污染后续所有计算。UBSan 的 <code class="c">integer-divide-by-zero</code> / <code class="c">float-divide-by-zero</code> 分别在开发期拦截。</li>
+<li><strong>移位是算掩码/位域的常见雷</strong>：<code class="c">1 &lt;&lt; bits</code> 里 <code class="c">bits</code> 若 ≥ 32（或负）就是 UB。实测 gcc 13.3 下 <code class="c">1 &lt;&lt; 40</code> 给出的是 <strong><code class="c">256</code></strong>（x86 <code class="c">shl</code> 只用移位数低 5 位：<code class="c">40 &amp; 31 = 8</code>）——<strong>不是一个一眼可疑的 0，而是一个看似正常的掩码</strong>，于是你会错误地置上/清掉标志位。UBSan 的 <code class="c">shift</code> 检查直接点名 <code class="c">shift exponent 40 is too large for 32-bit type 'int'</code>。</li>
+<li><strong>除零导致 NaN/Inf 传播</strong>：撮合引擎里 <code class="c">avg = total / count</code>，count 为 0 时整数除零发 SIGFPE 崩（实测退出码 136），浮点除零产生 NaN 污染后续所有计算。UBSan 的 <code class="c">integer-divide-by-zero</code> / <code class="c">float-divide-by-zero</code> 分别在开发期拦截。<strong>但别以为「除零必崩」</strong>——分子是编译期常量时编译器会折成不含 <code class="c">idiv</code> 的序列，连崩都不崩（见自测题 Q6）。</li>
 <li><strong>「debug 正常、release 错」的经典排查路径</strong>：一旦出现这种症状，第一反应就该怀疑 UB——上 UBSan 重编译跑一遍，比在 <code class="c">-O2</code> 反汇编里猜优化行为快得多。</li>
 </ol>
-<pre class="code" data-label="shell"><code class="c"># HFT 场景：定点价格累加溢出检查（正确做法，无 UB）
+<pre class="code" data-label="C"><code class="c">/* HFT 场景：定点价格累加溢出检查（正确做法，无 UB） */
 #include &lt;stdbool.h&gt;
+
 bool add_price(long *acc, long delta) {
     long r;
-    if (__builtin_add_overflow(*acc, delta, &amp;r))  // 编译器内建，不触发 UB
-        return false;   // 溢出，拒绝
+    if (__builtin_add_overflow(*acc, delta, &amp;r))  /* 编译器内建，不触发 UB */
+        return false;   /* 溢出，拒绝 */
     *acc = r;
     return true;
 }
@@ -1116,15 +1598,23 @@ bool add_price(long *acc, long delta) {
 </blockquote>
 <p><strong>Q2:</strong> UB 的「隐形」体现在哪？为什么 debug 版正常、release 版诡异？</p>
 <blockquote>
-<p>编译器被允许<strong>假设 UB 永不发生</strong>，并基于此做激进优化。debug（<code class="c">-O0</code>）几乎不优化，UB 表现为「回绕」等看似无害的结果；release（<code class="c">-O2</code>）下编译器利用「UB 不可能」的假设删掉它认为「不可能走到」的代码——比如把「靠溢出回绕检测溢出」的 <code class="c">if</code> 优化成恒假直接删除。于是同一个 UB，debug 版「装没事」，release 版「原形毕露」甚至删除你的保护逻辑。这是优化语义差异导致的，不是编译器 bug。</p>
+<p>编译器被允许<strong>假设 UB 永不发生</strong>，并基于此做「合法但反直觉」的变换。UB 的典型表现不是崩溃，而是<strong>回绕出看似合理的值</strong>（<code class="c">INT_MAX+1 = -2147483648</code>、<code class="c">1&lt;&lt;40 = 256</code>）；更麻烦的是编译器会<strong>把「利用 UB 写的逻辑」等价改写成别的东西</strong>——比如把「靠回绕检测溢出」的 <code class="c">if (a+b &lt; a)</code> 改写成 <code class="c">if (b &lt; 0)</code>，检查还在但语义完全变了。实测这条改写<strong>在 <code class="c">-O0</code> 就发生</strong>，所以不只是「debug 正常、release 诡异」，而是「debug 和 release 都错，只是错得不一样」：<code class="c">safe_add_wrap(INT_MAX,1)</code> 漏报（返回回绕值）、<code class="c">safe_add_wrap(5,-3)</code> 误报（返回 -1）。这是 UB 语义导致的，不是编译器 bug。</p>
 </blockquote>
 <p><strong>Q3:</strong> <code class="c">-fno-sanitize-recover=all</code> 的作用？不加会怎样？</p>
 <blockquote>
-<p>默认 UBSan 报完 UB 后<strong>继续运行</strong>（可恢复），适合「一次收集所有 UB」。加上 <code class="c">-fno-sanitize-recover=all</code> 让第一个 UB 就直接 abort，好处是①避免后续连锁 UB 淹没报告、②配合 gdb 在第一个 UB 现场停下来 <code class="c">bt</code> 抓调用栈。取舍：收集全景用默认恢复模式，定位单点用 abort 模式。</p>
+<p>默认 UBSan 报完 UB 后<strong>继续运行</strong>（可恢复），适合「一次收集所有 UB」——实测默认模式下 4 条 UB 全部报出。加上 <code class="c">-fno-sanitize-recover=all</code> 让第一个 UB 就直接 abort（实测：只报第一条、退出码 1、<strong>stdout 为空</strong>，因为第一个 UB 在第一次 <code class="c">printf</code> 之前就终止了进程）。好处是①避免后续连锁 UB 淹没报告、②配合 gdb 在第一个 UB 现场停下来 <code class="c">bt</code> 抓调用栈。取舍：收集全景用默认恢复模式，定位单点用 abort 模式。</p>
 </blockquote>
 <p><strong>Q4:</strong> 为什么不能用「溢出回绕」来检测溢出（<code class="c">if (a+b &lt; a)</code>）？</p>
 <blockquote>
-<p>因为 <code class="c">a+b</code> 若真的溢出，这本身就是 UB，编译器可以假设它不发生，进而认为 <code class="c">a+b &lt; a</code> 恒为假，把整个 <code class="c">if</code> 优化掉。正确做法是用编译器内建 <code class="c">__builtin_add_overflow(a, b, &amp;r)</code>（或 <code class="c">&lt;stdckdint.h&gt;</code> 的 <code class="c">ckd_add</code>），它在内部用无 UB 的方式检测溢出并返回布尔结果，不受优化影响。</p>
+<p>因为 <code class="c">a+b</code> 若真的溢出，这本身就是 UB，编译器可以假设它不发生，从而把 <code class="c">a+b &lt; a</code> 等价改写成 <code class="c">b &lt; 0</code>。于是这个「保护」<strong>双向失效</strong>：真溢出时（<code class="c">b &gt;= 0</code>）漏报并返回回绕值；没溢出时（<code class="c">b &lt; 0</code>）反而误报返回 -1——实测 <code class="c">safe_add_wrap(INT_MAX,1) = -2147483648</code>、<code class="c">safe_add_wrap(5,-3) = -1</code>。正确做法是用编译器内建 <code class="c">__builtin_add_overflow(a, b, &amp;r)</code>（或 <code class="c">&lt;stdckdint.h&gt;</code> 的 <code class="c">ckd_add</code>），它在内部用无 UB 的方式检测溢出并返回布尔结果，不受优化影响（实测两种输入都判定正确）。</p>
+</blockquote>
+<p><strong>Q5:</strong> 本节实测里 <code class="c">1 &lt;&lt; 40</code> 给出的是 <code class="c">256</code> 而不是 <code class="c">0</code>，为什么？这件事为什么比「给出 0」更危险？</p>
+<blockquote>
+<p>因为 x86 的 <code class="c">shl</code> 指令对 32 位操作数<strong>只取移位数的低 5 位</strong>：<code class="c">40 &amp; 31 = 8</code>，于是执行的是 <code class="c">1 &lt;&lt; 8 = 256</code>。比「给出 0」更危险的地方在于：<code class="c">0</code> 是一眼就不对的值，而 <code class="c">256</code> <strong>看起来是个完全正常的数</strong>。如果这行是算掩码（<code class="c">mask = 1 &lt;&lt; bits</code>），你会拿到一个「合法但错」的掩码，然后错误地置上/清掉标志位——错误会一路传播下去，且不触发任何崩溃或告警。UB 最危险的形态就是「还给你一个合理的数」。</p>
+</blockquote>
+<p><strong>Q6:</strong> 整数除零一定发 SIGFPE 吗？</p>
+<blockquote>
+<p><strong>不一定。</strong> 这取决于编译器有没有为这次除法生成 <code class="c">idiv</code> 指令。实测（gcc 13.3 <code class="c">-O0</code>）：<code class="c">g_one / g_zero</code>（两个运行时值）生成 <code class="c">cdq</code> + <code class="c">idiv</code> → 除零 → <code class="c">#DE</code> → SIGFPE；但 <code class="c">1 / g_zero</code>（<strong>分子是编译期常量</strong>）被折成一段<strong>不含任何除法指令</strong>的无分支序列，结果「不崩、直接打出 0」，退出码 0。根因是编译器有权基于「除数非零」这个 UB 假设做变换。完整推演（含两种写法的汇编对照）见 <a href="chapter-07.html#s-04">1.4 调试元流程</a> 的「动手」一节。</p>
 </blockquote>
 <p><strong>Q5:</strong> ASan 和 UBSan 能一起开吗？和 TSan 呢？</p>
 <blockquote>

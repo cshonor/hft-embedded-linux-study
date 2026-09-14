@@ -43,6 +43,95 @@ gdb ./orderbook core
 (gdb) bt -3            # 只看最外层 3 帧
 ```
 
+## 动手：不用 gdb 也能看见调用栈（实测）
+
+`bt` 听起来很神秘，但它底层就是**遍历栈帧**。`code/c2_2_backtrace.c` 用 glibc 的 `backtrace()` / `backtrace_symbols_fd()` 在**进程内**把同一份信息打出来——于是「调用栈长什么样」不用想象：
+
+```c
+/* code/c2_2_backtrace.c 节选 */
+#define BT_DEPTH 32
+
+static void on_crash(int sig)              /* 收到 SIGSEGV 时，进程内打印「穷人版 bt」 */
+{
+    void *frames[BT_DEPTH];
+    int   n = backtrace(frames, BT_DEPTH);
+    char  hdr[128];
+
+    /* ⚠️ 信号处理函数里只能用 async-signal-safe 函数：
+     *    printf / malloc 都可能死锁，write() / backtrace_symbols_fd() 才是安全的 */
+    int len = snprintf(hdr, sizeof hdr,
+                       "\n--- 捕获信号 %d(%s)，进程内 backtrace 共 %d 帧 ---\n",
+                       sig, strsignal(sig), n);
+    if (len > 0)
+        (void)!write(STDERR_FILENO, hdr, (size_t)len);
+
+    backtrace_symbols_fd(frames, n, STDERR_FILENO);   /* _fd 版不 malloc，安全 */
+    _exit(128 + sig);
+}
+
+/* 一串刻意分层、方便观察栈帧的调用链 */
+static int layer_d(int x) { int *p = NULL; *p = x; return *p; }   /* ← SIGSEGV */
+static int layer_c(int x) { return layer_d(x + 1); }
+static int layer_b(int x) { return layer_c(x + 1); }
+static int layer_a(int x) { return layer_b(x + 1); }
+```
+
+实测（gcc 13.3.0）。**这是本节最重要的一个实验**：同一份源码，只改优化档位，回溯的帧数就从 10 变成 6。
+
+**`-O0`：10 帧**（`gcc -g -O0 -rdynamic -o bt_O0 c2_2_backtrace.c`，退出码 139）
+
+```text
+调用链 main → layer_a → layer_b → layer_c → layer_d → 崩溃
+layer_d: 准备解引用 NULL（x=3）
+--- 捕获信号 11(Segmentation fault)，进程内 backtrace 共 10 帧 ---
+./bt_O0[0x4011fb]                                ← on_crash 自己
+/lib/x86_64-linux-gnu/libc.so.6(+0x45330)         ← 内核转交给用户态的信号 trampoline
+./bt_O0[0x4012c6]                                ← layer_d
+./bt_O0[0x4012e8]                                ← layer_c
+./bt_O0[0x401302]                                ← layer_b
+./bt_O0[0x40131c]                                ← layer_a
+./bt_O0(main+0x9e)[0x4013bc]                     ← main
+/lib/x86_64-linux-gnu/libc.so.6(+0x2a1ca)         ← __libc_start_call_main
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x8b)
+./bt_O0(_start+0x25)[0x401115]
+```
+
+**`-O2`：6 帧**（`gcc -g -O2 -rdynamic -o bt_O2 c2_2_backtrace.c`，退出码同样 139）
+
+```text
+--- 捕获信号 11(Segmentation fault)，进程内 backtrace 共 6 帧 ---
+./bt_O2[0x40128d]
+/lib/x86_64-linux-gnu/libc.so.6(+0x45330)
+./bt_O2(main+0x85)[0x401165]                     ← layer_a/b/c/d 全被内联进 main，4 帧变 1 帧
+/lib/x86_64-linux-gnu/libc.so.6(+0x2a1ca)
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x8b)
+./bt_O2(_start+0x25)[0x4011a5]
+```
+
+**10 − 6 = 4，正好是 `layer_a`~`layer_d` 四帧**。`-O2` 把它们全部内联进 `main`，于是「谁调了谁」这条信息**在程序里已经不存在了**——不是 gdb 读数不灵，而是栈上真的没有那四帧。
+
+这直接解释了 2.7 的核心结论：
+
+| | `-O0` | `-O2` |
+|---|-------|-------|
+| 回溯帧数 | 10 | 6 |
+| 能不能看到 `layer_d` 这一层 | ✅ 独立帧 | ❌ 已被内联，只剩 `main+0x85` 一个偏移 |
+| 局部变量 `x` 的值 | 每帧都能看 | 优化进了寄存器，可能看不到 |
+
+> **优化版崩溃为什么难查，这里给出了机制**：不是符号丢了，是**函数边界本身没了**。线上 core 拿到的 `bt` 会比开发期「浅」，读的时候要意识到这一点。
+
+### 顺带一个真实细节：为什么只有 `main` / `_start` 显示了函数名
+
+上面 `-O0` 的 10 帧里，`layer_d`~`layer_a` 和 `on_crash` 只显示成 `./bt_O0[0x4012c6]`（裸地址），而 `main` 和 `_start` 却有名字。原因很实在：
+
+- `-rdynamic` 只把**动态符号表（`.dynsym`）**导出给 `backtrace_symbols` 用；
+- `main` / `_start` 是全局符号（要给出动态链接器），所以在表里；
+- 而 `layer_a`~`layer_d` / `on_crash` 都是 **`static` 函数**，不进 `.dynsym`，于是只剩地址。
+
+**但 gdb 不会有这个问题**：gdb 直接读 ELF 的 **`.symtab`**（完整符号表），`static` 函数的名字它全看得到。这也是「gdb 的 `bt` 比 `backtrace()` 好看」的确切原因。
+
+> 📌 另外注意 `on_crash` 里用的是 `write()` 和 `backtrace_symbols_fd()`，**不是 `printf` / `backtrace_symbols`**——信号处理函数里能安全调用的只有 async-signal-safe 函数（`printf` 会拿 stdio 锁、`backtrace_symbols` 会 `malloc`，都可能死锁）。这是个很容易踩的坑，本 demo 的注释里专门标了。
+
 ## 栈帧布局：回溯为什么能工作
 
 函数调用时，CPU 用**栈**来保存「返回地址 + 上一帧的帧指针 + 局部变量」。x86_64 上，`rbp`（frame pointer）是回溯的关键：
@@ -210,6 +299,14 @@ rax            0x0                 0
 **Q5:** `print` 一个 `struct order *` 得到什么？想看结构体字段用什么？
 
 > `print` 指针得到指针值（一个十六进制地址）。要看它指向的结构体内容，用 `print *head` 解引用，会展开所有字段；想只看单个字段用 `print head->price`。类型信息用 `ptype head`（看类型定义）或 `whatis head`（看声明）。
+
+**Q6:** 实测里 `-O2` 比 `-O0` 少 4 帧，是符号信息丢了吗？
+
+> 不是符号的问题，是**栈上真的没有那 4 帧了**。`-O2` 把 `layer_a`~`layer_d` 全部内联进 `main`，函数调用不再发生，自然不产生新的栈帧。所以回溯只能给出 `main+0x85` 一个偏移，无法还原「谁调了谁」。区别在于：`-fomit-frame-pointer` 是「帧还在、回溯方式变了」，而内联是「帧根本不在了」——后者任何回溯工具都救不回来。这也是为什么要归档**带调试符号的 release 二进制**，以及线上 `bt` 会比开发期浅的原因。
+
+**Q7:** 为什么 `backtrace_symbols` 打出的 `static` 函数只有地址、而 gdb 能显示函数名？
+
+> 因为两者读的符号表不同。`backtrace_symbols` 依赖 `-rdynamic` 导出的**动态符号表 `.dynsym`**，而 `static` 函数只在编译单元内可见，不进 `.dynsym`（只有全局符号如 `main`/`_start` 才进），所以只能回落成裸地址。gdb 直接读 ELF 的 **`.symtab`**（完整符号表），`static` 函数的名字一样能看到——这就是「gdb 的 bt 比 `backtrace()` 好看」的确切原因。
 
 </details>
 
