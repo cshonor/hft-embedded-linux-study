@@ -312,6 +312,39 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </blockquote>
 <p><strong>这一章解决什么症状</strong>：CPU 高、吞吐低、延迟毛刺——「性能」类问题。注意：性能调优是<strong>另一个大领域</strong>，本模块只讲「用 perf 快速定位热点函数」这一入门技能，深入的系统级性能分析交给 <a href="../../06.6-systems-performance/html/index.html">06.6 Systems Performance</a>。</p>
 <hr />
+<h2>可跑的 demo（<code class="c">code/</code>）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>演示什么</th>
+<th>一句话看点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">code/c6_1_cache_miss.c</code></td>
+<td>同一份计算，只改<strong>访存顺序</strong></td>
+<td>加法次数一模一样，按列遍历慢 <strong>11.2 倍</strong>；16 MiB 时只慢 1.4 倍——<strong>尺寸就是结论</strong></td>
+</tr>
+<tr>
+<td><code class="c">code/c6_2_self_sampler.c</code></td>
+<td>不装 perf，自己在进程内实现一个采样 profiler</td>
+<td>采出与 <code class="c">perf report</code> 同构的热点表：<code class="c">slow_sqrt</code> 占 <strong>87.8%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>本章的诚实边界</strong>：perf 本体测不了（容器里没有 PMU 权限、也没装 perf），
+所以 <code class="c">perf stat</code> / <code class="c">perf report</code> 的<strong>输出形状是格式示意</strong>。
+但「采样 → 聚合 → 热点表」这条原理链是<strong>完整实测</strong>的：<code class="c">c6_2</code> 把 perf 的
+三步（定时中断 → 记录 PC+栈 → 按函数聚合）用 <code class="c">setitimer(ITIMER_PROF)</code>
++ <code class="c">SIGPROF</code> + <code class="c">backtrace()</code> 自己走了一遍，而且它输出的 <strong>folded 折叠栈格式</strong>
+就是 <code class="c">stackcollapse-perf.pl</code> 的输出——贴到自己的 Linux 上跑 <code class="c">flamegraph.pl</code>
+就得到一张真火焰图。</p>
+</blockquote>
+<p>详见 <a href="#intro"><code class="c">code/README.md</code></a>（含实测输出与四个踩坑记录）。</p>
+<hr />
 <h2>HFT 关联</h2>
 <ul>
 <li><strong>延迟毛刺先采样别猜</strong>：某笔单延迟 250ms，perf 采样 + 火焰图直接定位热点函数，比读代码猜高效得多；</li>
@@ -380,6 +413,14 @@ int main(void) {
 #
 #       1.234567890 seconds time elapsed
 </code></pre>
+<blockquote>
+<p>⚠️ <strong>上面这些数字是「列的形状示意」，不是实测</strong>——<code class="c">1,234.56</code> / <code class="c">4,123,456,789</code>
+一眼就是编的。这里本环境<strong>跑不了 perf</strong>（容器里没装、也没有 PMU 权限），
+所以本节所有 <code class="c">perf stat</code> / <code class="c">perf report</code> 的输出都只保证<strong>列名和量级形状</strong>是对的。
+真正可实测的是<strong>同一现象的替代实验</strong>：见本节末尾「动手」——
+用 <code class="c">clock_gettime</code> 测「同一份计算、只改访存顺序」的倍数差，
+再把 perf 的三步原理自己在进程内实现一遍。</p>
+</blockquote>
 <p>关键看几个数：</p>
 <div class="tbl-wrap"><table>
 <thead>
@@ -436,6 +477,8 @@ perf report              # 交互式浏览热点排行
    1.02%  hot      libc.so.6         [.] printf
    0.90%  hot      hot               [.] main
 </code></pre>
+<p>（同样只是<strong>形状示意</strong>。真实可跑的版本见末尾「动手」——自制采样器实测得到的是
+<code class="c">slow_sqrt 87.8% / fmt 6.4% / do_work 3.5%</code>，<strong>同样的三列，真实的数字</strong>。）</p>
 <p><strong>读法</strong>：<code class="c">Overhead</code> 是「该函数被采样命中的占比」，约等于「CPU 时间花在这个函数上的比例」。这里一眼看出 <code class="c">slow_sqrt</code> 占 68%——<strong>热点实锤</strong>，优化它收益最大。</p>
 <p>常用参数：</p>
 <pre class="code" data-label="shell"><code class="c">perf record -g ./hot       # -g 记录调用栈（callgraph），火焰图必需
@@ -469,6 +512,138 @@ perf report -n             # 显示采样次数（不只是百分比）
 <li>开销低（通常 &lt;5%），可以用于接近生产的场景。</li>
 <li>局限：采样是<strong>统计近似</strong>，会有误差；超短运行的程序样本不足；某些情况下会被「优化掉」的函数看不到。</li>
 </ul>
+<h2>动手：没有 perf，怎么把「采样定位热点」亲手做一遍（实测）</h2>
+<p>本环境没有 perf（容器里没装，也没有 PMU 权限）。但 perf 的<strong>原理</strong>只有三步，
+完全可以自己实现——而且自己做一遍，比看十遍 <code class="c">perf report</code> 的输出更懂它。</p>
+<h3>实验一：<code class="c">code/c6_1_cache_miss.c</code> —— 低 IPC 到底是什么体验</h3>
+<p>6.1 说 IPC 远小于 1 意味着「访存密集」——CPU 在等内存。这个程序测的是同一现象的
+<strong>另一面</strong>：加法次数完全一样，只改<strong>访问顺序</strong>，看耗时差多少。</p>
+<pre class="code" data-label="shell"><code class="c">cc -g -O2 -Wall -Wextra -o c6_1_cache_miss code/c6_1_cache_miss.c
+./c6_1_cache_miss
+</code></pre>
+<p>实测输出（gcc 13.3.0）：</p>
+<pre class="code" data-label="text"><code class="c">实验 A：4096×4096 的 int 矩阵求和，矩阵 64 MiB（两边都是 16777216 次加法）
+  按行遍历（地址连续，1 条 cache line 装 16 个 int）:    11.88 ms
+  按列遍历（stride 16384 B，每步换一条 cache line）  :   132.54 ms
+  → 慢 11.2 倍。加法次数一模一样，多出来的时间全花在等 cache line。
+
+实验 B：5000000 次「读一个 int 决定下一步」（next[] 有 1048576 个节点，4096 KiB）
+  顺序下标（预取器有效）:          3.63 ms
+  指针追逐（地址依赖数据）:       92.86 ms
+  → 慢 25.6 倍。这就是「追 cache」的真实价格，也是 HFT 里
+     为什么宁可用数组也不用链表的硬理由。
+</code></pre>
+<p><strong>实验 A 有个更值得记住的细节：尺寸本身就是结论。</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>N</th>
+<th>矩阵</th>
+<th>按行</th>
+<th>按列</th>
+<th>倍数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2048</td>
+<td>16 MiB</td>
+<td>5.77 ms</td>
+<td>—</td>
+<td><strong>1.4×</strong></td>
+</tr>
+<tr>
+<td>4096</td>
+<td>64 MiB</td>
+<td>11.88 ms</td>
+<td>132.54 ms</td>
+<td><strong>11.2×</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>同一个程序、同样的代码，N=2048 时按列只慢 1.4 倍——因为 16 MiB <strong>整个装得进
+容器的 L3</strong>，按列遍历只是多花点 L3 延迟。到 64 MiB 超出 L3 之后才变成「每次访问
+都要去主存」。</p>
+<p><strong>所以调 cache 问题的第一步永远是问两个数：数据集多大、cache 多大。</strong>
+「算法一样慢十倍」这种描述是没用的 —— 慢的是「装不下」。</p>
+<p><strong>实验 B 更狠</strong>：数组顺序走 3.63 ms，指针追逐 92.86 ms，差 <strong>25.6 倍</strong>。
+两者都是「读一个 int 决定下一步跳哪」，唯一区别是指针追逐的地址<strong>由数据本身决定</strong>，
+硬件预取器完全无法提前搬数据。这就是 6.1 HFT 关联第 2 条「HFT 程序常是访存密集」
+的字面价格。</p>
+<h3>实验二：<code class="c">code/c6_2_self_sampler.c</code> —— 自己实现一个 profiler</h3>
+<p>这个程序把 <code class="c">perf record</code> 的三步在<strong>进程内</strong>做一遍，只用标准库：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>perf 用的</th>
+<th>本程序用的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 触发采样</td>
+<td>PMU 硬件计数器 + 内核 NMI</td>
+<td><code class="c">setitimer(ITIMER_PROF)</code> → <code class="c">SIGPROF</code></td>
+</tr>
+<tr>
+<td>② 记录现场</td>
+<td>内核读 PMU + 栈回溯</td>
+<td>信号处理函数里 <code class="c">backtrace()</code>，只存裸 PC</td>
+</tr>
+<tr>
+<td>③ 聚合</td>
+<td><code class="c">perf report</code> / <code class="c">perf script</code></td>
+<td>跑完在普通上下文里 <code class="c">backtrace_symbols()</code> 解析排序</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c">cc -g -O2 -fno-inline -rdynamic -Wall -Wextra -o c6_2_self_sampler code/c6_2_self_sampler.c
+./c6_2_self_sampler
+</code></pre>
+<p>实测输出（gcc 13.3.0）：</p>
+<pre class="code" data-label="text"><code class="c">共采到 172 个样本（≈ 172 ms 进程 CPU 时间）
+（已跳过每个栈开头的 2 帧：frame 0 = backtrace() 内部帧，frame 1 = 采样函数 on_prof 自己）
+
+【自用 self】≡ perf report 的 Overhead 列 —— CPU 时间花在谁身上
+  占比      样本  函数
+    87.8%     151  slow_sqrt
+     6.4%      11  fmt
+     3.5%       6  do_work
+
+【含子调用 inclusive】≡ 火焰图里该帧的宽度 —— 调用链经过谁
+   100.0%     172  do_work
+   100.0%     172  main
+   100.0%     172  __libc_start_main
+   100.0%     172  _start
+    87.8%     151  slow_sqrt
+     8.7%      15  fmt
+</code></pre>
+<p>对着本节上面那张 <code class="c">perf report</code> 示意表看：<strong><code class="c">Overhead / Symbol</code> 两列一模一样</strong>。
+唯一区别是 perf 还能顺带给出 <code class="c">cycles / instructions / cache-misses</code>
+（因为它的采样源是 PMU，我们的采样源只是个定时器）。</p>
+<p>三个实现细节值得记：</p>
+<ol>
+<li><strong>为什么用 <code class="c">ITIMER_PROF</code> 而不是墙钟定时器</strong>：它按<strong>进程 CPU 时间</strong>计时，
+   进程被调度走时不计时。这正是 profiler 要的——否则 IO 等待会污染比例。
+   （<code class="c">perf stat</code> 里 <code class="c">task-clock</code> 远小于 wall time 就是同一件事的宏观版。）</li>
+<li><strong><code class="c">-fno-inline</code> 必须加</strong>：热点函数被内联进调用者后就采不到独立符号，
+   表里只会剩一个大坨的 <code class="c">do_work</code>。这就是 HFT 关联第 3 条「fno-inline 的取舍」
+   的<strong>实测形态</strong>——你可以把 <code class="c">-fno-inline</code> 去掉再跑一次，亲眼看它退化。</li>
+<li><strong>采样函数自己的帧要跳掉</strong>：从信号处理函数里调 <code class="c">backtrace()</code>，
+   frame 0 是 <code class="c">backtrace()</code> 内部帧、frame 1 是<strong>采样函数自己</strong>（它是 <code class="c">static</code>，
+   不进 <code class="c">.dynsym</code>，所以显示成 <code class="c">+0x45330</code> 这种裸偏移，永远占 100%）。
+   跳过前 2 帧后 <code class="c">self</code> 才是真正被打断的函数。</li>
+</ol>
+<h3>这个自制采样器还顺手给了 6.2 需要的 folded 格式</h3>
+<p>它最后会打出一段<strong>折叠栈</strong>：</p>
+<pre class="code" data-label="text"><code class="c">slow_sqrt;do_work;main;+0x2a1ca;__libc_start_main;_start                 151
+fmt;do_work;main;+0x2a1ca;__libc_start_main;_start                       11
+do_work;main;+0x2a1ca;__libc_start_main;_start                           6
+（共 5 种不同的调用栈）
+</code></pre>
+<p>这正是 <code class="c">stackcollapse-perf.pl</code> 的输出格式。<strong>把它贴到自己的 Linux 上跑
+<code class="c">flamegraph.pl</code>，就得到一张真火焰图</strong> —— 这正好接上 6.2。</p>
 <h2>HFT 关联</h2>
 <ol>
 <li><strong>延迟毛刺先采样别猜</strong>：某笔单延迟突然 250ms，先 <code class="c">perf record</code> + <code class="c">perf report</code> 看这段时间 CPU 花在哪，比读代码猜「可能是这里慢」高效得多——用数据说话。</li>
@@ -592,6 +767,56 @@ export PATH=$PATH:$PWD/FlameGraph
 <blockquote>
 <p>区分「平顶」和「塔尖」是火焰图最大的价值：<strong>平顶 = 函数自身耗时（self time）高，优化函数体；塔尖 = 调用链长，优化调用关系/减少调用次数</strong>。<code class="c">perf report</code> 扁平列表分不清这两者。</p>
 </blockquote>
+<h2>动手：亲手走到 folded 那一步（实测）</h2>
+<p>上面四步流程里，本环境只能走到第 ③ 步。但<strong>③ 恰恰是最抽象、最该亲手看一眼的一步</strong> ——
+它长什么样，决定了整张火焰图的形状。</p>
+<p><code class="c">code/c6_2_self_sampler.c</code>（6.1「动手」里那个自制采样器）跑完会直接打出一段
+<strong>折叠栈</strong>，格式和 <code class="c">stackcollapse-perf.pl</code> 的输出<strong>完全一致</strong>：</p>
+<pre class="code" data-label="text"><code class="c">【折叠栈 collapsed】≡ stackcollapse-perf.pl 的输出 —— 可直接喂给 flamegraph.pl
+  slow_sqrt;do_work;main;+0x2a1ca;__libc_start_main;_start                 151
+  fmt;do_work;main;+0x2a1ca;__libc_start_main;_start                       11
+  do_work;main;+0x2a1ca;__libc_start_main;_start                           6
+  +0x1995a6;fmt;do_work;main;+0x2a1ca;__libc_start_main;_start             2
+  ./output.s() [0x4010f0];fmt;do_work;main;+0x2a1ca;__libc_start_main;_start 2
+  （共 5 种不同的调用栈）
+</code></pre>
+<p><strong>读这段文本，就把整张火焰图读完了</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>folded 里的东西</th>
+<th>火焰图里对应什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每行的 <code class="c">;</code> 分隔链</td>
+<td>一条从底到顶的调用栈（左 → 右 = 底 → 顶）</td>
+</tr>
+<tr>
+<td>行末的数字</td>
+<td>这条栈被采样命中的次数 = 火焰图上这条路径的<strong>宽度</strong></td>
+</tr>
+<tr>
+<td>第一行 151 / 最后一行 2</td>
+<td>宽度 151 : 2 ≈ <strong>75 : 1</strong>，肉眼可见的胖框和细条</td>
+</tr>
+<tr>
+<td>所有行都含 <code class="c">main;</code></td>
+<td><code class="c">main</code> 必然占满整幅图的 100% 宽度</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># 在有 perl 的机器上，把这段贴进文件就能出图：
+./c6_2_self_sampler 2&gt;/dev/null | sed -n '/折叠栈/,$p' | grep -E '^  \S' \
+  | awk '{print $1, $NF}' &gt; out.folded
+flamegraph.pl out.folded &gt; flame.svg      # 打开 svg，横轴就是上面的宽度
+</code></pre>
+<p><strong>注意 <code class="c">+0x1995a6</code> / <code class="c">./output.s() [0x4010f0]</code> 这种没有函数名的条目</strong>：
+它们来自<strong>静态符号</strong>（<code class="c">static</code> 函数不进 <code class="c">.dynsym</code>）。火焰图里它们会显示成难看
+的一坨，但你对着地址还是能定位。这正是「符号表决定你能看见什么」的又一次现身
+—— 2.3 的 <code class="c">c2_2_backtrace.c</code> 和 6.1 的 <code class="c">c6_2</code> 都踩过同一个坑。
+<strong>排查火焰图里「一堆没名字的框」时，第一反应应该是查符号表，而不是怀疑数据丢了。</strong></p>
 <h2>cache miss 初探</h2>
 <p>6.1 提到低 IPC（访存密集）要看 cache miss。perf 用硬件事件采样 cache：</p>
 <pre class="code" data-label="shell"><code class="c"># 统计 cache 命中率

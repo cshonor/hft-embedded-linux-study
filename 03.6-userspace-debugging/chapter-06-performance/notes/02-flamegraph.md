@@ -65,6 +65,46 @@ export PATH=$PATH:$PWD/FlameGraph
 
 > 区分「平顶」和「塔尖」是火焰图最大的价值：**平顶 = 函数自身耗时（self time）高，优化函数体；塔尖 = 调用链长，优化调用关系/减少调用次数**。`perf report` 扁平列表分不清这两者。
 
+## 动手：亲手走到 folded 那一步（实测）
+
+上面四步流程里，本环境只能走到第 ③ 步。但**③ 恰恰是最抽象、最该亲手看一眼的一步** ——
+它长什么样，决定了整张火焰图的形状。
+
+`code/c6_2_self_sampler.c`（6.1「动手」里那个自制采样器）跑完会直接打出一段
+**折叠栈**，格式和 `stackcollapse-perf.pl` 的输出**完全一致**：
+
+```text
+【折叠栈 collapsed】≡ stackcollapse-perf.pl 的输出 —— 可直接喂给 flamegraph.pl
+  slow_sqrt;do_work;main;+0x2a1ca;__libc_start_main;_start                 151
+  fmt;do_work;main;+0x2a1ca;__libc_start_main;_start                       11
+  do_work;main;+0x2a1ca;__libc_start_main;_start                           6
+  +0x1995a6;fmt;do_work;main;+0x2a1ca;__libc_start_main;_start             2
+  ./output.s() [0x4010f0];fmt;do_work;main;+0x2a1ca;__libc_start_main;_start 2
+  （共 5 种不同的调用栈）
+```
+
+**读这段文本，就把整张火焰图读完了**：
+
+| folded 里的东西 | 火焰图里对应什么 |
+|-----------------|------------------|
+| 每行的 `;` 分隔链 | 一条从底到顶的调用栈（左 → 右 = 底 → 顶） |
+| 行末的数字 | 这条栈被采样命中的次数 = 火焰图上这条路径的**宽度** |
+| 第一行 151 / 最后一行 2 | 宽度 151 : 2 ≈ **75 : 1**，肉眼可见的胖框和细条 |
+| 所有行都含 `main;` | `main` 必然占满整幅图的 100% 宽度 |
+
+```bash
+# 在有 perl 的机器上，把这段贴进文件就能出图：
+./c6_2_self_sampler 2>/dev/null | sed -n '/折叠栈/,$p' | grep -E '^  \S' \
+  | awk '{print $1, $NF}' > out.folded
+flamegraph.pl out.folded > flame.svg      # 打开 svg，横轴就是上面的宽度
+```
+
+**注意 `+0x1995a6` / `./output.s() [0x4010f0]` 这种没有函数名的条目**：
+它们来自**静态符号**（`static` 函数不进 `.dynsym`）。火焰图里它们会显示成难看
+的一坨，但你对着地址还是能定位。这正是「符号表决定你能看见什么」的又一次现身
+—— 2.3 的 `c2_2_backtrace.c` 和 6.1 的 `c6_2` 都踩过同一个坑。
+**排查火焰图里「一堆没名字的框」时，第一反应应该是查符号表，而不是怀疑数据丢了。**
+
 ## cache miss 初探
 
 6.1 提到低 IPC（访存密集）要看 cache miss。perf 用硬件事件采样 cache：

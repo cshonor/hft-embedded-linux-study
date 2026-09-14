@@ -42,6 +42,10 @@ gcc -O2 -pthread -o race race.c
 # counter = 1999991   ← 这次丢了 9 次，每次都不一样
 ```
 
+> ⚠️ **上面这两行数字是「形状示意」，不是实测**。它想表达的是「丢得不多、每次不一样」，
+> 但具体丢几次取决于机器和调度，抄这个数字没有意义。**真实可跑、有实测数字的版本
+> 在本节末尾「动手」一节**（`code/c4_1_data_race.c`，实测丢 50%）。
+
 `g_counter++` 其实是三步：读 → 加一 → 写回。两个线程的这三步交错执行时，就会「互相覆盖」——A 读到 100，B 也读到 100，各自加一写回 101，两次自增只涨了 1。**丢了更新**，且丢多少取决于调度，所以偶发、难复现。
 
 ## 什么是数据竞争（严格定义）
@@ -161,6 +165,97 @@ valgrind --tool=helgrind ./race
 | 适用 | 开发期 CI 常驻 | 现有二进制定性、锁序排查 |
 
 > **取舍**：TSan 快、进 CI；Helgrind 慢但**能抓潜在死锁**（它分析锁的获取顺序，报「锁序不一致」这类 TSan 不报的问题），且对没有源码的二进制可用。两者互补。
+
+## 动手：让 TSan 抓一次真竞争（实测）
+
+`code/c4_1_data_race.c` 把「两个线程各做 N 次自增」这一件事写成四种版本，
+用命令行参数切换：
+
+```bash
+cc -g -O2 -pthread -Wall -Wextra -o c4_1 code/c4_1_data_race.c
+./c4_1 race | ./c4_1 mutex | ./c4_1 atomic | ./c4_1 local
+```
+
+四种写法里都插了同样多的假活（`tiny_work()`），两个目的：① 让四种写法的计算量
+对等，耗时才可比；② 对 `race` 模式来说，它把「读」和「写回」之间的**窗口**显式撑开，
+让丢失的更新稳定可见、不靠运气（下面坑 2 会讲为什么需要这样）。
+
+### 实测（gcc 13.3.0，`-g -O2 -pthread`，每模式 3 次取最小）
+
+| 模式 | 写法 | 实际结果（期望 200000） | 丢失 | 耗时 | 退出码 |
+|------|------|------------------------|------|------|--------|
+| `race` | `v = g_race; …; g_race = v + 1` 无同步 | **100000** | **100000（50.00%）** | 11.8 ms | **0** |
+| `mutex` | `pthread_mutex_lock` 包住自增 | 200000 | 0 | 25.5 ms | 0 |
+| `atomic` | `atomic_fetch_add` | 200000 | 0 | 8.1 ms | 0 |
+| `local` | 每线程私有累加，最后合并一次 | 200000 | 0 | 8.1 ms | 0 |
+
+三条结论：
+
+1. **`race` 丢了整整一半更新，进程却「成功」了** —— 退出码 0，stderr 空。
+   这正是 1.2 决策树里「结果偶尔不对」不能靠盯退出码的原因。
+2. **50% 是窗口撑到极限的极端值，不是常态**。40 次假活让窗口宽到两个线程几乎
+   必然都读到旧值。现实里这个窗口只有 cache miss 的几十纳秒，所以真实竞态可能
+   只丢万分之几 —— 那才是它难抓的原因。把源码里 `SPIN` 调小（比如 8）就能看到丢得变少。
+3. **锁是有代价的**：`mutex` 25.5 ms 对 `atomic`/`local` 8.1 ms，差 3 倍。
+   这就是 HFT 关联第 2、3 条说的「锁争用造成延迟毛刺」「把共享写入降到最少」。
+
+### TSan 编译：报告出现了，而这次结果是对的
+
+```bash
+cc -g -O1 -fsanitize=thread -pthread -o c4_1_tsan code/c4_1_data_race.c
+./c4_1_tsan race
+```
+
+实测 stderr（clang 18.1.0，已去掉色码）：
+
+```text
+==================
+WARNING: ThreadSanitizer: data race (pid=2)
+  Read of size 4 at 0x5555569dd660 by thread T2:
+    #0 th_race /app/example.c (output.s+0xdce64)
+
+  Previous write of size 4 at 0x5555569dd660 by thread T1:
+    #0 th_race /app/example.c:104:16 (output.s+0xdce8a)
+
+  Location is global 'g_race' of size 4 at 0x5555569dd660 (output.s+0x1489660)
+
+  Thread T2 (tid=5, running) created by main thread at:
+    #0 pthread_create .../tsan_interceptors_posix.cpp:1022:3 (output.s+0x5f7bb)
+    #1 run_threads /app/example.c:134:9 (output.s+0xdcabf)
+    #2 main /app/example.c:150:24 (output.s+0xdcabf)
+  ...（T1 的创建点同理）
+SUMMARY: ThreadSanitizer: data race /app/example.c:104:16 in th_race
+==================
+ThreadSanitizer: reported 2 warnings
+```
+
+对着本节开头那张「报错示意」看，形状完全一致——冲突双方（`Read by T2` /
+`Previous write by T1`）、位置（`Location is global 'g_race'`）、线程来源
+（`created by main thread`）三段都在。区别只有地址和行号是真实的。
+
+**而这一次进程打出的结果是 `200000` —— 一次都没丢。**
+结果对了，TSan 照样报了两条竞争。这就是下面自测题 Q5 的实证：
+
+| 运行 | 结果 | TSan | 说明 |
+|------|------|------|------|
+| `./c4_1 race`（gcc，无 TSan） | 100000（**错**） | 不存在 | 结果错了，退出码 0，静默 |
+| `./c4_1_tsan race`（clang + TSan） | 200000（**对**） | **报 2 条** | 结果对了，TSan 照样报 |
+
+对照组 `./c4_1_tsan atomic`：退出码 0、stderr 全空 —— C11 原子操作是 TSan
+认可的同步，不是竞争。
+
+### 坑：gcc 版 TSan 在本环境跑不起来，必须用 clang
+
+```text
+[gcc 13.3.0 + -fsanitize=thread]
+--- stdout ---
+--- stderr ---
+FATAL: ThreadSanitizer: unexpected memory mapping 0x7913d9072000-0x7913d9500000
+（退出码 66，但程序一行都没执行）
+```
+
+同一个程序换成 clang 18.1.0 就完全正常。看到 `unexpected memory mapping`
+不要怀疑自己的代码，那是 TSan 运行时和容器地址空间布局冲突。
 
 ## HFT 关联
 

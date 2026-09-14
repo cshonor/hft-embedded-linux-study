@@ -104,6 +104,109 @@ gdb ./trader_race
 
 但 gdb 只能「停下来看现场」，**无法自动判定竞争**（它不知道两个访问之间有没有同步）。所以竞态排查 TSan 是首选，gdb 只是备选/补充。
 
+## 动手：`-DBUG_RACE` 的真实 TSan 报告（实测）
+
+上面第二步、第三步讲的是「怎么读报告」。这里给出这个变体**真正跑出来的报告**。
+
+```bash
+cc -g -O1 -pthread -fsanitize=thread -DBUG_RACE -o c7_1_race code/c7_1_trader.c
+./c7_1_race
+```
+
+实测（clang 18.1.0）：
+
+```text
+变体： RACE
+
+total matched qty = 80200   （期望 40100）
+订单计数：malloc 200 个，free 200 个，仍存活 0 个（每个 32 字节，约 0 字节）
+（退出码 66）
+```
+
+**结果是 `80200 = 2 × 40100`** —— feed 和 match **各自**把全部订单加了一遍。
+注意这个变体的后果是「**稳定**多算一倍」，不是「偶尔差一点」；
+真正难抓的是 4.3 里 `c4_1` 那种**丢更新**（结果只差万分之几）。TSan 对两种都当场报出。
+
+TSan 一共报了 **3 条**，逐条读：
+
+### 第 1 条：`g_total` 本身（本节的主案件）
+
+```text
+  Write of size 8 at 0x5555569dc6b0 by thread T2 (mutexes: write M0):
+    #0 match_thread /app/example.c:216:21          ← g_total += o->qty
+
+  Previous write of size 8 at 0x5555569dc6b0 by thread T1:
+    #0 feed_thread /app/example.c:191:17           ← g_total += o->qty
+
+  Location is global 'g_total' of size 8 at 0x5555569dc6b0
+SUMMARY: ThreadSanitizer: data race /app/example.c:216:21 in match_thread
+```
+
+两个线程在同一语义上写同一个全局变量，**都没拿 `g_stat_lock`**。
+注意 TSan 特意写了 `(mutexes: write M0)` —— match 这时**拿着** `g_book_lock`。
+但 `g_book_lock` 保护的是订单簿，不是统计量。**拿错锁 = 没拿锁**，
+这份报告把这件事说得比任何文字都清楚。
+
+### 第 2 条：一条被「连坐」出来的 use-after-free
+
+```text
+  Write of size 8 at 0x720800001030 by thread T2 (mutexes: write M0):
+    #0 free ... tsan_interceptors_posix.cpp:724:3
+    #1 match_thread /app/example.c:227:13          ← free(o)
+
+  Previous read of size 8 at 0x720800001030 by thread T1:
+    #0 feed_thread /app/example.c:191:23           ← 读 o->qty
+SUMMARY: ThreadSanitizer: data race /app/example.c:227:13 in match_thread
+```
+
+**这是真实的 use-after-free，而且是被 `-DBUG_RACE` 顺带引入的。**
+雷点的本意是「feed 无锁写 `g_total`」，但那一行写在
+`pthread_mutex_unlock(&g_book_lock)` **之后**，于是 feed 读 `o->qty` 的那一刻，
+这个订单可能已经被 match 撮合掉并 `free` 了。
+
+> **教训：破坏点放错位置会连坐出第二个 bug。**
+> 真实代码审查里，「这一行到底在锁内还是锁外」就是靠这类报告揪出来的。
+> 这也解释了为什么本节的报告有 3 条而不是 1 条 —— **一个根因可以长出多个症状**。
+
+### 第 3 条：骨架本身自带的（不是在 7.3 引入的）
+
+```text
+  Read of size 4 at 0x555555670b78 by thread T2 (mutexes: write M0):
+    #0 match_thread /app/example.c:211:28
+  Previous write of size 4 at 0x555555670b78 by thread T1:
+    #0 feed_thread /app/example.c:197:5            ← g_running = 0
+SUMMARY: ThreadSanitizer: data race /app/example.c:211:28 in match_thread
+```
+
+**`g_running` 这条竞争，把 `-DBUG_RACE` 去掉、跑基线代码也一样会报**（见 7.1 的
+「⚠️ 正确版本其实是有 bug 的」）。原因是 `volatile int g_running` 不是同步原语，
+而 feed 写它时一把锁都没拿。
+
+**所以「TSan 报了几条」≠「有几个 bug」。** 读报告要先做分类：
+哪几条指向同一个根因、哪几条是骨架自带的、哪几条是本次改动引入的。
+本变体 3 条对应 2 个根因（`g_total` 无保护 / `g_running` 无保护），
+外加 1 条被位置放错连坐出来的 UAF。
+
+### 修法验证：`-DFIX_RUNNING` 让 TSan 静默
+
+```bash
+cc -g -O1 -pthread -fsanitize=thread -DFIX_RUNNING -o c7_1_fixed code/c7_1_trader.c
+./c7_1_fixed          # → total = 40100，stderr 全空，退出码 0
+```
+
+**「修好了」的判据不是「结果对了」，是「TSan 不报了」。** 这两件事在 7.1 里
+已经被实测分开了 —— 基线结果一直是对的，竞争一直在。
+
+### 本环境的一个硬限制：TSan 必须用 clang
+
+```text
+[gcc 13.3.0 + -fsanitize=thread]
+FATAL: ThreadSanitizer: unexpected memory mapping 0x7913d9072000-0x7913d9500000
+（退出码 66，但程序一行都没执行）
+```
+
+同上：换 clang 就正常。看到 `unexpected memory mapping` 不要怀疑自己的代码。
+
 ## HFT 关联
 
 1. **偶发错单的头号嫌疑**：下单结果偶发不对，先怀疑共享订单状态/统计量的竞态，而不是撮合算法逻辑错。TSan 能一次性把所有竞争点列出来。

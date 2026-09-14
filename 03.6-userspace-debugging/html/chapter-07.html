@@ -315,6 +315,76 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </blockquote>
 <p><strong>这一章做什么</strong>：一个「多线程 + 网络 + 共享内存」的迷你下单程序，从写出 bug 到定位修复，走一遍完整调试流程——用 Ch1 的方法论做分诊，用 Ch2–Ch6 的工具逐个击破。</p>
 <hr />
+<h2>可跑的 demo（<code class="c">code/</code>）</h2>
+<p><code class="c">code/c7_1_trader.c</code> 就是 7.1 那个 <code class="c">trader.c</code>，做成可编译可跑的文件。
+<strong>一个程序九种跑法</strong>，覆盖本章全部五节的症状：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>跑法</th>
+<th>关键输出</th>
+<th>退出码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>基线</td>
+<td><code class="c">total matched qty = 40100</code>；malloc 200 / free 200 / 仍存活 0</td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td>基线 + TSan</td>
+<td><code class="c">total = 40100</code> 正确，但 TSan 报 <strong>1 条</strong> <code class="c">g_running</code> 竞争</td>
+<td><strong>66</strong></td>
+</tr>
+<tr>
+<td>基线 + TSan + <code class="c">-DFIX_RUNNING</code></td>
+<td>TSan <strong>静默</strong></td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td>基线 + ASan</td>
+<td><code class="c">total = 40100</code>，无泄漏报告</td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td><code class="c">-DBUG_CRASH</code>（无栈保护）</td>
+<td><code class="c">Program terminated with signal SIGSEGV (11)</code></td>
+<td><strong>139</strong></td>
+</tr>
+<tr>
+<td><code class="c">-DBUG_CRASH</code> + <code class="c">-fstack-protector-all</code></td>
+<td><code class="c">*** stack smashing detected ***</code></td>
+<td><strong>134</strong></td>
+</tr>
+<tr>
+<td><code class="c">-DBUG_RACE</code> + TSan</td>
+<td><code class="c">total = 80200</code>（= 2×40100）；TSan 报 <strong>3 条</strong></td>
+<td><strong>66</strong></td>
+</tr>
+<tr>
+<td><code class="c">-DBUG_LEAK</code> + ASan</td>
+<td><code class="c">LeakSanitizer: 6400 byte(s) leaked in 200 allocation(s)</code></td>
+<td><strong>1</strong></td>
+</tr>
+<tr>
+<td><code class="c">-DBUG_HANG</code></td>
+<td>看门狗 alarm 判定「自死锁实锤」</td>
+<td><strong>4</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ 表里第 2、3 行是本次改写最重要的发现：<strong>笔记里的「正确版本」本身就有数据竞争</strong>
+—— <code class="c">volatile int g_running</code> 不是同步原语，feed 无锁写它、match 持锁读它。
+加上 <code class="c">-DFIX_RUNNING</code>（换成 <code class="c">atomic_int</code> + 退出条件挪进锁内）TSan 才静默。
+详见 <a href="#intro"><code class="c">code/README.md</code></a> 第 2 节。</p>
+</blockquote>
+<p>另外本版本比笔记里的 <code class="c">trader.c</code> 多了两样东西，都是为了「在容器里也能演示」：
+<code class="c">alarm(3)</code> 看门狗（容器没有 <code class="c">timeout</code> 命令，卡死进程没法收场）和订单分配计数
+（没有 valgrind 时，自己数 <code class="c">malloc/free</code> 是唯一可用的降级手段）。</p>
+<p>详见 <a href="#intro"><code class="c">code/README.md</code></a>（九种跑法的完整输出 + 四个踩坑记录）。</p>
+<hr />
 <h2>HFT 关联</h2>
 <ul>
 <li><strong>综合演练</strong>：真实交易系统的 bug 往往跨类（竞态引发崩溃、泄漏伴随卡死），本章练习「多工具接力」而非单工具死磕；</li>
@@ -504,6 +574,152 @@ gcc -g -O1 -pthread -fsanitize=thread -o trader_race -DBUG_RACE trader.c  # 7.3 
 gcc -g -O0 -pthread -o trader_leak -DBUG_LEAK trader.c       # 7.4 泄漏
 gcc -g -O0 -pthread -o trader_hang -DBUG_HANG trader.c       # 7.5 卡住
 </code></pre>
+<h2>动手：把 <code class="c">trader.c</code> 变成真能跑的文件（实测）</h2>
+<p>上面那段代码已经不是纸上谈兵了 —— 它是 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/c7_1_trader.c"><code class="c">code/c7_1_trader.c</code></a>，
+一个能编译能跑的文件。和笔记版本相比多了两样东西，都是为了「在没有 valgrind / gdb
+的环境里也能演示」：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>增加的东西</th>
+<th>为什么加</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">main</code> 里的 <code class="c">alarm(3)</code> 看门狗</td>
+<td>容器里没有 <code class="c">timeout</code> 命令，卡死的进程没法收场；而且「进程自己报警」本身也是生产环境的做法</td>
+</tr>
+<tr>
+<td>订单分配计数（<code class="c">g_alloc</code> / <code class="c">g_freed</code>）</td>
+<td>没有 valgrind 时，「自己数 malloc/free」是唯一可用的降级手段</td>
+</tr>
+</tbody>
+</table></div>
+<h3>基线先跑通</h3>
+<pre class="code" data-label="shell"><code class="c">cc -g -O0 -pthread -Wall -Wextra -o c7_1_base code/c7_1_trader.c
+./c7_1_base
+</code></pre>
+<p>实测（gcc 13.3.0）：</p>
+<pre class="code" data-label="text"><code class="c">迷你下单引擎：feed 塞 200 单，match 撮合；正确基线 = 40100
+变体： 无（正确版本）
+
+total matched qty = 40100   （期望 40100）
+订单计数：malloc 200 个，free 200 个，仍存活 0 个（每个 32 字节，约 0 字节）
+进程进度：feed 到 200/200，match 走了 356 轮
+</code></pre>
+<ul>
+<li><code class="c">40100 = (100+1) + (100+2) + … + (100+200)</code> —— <strong>正确基线</strong>，后面每个变体都以它为锚。</li>
+<li><code class="c">malloc 200 / free 200 / 仍存活 0</code> —— 基线没有泄漏。</li>
+<li><code class="c">match 走了 356 轮</code> &gt; 200：match 要多空转几轮才确认「feed 已收工 + 订单簿已空」。</li>
+<li>那句 <code class="c">变体： …</code> 是<strong>自报家门</strong>，不是装饰。下面坑 1 会讲它救了多大的场。</li>
+</ul>
+<h3>一个程序，九种跑法</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>跑法</th>
+<th>关键输出</th>
+<th>退出码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>基线</td>
+<td><code class="c">total = 40100</code>；malloc 200 / free 200 / live 0</td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td>基线 + TSan</td>
+<td><code class="c">total = 40100</code> <strong>正确</strong>，但 TSan 报 <strong>1 条</strong> <code class="c">g_running</code> 竞争</td>
+<td><strong>66</strong></td>
+</tr>
+<tr>
+<td>基线 + TSan + <code class="c">-DFIX_RUNNING</code></td>
+<td>TSan <strong>静默</strong></td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td>基线 + ASan</td>
+<td><code class="c">total = 40100</code>，无泄漏报告</td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td><code class="c">-DBUG_CRASH</code>（无栈保护）</td>
+<td><code class="c">Program terminated with signal SIGSEGV (11)</code></td>
+<td><strong>139</strong></td>
+</tr>
+<tr>
+<td><code class="c">-DBUG_CRASH</code> + <code class="c">-fstack-protector-all</code></td>
+<td><code class="c">*** stack smashing detected ***</code></td>
+<td><strong>134</strong></td>
+</tr>
+<tr>
+<td><code class="c">-DBUG_RACE</code> + TSan</td>
+<td><code class="c">total = 80200</code>（= 2×40100）；TSan 报 <strong>3 条</strong></td>
+<td><strong>66</strong></td>
+</tr>
+<tr>
+<td><code class="c">-DBUG_LEAK</code> + ASan</td>
+<td><code class="c">LeakSanitizer: 6400 byte(s) leaked in 200 allocation(s)</code></td>
+<td><strong>1</strong></td>
+</tr>
+<tr>
+<td><code class="c">-DBUG_HANG</code></td>
+<td>看门狗判定「自死锁实锤」</td>
+<td><strong>4</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>注意第 2 行</strong>：这一行推翻了本节的一个隐含假设。见下。</p>
+<h3>⚠️ 「正确版本」其实是有 bug 的</h3>
+<p>这个变体（<code class="c">-DBUG_RACE</code>）看似只是把「正确版本」的统计量保护拿掉，但实测发现：
+<strong>即使完全不打开任何 <code class="c">-DBUG_*</code> 宏，把基线交给 TSan，它也会报 1 条数据竞争。</strong></p>
+<pre class="code" data-label="shell"><code class="c">cc -g -O1 -pthread -fsanitize=thread -o c7_1_tsan code/c7_1_trader.c
+./c7_1_tsan            # 基线代码 + TSan → 退出码 66
+</code></pre>
+<pre class="code" data-label="text"><code class="c">  Write of size 4 at 0x555555670b78 by thread T1:
+    #0 feed_thread /app/example.c:197:5          ← g_running = 0（无锁写）
+  Previous read of size 4 at 0x555555670b78 by thread T2 (mutexes: write M0):
+    #0 match_thread /app/example.c:211:28        ← while 条件里读 g_running
+  As if synchronized via sleep:
+    #1 sleep_us /app/example.c:90:5
+    #2 feed_thread /app/example.c:195:9
+  Location is global 'g_running' of size 4
+SUMMARY: ThreadSanitizer: data race /app/example.c:197:5 in feed_thread
+</code></pre>
+<p>根因：<code class="c">volatile int g_running</code> <strong>不是同步原语</strong>（和 3.2 里 <code class="c">volatile</code> 不给原子性
+是同一条规则）。<code class="c">volatile</code> 只保证「每次都真的访存」，不提供 happens-before。
+而且写方（feed 的 <code class="c">g_running = 0</code>）<strong>一把锁都没拿</strong> —— 锁只保护一边是没用的。</p>
+<p>修法（源码里用 <code class="c">-DFIX_RUNNING</code> 开关，方便你 A/B 对比）：<code class="c">g_running</code> 换成
+<code class="c">atomic_int</code> + <code class="c">atomic_store/load</code>，并把退出条件挪进 <code class="c">g_book_lock</code> 临界区内判定。</p>
+<pre class="code" data-label="shell"><code class="c">cc -g -O1 -pthread -fsanitize=thread -DFIX_RUNNING -o c7_1_fixed code/c7_1_trader.c
+./c7_1_fixed          # → 退出码 0，stderr 全空
+</code></pre>
+<p><strong>这就是本节「正确基线」这个概念要加的一课</strong>：<code class="c">g_total == 40100</code> 只说明
+<strong>业务逻辑对</strong>，不说明<strong>没有数据竞争</strong>。这两件事必须用两个不同的手段来验
+（前者靠断言，后者靠 TSan）。Q3 的答案因此要补一句：<strong>基线只定义了「值应该对」，
+不定义「并发安全」</strong>。</p>
+<h3>坑 1：<code class="c">-DBUG_*</code> 差点全都没生效</h3>
+<p>第一轮验证时我把 <code class="c">-DBUG_CRASH</code> 写进了「程序参数」位置而不是「编译参数」位置，
+于是<strong>五个变体全都跑了正确版本</strong>，输出整齐划一地都是：</p>
+<pre class="code" data-label="text"><code class="c">变体： 无（正确版本）
+total matched qty = 40100
+</code></pre>
+<p>五个「通过」其实是五个「没生效」。<strong>唯一看出问题的线索就是那句自报家门的
+<code class="c">变体： …</code></strong> —— 如果没有它，这次会得出完全相反的结论。</p>
+<blockquote>
+<p>给调试程序留一句「我是谁、我开了哪些开关」，成本一行 <code class="c">printf</code>，
+收益是防止整批实验静默失效。这和「正确基线」是同一类思路：<strong>先确认你在测的是
+你以为在测的东西。</strong></p>
+</blockquote>
+<h3>坑 2：<code class="c">usleep</code> 在 strict POSIX 下被 glibc 藏了</h3>
+<pre class="code" data-label="text"><code class="c">gcc:   warning: implicit declaration of function 'usleep'; did you mean 'sleep'?
+clang: error:   call to undeclared function 'usleep'
+</code></pre>
+<p><code class="c">usleep</code> 已在 POSIX.1-2008 中被移除。gcc 只给警告（于是按「返回 int」的隐式声明
+链接，<strong>能跑</strong>），clang 直接报错。源码改成 <code class="c">nanosleep</code> 封装的 <code class="c">sleep_us()</code>。
+<strong>同一份 C 代码在两个编译器下可能是「警告」vs「致命错误」——CI 里两个都跑一遍很有必要。</strong></p>
 <h2>HFT 关联</h2>
 <ol>
 <li><strong>真实系统的 bug 是「混装」的</strong>：撮合引擎出问题，往往是「竞态写坏了数据 → 引发崩溃 → 崩溃前的分配泄漏」多类问题叠加。分诊（Ch1）+ 多工具接力（Ch2–Ch6）是唯一正确姿势，别指望一个工具通吃。</li>
@@ -533,6 +749,24 @@ gcc -g -O0 -pthread -o trader_hang -DBUG_HANG trader.c       # 7.5 卡住
 <blockquote>
 <p>因为要处理「生产/消费的边界」：<code class="c">g_running</code> 表示 feed 还在生产，<code class="c">g_book</code> 表示订单簿里还有未撮合的订单。只有当 feed 已停止（<code class="c">g_running=0</code>）<strong>且</strong>订单簿已空（<code class="c">g_book=NULL</code>）时，match 才能退出。两个条件用 <code class="c">||</code>：只要「还在生产」或「还有存量」就得继续撮合。这是典型的生产者-消费者收敛条件。</p>
 </blockquote>
+<p><strong>Q6:</strong> 基线跑出 <code class="c">g_total = 40100</code>，能不能说这个程序「并发上是正确的」？</p>
+<blockquote>
+<p>不能，而且实测已经证明不行。把<strong>基线代码</strong>（不打开任何 <code class="c">-DBUG_*</code> 宏）交给 TSan，
+它照样报 1 条 data race —— <code class="c">g_running</code> 是 <code class="c">volatile int</code>，feed 无锁写它、match 持着
+<code class="c">g_book_lock</code> 读它。<code class="c">volatile</code> 不是同步原语（同 3.2：<code class="c">volatile</code> 不给原子性），
+而锁只保护一边也等于没保护。</p>
+<p>所以「正确」要拆成两件事分开验：<strong>值对不对</strong>靠断言/基线比对（<code class="c">== 40100</code>），
+<strong>有没有数据竞争</strong>靠 TSan。用一个手段验两件事，就是这次差点漏掉它的原因。
+修法：<code class="c">g_running</code> 换成 <code class="c">atomic_int</code>，并把退出条件挪进锁内（源码里是 <code class="c">-DFIX_RUNNING</code>）。</p>
+</blockquote>
+<p><strong>Q7:</strong> 为什么给这个 demo 加一句 <code class="c">printf("变体： …")</code> 打印自己开了哪些宏？</p>
+<blockquote>
+<p>因为它是<strong>唯一能证明「实验真的按预期配置跑了」的证据</strong>。实测教训：第一轮验证时
+<code class="c">-DBUG_CRASH</code> 被误放进了「程序参数」而不是「编译参数」，五个变体全都跑成了
+正确版本、全打印 <code class="c">变体： 无（正确版本）</code>。如果输出里没有这一行，看到的会是
+「五个变体全部通过」—— 结论完全相反。
+这和 Q3 的「正确基线」是同一类思路：<strong>先确认你在测的是你以为在测的东西。</strong></p>
+</blockquote>
 </details>
 <h2>交叉引用</h2>
 <ul>
@@ -559,6 +793,110 @@ gcc -g -O0 -pthread -o trader_hang -DBUG_HANG trader.c       # 7.5 卡住
 <blockquote>
 <p>关键观察：崩溃「偶发、位置不定」。因为 <code class="c">slots[o-&gt;id]</code> 越界写坏的是<strong>栈上的返回地址/帧指针</strong>，破坏程度取决于被写的值，可能当场崩、可能函数返回时崩、也可能没崩到致命处。</p>
 </blockquote>
+<h3>实测：这个 bug 在本配置下是<strong>稳定</strong>复现的</h3>
+<p>上面的「偶发」是越界写的<strong>一般</strong>特征，但这个具体变体不是偶发——它写得足够远
+（<code class="c">id</code> 最大 200，越界 <code class="c">200-15 = 185</code> 个 int = 740 字节），稳定会踩到金丝雀或返回地址。
+所以它反而是个理想的<strong>教学样本</strong>：先让你看到稳定复现的版本，再去理解为什么
+真实项目里的越界写是偶发的（见下面「为什么越界写不立即崩」和自测题 Q1）。</p>
+<pre class="code" data-label="shell"><code class="c"># 不带栈保护
+cc -g -O0 -pthread -Wall -Wextra -DBUG_CRASH -o c7_1_crash code/c7_1_trader.c
+./c7_1_crash
+</code></pre>
+<pre class="code" data-label="text"><code class="c">迷你下单引擎：feed 塞 200 单，match 撮合；正确基线 = 40100
+变体： CRASH
+--- stderr ---
+Program terminated with signal SIGSEGV (11)
+（退出码 139）
+</code></pre>
+<pre class="code" data-label="shell"><code class="c"># 带栈金丝雀
+cc -g -O0 -pthread -Wall -Wextra -fstack-protector-all -DBUG_CRASH -o c7_1_crash_sp code/c7_1_trader.c
+./c7_1_crash_sp
+</code></pre>
+<pre class="code" data-label="text"><code class="c">迷你下单引擎：feed 塞 200 单，match 撮合；正确基线 = 40100
+变体： CRASH
+--- stderr ---
+*** stack smashing detected ***: terminated
+Program terminated with signal SIGABRT (6)
+（退出码 134）
+</code></pre>
+<p><strong>同一个 bug，三个退出码</strong>，这条对照极有价值：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译</th>
+<th>谁先发现</th>
+<th>退出码</th>
+<th>你能拿到什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无栈保护</td>
+<td>谁也没发现，直到 ret 跳到坏地址</td>
+<td><strong>139</strong>（128+11，SIGSEGV）</td>
+<td>一个崩溃现场，但破坏已发生很久</td>
+</tr>
+<tr>
+<td><code class="c">-fstack-protector-all</code></td>
+<td>函数返回前检查金丝雀</td>
+<td><strong>134</strong>（128+6，SIGABRT）</td>
+<td><strong>准确的死亡时刻</strong>：函数刚要返回就报警，但仍是「命案现场」</td>
+</tr>
+<tr>
+<td><code class="c">-fsanitize=address</code></td>
+<td>每次写都查影子内存</td>
+<td><strong>1</strong>（ASan 约定退出码）</td>
+<td><strong>准确的犯罪现场</strong>：抓到第 16 次循环、第 172 行那次写</td>
+</tr>
+</tbody>
+</table></div>
+<h3>ASan 版本实测：它抓的是「第一次」越界</h3>
+<pre class="code" data-label="shell"><code class="c">cc -g -O1 -pthread -fsanitize=address -DBUG_CRASH -o c7_1_crash_asan code/c7_1_trader.c
+./c7_1_crash_asan
+</code></pre>
+<pre class="code" data-label="text"><code class="c">变体： CRASH
+--- stderr ---
+==2==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x789df2efe080
+WRITE of size 4 at 0x789df2efe080 thread T1
+    #0 0x4018ae in feed_thread /app/example.c:172      ← slots[o-&gt;id] = 1
+
+Address ... is located in stack of thread T1 at offset 128 in frame
+    #0 0x40164f in feed_thread /app/example.c:157
+
+  This frame has 2 object(s):
+    [32, 48) 'ts' (line 87)
+    [64, 128) 'slots' (line 171) &lt;== Memory access at offset 128 overflows this variable
+SUMMARY: AddressSanitizer: stack-buffer-overflow /app/example.c:172 in feed_thread
+Shadow bytes around the buggy address:
+=&gt;0x789df2efe080:[f3]f3 f3 f3 00 00 00 00 ...
+（退出码 1）
+</code></pre>
+<p>三个细节直接呼应本节的主题：</p>
+<ol>
+<li><strong>它抓的是 <code class="c">offset 128</code></strong> —— <code class="c">slots</code> 占 <code class="c">[64, 128)</code>，所以 <code class="c">offset 128</code> 就是
+   <code class="c">slots[16]</code>，也就是 <code class="c">o-&gt;id == 16</code> 时<strong>第一次</strong>越界。<strong>不是 <code class="c">id = 200</code> 那一次。</strong>
+   ASan 给你的是<strong>犯罪现场</strong>（第一次动手），而 SIGSEGV / 金丝雀给你的是
+   <strong>命案现场</strong>（最后一次发作）。<strong>这就是本节灵魂的那句话的实证。</strong>
+   线索也直白：<code class="c">&lt;== Memory access at offset 128 overflows this variable</code>。</li>
+<li><strong>它连「这块栈上是哪个变量、从哪一行来的」都报出来了</strong>：
+   <code class="c">[64, 128) 'slots' (line 171)</code> —— 变量名 + 声明行号。gdb 要 <code class="c">info locals</code> 才勉强
+   做到，而 ASan 是在<strong>写入的当场</strong>说的。</li>
+<li><strong>影子内存那一行 <code class="c">[f3]</code></strong> 是栈右红区的编码（见 3.2 的影子内存表）：
+   <code class="c">f3</code> = stack right redzone。<strong>为什么是 <code class="c">f3</code> 不是 <code class="c">f1</code></strong> —— 因为越界写在数组<strong>之后</strong>
+   （高地址方向），落在右侧红区；<code class="c">f1</code> 是数组之前（左侧）的红区。</li>
+</ol>
+<p><strong>顺序建议</strong>：开发期跑 ASan（准、快、给犯罪现场）；没有源码的环境跑
+<code class="c">-fstack-protector-all</code> 或拿 core（给命案现场 + 全局状态）。两者互补，不是二选一。</p>
+<p><strong>金丝雀的价值在于「把犯罪和命案的间隔压到最短」</strong>——从「不确定多久之后」
+压缩到「一次函数返回」。这就是为什么调试构建值得开 <code class="c">-fstack-protector-all</code>
+（代价是略慢，收益是让你少熬几个通宵）。</p>
+<blockquote>
+<p>⚠️ 还要注意三种情况下 stdout <strong>都只剩两行</strong>：<code class="c">total matched qty</code> 和订单计数全没了。
+这就是 Ch5 讲的「<strong>stdout 全缓冲 + 进程被信号杀死 = 缓冲区内容全丢</strong>」
+——开头两行能活下来，是因为源码里紧跟其后调了一次 <code class="c">fflush(stdout)</code>。
+这是本仓库里这个现象的<strong>第三次</strong>现身（前两次：<code class="c">c1_2_shrink_demo.c</code>、
+<code class="c">c7_1</code> 的泄漏变体）。<strong>崩溃现场调试时，输出丢了往往不是程序没跑到，是没刷缓冲。</strong></p>
+</blockquote>
 <h2>第二步：开 core dump</h2>
 <p>崩溃要有 core 文件才能事后回溯（Ch2 四道闸排查过）：</p>
 <pre class="code" data-label="shell"><code class="c">ulimit -c unlimited          # shell 级允许生成 core
@@ -578,6 +916,16 @@ ls -l core*                   # 确认 core 文件存在
 #6  0x00007f8a3c456789 in start_thread (...) at pthread_create.c:...
 #7  0x00007f8a3c4dabcd in clone (...) at ...
 </code></pre>
+<blockquote>
+<p>⚠️ <strong>上面这段 gdb 输出是「格式示意」，不是实测。</strong> 要跑出它需要三样本环境都没有的
+东西：gdb、真实的 core 文件、以及 <code class="c">ulimit -c</code> 的权限。这里保留它是为了讲
+「栈顶为什么是 <code class="c">__libc_write</code>」这个<strong>因果链</strong>（越界写坏 rbp → 函数返回时跳错 →
+在某个系统调用里被 SIGSEGV 抓住），这个推理是可靠的；但地址、行号都是占位的。</p>
+<p>本环境<strong>能</strong>实测的替代证据在上面的「实测」小节（139/134 两个退出码 +
+<code class="c">stack smashing detected</code>），以及在 <a href="#intro"><code class="c">code/README.md</code></a> 里的
+九种跑法汇总。<strong>看到 gdb/valgrind/perf 的输出时，先问一句「这台机器上是谁跑出来的」</strong>——
+未实测的输出长得再像也不该当依据。</p>
+</blockquote>
 <p><strong>崩溃点在 <code class="c">feed_thread</code> 里</strong>——但注意栈顶是 <code class="c">__libc_write</code>，说明崩溃发生时线程正在执行系统调用（<code class="c">usleep</code> 内部的 write）。这不是巧合：</p>
 <pre class="code" data-label="shell"><code class="c">(gdb) info locals
 # o = 0x... (order_t *)
@@ -597,6 +945,9 @@ ls -l core*                   # 确认 core 文件存在
 (gdb) print o-&gt;id
 # $1 = 200
 </code></pre>
+<p>（同样是<strong>示意</strong>——除了 gdb 不可用，这里的 <code class="c">slots[200]</code> 越界量也随手算了：
+<code class="c">200 - 16 + 1 = 185</code> 个 int，不是 184。<strong>这类「顺手一算」最容易出错，
+看到数字先自己验一遍</strong>。）</p>
 <p>定位结论：<strong><code class="c">o-&gt;id</code> 没有边界检查，直接当 <code class="c">slots[16]</code> 的下标，id=200 时越界写，写坏了栈帧</strong>。这与 2.6 讲的「越界写坏相邻数据」是同一类根因——只是这次坏的是栈帧而不是堆上的相邻对象。</p>
 <h2>第五步：修复</h2>
 <pre class="code" data-label="C"><code class="c">#ifdef BUG_CRASH
@@ -659,6 +1010,39 @@ gdb ./matching_engine core
 <p><strong>Q5:</strong> 这个 bug 的正确修法是什么？体现什么工程原则？</p>
 <blockquote>
 <p>修法是加边界检查：<code class="c">if (o-&gt;id &gt;= 0 &amp;&amp; o-&gt;id &lt; 16)</code> 再下标访问。体现的工程原则：<strong>外部输入（订单 id）必须校验后才能当数组下标/索引</strong>。订单 id 来自「外部」，范围不可信，信任它就会越界。这在 HFT 里是下单路径的基本纪律——任何从行情/网络来的值，先校验再使用。</p>
+</blockquote>
+<p><strong>Q6:</strong> 同一个越界写，SIGSEGV、栈金丝雀、ASan 报出来的是同一次写吗？</p>
+<blockquote>
+<p>不是，这正是本节「犯罪现场 / 命案现场」的现实版本。实测三种退出码：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译</th>
+<th>退出码</th>
+<th>抓到的是哪一次</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无栈保护</td>
+<td>139（SIGSEGV）</td>
+<td>破坏最终生效的那一次（可能是 id=200 或之后）</td>
+</tr>
+<tr>
+<td><code class="c">-fstack-protector-all</code></td>
+<td>134（SIGABRT）</td>
+<td>函数返回时发现金丝雀被改 —— 仍不是第一次写</td>
+</tr>
+<tr>
+<td><code class="c">-fsanitize=address</code></td>
+<td>1</td>
+<td><strong>第一次</strong>越界：<code class="c">offset 128</code> 即 <code class="c">slots[16]</code>，也就是 <code class="c">id=16</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>ASan 因为每次写都查影子内存，所以能在<strong>第一次动手</strong>时就报；SIGSEGV 和
+金丝雀都是「破坏已经发生了，等某处用到才发现」。所以<strong>开发期优先 ASan</strong>
+（它给你犯罪现场），线上没有源码时靠 core + 金丝雀（给你命案现场）——互补，不是二选一。</p>
 </blockquote>
 </details>
 <h2>交叉引用</h2>
@@ -753,6 +1137,80 @@ TSan 运行：在【每次】内存访问时检查 happens-before
 (gdb) info threads            # 列出所有线程
 </code></pre>
 <p>但 gdb 只能「停下来看现场」，<strong>无法自动判定竞争</strong>（它不知道两个访问之间有没有同步）。所以竞态排查 TSan 是首选，gdb 只是备选/补充。</p>
+<h2>动手：<code class="c">-DBUG_RACE</code> 的真实 TSan 报告（实测）</h2>
+<p>上面第二步、第三步讲的是「怎么读报告」。这里给出这个变体<strong>真正跑出来的报告</strong>。</p>
+<pre class="code" data-label="shell"><code class="c">cc -g -O1 -pthread -fsanitize=thread -DBUG_RACE -o c7_1_race code/c7_1_trader.c
+./c7_1_race
+</code></pre>
+<p>实测（clang 18.1.0）：</p>
+<pre class="code" data-label="text"><code class="c">变体： RACE
+
+total matched qty = 80200   （期望 40100）
+订单计数：malloc 200 个，free 200 个，仍存活 0 个（每个 32 字节，约 0 字节）
+（退出码 66）
+</code></pre>
+<p><strong>结果是 <code class="c">80200 = 2 × 40100</code></strong> —— feed 和 match <strong>各自</strong>把全部订单加了一遍。
+注意这个变体的后果是「<strong>稳定</strong>多算一倍」，不是「偶尔差一点」；
+真正难抓的是 4.3 里 <code class="c">c4_1</code> 那种<strong>丢更新</strong>（结果只差万分之几）。TSan 对两种都当场报出。</p>
+<p>TSan 一共报了 <strong>3 条</strong>，逐条读：</p>
+<h3>第 1 条：<code class="c">g_total</code> 本身（本节的主案件）</h3>
+<pre class="code" data-label="text"><code class="c">  Write of size 8 at 0x5555569dc6b0 by thread T2 (mutexes: write M0):
+    #0 match_thread /app/example.c:216:21          ← g_total += o-&gt;qty
+
+  Previous write of size 8 at 0x5555569dc6b0 by thread T1:
+    #0 feed_thread /app/example.c:191:17           ← g_total += o-&gt;qty
+
+  Location is global 'g_total' of size 8 at 0x5555569dc6b0
+SUMMARY: ThreadSanitizer: data race /app/example.c:216:21 in match_thread
+</code></pre>
+<p>两个线程在同一语义上写同一个全局变量，<strong>都没拿 <code class="c">g_stat_lock</code></strong>。
+注意 TSan 特意写了 <code class="c">(mutexes: write M0)</code> —— match 这时<strong>拿着</strong> <code class="c">g_book_lock</code>。
+但 <code class="c">g_book_lock</code> 保护的是订单簿，不是统计量。<strong>拿错锁 = 没拿锁</strong>，
+这份报告把这件事说得比任何文字都清楚。</p>
+<h3>第 2 条：一条被「连坐」出来的 use-after-free</h3>
+<pre class="code" data-label="text"><code class="c">  Write of size 8 at 0x720800001030 by thread T2 (mutexes: write M0):
+    #0 free ... tsan_interceptors_posix.cpp:724:3
+    #1 match_thread /app/example.c:227:13          ← free(o)
+
+  Previous read of size 8 at 0x720800001030 by thread T1:
+    #0 feed_thread /app/example.c:191:23           ← 读 o-&gt;qty
+SUMMARY: ThreadSanitizer: data race /app/example.c:227:13 in match_thread
+</code></pre>
+<p><strong>这是真实的 use-after-free，而且是被 <code class="c">-DBUG_RACE</code> 顺带引入的。</strong>
+雷点的本意是「feed 无锁写 <code class="c">g_total</code>」，但那一行写在
+<code class="c">pthread_mutex_unlock(&amp;g_book_lock)</code> <strong>之后</strong>，于是 feed 读 <code class="c">o-&gt;qty</code> 的那一刻，
+这个订单可能已经被 match 撮合掉并 <code class="c">free</code> 了。</p>
+<blockquote>
+<p><strong>教训：破坏点放错位置会连坐出第二个 bug。</strong>
+真实代码审查里，「这一行到底在锁内还是锁外」就是靠这类报告揪出来的。
+这也解释了为什么本节的报告有 3 条而不是 1 条 —— <strong>一个根因可以长出多个症状</strong>。</p>
+</blockquote>
+<h3>第 3 条：骨架本身自带的（不是在 7.3 引入的）</h3>
+<pre class="code" data-label="text"><code class="c">  Read of size 4 at 0x555555670b78 by thread T2 (mutexes: write M0):
+    #0 match_thread /app/example.c:211:28
+  Previous write of size 4 at 0x555555670b78 by thread T1:
+    #0 feed_thread /app/example.c:197:5            ← g_running = 0
+SUMMARY: ThreadSanitizer: data race /app/example.c:211:28 in match_thread
+</code></pre>
+<p><strong><code class="c">g_running</code> 这条竞争，把 <code class="c">-DBUG_RACE</code> 去掉、跑基线代码也一样会报</strong>（见 7.1 的
+「⚠️ 正确版本其实是有 bug 的」）。原因是 <code class="c">volatile int g_running</code> 不是同步原语，
+而 feed 写它时一把锁都没拿。</p>
+<p><strong>所以「TSan 报了几条」≠「有几个 bug」。</strong> 读报告要先做分类：
+哪几条指向同一个根因、哪几条是骨架自带的、哪几条是本次改动引入的。
+本变体 3 条对应 2 个根因（<code class="c">g_total</code> 无保护 / <code class="c">g_running</code> 无保护），
+外加 1 条被位置放错连坐出来的 UAF。</p>
+<h3>修法验证：<code class="c">-DFIX_RUNNING</code> 让 TSan 静默</h3>
+<pre class="code" data-label="shell"><code class="c">cc -g -O1 -pthread -fsanitize=thread -DFIX_RUNNING -o c7_1_fixed code/c7_1_trader.c
+./c7_1_fixed          # → total = 40100，stderr 全空，退出码 0
+</code></pre>
+<p><strong>「修好了」的判据不是「结果对了」，是「TSan 不报了」。</strong> 这两件事在 7.1 里
+已经被实测分开了 —— 基线结果一直是对的，竞争一直在。</p>
+<h3>本环境的一个硬限制：TSan 必须用 clang</h3>
+<pre class="code" data-label="text"><code class="c">[gcc 13.3.0 + -fsanitize=thread]
+FATAL: ThreadSanitizer: unexpected memory mapping 0x7913d9072000-0x7913d9500000
+（退出码 66，但程序一行都没执行）
+</code></pre>
+<p>同上：换 clang 就正常。看到 <code class="c">unexpected memory mapping</code> 不要怀疑自己的代码。</p>
 <h2>HFT 关联</h2>
 <ol>
 <li><strong>偶发错单的头号嫌疑</strong>：下单结果偶发不对，先怀疑共享订单状态/统计量的竞态，而不是撮合算法逻辑错。TSan 能一次性把所有竞争点列出来。</li>
@@ -835,6 +1293,14 @@ gcc -g -O1 -fsanitize=thread -pthread -o engine_tsan matching_engine.c ...
 ==12345== LEAK SUMMARY:
 ==12345==    definitely lost: 8,000 bytes in 200 blocks
 </code></pre>
+<blockquote>
+<p>⚠️ <strong>上面这段是「格式示意」，而且里面有一个可验证的错误</strong>：<code class="c">8,000 bytes in 200 blocks</code>
+意味着每个 block 40 字节，但 <code class="c">sizeof(order_t)</code> 实测是 <strong>32 字节</strong>
+（<code class="c">int id</code> + <code class="c">double price</code> + <code class="c">long qty</code> + 指针，含对齐填充 = 32）。
+200 × 32 = <strong>6400</strong>，不是 8000。下面「动手」一节给的是<strong>实测数字</strong>。
+「顺手编一个看起来合理的字节数」正是这类示意输出的典型问题——
+<strong>它自洽不了，也经不起一次乘法验算。</strong></p>
+</blockquote>
 <p>解读（3.1 讲过的四步）：</p>
 <ol>
 <li><strong>HEAP SUMMARY</strong>：<code class="c">200 allocs, 0 frees</code> —— <strong>分配了 200 次，一次都没 free</strong>，铁证如山。</li>
@@ -901,6 +1367,91 @@ SUMMARY: AddressSanitizer: 8000 byte(s) leaked in 200 allocation(s).
   → 重启后又从头泄漏 → 周期性崩溃
 </code></pre>
 <p><strong>关键</strong>：短命进程里「结果正确」的泄漏测试会漏掉 bug，因为进程退出就没事了。长跑进程必须专门做<strong>泄漏检测</strong>（valgrind/ASan + 长时间压测），否则上线后才暴露。</p>
+<h2>动手：本环境跑不了 valgrind，用 LSan 拿真实数字（实测）</h2>
+<p>valgrind 在本环境不可用（没装），但 <strong>ASan 自带的 LeakSanitizer（LSan）能用</strong>，
+而且它给的是<strong>同一类报告</strong>——直接对比着看，正好能体会到「两套工具的字段怎么对应」。</p>
+<pre class="code" data-label="shell"><code class="c">cc -g -O1 -pthread -fsanitize=address -DBUG_LEAK -o c7_1_leak code/c7_1_trader.c
+./c7_1_leak
+</code></pre>
+<p>实测（gcc 13.3.0）：</p>
+<pre class="code" data-label="text"><code class="c">变体： LEAK
+--- stderr ---
+
+=================================================================
+==2==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 6400 byte(s) in 200 object(s) allocated from:
+    #0 0x7554f1d4804f in malloc (/opt/compiler-explorer/gcc-13.3.0/lib64/libasan.so.8+0xdc04f)
+    #1 0x4017b4 in feed_thread /app/example.c:160      ← malloc 那一行
+
+SUMMARY: AddressSanitizer: 6400 byte(s) leaked in 200 allocation(s).
+（退出码 1）
+</code></pre>
+<p><strong>对照字段</strong>（这是本节最实用的一张表）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>valgrind 的字段</th>
+<th>LSan 的对应</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">definitely lost</code></td>
+<td><code class="c">Direct leak</code></td>
+<td>没有任何<strong>根</strong>（全局/栈/寄存器）指着它 —— 彻底失联</td>
+</tr>
+<tr>
+<td><code class="c">indirectly lost</code></td>
+<td><code class="c">Indirect leak</code></td>
+<td>只有别的泄漏块指着它</td>
+</tr>
+<tr>
+<td><code class="c">still reachable</code></td>
+<td>（LSan 默认不报）</td>
+<td>还被根指着，通常不算 bug</td>
+</tr>
+<tr>
+<td><code class="c">HEAP SUMMARY: N allocs, 0 frees</code></td>
+<td><code class="c">SUMMARY: … leaked in 200 allocation(s)</code></td>
+<td>总量账</td>
+</tr>
+<tr>
+<td>分配栈 <code class="c">by feed_thread trader.c:20</code></td>
+<td><code class="c">#1 feed_thread /app/example.c:160</code></td>
+<td><strong>在哪分配的</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>三个实测细节：</p>
+<ol>
+<li><strong><code class="c">6400 = 200 × 32</code></strong> —— 和上面那张「示意」里的 <code class="c">8,000</code> 一比就知道示意错了
+   （示意隐含每块 40 字节，而 <code class="c">sizeof(order_t)</code> 实测 32）。程序自己数的
+   <code class="c">malloc 200 / free 0</code> 也完全对上。<strong>所以没有 valgrind 时，
+   「自己数分配次数 + 打印 <code class="c">sizeof</code>」是一个可用的降级手段</strong> ——
+   代价是拿不到调用栈，定位不到「哪一行漏的」。</li>
+<li><strong>Direct / Indirect 是「退出那一刻还有没有指针指进这条链」，会随代码写法变。</strong>
+   本次实测是 <code class="c">Direct leak … 200 object(s)</code>（一个 Indirect 都没有）；上一版
+   match 循环里保留了一个局部指针，跑出来是 <code class="c">6368 Direct(199) + 32 Indirect(1)</code>。
+   <strong>两种都对，差别只在退出瞬间的指针残留</strong>，不要把它当成性能或正确性指标。
+   真正要看的账是总量：<strong>6400 字节 / 200 块，和 <code class="c">malloc 200 / free 0</code> 对得上</strong>，
+   这就够了。</li>
+<li><strong>报告里的 <code class="c">#1 feed_thread /app/example.c:160</code> 就是 <code class="c">malloc</code> 那一行</strong>，
+   直接指到案发现场 —— 和 valgrind 的分配栈是同一个作用。</li>
+</ol>
+<h3>这个变体最值得注意的一点：<strong>「结果对不对」发现不了它</strong></h3>
+<pre class="code" data-label="text"><code class="c">total matched qty = 40100   （期望 40100）    ← 撮合逻辑完全正确
+</code></pre>
+<p><code class="c">g_total</code> 一点没错，程序也不崩不卡，退出码却是 1 —— 那个 1 完全来自 LSan。
+<strong>如果没开 sanitizer，这个 bug 的唯一表现是「内存曲线一直往上爬」</strong>，
+跑几分钟到几小时才 OOM。这就是下面「慢泄漏是长跑进程的头号杀手」的字面解释。</p>
+<blockquote>
+<p>⚠️ 而且 stdout 又只剩两行：LSan 在退出前 <code class="c">_exit</code>，<strong>stdio 缓冲区里的
+<code class="c">total matched qty = 40100</code> 直接丢了</strong>。同一个「stdout 全缓冲」坑，
+这是本仓库里第<strong>四</strong>次出现（<code class="c">c1_2</code>、<code class="c">c7_1</code> 崩溃变体、<code class="c">c7_1</code> 卡住变体、这里）。
+<strong>看到 sanitizer 报了错但程序输出"没有"，先怀疑缓冲区，不要怀疑逻辑。</strong></p>
+</blockquote>
 <h2>HFT 关联</h2>
 <ol>
 <li><strong>7×24 进程最怕慢泄漏</strong>：撮合引擎、行情网关「永不重启」，慢泄漏累积几周后 OOM。开发期用 valgrind 钉死分配点，比上线后盯 RSS 曲线猜强百倍。</li>
@@ -973,6 +1524,12 @@ strace -p $PID -f
 [pid 12346] futex(0x404080, FUTEX_WAIT_PRIVATE, 2, NULL &lt;unfinished ...&gt;
 [pid 12345] futex(0x404080, FUTEX_WAIT_PRIVATE, 2, NULL &lt;unfinished ...&gt;
 </code></pre>
+<blockquote>
+<p>⚠️ <strong>上面这段是「格式示意」，不是实测</strong> —— 本环境的 strace 是 Windows 版二进制，
+用不了（详见 5.1 的边界说明）。它想表达的因果是可靠的：<strong>两个线程都停在
+<code class="c">futex(...FUTEX_WAIT...)</code></strong>；但具体的 PID、地址、<code class="c">2</code> 这个值都是占位的。
+真正可实测的等价证据在下面「动手」一节（用进程内看门狗拿同一结论）。</p>
+</blockquote>
 <p>两个线程（<code class="c">12345</code> 主线程、<code class="c">12346</code> feed 线程）都卡在 <strong><code class="c">futex(...FUTEX_WAIT_PRIVATE...)</code></strong> 上。</p>
 <blockquote>
 <p><code class="c">futex</code> 是 Linux 用户态锁（mutex）的底层实现：<code class="c">FUTEX_WAIT</code> = 线程在<strong>等一把锁</strong>。两个线程都等锁 → 卡死，且是「等锁」而非「等 IO」。</p>
@@ -1079,6 +1636,109 @@ pthread_mutex_init(&amp;g_book_lock, &amp;attr);
 </tbody>
 </table></div>
 <p><strong>标准流程</strong>：先 strace 定性「等锁还是等 IO」→ 若是等锁，gdb 深入看「谁持锁谁等锁」→ 定位死锁/忘解锁。两者接力，不是二选一。</p>
+<h2>动手：没有 strace，用进程内看门狗拿到同一结论（实测）</h2>
+<p>本节全篇依赖 strace——而 strace 要 attach 一个<strong>已经在卡死的</strong>进程，
+这件事本身有个前提：<strong>你得先知道它卡了</strong>。生产环境里更常见的情况是
+「服务半天没响应，运维才反应过来」。</p>
+<p><code class="c">code/c7_1_trader.c</code> 里加了另一种做法：<strong>让进程自己报警</strong>。
+<code class="c">main</code> 里 <code class="c">alarm(3)</code>，超过 3 秒没结束就由 SIGALRM 处理函数打印现场并 <code class="c">_exit(4)</code>。</p>
+<pre class="code" data-label="shell"><code class="c">cc -g -O0 -pthread -Wall -Wextra -DBUG_HANG -o c7_1_hang code/c7_1_trader.c
+./c7_1_hang
+</code></pre>
+<p>实测（gcc 13.3.0）：</p>
+<pre class="code" data-label="text"><code class="c">变体： HANG
+--- stderr ---
+
+[看门狗] alarm 已经 3 秒 —— 进程没结束，判定卡住。
+  feed  线程：进度 0/200（★仍在跑★）
+  match 线程：进度 0（★仍在跑★）
+  g_book_lock: EBUSY —— 锁被持有，但两个线程都不再推进
+               → 持有者自己在等自己，自死锁实锤
+  （7.5 里 strace 会给同一件事的另一种视角：所有线程都停在 futex 上等锁）
+  → 看门狗 _exit(4)（不是崩溃，是有人主动判定它死了）
+（退出码 4）
+</code></pre>
+<p>看门狗做了三件事，<strong>每一件都能对应到 strace / gdb 的一个观察点</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>看门狗输出</th>
+<th>strace / gdb 的等价视角</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">feed 进度 0/200</code>、<code class="c">match 进度 0</code></td>
+<td><strong>没有新 syscall 输出</strong> —— 程序不再往前走了（对比「慢」：慢的程序还在持续出 syscall）</td>
+</tr>
+<tr>
+<td><code class="c">g_book_lock: EBUSY</code></td>
+<td><code class="c">futex(0x…, FUTEX_WAIT_PRIVATE, …)</code> —— 所有人都在等同一把锁</td>
+</tr>
+<tr>
+<td><code class="c">feed 和 match 都卡住</code></td>
+<td><code class="c">thread apply all bt</code> 两个线程栈顶都是 <code class="c">pthread_mutex_lock</code> / <code class="c">__lll_lock_wait_private</code></td>
+</tr>
+<tr>
+<td><code class="c">_exit(4)</code></td>
+<td>——（strace 看不到这个：它是主动退出，不是被信号打死）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>关键设计：心跳只在「真正推进」时才 +1</h3>
+<p>这是这份 demo 里最值得抄走的一个技巧。源码里 <code class="c">feed</code> 有两条计数：</p>
+<pre class="code" data-label="C"><code class="c">g_feed_progress = i;      /* 每轮循环都更新 —— 它一直在涨，哪怕线程什么也没干成 */
+</code></pre>
+<p>而看门狗判定用的是<strong>另一个</strong>东西——只有真正拿到两把锁才 +1 的心跳
+（<code class="c">c4_2_deadlock.c</code> 里是 <code class="c">g_hb</code>，这里是「进度」）。区别在于：</p>
+<ul>
+<li>如果心跳<strong>每轮循环都 +1</strong>，那么卡在 <code class="c">mutex_lock</code> 里的线程心跳也会停，
+  但一个<strong>空转</strong>的线程心跳会一直涨 —— <strong>你分不清「卡死」和「低效」</strong>。</li>
+<li>只有「真正完成了一轮工作才 +1」，心跳不动才等于<strong>没有进展</strong>。</li>
+</ul>
+<p><strong>「心跳不涨」是区分死锁与慢的硬指标</strong>，而这个指标必须靠「只在完成时打点」来保证。
+很多线上服务的健康检查栽在这一条上：心跳用的是「循环计数器」而不是「完成计数器」，
+于是卡死的进程照样在涨心跳。</p>
+<h3>对照：<code class="c">_exit(4)</code> 和「被信号打死」完全不同</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>退出码</th>
+<th>谁决定的</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>139 / 134 / 136</td>
+<td>内核（信号）</td>
+<td>进程被 SIGSEGV / SIGABRT / SIGFPE 打死 —— <strong>意外</strong></td>
+</tr>
+<tr>
+<td><strong>4</strong></td>
+<td><strong>看门狗代码</strong></td>
+<td>有人主动判定「它死了」并退出 —— <strong>判断</strong></td>
+</tr>
+<tr>
+<td>66</td>
+<td>TSan 运行时</td>
+<td>检测到数据竞争后主动退出</td>
+</tr>
+<tr>
+<td>1</td>
+<td>ASan/LSan 运行时</td>
+<td>检测到内存错误后主动退出</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>退出码本身就是一条线索</strong>：拿到一个非 0 的退出码，先问「这个数字是谁给的」。
+内核给的和程序自己给的含义完全不同——前者是「出事了」，后者是「我发现了事」。</p>
+<h3>这个看门狗和 strace 的关系：不是替代，是互补</h3>
+<ul>
+<li><strong>看门狗</strong>：常驻、无人值守、自动报警。适合「服务卡了但没人盯着」。</li>
+<li><strong>strace</strong>：事后启动、信息全（能看到具体在等哪个地址、哪个 fd）。适合「已经知道卡了，去查到底卡在哪」。</li>
+</ul>
+<p>现实做法是两者都上：<strong>看门狗负责发现，strace/gdb 负责取证</strong>。</p>
 <h2>HFT 关联</h2>
 <ol>
 <li><strong>「卡死」是交易系统的致命故障</strong>：撮合引擎卡住 = 停止成交 = 直接经济损失。卡住比崩溃更隐蔽（不报错、不留 core、监控可能只看到「无输出」），所以 strace attach 是「卡住现场」的第一工具。</li>

@@ -17,6 +17,103 @@ gcc -g -O0 -pthread -o trader_crash -DBUG_CRASH trader.c
 
 > 关键观察：崩溃「偶发、位置不定」。因为 `slots[o->id]` 越界写坏的是**栈上的返回地址/帧指针**，破坏程度取决于被写的值，可能当场崩、可能函数返回时崩、也可能没崩到致命处。
 
+### 实测：这个 bug 在本配置下是**稳定**复现的
+
+上面的「偶发」是越界写的**一般**特征，但这个具体变体不是偶发——它写得足够远
+（`id` 最大 200，越界 `200-15 = 185` 个 int = 740 字节），稳定会踩到金丝雀或返回地址。
+所以它反而是个理想的**教学样本**：先让你看到稳定复现的版本，再去理解为什么
+真实项目里的越界写是偶发的（见下面「为什么越界写不立即崩」和自测题 Q1）。
+
+```bash
+# 不带栈保护
+cc -g -O0 -pthread -Wall -Wextra -DBUG_CRASH -o c7_1_crash code/c7_1_trader.c
+./c7_1_crash
+```
+
+```text
+迷你下单引擎：feed 塞 200 单，match 撮合；正确基线 = 40100
+变体： CRASH
+--- stderr ---
+Program terminated with signal SIGSEGV (11)
+（退出码 139）
+```
+
+```bash
+# 带栈金丝雀
+cc -g -O0 -pthread -Wall -Wextra -fstack-protector-all -DBUG_CRASH -o c7_1_crash_sp code/c7_1_trader.c
+./c7_1_crash_sp
+```
+
+```text
+迷你下单引擎：feed 塞 200 单，match 撮合；正确基线 = 40100
+变体： CRASH
+--- stderr ---
+*** stack smashing detected ***: terminated
+Program terminated with signal SIGABRT (6)
+（退出码 134）
+```
+
+**同一个 bug，三个退出码**，这条对照极有价值：
+
+| 编译 | 谁先发现 | 退出码 | 你能拿到什么 |
+|------|----------|--------|--------------|
+| 无栈保护 | 谁也没发现，直到 ret 跳到坏地址 | **139**（128+11，SIGSEGV） | 一个崩溃现场，但破坏已发生很久 |
+| `-fstack-protector-all` | 函数返回前检查金丝雀 | **134**（128+6，SIGABRT） | **准确的死亡时刻**：函数刚要返回就报警，但仍是「命案现场」 |
+| `-fsanitize=address` | 每次写都查影子内存 | **1**（ASan 约定退出码） | **准确的犯罪现场**：抓到第 16 次循环、第 172 行那次写 |
+
+### ASan 版本实测：它抓的是「第一次」越界
+
+```bash
+cc -g -O1 -pthread -fsanitize=address -DBUG_CRASH -o c7_1_crash_asan code/c7_1_trader.c
+./c7_1_crash_asan
+```
+
+```text
+变体： CRASH
+--- stderr ---
+==2==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x789df2efe080
+WRITE of size 4 at 0x789df2efe080 thread T1
+    #0 0x4018ae in feed_thread /app/example.c:172      ← slots[o->id] = 1
+
+Address ... is located in stack of thread T1 at offset 128 in frame
+    #0 0x40164f in feed_thread /app/example.c:157
+
+  This frame has 2 object(s):
+    [32, 48) 'ts' (line 87)
+    [64, 128) 'slots' (line 171) <== Memory access at offset 128 overflows this variable
+SUMMARY: AddressSanitizer: stack-buffer-overflow /app/example.c:172 in feed_thread
+Shadow bytes around the buggy address:
+=>0x789df2efe080:[f3]f3 f3 f3 00 00 00 00 ...
+（退出码 1）
+```
+
+三个细节直接呼应本节的主题：
+
+1. **它抓的是 `offset 128`** —— `slots` 占 `[64, 128)`，所以 `offset 128` 就是
+   `slots[16]`，也就是 `o->id == 16` 时**第一次**越界。**不是 `id = 200` 那一次。**
+   ASan 给你的是**犯罪现场**（第一次动手），而 SIGSEGV / 金丝雀给你的是
+   **命案现场**（最后一次发作）。**这就是本节灵魂的那句话的实证。**
+   线索也直白：`<== Memory access at offset 128 overflows this variable`。
+2. **它连「这块栈上是哪个变量、从哪一行来的」都报出来了**：
+   `[64, 128) 'slots' (line 171)` —— 变量名 + 声明行号。gdb 要 `info locals` 才勉强
+   做到，而 ASan 是在**写入的当场**说的。
+3. **影子内存那一行 `[f3]`** 是栈右红区的编码（见 3.2 的影子内存表）：
+   `f3` = stack right redzone。**为什么是 `f3` 不是 `f1`** —— 因为越界写在数组**之后**
+   （高地址方向），落在右侧红区；`f1` 是数组之前（左侧）的红区。
+
+**顺序建议**：开发期跑 ASan（准、快、给犯罪现场）；没有源码的环境跑
+`-fstack-protector-all` 或拿 core（给命案现场 + 全局状态）。两者互补，不是二选一。
+
+**金丝雀的价值在于「把犯罪和命案的间隔压到最短」**——从「不确定多久之后」
+压缩到「一次函数返回」。这就是为什么调试构建值得开 `-fstack-protector-all`
+（代价是略慢，收益是让你少熬几个通宵）。
+
+> ⚠️ 还要注意三种情况下 stdout **都只剩两行**：`total matched qty` 和订单计数全没了。
+> 这就是 Ch5 讲的「**stdout 全缓冲 + 进程被信号杀死 = 缓冲区内容全丢**」
+> ——开头两行能活下来，是因为源码里紧跟其后调了一次 `fflush(stdout)`。
+> 这是本仓库里这个现象的**第三次**现身（前两次：`c1_2_shrink_demo.c`、
+> `c7_1` 的泄漏变体）。**崩溃现场调试时，输出丢了往往不是程序没跑到，是没刷缓冲。**
+
 ## 第二步：开 core dump
 
 崩溃要有 core 文件才能事后回溯（Ch2 四道闸排查过）：
@@ -46,6 +143,16 @@ gdb ./trader_crash core
 #7  0x00007f8a3c4dabcd in clone (...) at ...
 ```
 
+> ⚠️ **上面这段 gdb 输出是「格式示意」，不是实测。** 要跑出它需要三样本环境都没有的
+> 东西：gdb、真实的 core 文件、以及 `ulimit -c` 的权限。这里保留它是为了讲
+> 「栈顶为什么是 `__libc_write`」这个**因果链**（越界写坏 rbp → 函数返回时跳错 →
+> 在某个系统调用里被 SIGSEGV 抓住），这个推理是可靠的；但地址、行号都是占位的。
+>
+> 本环境**能**实测的替代证据在上面的「实测」小节（139/134 两个退出码 +
+> `stack smashing detected`），以及在 [`code/README.md`](../code/README.md) 里的
+> 九种跑法汇总。**看到 gdb/valgrind/perf 的输出时，先问一句「这台机器上是谁跑出来的」**——
+> 未实测的输出长得再像也不该当依据。
+
 **崩溃点在 `feed_thread` 里**——但注意栈顶是 `__libc_write`，说明崩溃发生时线程正在执行系统调用（`usleep` 内部的 write）。这不是巧合：
 
 ```bash
@@ -72,6 +179,10 @@ coredump 给的是**崩溃现场**（`feed_thread` 里 rbp 坏了），但**犯�
 (gdb) print o->id
 # $1 = 200
 ```
+
+（同样是**示意**——除了 gdb 不可用，这里的 `slots[200]` 越界量也随手算了：
+`200 - 16 + 1 = 185` 个 int，不是 184。**这类「顺手一算」最容易出错，
+看到数字先自己验一遍**。）
 
 定位结论：**`o->id` 没有边界检查，直接当 `slots[16]` 的下标，id=200 时越界写，写坏了栈帧**。这与 2.6 讲的「越界写坏相邻数据」是同一类根因——只是这次坏的是栈帧而不是堆上的相邻对象。
 
@@ -148,6 +259,20 @@ gdb ./matching_engine core
 **Q5:** 这个 bug 的正确修法是什么？体现什么工程原则？
 
 > 修法是加边界检查：`if (o->id >= 0 && o->id < 16)` 再下标访问。体现的工程原则：**外部输入（订单 id）必须校验后才能当数组下标/索引**。订单 id 来自「外部」，范围不可信，信任它就会越界。这在 HFT 里是下单路径的基本纪律——任何从行情/网络来的值，先校验再使用。
+
+**Q6:** 同一个越界写，SIGSEGV、栈金丝雀、ASan 报出来的是同一次写吗？
+
+> 不是，这正是本节「犯罪现场 / 命案现场」的现实版本。实测三种退出码：
+>
+> | 编译 | 退出码 | 抓到的是哪一次 |
+> |------|--------|----------------|
+> | 无栈保护 | 139（SIGSEGV） | 破坏最终生效的那一次（可能是 id=200 或之后） |
+> | `-fstack-protector-all` | 134（SIGABRT） | 函数返回时发现金丝雀被改 —— 仍不是第一次写 |
+> | `-fsanitize=address` | 1 | **第一次**越界：`offset 128` 即 `slots[16]`，也就是 `id=16` |
+>
+> ASan 因为每次写都查影子内存，所以能在**第一次动手**时就报；SIGSEGV 和
+> 金丝雀都是「破坏已经发生了，等某处用到才发现」。所以**开发期优先 ASan**
+> （它给你犯罪现场），线上没有源码时靠 core + 金丝雀（给你命案现场）——互补，不是二选一。
 
 </details>
 

@@ -44,6 +44,13 @@ valgrind --leak-check=full --show-leak-kinds=all ./trader_leak
 ==12345==    definitely lost: 8,000 bytes in 200 blocks
 ```
 
+> ⚠️ **上面这段是「格式示意」，而且里面有一个可验证的错误**：`8,000 bytes in 200 blocks`
+> 意味着每个 block 40 字节，但 `sizeof(order_t)` 实测是 **32 字节**
+> （`int id` + `double price` + `long qty` + 指针，含对齐填充 = 32）。
+> 200 × 32 = **6400**，不是 8000。下面「动手」一节给的是**实测数字**。
+> 「顺手编一个看起来合理的字节数」正是这类示意输出的典型问题——
+> **它自洽不了，也经不起一次乘法验算。**
+
 解读（3.1 讲过的四步）：
 
 1. **HEAP SUMMARY**：`200 allocs, 0 frees` —— **分配了 200 次，一次都没 free**，铁证如山。
@@ -130,6 +137,74 @@ SUMMARY: AddressSanitizer: 8000 byte(s) leaked in 200 allocation(s).
 ```
 
 **关键**：短命进程里「结果正确」的泄漏测试会漏掉 bug，因为进程退出就没事了。长跑进程必须专门做**泄漏检测**（valgrind/ASan + 长时间压测），否则上线后才暴露。
+
+## 动手：本环境跑不了 valgrind，用 LSan 拿真实数字（实测）
+
+valgrind 在本环境不可用（没装），但 **ASan 自带的 LeakSanitizer（LSan）能用**，
+而且它给的是**同一类报告**——直接对比着看，正好能体会到「两套工具的字段怎么对应」。
+
+```bash
+cc -g -O1 -pthread -fsanitize=address -DBUG_LEAK -o c7_1_leak code/c7_1_trader.c
+./c7_1_leak
+```
+
+实测（gcc 13.3.0）：
+
+```text
+变体： LEAK
+--- stderr ---
+
+=================================================================
+==2==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 6400 byte(s) in 200 object(s) allocated from:
+    #0 0x7554f1d4804f in malloc (/opt/compiler-explorer/gcc-13.3.0/lib64/libasan.so.8+0xdc04f)
+    #1 0x4017b4 in feed_thread /app/example.c:160      ← malloc 那一行
+
+SUMMARY: AddressSanitizer: 6400 byte(s) leaked in 200 allocation(s).
+（退出码 1）
+```
+
+**对照字段**（这是本节最实用的一张表）：
+
+| valgrind 的字段 | LSan 的对应 | 含义 |
+|-----------------|-------------|------|
+| `definitely lost` | `Direct leak` | 没有任何**根**（全局/栈/寄存器）指着它 —— 彻底失联 |
+| `indirectly lost` | `Indirect leak` | 只有别的泄漏块指着它 |
+| `still reachable` | （LSan 默认不报） | 还被根指着，通常不算 bug |
+| `HEAP SUMMARY: N allocs, 0 frees` | `SUMMARY: … leaked in 200 allocation(s)` | 总量账 |
+| 分配栈 `by feed_thread trader.c:20` | `#1 feed_thread /app/example.c:160` | **在哪分配的** |
+
+三个实测细节：
+
+1. **`6400 = 200 × 32`** —— 和上面那张「示意」里的 `8,000` 一比就知道示意错了
+   （示意隐含每块 40 字节，而 `sizeof(order_t)` 实测 32）。程序自己数的
+   `malloc 200 / free 0` 也完全对上。**所以没有 valgrind 时，
+   「自己数分配次数 + 打印 `sizeof`」是一个可用的降级手段** ——
+   代价是拿不到调用栈，定位不到「哪一行漏的」。
+2. **Direct / Indirect 是「退出那一刻还有没有指针指进这条链」，会随代码写法变。**
+   本次实测是 `Direct leak … 200 object(s)`（一个 Indirect 都没有）；上一版
+   match 循环里保留了一个局部指针，跑出来是 `6368 Direct(199) + 32 Indirect(1)`。
+   **两种都对，差别只在退出瞬间的指针残留**，不要把它当成性能或正确性指标。
+   真正要看的账是总量：**6400 字节 / 200 块，和 `malloc 200 / free 0` 对得上**，
+   这就够了。
+3. **报告里的 `#1 feed_thread /app/example.c:160` 就是 `malloc` 那一行**，
+   直接指到案发现场 —— 和 valgrind 的分配栈是同一个作用。
+
+### 这个变体最值得注意的一点：**「结果对不对」发现不了它**
+
+```text
+total matched qty = 40100   （期望 40100）    ← 撮合逻辑完全正确
+```
+
+`g_total` 一点没错，程序也不崩不卡，退出码却是 1 —— 那个 1 完全来自 LSan。
+**如果没开 sanitizer，这个 bug 的唯一表现是「内存曲线一直往上爬」**，
+跑几分钟到几小时才 OOM。这就是下面「慢泄漏是长跑进程的头号杀手」的字面解释。
+
+> ⚠️ 而且 stdout 又只剩两行：LSan 在退出前 `_exit`，**stdio 缓冲区里的
+> `total matched qty = 40100` 直接丢了**。同一个「stdout 全缓冲」坑，
+> 这是本仓库里第**四**次出现（`c1_2`、`c7_1` 崩溃变体、`c7_1` 卡住变体、这里）。
+> **看到 sanitizer 报了错但程序输出"没有"，先怀疑缓冲区，不要怀疑逻辑。**
 
 ## HFT 关联
 

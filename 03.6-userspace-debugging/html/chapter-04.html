@@ -314,6 +314,33 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <p><strong>这一章解决什么症状</strong>：结果偶尔出错、偶发死锁、崩溃点漂移不定——多线程程序的「竞态」类问题。并发 bug 是调试里最难的一类：它依赖线程调度时序，往往<strong>偶发、难复现、位置漂移</strong>。</p>
 <p>本章三个工具各管一段：gdb 多线程调试（4.1）<strong>停下来看全线程现场</strong>、定位死锁；TSan/Helgrind（4.3）在开发期<strong>全量检测数据竞争</strong>；rr 可逆调试（4.2）<strong>录像回放</strong>复现偶发竞态。</p>
 <hr />
+<h2>可跑的 demo（<code class="c">code/</code>）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>演示什么</th>
+<th>一句话看点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">code/c4_1_data_race.c</code></td>
+<td>同一件事的四种写法：裸自增 / 互斥锁 / C11 原子 / 每线程私有</td>
+<td>裸自增静默丢掉 <strong>50%</strong> 的更新，退出码仍是 <strong>0</strong>；TSan 报错那次结果反而是对的</td>
+</tr>
+<tr>
+<td><code class="c">code/c4_2_deadlock.c</code></td>
+<td>确定性 AB-BA 死锁 + 进程内看门狗自证</td>
+<td>看门狗用 <code class="c">pthread_mutex_timedlock</code> 证明「两把锁都被持有 + 没人推进」</td>
+</tr>
+</tbody>
+</table></div>
+<p>这两个程序都<strong>不依赖 gdb</strong>，因为它们回答的是同一个问题的两个侧面：4.1 教的
+<code class="c">thread apply all bt</code> 到底在给你什么信息。先跑 <code class="c">./c4_2_deadlock abba</code>，
+再看 gdb 那张全线程栈表，就不是天书了。</p>
+<p>编译命令、完整实测输出与四个踩坑记录见 <a href="#intro"><code class="c">code/README.md</code></a>。</p>
+<hr />
 <h2>HFT 关联</h2>
 <ul>
 <li><strong>偶发错单的头号嫌疑是竞态</strong>：下单结果偶发不对，先怀疑多线程共享订单状态没锁好，而不是算法逻辑错（见 1.1 分类学）；</li>
@@ -508,6 +535,99 @@ lock = &amp;lock1      # ← A 在等 lock1，但它其实已经持有了 lock2
 lock = &amp;lock2      # ← B 在等 lock2，但它已经持有了 lock1
 </code></pre>
 <p>锁序相反（A: lock2→lock1，B: lock1→lock2）就是根因。修法：统一加锁顺序（都先 lock1 再 lock2），或用 <code class="c">pthread_mutex_trylock</code> + 超时回退。</p>
+<h2>动手：不装 gdb，也把「死锁」证出来（实测）</h2>
+<p>上面那些 gdb 命令都需要 gdb。这里换一条路：<strong>让程序自己报警</strong>。</p>
+<p><code class="c">code/c4_2_deadlock.c</code> 里两个线程反序加锁（A: <code class="c">lock_a</code>→<code class="c">lock_b</code>，B: <code class="c">lock_b</code>→<code class="c">lock_a</code>），
+另有一个看门狗线程，每 200ms 采样一次两个工作线程的「心跳」（<strong>只有真正拿到两把锁才 +1</strong>）
+和「当前阶段」。</p>
+<pre class="code" data-label="shell"><code class="c">cc -g -O1 -pthread -Wall -Wextra -o c4_2_deadlock code/c4_2_deadlock.c
+./c4_2_deadlock abba        # 反序加锁 → 死锁
+./c4_2_deadlock ordered     # 统一锁序 → 正常跑完
+</code></pre>
+<p>为什么这个 AB-BA 是<strong>确定性</strong>的：教科书写法跑十次有三次顺利跑完（谁先拿到第一把锁
+看调度运气）。这里加了一次握手——两个线程各自先拿到自己的第一把锁、用原子变量通报
+「我拿到了」、并<strong>等对方也通报完</strong>，才一起去抢第二把锁。于是环<strong>必然</strong>形成。</p>
+<h3><code class="c">abba</code> 模式实测输出（gcc 13.3.0）</h3>
+<pre class="code" data-label="text"><code class="c">[watchdog 第 0轮] A: hb=0     抢第二把锁(←死锁卡点) | B: hb=0     抢第二把锁(←死锁卡点)
+[watchdog 第 1轮] A: hb=0     抢第二把锁(←死锁卡点) | B: hb=0     抢第二把锁(←死锁卡点)
+[watchdog 第 2轮] A: hb=0     抢第二把锁(←死锁卡点) | B: hb=0     抢第二把锁(←死锁卡点)
+[watchdog 第 3轮] A: hb=0     抢第二把锁(←死锁卡点) | B: hb=0     抢第二把锁(←死锁卡点)
+
+=========================== 看门狗判定：死锁 ===========================
+第 1 轮采样起，连续 3 次采样两个线程心跳都不变 → 没有任何线程在推进
+
+[1] 两个线程各自停在哪（心跳 = 只有真正拿到两把锁才 +1）
+    thread-A  hb=0      阶段=抢第二把锁(←死锁卡点)
+    thread-B  hb=0      阶段=抢第二把锁(←死锁卡点)
+    ↑ 两个心跳都停在同一个数字上不动了，阶段都停在「抢第二把锁」
+
+[2] 独立取证：两把锁到底在谁手里（看门狗亲自去试）
+    pthread_mutex_timedlock(&amp;lock_a) → 被占用（timedlock 超时）
+    pthread_mutex_timedlock(&amp;lock_b) → 被占用（timedlock 超时）
+    ↑ 两把锁同时被占，且持有者毫无进展 → 环形等待成立
+
+[3] 还原锁序
+    thread-A: 拿到 lock_a → 在等 lock_b
+    thread-B: 拿到 lock_b → 在等 lock_a
+    → A: a→b，B: b→a，两个方向相反，环闭合。这就是 AB-BA 死锁。
+</code></pre>
+<p>（退出码 <strong>3</strong> —— 是看门狗主动判定后自己退的，不是崩溃。这和 139/134 那类
+「被信号打死」有本质区别：看到 3 就该想到「有人做了判断」。）</p>
+<h3>对照：同一份程序，锁序一统一就不死了</h3>
+<pre class="code" data-label="text"><code class="c">[watchdog 第 0轮] A: hb=1     持有两把锁        | B: hb=171   持有两把锁
+[watchdog 第 1轮] A: hb=171   持有两把锁        | B: hb=171   抢第一把锁
+[watchdog 第 2轮] A: hb=338   持有两把锁        | B: hb=171   抢第一把锁
+[watchdog 第 3轮] A: hb=392   抢第一把锁        | B: hb=286   持有两把锁
+[watchdog 第 4轮] A: hb=400   已完成            | B: hb=400   已完成
+
+[watchdog] 两个线程都已 ST_DONE，心跳从 0 涨到 400 —— 全程有推进，无死锁。
+</code></pre>
+<p>三件事值得记住：</p>
+<ol>
+<li><strong>「没有进展」是可测量的，不用靠感觉</strong>。心跳只在真正拿到两把锁之后 +1，
+   所以心跳不动 = 没有线程在干活。这和「慢」有本质区别：慢的程序心跳还在涨。
+   「你怎么区分死锁和慢」——这是最直接的答案。</li>
+<li><strong>看门狗那两行 <code class="c">timedlock</code> 是独立取证</strong>。<code class="c">ETIMEDOUT</code> 说明锁被别人占着；
+   两把都超时、且持有者都不动，环就闭合了。这比「我觉得它卡住了」硬得多。
+   这正是 gdb 做不到的事——gdb 要你<strong>先</strong>怀疑是死锁、<strong>再</strong>去 attach；
+   而看门狗是<strong>常驻</strong>的，卡住那一刻自己就把证据留下了。</li>
+<li><strong>第 0 轮的数字很不对称，别以为有 bug</strong>：A 才 1 格、B 已经 171 格。两个原因——
+   ①采样是<strong>时间点快照</strong>，打印 A 和打印 B 之间已经过了几微秒，不是同步事务；
+   ②glibc 的普通互斥锁<strong>不保证公平</strong>（会 barging），同一线程可以连续赢很多次。</li>
+</ol>
+<h3>gdb 那张 <code class="c">thread apply all bt</code> 表，就是这件事的「带栈版本」</h3>
+<p>本 demo 只能打印「阶段字符串」，因为 <code class="c">backtrace()</code> 拿不到<strong>别的线程</strong>的栈。
+gdb 能读到 <code class="c">.symtab</code>，所以能把同一份信息升级成函数名 + 行号：</p>
+<pre class="code" data-label="gdb"><code class="c">(gdb) thread apply all bt
+Thread 1:  #0 __lll_lock_wait_private   #1 pthread_mutex_lock
+           #2 worker (... &amp;lock_b) at c4_2_deadlock.c:&lt;② 那一行&gt;
+Thread 2:  #0 __lll_lock_wait_private   #1 pthread_mutex_lock
+           #2 worker (... &amp;lock_a) at c4_2_deadlock.c:&lt;② 那一行&gt;
+</code></pre>
+<p>两份信息一一对应：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>本 demo 看到的</th>
+<th>gdb 看到的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>阶段 = 抢第二把锁（←死锁卡点）</td>
+<td><code class="c">#2 worker (...)</code> 停在②那一行的 <code class="c">pthread_mutex_lock</code></td>
+</tr>
+<tr>
+<td>两把锁都被占（timedlock 超时）</td>
+<td>两个线程的 <code class="c">#0/#1</code> 都是 <code class="c">__lll_lock_wait_private</code> / <code class="c">pthread_mutex_lock</code></td>
+</tr>
+<tr>
+<td>心跳不涨</td>
+<td>谁的栈都不再前进</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>先把 demo 跑一遍，再去看 gdb 输出，那张表就不是天书了。</strong></p>
 <h2>HFT 关联</h2>
 <ol>
 <li><strong>崩溃/卡死第一命令 = <code class="c">thread apply all bt</code></strong>：交易进程几十个线程，一眼看出「崩的是行情线程还是下单线程」「卡住的是网络线程还是风控线程」，比逐个 <code class="c">thread N; bt</code> 高效一个量级。</li>
@@ -786,6 +906,11 @@ int main(void) {
 ./race   # 第二次
 # counter = 1999991   ← 这次丢了 9 次，每次都不一样
 </code></pre>
+<blockquote>
+<p>⚠️ <strong>上面这两行数字是「形状示意」，不是实测</strong>。它想表达的是「丢得不多、每次不一样」，
+但具体丢几次取决于机器和调度，抄这个数字没有意义。<strong>真实可跑、有实测数字的版本
+在本节末尾「动手」一节</strong>（<code class="c">code/c4_1_data_race.c</code>，实测丢 50%）。</p>
+</blockquote>
 <p><code class="c">g_counter++</code> 其实是三步：读 → 加一 → 写回。两个线程的这三步交错执行时，就会「互相覆盖」——A 读到 100，B 也读到 100，各自加一写回 101，两次自增只涨了 1。<strong>丢了更新</strong>，且丢多少取决于调度，所以偶发、难复现。</p>
 <h2>什么是数据竞争（严格定义）</h2>
 <p>数据竞争 = 同时满足三个条件：</p>
@@ -935,6 +1060,136 @@ valgrind --tool=helgrind ./race
 <blockquote>
 <p><strong>取舍</strong>：TSan 快、进 CI；Helgrind 慢但<strong>能抓潜在死锁</strong>（它分析锁的获取顺序，报「锁序不一致」这类 TSan 不报的问题），且对没有源码的二进制可用。两者互补。</p>
 </blockquote>
+<h2>动手：让 TSan 抓一次真竞争（实测）</h2>
+<p><code class="c">code/c4_1_data_race.c</code> 把「两个线程各做 N 次自增」这一件事写成四种版本，
+用命令行参数切换：</p>
+<pre class="code" data-label="shell"><code class="c">cc -g -O2 -pthread -Wall -Wextra -o c4_1 code/c4_1_data_race.c
+./c4_1 race | ./c4_1 mutex | ./c4_1 atomic | ./c4_1 local
+</code></pre>
+<p>四种写法里都插了同样多的假活（<code class="c">tiny_work()</code>），两个目的：① 让四种写法的计算量
+对等，耗时才可比；② 对 <code class="c">race</code> 模式来说，它把「读」和「写回」之间的<strong>窗口</strong>显式撑开，
+让丢失的更新稳定可见、不靠运气（下面坑 2 会讲为什么需要这样）。</p>
+<h3>实测（gcc 13.3.0，<code class="c">-g -O2 -pthread</code>，每模式 3 次取最小）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>写法</th>
+<th>实际结果（期望 200000）</th>
+<th>丢失</th>
+<th>耗时</th>
+<th>退出码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">race</code></td>
+<td><code class="c">v = g_race; …; g_race = v + 1</code> 无同步</td>
+<td><strong>100000</strong></td>
+<td><strong>100000（50.00%）</strong></td>
+<td>11.8 ms</td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td><code class="c">mutex</code></td>
+<td><code class="c">pthread_mutex_lock</code> 包住自增</td>
+<td>200000</td>
+<td>0</td>
+<td>25.5 ms</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code class="c">atomic</code></td>
+<td><code class="c">atomic_fetch_add</code></td>
+<td>200000</td>
+<td>0</td>
+<td>8.1 ms</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code class="c">local</code></td>
+<td>每线程私有累加，最后合并一次</td>
+<td>200000</td>
+<td>0</td>
+<td>8.1 ms</td>
+<td>0</td>
+</tr>
+</tbody>
+</table></div>
+<p>三条结论：</p>
+<ol>
+<li><strong><code class="c">race</code> 丢了整整一半更新，进程却「成功」了</strong> —— 退出码 0，stderr 空。
+   这正是 1.2 决策树里「结果偶尔不对」不能靠盯退出码的原因。</li>
+<li><strong>50% 是窗口撑到极限的极端值，不是常态</strong>。40 次假活让窗口宽到两个线程几乎
+   必然都读到旧值。现实里这个窗口只有 cache miss 的几十纳秒，所以真实竞态可能
+   只丢万分之几 —— 那才是它难抓的原因。把源码里 <code class="c">SPIN</code> 调小（比如 8）就能看到丢得变少。</li>
+<li><strong>锁是有代价的</strong>：<code class="c">mutex</code> 25.5 ms 对 <code class="c">atomic</code>/<code class="c">local</code> 8.1 ms，差 3 倍。
+   这就是 HFT 关联第 2、3 条说的「锁争用造成延迟毛刺」「把共享写入降到最少」。</li>
+</ol>
+<h3>TSan 编译：报告出现了，而这次结果是对的</h3>
+<pre class="code" data-label="shell"><code class="c">cc -g -O1 -fsanitize=thread -pthread -o c4_1_tsan code/c4_1_data_race.c
+./c4_1_tsan race
+</code></pre>
+<p>实测 stderr（clang 18.1.0，已去掉色码）：</p>
+<pre class="code" data-label="text"><code class="c">==================
+WARNING: ThreadSanitizer: data race (pid=2)
+  Read of size 4 at 0x5555569dd660 by thread T2:
+    #0 th_race /app/example.c (output.s+0xdce64)
+
+  Previous write of size 4 at 0x5555569dd660 by thread T1:
+    #0 th_race /app/example.c:104:16 (output.s+0xdce8a)
+
+  Location is global 'g_race' of size 4 at 0x5555569dd660 (output.s+0x1489660)
+
+  Thread T2 (tid=5, running) created by main thread at:
+    #0 pthread_create .../tsan_interceptors_posix.cpp:1022:3 (output.s+0x5f7bb)
+    #1 run_threads /app/example.c:134:9 (output.s+0xdcabf)
+    #2 main /app/example.c:150:24 (output.s+0xdcabf)
+  ...（T1 的创建点同理）
+SUMMARY: ThreadSanitizer: data race /app/example.c:104:16 in th_race
+==================
+ThreadSanitizer: reported 2 warnings
+</code></pre>
+<p>对着本节开头那张「报错示意」看，形状完全一致——冲突双方（<code class="c">Read by T2</code> /
+<code class="c">Previous write by T1</code>）、位置（<code class="c">Location is global 'g_race'</code>）、线程来源
+（<code class="c">created by main thread</code>）三段都在。区别只有地址和行号是真实的。</p>
+<p><strong>而这一次进程打出的结果是 <code class="c">200000</code> —— 一次都没丢。</strong>
+结果对了，TSan 照样报了两条竞争。这就是下面自测题 Q5 的实证：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>运行</th>
+<th>结果</th>
+<th>TSan</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">./c4_1 race</code>（gcc，无 TSan）</td>
+<td>100000（<strong>错</strong>）</td>
+<td>不存在</td>
+<td>结果错了，退出码 0，静默</td>
+</tr>
+<tr>
+<td><code class="c">./c4_1_tsan race</code>（clang + TSan）</td>
+<td>200000（<strong>对</strong>）</td>
+<td><strong>报 2 条</strong></td>
+<td>结果对了，TSan 照样报</td>
+</tr>
+</tbody>
+</table></div>
+<p>对照组 <code class="c">./c4_1_tsan atomic</code>：退出码 0、stderr 全空 —— C11 原子操作是 TSan
+认可的同步，不是竞争。</p>
+<h3>坑：gcc 版 TSan 在本环境跑不起来，必须用 clang</h3>
+<pre class="code" data-label="text"><code class="c">[gcc 13.3.0 + -fsanitize=thread]
+--- stdout ---
+--- stderr ---
+FATAL: ThreadSanitizer: unexpected memory mapping 0x7913d9072000-0x7913d9500000
+（退出码 66，但程序一行都没执行）
+</code></pre>
+<p>同一个程序换成 clang 18.1.0 就完全正常。看到 <code class="c">unexpected memory mapping</code>
+不要怀疑自己的代码，那是 TSan 运行时和容器地址空间布局冲突。</p>
 <h2>HFT 关联</h2>
 <ol>
 <li><strong>偶发错单的第一嫌疑是竞态</strong>：下单结果偶发不对，先别怀疑撮合算法，先上 TSan 查共享订单状态是不是没锁好。1.1 分类学的经验法则：多线程「偶发、难复现、位置漂移」九成是并发或内存问题。</li>
