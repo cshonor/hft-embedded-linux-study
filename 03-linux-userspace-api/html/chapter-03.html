@@ -601,6 +601,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <td>六种坏指针喂给 <code class="c">write(2)</code>，看内核怎么拦成 <code class="c">EFAULT</code></td>
 </tr>
 <tr>
+<td><code class="c">c3_14_raw_asm.S</code></td>
+<td>3.1</td>
+<td>无 libc 纯汇编：<code class="c">_start</code> 直接填寄存器发 <code class="c">svc #0</code>/<code class="c">syscall</code>（双架构）；aarch64 在 Pi 5 实测，x86_64 分支未实测</td>
+</tr>
+<tr>
 <td><code class="c">c3_6_cli_args.c</code></td>
 <td>3.5.1</td>
 <td><code class="c">argc</code>/<code class="c">argv</code> 的真实形状 + <code class="c">getopt(3)</code> 的三种结局</td>
@@ -1097,7 +1102,114 @@ int main(void)
 </tbody>
 </table></div>
 <p>所以「系统调用号」的本质就是<strong>这张表的数组下标</strong>。<code class="c">syscall_64.tbl</code> 只是生成这张表的输入文件。</p>
-<h2>5. 数据怎么过边界：<code class="c">access_ok</code> + <code class="c">copy_from_user</code></h2>
+<h2>5. 拆开包装看真相：write() / syscall() / <code class="c">syscall</code> 指令（Pi 实测）</h2>
+<p>先把两个<strong>撞名</strong>的东西分开——这一对名字是本章最高频的混淆点：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>名字</th>
+<th>是什么</th>
+<th>在哪一层</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">syscall(2)</code></td>
+<td>glibc 提供的 <strong>C 函数</strong>（通用入口，号由你传）</td>
+<td>用户态</td>
+</tr>
+<tr>
+<td><code class="c">syscall</code></td>
+<td>x86_64 的 <strong>CPU 指令</strong>（aarch64 上对应 <code class="c">svc #0</code>），触发用户态→内核态切换</td>
+<td>用户态/内核态边界</td>
+</tr>
+</tbody>
+</table></div>
+<p>于是所有调用路径都可以归入一个<strong>三层封装阶梯</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>是什么</th>
+<th>系统调用号</th>
+<th>陷入指令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">write(fd, buf, len)</code></td>
+<td>glibc <strong>专用封装</strong></td>
+<td>编译期写死（<code class="c">__NR_write</code>）</td>
+<td>间接执行</td>
+</tr>
+<tr>
+<td><code class="c">syscall(__NR_write, ...)</code></td>
+<td>glibc <strong>通用封装</strong></td>
+<td>你的第一个参数</td>
+<td>间接执行</td>
+</tr>
+<tr>
+<td>手写汇编（不链 libc）</td>
+<td><strong>无封装</strong></td>
+<td>自己填 <code class="c">rax</code>（aarch64 为 <code class="c">x8</code>）</td>
+<td><strong>直接执行</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h3>实测一：glibc 的 write 到底有多薄（树莓派 5 · aarch64 · glibc 2.41）</h3>
+<p>对 Pi 5（Debian trixie）上的 <code class="c">/lib/aarch64-linux-gnu/libc.so.6</code> 反汇编，<code class="c">write</code> 符号总共 <strong>0x1c = 28 字节</strong>：</p>
+<pre class="code" data-label="asm"><code class="c">00000000000e4620 &lt;__write@@GLIBC_2.17&gt;:     ; ← 你调的 write() 就这 28 字节
+   e4624: sxtw x0, w0                       ; fd 符号扩展到 64 位
+   e4628: mov  x6, #0x40                    ; ★ 调用号 64（__NR_write）写死在这
+   e462c: mov  x5, #0x0                     ; 补齐后续参数位（write 只有 3 参）
+   e4634: mov  x3, #0x0
+   e4638: b    8264c                        ; 尾跳公共路径
+</code></pre>
+<p>顺着尾跳追两层，就到了<strong>所有 syscall 共用的底部</strong>：</p>
+<pre class="code" data-label="asm"><code class="c">   825c8: mov  x8, x6                       ; 调用号进 x8（aarch64 约定：号在 x8）
+      …                                     ; 参数整队到 x0–x5
+   8ef68: svc  #0x0                         ; ★★ 真正的陷入指令，全 libc 就这几条
+; ——返回之后，errno 翻译层——
+   8265c: cmn  x0, #0x1, lsl #12            ; x0+4096 产生进位？→ 返回值落在 [-4095,-1]（2 节约定）
+   8267c: neg  w3, w0                       ; errno = -返回值
+   82680: mov  x0, #-1                      ; 返回值改写成 -1
+   8268c: str  w3, [x2, x1]                 ; 写进线程局部 errno
+</code></pre>
+<p>这张反汇编一次性验证了本节的三个论断：</p>
+<ol>
+<li><strong><code class="c">write()</code> 不直接进内核</strong>——它是 28 字节的薄封装，全部工作就是「把写死的调用号放好、参数整队、跳到公共路径」；</li>
+<li><strong>真正触发内核的是 <code class="c">svc #0x0</code>（x86_64 上是 <code class="c">syscall</code> 指令）</strong>——这才是「直接调用内核」那一步，同一个 libc 里所有系统调用共用它；</li>
+<li><strong><code class="c">-1 + errno</code> 是封装翻译出来的</strong>——<code class="c">cmn x0, #4096 → 写 TLS → 返回 -1</code> 那几条指令就是 2 节错误返回约定 + glibc 翻译层的实体（对应 <a href="#s-3-3">3.3</a> 的机制描述，这里给了机器码证据）。</li>
+</ol>
+<blockquote>
+<p>x86_64 上是同一个故事：调用号进 <code class="c">rax</code>、参数进 <code class="c">rdi/rsi/rdx/r10/r8/r9</code>、陷入指令 <code class="c">syscall</code>。区别只在寄存器名和指令名——<strong>架构决定了「号放哪、参数放哪、哪条指令陷入」，不变的是三层封装结构</strong>。</p>
+</blockquote>
+<h3>实测二：把封装剥干净——无 libc 纯汇编（<code class="c">code/c3_14_raw_asm.S</code>）</h3>
+<p>上面的反汇编是「读别人的包装」，下面自己写一个<strong>完全不带 libc</strong> 的程序：进程入口就是 <code class="c">_start</code>，<code class="c">write</code> 和 <code class="c">exit</code> 都自己填寄存器、自己发陷入指令：</p>
+<pre class="code" data-label="asm"><code class="c">/* aarch64 片段（完整双架构源码见 code/c3_14_raw_asm.S） */
+_start:
+    mov  x0, #1            /* fd = stdout */
+    adr  x1, msg           /* buf */
+    mov  x2, #21           /* len */
+    mov  x8, #64           /* __NR_write —— 没有封装替你写死，自己填 */
+    svc  #0x0              /* 和 glibc 包装底部同一条指令 */
+    mov  x0, #42
+    mov  x8, #93           /* __NR_exit —— exit 也得自己发 */
+    svc  #0x0
+</code></pre>
+<pre class="code" data-label="shell"><code class="c">gcc -nostdlib -static -o c3_14_raw_asm c3_14_raw_asm.S   # -nostdlib 甩掉 C 运行时
+</code></pre>
+<p>Pi 5 实测：</p>
+<pre class="code" data-label="text"><code class="c">$ ./c3_14_raw_asm
+raw syscall: no libc
+$ echo $?
+42
+</code></pre>
+<p>这个 30 行的纯汇编把阶梯的第三层坐实了：<strong>没有 glibc，系统调用照样能用</strong>——glibc 提供的只是「填寄存器」的便利和「errno 翻译」的礼仪，不是内核的准入证。两个必须自己承担的细节：<code class="c">exit(2)</code> 也要自己发（<code class="c">_start</code> 掉出去就是段错误，而不是「正常返回」）；失败时拿到的是裸 <code class="c">-errno</code>，没有 <code class="c">errno</code> 变量可查（见 3 段 ③ 实测）。</p>
+<blockquote>
+<p>⚠️ 本节反汇编与纯汇编在 <strong>aarch64</strong> 实测（Pi 5）；<code class="c">code/c3_14_raw_asm.S</code> 内含 x86_64 分支，同一源文件可直接在 x86_64 Linux 上编出对应版本（未实测）。</p>
+</blockquote>
+<h2>6. 数据怎么过边界：<code class="c">access_ok</code> + <code class="c">copy_from_user</code></h2>
 <p>内核拿到用户态传来的指针（如 <code class="c">write</code> 的 <code class="c">buf</code>），<strong>不能直接解引用</strong>：</p>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1122,7 +1234,7 @@ int main(void)
 </tbody>
 </table></div>
 <p>所以每个带指针参数的系统调用都要：<code class="c">access_ok()</code> 校验范围 → <code class="c">copy_from_user()</code> 把数据拷进内核缓冲。<strong>校验失败就是 <code class="c">EFAULT(14)</code></strong>（不是 <code class="c">SIGSEGV</code>）。这一段的完整实测见 <a href="#s-3-4">3.4 错误处理</a> 的 <code class="c">c3_13_efault.c</code>；内核侧细节见 <a href="../../05-linux-kernel/html/chapter-05.html#s-5-4">05/Ch5.4 实现与参数验证</a>。</p>
-<h2>6. HFT / 嵌入式关联</h2>
+<h2>7. HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>

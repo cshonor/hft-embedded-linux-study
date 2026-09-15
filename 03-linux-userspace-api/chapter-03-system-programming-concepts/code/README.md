@@ -12,6 +12,7 @@
 | `c3_4_errno.c` | 3.4 | `errno` 六条规则逐条实测：不清零、可赋值左值宏、TLS 地址对比、中间调用冲掉、库函数不一定设 | `-pthread` |
 | `c3_5_errno_traps.c` | 3.4 | 六种 `errno` 误用逐个打脸，含 `strerror` 三次返回同一地址、`%m` 扩展 | `-pthread` |
 | `c3_13_efault.c` | 3.4 | 六种坏指针喂给 `write(2)`：`NULL` / `0x1` / 越界值 / 只读映射页；`EFAULT` vs `SIGSEGV` | `mmap` + `mprotect` |
+| `c3_14_raw_asm.S` | 3.1 | 无 libc 纯汇编：`_start` 直接 `mov x8,#64; svc #0`（aarch64）/ `mov $1,%eax; syscall`（x86_64）发 `write`+`exit`，证明「glibc 只是填寄存器的便利，不是内核的准入证」 | `-nostdlib -static`；aarch64 在 Pi 5 实测，x86_64 分支未实测 |
 | `c3_6_cli_args.c` | 3.5.1 | `argc`/`argv` 的真实形状（`argv[argc] == NULL`）+ 人工构造 `argv` 演示 `getopt(3)` 三种结局 | 无 |
 | `c3_7_get_num.c` | 3.5.2 | `atoi` 为什么分不清「0」与「出错」+ 复刻原书 `get_num.c` 的 `strtol`+`errno`+`endptr` 三态判定 | 无 |
 | `c3_8_error_functions.c` | 3.5.2 | 六个「会自杀的」错误处理函数各关进子进程，抓回真实输出与退出码；`_exit()` 丢 stdio 缓冲的 MARKER 实验 | `fork` + `wait` + `pipe` |
@@ -56,6 +57,7 @@ gcc -O0 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -o c3_10 c3_10_types.c && ./c3_10
 | `./c3_3_glibc` | 打印编译期/运行期的库与标准版本 |
 | `./c3_4_errno` / `./c3_5_errno_traps` | 六条规则 / 六种误用 |
 | `./c3_13_efault` | 六种指针的 `write` 结果对照 |
+| `./c3_14_raw_asm` | 输出 `raw syscall: no libc`，`echo $?` 得 42（aarch64 上：`gcc -nostdlib -static -o c3_14_raw_asm c3_14_raw_asm.S`） |
 | `./c3_6_cli_args` | `argv` 形状 + `getopt` 三种结局 |
 | `./c3_7_get_num` | `atoi` 对照 + 11 组三态判定 |
 | `./c3_8_error_functions` | 六个函数输出/退出码表 + MARKER 实验 + 管道关闭时机 |

@@ -132,6 +132,7 @@ Ch2  基本概念（用户态 / 内核态、地址空间、/proc）
 | `c3_4_errno.c` | 3.4 | `errno` 六条规则逐条实测（含线程私有地址对比） |
 | `c3_5_errno_traps.c` | 3.4 | 六种 `errno` 误用逐个打脸 |
 | `c3_13_efault.c` | 3.4 | 六种坏指针喂给 `write(2)`，看内核怎么拦成 `EFAULT` |
+| `c3_14_raw_asm.S` | 3.1 | 无 libc 纯汇编：`_start` 直接填寄存器发 `svc #0`/`syscall`（双架构）；aarch64 在 Pi 5 实测，x86_64 分支未实测 |
 | `c3_6_cli_args.c` | 3.5.1 | `argc`/`argv` 的真实形状 + `getopt(3)` 的三种结局 |
 | `c3_7_get_num.c` | 3.5.2 | `atoi` 为什么不够用 + 复刻原书 `get_num.c` 的三态判定 |
 | `c3_8_error_functions.c` | 3.5.2 | 六个「会自杀的」错误处理函数各关进子进程，抓输出与退出码 |
