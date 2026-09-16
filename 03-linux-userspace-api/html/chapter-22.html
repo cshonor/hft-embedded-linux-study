@@ -522,134 +522,45 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><code class="c">man 2 sigsuspend</code> · <code class="c">man 3 sigwaitinfo</code> · <code class="c">man 3 sigqueue</code> · <code class="c">man 2 signalfd</code> · <code class="c">man 2 sigaltstack</code> · <code class="c">man 5 core</code> · <code class="c">man 7 signal</code></li>
 </ul>
 <hr />
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">/* ch22_demo.c —— Ch22 核心：三种接收方式对照
- *
- *   A. sigsuspend  原子等待（单线程）
- *   B. sigwaitinfo 同步取走（不跑 handler，多线程推荐）
- *   C. signalfd    fd 化，可进 epoll
- *
- * 编译: gcc -Wall -Wextra -O2 -o ch22_demo ch22_demo.c
- * 运行: ./ch22_demo
- *       kill -USR1 $(pidof ch22_demo)
- *       kill -TERM $(pidof ch22_demo)
- */
-#define _GNU_SOURCE
-#include &lt;stdio.h&gt;
-#include &lt;stdlib.h&gt;
-#include &lt;string.h&gt;
-#include &lt;signal.h&gt;
-#include &lt;unistd.h&gt;
-#include &lt;errno.h&gt;
-#include &lt;sys/signalfd.h&gt;
-
-static volatile sig_atomic_t got = 0;
-
-/* handler 只置标志 —— 唯一允许的通信方式 */
-static void on_sig(int sig) { got = sig; }
-
-static int install(int sig, int flags)
-{
-    struct sigaction sa, verify;
-
-    memset(&amp;sa, 0, sizeof(sa));          /* ① 清零（含 sa_mask）*/
-    sa.sa_handler = on_sig;
-    sigemptyset(&amp;sa.sa_mask);            /* ② 显式初始化，双保险 */
-    sa.sa_flags   = flags;               /* ③ 显式，不依赖默认值 */
-    if (sigaction(sig, &amp;sa, NULL) == -1)
-        return -1;
-
-    /* ④ 读回校验 —— 内核会静默清除未知 flag（do_sigaction():4153-4156）*/
-    sigaction(sig, NULL, &amp;verify);
-    if (verify.sa_handler != on_sig || (verify.sa_flags &amp; flags) != (unsigned)flags)
-        return -1;
-    return 0;
-}
-
-/* ── A. sigsuspend：换掩码 + 睡，原子 ───────────────────── */
-static void demo_sigsuspend(void)
-{
-    sigset_t block, prev, wait;
-
-    install(SIGUSR1, SA_RESTART);
-
-    sigemptyset(&amp;block);
-    sigaddset(&amp;block, SIGUSR1);
-    sigprocmask(SIG_BLOCK, &amp;block, &amp;prev);       /* 先阻塞 */
-
-    wait = prev;                                  /* 取阻塞前的掩码 */
-    sigdelset(&amp;wait, SIGUSR1);                    /* 放开目标信号 */
-
-    printf(&quot;[A] sigsuspend: 等待 SIGUSR1 ...\n&quot;);
-    fflush(stdout);
-    sigsuspend(&amp;wait);                            /* 原子：换掩码 + 睡 */
-    printf(&quot;[A] 收到信号 %d\n&quot;, got);
-}
-
-/* ── B. sigwaitinfo：直接取走，不跑 handler ──────────────── */
-static void demo_sigwaitinfo(void)
-{
-    sigset_t set;
-    siginfo_t info;
-
-    sigemptyset(&amp;set);
-    sigaddset(&amp;set, SIGUSR2);
-    sigprocmask(SIG_BLOCK, &amp;set, NULL);           /* 必须先阻塞 */
-
-    kill(getpid(), SIGUSR2);                      /* 自己发一个 */
-
-    printf(&quot;[B] sigwaitinfo: 阻塞取 SIGUSR2 ...\n&quot;);
-    fflush(stdout);
-    int sig = sigwaitinfo(&amp;set, &amp;info);
-    if (sig &gt; 0)
-        printf(&quot;[B] 取到信号 %d (si_pid=%d)，handler 未被调用 (got=%d)\n&quot;,
-               sig, info.si_pid, got);
-}
-
-/* ── C. signalfd：fd 化，可进 epoll ──────────────────────── */
-static void demo_signalfd(void)
-{
-    sigset_t mask;
-    struct signalfd_siginfo si;
-
-    sigemptyset(&amp;mask);
-    sigaddset(&amp;mask, SIGTERM);
-    sigaddset(&amp;mask, SIGINT);
-
-    sigprocmask(SIG_BLOCK, &amp;mask, NULL);          /* ① 必须先阻塞 */
-    int sfd = signalfd(-1, &amp;mask, SFD_NONBLOCK);  /* ② 建 fd */
-    if (sfd == -1) { perror(&quot;signalfd&quot;); return; }
-
-    kill(getpid(), SIGTERM);
-
-    printf(&quot;[C] signalfd: read 一个 signalfd_siginfo ...\n&quot;);
-    fflush(stdout);
-
-    /* ③ 缓冲区必须 ≥ sizeof(signalfd_siginfo)，否则 -EINVAL */
-    ssize_t n = read(sfd, &amp;si, sizeof(si));
-    if (n == (ssize_t)sizeof(si))
-        printf(&quot;[C] 读到信号 %u (sender pid=%u)\n&quot;, si.ssi_signo, si.ssi_pid);
-    else if (n == -1)
-        perror(&quot;[C] read&quot;);
-
-    close(sfd);
-}
-
-int main(void)
-{
-    printf(&quot;pid=%d\n\n&quot;, (int)getpid());
-    demo_sigsuspend();
-    demo_sigwaitinfo();
-    demo_signalfd();
-
-    printf(&quot;\n对比要点:\n&quot;
-           &quot;  sigsuspend  → 跑 handler（got 被置位）\n&quot;
-           &quot;  sigwaitinfo → 不跑 handler，信号被取走\n&quot;
-           &quot;  signalfd    → 不跑 handler，可被 epoll 统一纳管\n&quot;
-           &quot;  三者都必须【先阻塞】目标信号才不会丢\n&quot;);
-    return 0;
-}
-</code></pre>
+<h2>实测硬结论（macOS 26.6.2 / arm64 真机，详见 <a href="#intro">code/README.md</a>）</h2>
+<p>8 个官方镜像 + 3 个自编中，<strong>5 个在 macOS 真实编译运行、5 个 Linux 专有只做源码核验</strong>：</p>
+<ol>
+<li><strong>sigsuspend 原子性实测复现</strong>：临界区（INT/QUIT 全屏蔽）内到达的 SIGINT 变 pending，<code class="c">Caught signal 2</code> 精确落在 sigsuspend 点——22.9「先阻塞才不丢」的灵魂输出</li>
+<li><strong>标准信号合并 vs RT 排队</strong>：<code class="c">catch_rtsigs</code> 实测发 USR1×2 只 caught 1 次；RT 排队验证需 Linux（macOS NSIG=32 无 RT 段）</li>
+<li><strong>⚠️ ARM64 整数除零不触发 SIGFPE</strong>：<code class="c">demo_SIGFPE</code> 在 Apple Silicon 上 handler 根本不进（<code class="c">sdiv</code> 无陷阱，x86 才有）——22.4 的演示在 M 系列 Mac 上必然落空</li>
+<li><strong>macOS 阻塞期延迟递送的信号不回填 si_pid/si_uid</strong>（=0）；运行期直收则正常——Linux 会一直填</li>
+<li><code class="c">sig_speed_sigsuspend 2000</code> 实测 0.04s——sigsuspend 往返 ≈20µs，仍是「廉价 IPC」量级</li>
+<li>macOS 无 <code class="c">sigqueue()/sigwaitinfo()/signalfd</code>——三个自编 RT demo 全部标注 Linux 专有，Pi5 编译复测</li>
+</ol>
+<hr />
+<h2>本仓库代码</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>文件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Listing 镜像</td>
+<td>22-1 <code class="c">signal.c</code> · 22-2 <code class="c">t_sigqueue.c</code> · 22-3 <code class="c">catch_rtsigs.c</code> · 22-5 <code class="c">t_sigsuspend.c</code> · 22-6 <code class="c">t_sigwaitinfo.c</code> · 22-7 <code class="c">signalfd_sigval.c</code> · 补充 <code class="c">demo_SIGFPE.c</code> · <code class="c">sig_speed_sigsuspend.c</code></td>
+</tr>
+<tr>
+<td>自编 demo</td>
+<td><code class="c">sigsuspend_wait.c</code>（22.9）· <code class="c">sigwaitinfo_loop.c</code>（22.10）· <code class="c">sigqueue_rt.c</code>（22.8）</td>
+</tr>
+<tr>
+<td>支撑</td>
+<td><code class="c">tlpi_hdr.h</code>（macOS 替身）· <code class="c">get_num.{c,h}</code>（dist 原版）· <code class="c">signal_functions.{c,h}</code>（跨章依赖 Listing 20-4）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>编译分类表、完整实测输出、Linux 专有语义核验 + Pi5 复测清单全部在
+<strong><a href="#intro">code/README.md</a></strong>。dist <code class="c">signals/</code> 混装三章程序，
+本章只镜像 Ch22 自己的 8 个文件。</p>
+</blockquote>
       </section>
       <section class="section" id="s-22-1">
         <div class="sec-head"><div class="sec-no">22.1</div><h2>Core Dump 文件</h2></div>

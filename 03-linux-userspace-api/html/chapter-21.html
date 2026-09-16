@@ -443,49 +443,49 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><code class="c">man 2 sigaction</code> · <code class="c">man 7 signal-safety</code> · <code class="c">man 2 waitpid</code></li>
 </ul>
 <hr />
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;signal.h&gt;
-#include &lt;string.h&gt;
-#include &lt;unistd.h&gt;
-
-/* Ch21 信号处理器 — sigaction（替代可移植性差的 signal）。
- * 演示 sigaction 注册 + 信号信息获取。
- * 编译: gcc -o ch21_demo ch21_demo.c */
-
-static volatile sig_atomic_t count = 0;
-
-void handler(int sig, siginfo_t *info, void *ctx) {
-    count++;
-    /* 注意: printf 不是异步信号安全函数，这里仅做演示 */
-    const char *msg = &quot;caught SIGINT\n&quot;;
-    write(STDOUT_FILENO, msg, strlen(msg));
-}
-
-int main(void) {
-    struct sigaction sa;
-    memset(&amp;sa, 0, sizeof(sa));
-    sa.sa_sigaction = handler;
-    sa.sa_flags = SA_SIGINFO;
-    sigemptyset(&amp;sa.sa_mask);
-
-    /* sigaction 比 signal 更可移植、更强大 */
-    if (sigaction(SIGINT, &amp;sa, NULL) &lt; 0) {
-        perror(&quot;sigaction&quot;);
-        return 1;
-    }
-
-    printf(&quot;Press Ctrl+C to test (will catch 3 times then exit)\n&quot;);
-    printf(&quot;Or run: kill -INT %d\n&quot;, (int)getpid());
-
-    while (count &lt; 3) {
-        pause();  /* 等待信号 */
-    }
-    printf(&quot;Caught %d signals, exiting.\n&quot;, count);
-    return 0;
-}
-
-</code></pre>
+<h2>实测硬结论（macOS 26.6.2 / arm64 真机，详见 <a href="#intro">code/README.md</a>）</h2>
+<p>本章 3 个原书 Listing + 4 个自编 demo + 1 个习题实现全部真实编译运行（<code class="c">nonreentrant</code> 除外，见下）：</p>
+<ol>
+<li><strong>longjmp 的掩码语义是平台相关的，不是理论题</strong>：同一份 <code class="c">sigmask_longjmp</code> 代码，macOS 上跳回后掩码恢复空集；POSIX 对 setjmp 版明说"未定义"，Linux 上常表现为 SIGINT 保持阻塞——所以必须用 <code class="c">sigsetjmp(env, 1)</code></li>
+<li><strong>sigaltstack 真的救命</strong>：递归 83 层撑爆 8MB 主栈，SIGSEGV handler 稳稳落在 <code class="c">sigaltstack</code> 区间（<code class="c">0x150037b58</code> vs 主栈 <code class="c">0x16a9...</code>）</li>
+<li><strong>EINTR 实测复现</strong>：无 <code class="c">SA_RESTART</code> 的 sigaction 下，SIGINT 打断阻塞 <code class="c">read</code> → <code class="c">-1/EINTR</code>，handler 置旗的值同时可见</li>
+<li><strong>SIGCHLD 循环 waitpid 不是风格问题</strong>：3 个子进程同亡只投递一次 SIGCHLD（不排队），<code class="c">while(waitpid(-1,...,WNOHANG))&gt;0</code> 是唯一正确写法——实测无僵尸退出</li>
+<li><strong>自实现 abort() 全场景过</strong>（习题 21-1）：阻塞拦不住（SUSv3 override）、handler 返回则复位 SIG_DFL 必死、终止前 flush stdio（缓冲内容能打出来正是 flush 语义）</li>
+<li><code class="c">nonreentrant</code>（21-1）macOS 无 <code class="c">&lt;crypt.h&gt;</code> 编译不过——Linux 专有，Pi5 复测项</li>
+</ol>
+<hr />
+<h2>本仓库代码</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>文件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Listing 镜像</td>
+<td>21-1 <code class="c">nonreentrant.c</code> · 21-2 <code class="c">sigmask_longjmp.c</code> · 21-3 <code class="c">t_sigaltstack.c</code> · 补充 <code class="c">nonatomic_uint64.c</code></td>
+</tr>
+<tr>
+<td>自编 demo</td>
+<td><code class="c">flag_handler.c</code>（21.1）· <code class="c">eintr_read.c</code>（21.5）· <code class="c">siginfo_demo.c</code>（21.4）· <code class="c">sigchld_reap.c</code>（21.1）</td>
+</tr>
+<tr>
+<td>习题实现</td>
+<td>21-1 <code class="c">ex21_1_abort.c</code>（自实现 abort）</td>
+</tr>
+<tr>
+<td>支撑</td>
+<td><code class="c">tlpi_hdr.h</code>（macOS 替身）· <code class="c">get_num.{c,h}</code>（dist 原版）· <code class="c">signal_functions.{c,h}</code>（跨章依赖 Listing 20-4）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>编译命令、完整实测输出、macOS↔Linux 差异、Pi5 复测清单全部在
+<strong><a href="#intro">code/README.md</a></strong>。dist <code class="c">signals/</code> 里 Ch21/22 混装，
+本章只镜像 Ch21 自己的 4 个文件。</p>
+</blockquote>
       </section>
       <section class="section" id="s-21-1">
         <div class="sec-head"><div class="sec-no">21.1</div><h2>设计信号处理器</h2></div>
