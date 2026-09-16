@@ -106,133 +106,27 @@
 
 ---
 
-## 代码示例
+## 实测硬结论（macOS 26.6.2 / arm64 真机，详见 [code/README.md](code/README.md)）
 
-```c
-/* ch22_demo.c —— Ch22 核心：三种接收方式对照
- *
- *   A. sigsuspend  原子等待（单线程）
- *   B. sigwaitinfo 同步取走（不跑 handler，多线程推荐）
- *   C. signalfd    fd 化，可进 epoll
- *
- * 编译: gcc -Wall -Wextra -O2 -o ch22_demo ch22_demo.c
- * 运行: ./ch22_demo
- *       kill -USR1 $(pidof ch22_demo)
- *       kill -TERM $(pidof ch22_demo)
- */
-#define _GNU_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <signal.h>
-#include <unistd.h>
-#include <errno.h>
-#include <sys/signalfd.h>
+8 个官方镜像 + 3 个自编中，**5 个在 macOS 真实编译运行、5 个 Linux 专有只做源码核验**：
 
-static volatile sig_atomic_t got = 0;
+1. **sigsuspend 原子性实测复现**：临界区（INT/QUIT 全屏蔽）内到达的 SIGINT 变 pending，`Caught signal 2` 精确落在 sigsuspend 点——22.9「先阻塞才不丢」的灵魂输出
+2. **标准信号合并 vs RT 排队**：`catch_rtsigs` 实测发 USR1×2 只 caught 1 次；RT 排队验证需 Linux（macOS NSIG=32 无 RT 段）
+3. **⚠️ ARM64 整数除零不触发 SIGFPE**：`demo_SIGFPE` 在 Apple Silicon 上 handler 根本不进（`sdiv` 无陷阱，x86 才有）——22.4 的演示在 M 系列 Mac 上必然落空
+4. **macOS 阻塞期延迟递送的信号不回填 si_pid/si_uid**（=0）；运行期直收则正常——Linux 会一直填
+5. `sig_speed_sigsuspend 2000` 实测 0.04s——sigsuspend 往返 ≈20µs，仍是「廉价 IPC」量级
+6. macOS 无 `sigqueue()/sigwaitinfo()/signalfd`——三个自编 RT demo 全部标注 Linux 专有，Pi5 编译复测
 
-/* handler 只置标志 —— 唯一允许的通信方式 */
-static void on_sig(int sig) { got = sig; }
+---
 
-static int install(int sig, int flags)
-{
-    struct sigaction sa, verify;
+## 本仓库代码
 
-    memset(&sa, 0, sizeof(sa));          /* ① 清零（含 sa_mask）*/
-    sa.sa_handler = on_sig;
-    sigemptyset(&sa.sa_mask);            /* ② 显式初始化，双保险 */
-    sa.sa_flags   = flags;               /* ③ 显式，不依赖默认值 */
-    if (sigaction(sig, &sa, NULL) == -1)
-        return -1;
+| 类型 | 文件 |
+|------|------|
+| Listing 镜像 | 22-1 `signal.c` · 22-2 `t_sigqueue.c` · 22-3 `catch_rtsigs.c` · 22-5 `t_sigsuspend.c` · 22-6 `t_sigwaitinfo.c` · 22-7 `signalfd_sigval.c` · 补充 `demo_SIGFPE.c` · `sig_speed_sigsuspend.c` |
+| 自编 demo | `sigsuspend_wait.c`（22.9）· `sigwaitinfo_loop.c`（22.10）· `sigqueue_rt.c`（22.8） |
+| 支撑 | `tlpi_hdr.h`（macOS 替身）· `get_num.{c,h}`（dist 原版）· `signal_functions.{c,h}`（跨章依赖 Listing 20-4） |
 
-    /* ④ 读回校验 —— 内核会静默清除未知 flag（do_sigaction():4153-4156）*/
-    sigaction(sig, NULL, &verify);
-    if (verify.sa_handler != on_sig || (verify.sa_flags & flags) != (unsigned)flags)
-        return -1;
-    return 0;
-}
-
-/* ── A. sigsuspend：换掩码 + 睡，原子 ───────────────────── */
-static void demo_sigsuspend(void)
-{
-    sigset_t block, prev, wait;
-
-    install(SIGUSR1, SA_RESTART);
-
-    sigemptyset(&block);
-    sigaddset(&block, SIGUSR1);
-    sigprocmask(SIG_BLOCK, &block, &prev);       /* 先阻塞 */
-
-    wait = prev;                                  /* 取阻塞前的掩码 */
-    sigdelset(&wait, SIGUSR1);                    /* 放开目标信号 */
-
-    printf("[A] sigsuspend: 等待 SIGUSR1 ...\n");
-    fflush(stdout);
-    sigsuspend(&wait);                            /* 原子：换掩码 + 睡 */
-    printf("[A] 收到信号 %d\n", got);
-}
-
-/* ── B. sigwaitinfo：直接取走，不跑 handler ──────────────── */
-static void demo_sigwaitinfo(void)
-{
-    sigset_t set;
-    siginfo_t info;
-
-    sigemptyset(&set);
-    sigaddset(&set, SIGUSR2);
-    sigprocmask(SIG_BLOCK, &set, NULL);           /* 必须先阻塞 */
-
-    kill(getpid(), SIGUSR2);                      /* 自己发一个 */
-
-    printf("[B] sigwaitinfo: 阻塞取 SIGUSR2 ...\n");
-    fflush(stdout);
-    int sig = sigwaitinfo(&set, &info);
-    if (sig > 0)
-        printf("[B] 取到信号 %d (si_pid=%d)，handler 未被调用 (got=%d)\n",
-               sig, info.si_pid, got);
-}
-
-/* ── C. signalfd：fd 化，可进 epoll ──────────────────────── */
-static void demo_signalfd(void)
-{
-    sigset_t mask;
-    struct signalfd_siginfo si;
-
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGTERM);
-    sigaddset(&mask, SIGINT);
-
-    sigprocmask(SIG_BLOCK, &mask, NULL);          /* ① 必须先阻塞 */
-    int sfd = signalfd(-1, &mask, SFD_NONBLOCK);  /* ② 建 fd */
-    if (sfd == -1) { perror("signalfd"); return; }
-
-    kill(getpid(), SIGTERM);
-
-    printf("[C] signalfd: read 一个 signalfd_siginfo ...\n");
-    fflush(stdout);
-
-    /* ③ 缓冲区必须 ≥ sizeof(signalfd_siginfo)，否则 -EINVAL */
-    ssize_t n = read(sfd, &si, sizeof(si));
-    if (n == (ssize_t)sizeof(si))
-        printf("[C] 读到信号 %u (sender pid=%u)\n", si.ssi_signo, si.ssi_pid);
-    else if (n == -1)
-        perror("[C] read");
-
-    close(sfd);
-}
-
-int main(void)
-{
-    printf("pid=%d\n\n", (int)getpid());
-    demo_sigsuspend();
-    demo_sigwaitinfo();
-    demo_signalfd();
-
-    printf("\n对比要点:\n"
-           "  sigsuspend  → 跑 handler（got 被置位）\n"
-           "  sigwaitinfo → 不跑 handler，信号被取走\n"
-           "  signalfd    → 不跑 handler，可被 epoll 统一纳管\n"
-           "  三者都必须【先阻塞】目标信号才不会丢\n");
-    return 0;
-}
-```
+> 编译分类表、完整实测输出、Linux 专有语义核验 + Pi5 复测清单全部在
+> **[code/README.md](code/README.md)**。dist `signals/` 混装三章程序，
+> 本章只镜像 Ch22 自己的 8 个文件。
