@@ -74,48 +74,28 @@
 
 ---
 
-## 代码示例
+## 实测硬结论（macOS 26.6.2 / arm64 真机，详见 [code/README.md](code/README.md)）
 
-```c
-#include <stdio.h>
-#include <signal.h>
-#include <string.h>
-#include <unistd.h>
+本章 3 个原书 Listing + 4 个自编 demo + 1 个习题实现全部真实编译运行（`nonreentrant` 除外，见下）：
 
-/* Ch21 信号处理器 — sigaction（替代可移植性差的 signal）。
- * 演示 sigaction 注册 + 信号信息获取。
- * 编译: gcc -o ch21_demo ch21_demo.c */
+1. **longjmp 的掩码语义是平台相关的，不是理论题**：同一份 `sigmask_longjmp` 代码，macOS 上跳回后掩码恢复空集；POSIX 对 setjmp 版明说"未定义"，Linux 上常表现为 SIGINT 保持阻塞——所以必须用 `sigsetjmp(env, 1)`
+2. **sigaltstack 真的救命**：递归 83 层撑爆 8MB 主栈，SIGSEGV handler 稳稳落在 `sigaltstack` 区间（`0x150037b58` vs 主栈 `0x16a9...`）
+3. **EINTR 实测复现**：无 `SA_RESTART` 的 sigaction 下，SIGINT 打断阻塞 `read` → `-1/EINTR`，handler 置旗的值同时可见
+4. **SIGCHLD 循环 waitpid 不是风格问题**：3 个子进程同亡只投递一次 SIGCHLD（不排队），`while(waitpid(-1,...,WNOHANG))>0` 是唯一正确写法——实测无僵尸退出
+5. **自实现 abort() 全场景过**（习题 21-1）：阻塞拦不住（SUSv3 override）、handler 返回则复位 SIG_DFL 必死、终止前 flush stdio（缓冲内容能打出来正是 flush 语义）
+6. `nonreentrant`（21-1）macOS 无 `<crypt.h>` 编译不过——Linux 专有，Pi5 复测项
 
-static volatile sig_atomic_t count = 0;
+---
 
-void handler(int sig, siginfo_t *info, void *ctx) {
-    count++;
-    /* 注意: printf 不是异步信号安全函数，这里仅做演示 */
-    const char *msg = "caught SIGINT\n";
-    write(STDOUT_FILENO, msg, strlen(msg));
-}
+## 本仓库代码
 
-int main(void) {
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_sigaction = handler;
-    sa.sa_flags = SA_SIGINFO;
-    sigemptyset(&sa.sa_mask);
+| 类型 | 文件 |
+|------|------|
+| Listing 镜像 | 21-1 `nonreentrant.c` · 21-2 `sigmask_longjmp.c` · 21-3 `t_sigaltstack.c` · 补充 `nonatomic_uint64.c` |
+| 自编 demo | `flag_handler.c`（21.1）· `eintr_read.c`（21.5）· `siginfo_demo.c`（21.4）· `sigchld_reap.c`（21.1） |
+| 习题实现 | 21-1 `ex21_1_abort.c`（自实现 abort） |
+| 支撑 | `tlpi_hdr.h`（macOS 替身）· `get_num.{c,h}`（dist 原版）· `signal_functions.{c,h}`（跨章依赖 Listing 20-4） |
 
-    /* sigaction 比 signal 更可移植、更强大 */
-    if (sigaction(SIGINT, &sa, NULL) < 0) {
-        perror("sigaction");
-        return 1;
-    }
-
-    printf("Press Ctrl+C to test (will catch 3 times then exit)\n");
-    printf("Or run: kill -INT %d\n", (int)getpid());
-
-    while (count < 3) {
-        pause();  /* 等待信号 */
-    }
-    printf("Caught %d signals, exiting.\n", count);
-    return 0;
-}
-
-```
+> 编译命令、完整实测输出、macOS↔Linux 差异、Pi5 复测清单全部在
+> **[code/README.md](code/README.md)**。dist `signals/` 里 Ch21/22 混装，
+> 本章只镜像 Ch21 自己的 4 个文件。
