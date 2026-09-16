@@ -1,34 +1,23 @@
-# Ch17 demos — POSIX ACL
+# Ch17 `code/` 目录说明
 
-需要：支持 ACL 的文件系统 + 开发包（Debian/Ubuntu: `libacl1-dev`）。
+TLPI 第 17 章（Access Control Lists）的代码。
+
+| 类别 | 文件 | 实测状态 |
+|------|------|---------|
+| 判定算法复现 | `c17_1_acl_algorithm.c` | ✅ 本机实测（macOS/clang 23.1.0；纯逻辑，全平台可跑） |
+| 习题 17-1 | `ex17_1_listacls.c` | ⛔ Linux 专有（libacl，`-lacl`），Pi5/ext4 复测 |
+| 原书镜像 | `acl_view.c`(Listing 17-1) `acl_update.c`(补充) | ⛔ Linux 专有（libacl） |
+| 支撑 | `tlpi_hdr.h` 替身 | — |
 
 ```bash
-cc -Wall -Wextra -o print_acl print_acl.c -lacl
-./print_acl /tmp/tlpi_acl_demo.txt
-# or after: setfacl -m u:$USER:rw /tmp/some_file && ./print_acl /tmp/some_file
+# 全平台：判定算法实测（本机已跑通，输出钉进 17.2/17.4）
+cc -Wall -Wextra -o c17_1_acl_algorithm c17_1_acl_algorithm.c && ./c17_1_acl_algorithm
 
-cc -Wall -Wextra -o set_named_user_acl set_named_user_acl.c -lacl
-./set_named_user_acl /tmp/tlpi_acl_demo.txt
-getfacl /tmp/tlpi_acl_demo.txt
-ls -l /tmp/tlpi_acl_demo.txt    # note trailing '+' and group column = mask
+# Linux（Pi5，需 libacl1-dev）：真机 ACL
+gcc -Wall -o ex17_1_listacls ex17_1_listacls.c -lacl && ./ex17_1_listacls u liming /tmp/data
+gcc -Wall -o acl_view acl_view.c -lacl && ./acl_view /tmp/data
+gcc -Wall -o acl_update acl_update.c -lacl
 ```
 
-| 文件 | 说明 |
-|------|------|
-| `print_acl.c` | 遍历 Access ACL，打印 ACE（简易 getfacl） |
-| `set_named_user_acl.c` | 写扩展 ACL：命名用户 + MASK |
-
-## 代码示例
-
-```c
-#include <stdio.h>
-#include <sys/acl.h>
-/* Ch17 demo: acl_get_file (需要 -lacl) */
-int main(void) {
-    acl_t a = acl_get_file("/tmp", ACL_TYPE_ACCESS);
-    if (a) { char *t = acl_to_text(a, NULL); printf("%s\n", t); acl_free(t); acl_free(a); }
-    return 0;
-}
-```
-
----
+> ⚠️ POSIX draft ACL（`system.posix_acl_*` xattr + libacl）是 Linux 生态；macOS 无对应 API/常量。
+> 本机的"实测"仅覆盖判定算法的纯逻辑复现（9 用例 + mask 清零实验），与 TLPI §17.2 算法逐条一致。

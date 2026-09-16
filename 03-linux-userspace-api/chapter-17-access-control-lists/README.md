@@ -1,141 +1,46 @@
 # TLPI 第 17 章 — Access Control Lists
 
-**优先级**：🔴（多用户共享目录、备份丢 ACL、chmod↔MASK 陷阱）
-**前置**：[Ch16 Extended Attributes](../chapter-16-extended-attributes/README.md)
-**后置**：[Ch18 Directories and Links](../chapter-18-directories-links/README.md) · [Ch38](../chapter-38-secure-privileged/README.md) · [Ch39 Capabilities](../chapter-39-capabilities/README.md)
+**优先级**：🟡（多用户共享目录 / chmod↔mask 陷阱 / 权限版本化；概念价值 > 频率）
+**前置**：[Ch16 Extended Attributes](../chapter-16-extended-attributes/README.md)（ACL 的存储载体）· [Ch15.4 权限](../chapter-15-file-attributes/README.md)（最小 ACL 的另一面）
+**后置**：[Ch38 特权与安全](../chapter-38-secure-privileged/README.md)（file capabilities = `security.*` xattr 的邻居）
 
 ---
 
-## 小节目录
+## 小节目录（与原书 17.1–17.10 一致）
 
-- [17.1 基础概念](notes/17.1-overview.md)
-- [17.2 `ACL_MASK`（核心坑）](notes/17.2-acl-permission-checking-algorithm.md)
-- [17.3 内核判定顺序（示意）](notes/17.3-long-and-short-text-forms-for-acls.md)
-- [17.4 Default ACL 继承](notes/17.4-the-acl-mask-entry-and-the-acl-group-cla.md)
-- 17.5 libacl API（链接 `-lacl`）
-- [17.6 命令行](notes/17.6-default-acls-and-file-creation.md)
+- [17.1 Overview 概览](notes/17.1-overview.md) — 6 种 tag / 最小与扩展 ACL / 存储
+- [17.2 ACL Permission-Checking Algorithm 判定算法](notes/17.2-acl-permission-checking-algorithm.md) ✅ 本机实测复现
+- [17.3 Long and Short Text Forms 文本形式](notes/17.3-long-and-short-text-forms-for-acls.md)
+- [17.4 The ACL_MASK Entry and the ACL Group Class](notes/17.4-the-acl-mask-entry-and-the-acl-group-cla.md) — mask 与 chmod 的兼容协议
+- [17.5 The getfacl and setfacl Commands](notes/17.5-the-getfacl-and-setfacl-commands.md)
+- [17.6 Default ACLs and File Creation](notes/17.6-default-acls-and-file-creation.md) — 新文件模板 / 忽略 umask
+- [17.7 ACL Implementation Limits](notes/17.7-acl-implementation-limits.md)
+- [17.8 The ACL API](notes/17.8-the-acl-api.md) — libacl / 两遍遍历
+- [17.9 Summary 本章总结](notes/17.9-summary.md)
+- [17.10 Exercise 练习](notes/17.10-exercise.md) — 17-1 listacls（Linux 复测）
 
 ---
 
 ## 章节目标
 
-
-掌握 ACE 标签、最小/扩展 ACL、`ACL_MASK`、Access vs Default ACL；会用 libacl（`-lacl`）；理清内核判定顺序与 `chmod`/`umask`/`ls -l` 交互陷阱。
-
----
-
-## 17.7 速查：Access vs Default · chmod 影响
-
-
-| | Access ACL | Default ACL |
-|--|------------|-------------|
-| 对象 | 文件/目录 | **仅目录** |
-| 控制本对象访问？ | 是 | **否** |
-| 继承 | — | 新建文件/子目录 |
-
-| 对扩展 ACL 做 `chmod` | 效果 |
-|----------------------|------|
-| 改「属组」那三位（ls 上的 group） | 实际改的是 **MASK**，不是 GROUP_OBJ |
-| 最小 ACL | 与传统一致，改 GROUP_OBJ |
-
-| 备份 | |
-|------|--|
-| 默认 `cp` | 易丢 ACL（同 xattr） |
-| 保留 | `cp --preserve=xattr` / `rsync -A`（及 xattr 相关选项） |
+- **判定算法肌肉记忆**：①属主 ②named(∩mask) ③组类(OR∩mask) ④other——mask 约束②③不碰①④（c17_1 九用例实测）
+- **mask 的兼容协议**：chmod 组位 = mask；`ls -l` 的 group 位在有 mask 时显示 mask；`+` 后缀的含义
+- **default ACL**：目录的新文件模板，AND 语义、忽略 umask、随子目录递归——共享目录权限的正确姿势
+- **诚实边界**：POSIX draft ACL 为 Linux 专有；本机可实测的是判定算法纯逻辑复现，真机行为（getfacl/setfacl/default 继承）列 Pi5 复测清单
 
 ---
 
-## 17.8 易错清单
+## 原书示例清单（TLPI dist `acl/`，逐字镜像）
 
+| Listing | 文件 | 说明 |
+|---------|------|------|
+| **17-1** | `acl_view.c` | 读并打印 ACL（getfacl 教学微缩版） |
+| 补充 | `acl_update.c` | 增量修改 ACL（setfacl 教学微缩版） |
 
-1. 备份丢 ACL → 权限「突然不对」
-2. `chmod` + 扩展 ACL → 动的是 MASK；`ls` group 列是 MASK
-3. 有 Default ACL 时 umask 行为改变
-4. 硬链接共享 ACL；软链接无自身 ACL（跟目标）
-5. NFS ACL 兼容性慎用
-6. libacl **不可移植**到典型 BSD/macOS 同一套 API
-
----
-
-## 练习
-
-
-1. 遍历打印 Access ACE（简易 getfacl）
-2. 写扩展 ACL：命名用户 + MASK，再 `getfacl`/`ls -l+`
-3. 目录 Default ACL → 新建文件是否继承
-4. 带 ACL 文件 `chmod`，观察 group 列变 MASK
+自编：`c17_1_acl_algorithm.c`（判定算法全平台复现，本机实测）· `ex17_1_listacls.c`（17-1，Linux 复测）。清单见 [`code/README.md`](code/README.md)。
 
 ---
 
-## 背诵卡
+## 一条主线：**ACL 不是"更多权限位"，而是一套带全局约束（mask）的判定协议**
 
-
-| # | 要点 |
-|---|------|
-| 1 | ACL = ACE 列表；扩展 ACL 必须有 MASK |
-| 2 | 有效权限 = ACE & MASK |
-| 3 | `ls -l` 有 `+` 时 group 列常是 MASK |
-| 4 | Default ACL 只影响新建；目录专属 |
-| 5 | 存于 `system.posix_acl_*` xattr |
-| 6 | `chmod` 扩展 ACL 时改 MASK，勿当 GROUP_OBJ |
-
----
-
-## 参考
-
-
-- Kerrisk · TLPI Ch17
-- `man 3 acl_get_file` · `man 5 acl` · `man 1 getfacl` · `man 1 setfacl`
-
----
-
-## 代码示例
-
-```c
-#include <stdio.h>
-#include <sys/acl.h>
-#include <errno.h>
-
-/* Ch17 访问控制列表 (ACL) — acl_get_file/acl_set_file。
- * ACL 比传统 rwx 更细粒度：可给特定用户/组单独授权。
- * 编译: gcc -o ch17_demo ch17_demo.c -lacl
- * 需要安装: apt install libacl1-dev */
-
-int main(void) {
-    const char *path = "/tmp/ch17_test.txt";
-    FILE *fp = fopen(path, "w");
-    if (!fp) { perror("fopen"); return 1; }
-    fprintf(fp, "test\n");
-    fclose(fp);
-
-    /* 获取文件 ACL */
-    acl_t acl = acl_get_file(path, ACL_TYPE_ACCESS);
-    if (acl == NULL) {
-        perror("acl_get_file (need libacl)");
-        remove(path);
-        return 1;
-    }
-
-    /* 打印 ACL 文本形式 */
-    char *text = acl_to_text(acl, NULL);
-    if (text) {
-        printf("Current ACL:\n%s\n", text);
-        acl_free(text);
-    }
-    acl_free(acl);
-
-    /* 创建新 ACL 条目: 给 uid 1000 读写权限 */
-    acl = acl_from_text("u::rw,g::r,o::r,u:1000:rw,m::rw");
-    if (acl) {
-        if (acl_set_file(path, ACL_TYPE_ACCESS, acl) == 0)
-            printf("ACL updated: uid 1000 gets rw\n");
-        else
-            perror("acl_set_file");
-        acl_free(acl);
-    }
-
-    remove(path);
-    return 0;
-}
-
-```
+看懂 17.2 的四步算法，17.4 的 mask、17.3 的 #effective 注释、`ls -l` 的 `+` 全部自洽；看不懂算法，工具用得再多也是玄学。
