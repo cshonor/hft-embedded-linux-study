@@ -94,47 +94,28 @@
 
 ---
 
-## 代码示例
+## 实测硬结论（macOS 26.6.2 / arm64 真机，详见 [code/README.md](code/README.md)）
 
-```c
-#include <stdio.h>
-#include <signal.h>
-#include <unistd.h>
+本章 6 个原书程序 + 2 个自编 demo 全部真实编译运行，实测输出已钉进 code/README.md：
 
-/* Ch20 信号基础 — signal/kill/raise + 信号概念。
- * 演示注册信号处理器 + 自发信号。
- * 编译: gcc -o ch20_demo ch20_demo.c */
+1. **标准信号不排队，亲眼可见**：`sig_sender` 连发 3×信号10，`sig_receiver` 解除屏蔽后 `caught 1 time`——pending 位图只有一个比特，后两次全部合并
+2. **SIG_IGN 会抹掉 pending**（习题 20-2 官方解实测）：处置改成 `SIG_IGN` 的瞬间 pending 位图清空，解除阻塞后什么也不会发生——「变更处置 → 丢弃」不用背
+3. **跨平台信号编号完全不同**：macOS 是 BSD 系（`SIGUSR1=30/USR2=31`、`SIGBUS=10`、`SIGSYS=12`），Linux 是 System V 系（USR1=10/USR2=12）——`strsignal(10)` 在两边打印完全不同的文字，**编号只能用宏，不能硬编码**
+4. **`si_code` 语义有平台差**：Linux `SI_USER==0`，macOS `SI_USER==0x10001`（kill 发的信号 si_code=0）；macOS 的 `si_pid/si_uid` 填 0，追不了发送者
+5. **macOS 无实时信号段**：NSIG=32，没有 34–64 的 RT 区间——队列化信号实验只能去 Linux/Pi5
+6. （Ch21/22 预演）**ARM64 macOS 整数除零不触发 SIGFPE**：`1/0` 直接出结果继续跑，handler 根本不进——ARM64 `sdiv` 无除零陷阱，x86 演示在 Apple Silicon 上必然落空
 
-static volatile sig_atomic_t got_signal = 0;
+---
 
-void handler(int sig) {
-    got_signal = sig;
-}
+## 本仓库代码
 
-int main(void) {
-    /* 注册 SIGUSR1 处理器 */
-    signal(SIGUSR1, handler);
+| 类型 | 文件 |
+|------|------|
+| 自编 demo | `kill_probe.c`（20.6）、`block_pending.c`（20.10/20.11） |
+| Listing 镜像 | 20-1 `ouch.c` · 20-2 `intquit.c` · 20-3 `t_kill.c` · 20-4 `signal_functions.{c,h}` · 20-6 `sig_sender.c` · 20-7 `sig_receiver.c` |
+| 官方习题解镜像 | 习题 20-2 `ignore_pending_sig.c` · 习题 20-4 `siginterrupt.c` |
+| 支撑 | `tlpi_hdr.h`（macOS 最小替身）· `get_num.{c,h}`（官方 dist 原版） |
 
-    /* 给自己发信号 */
-    printf("Sending SIGUSR1 to self...\n");
-    raise(SIGUSR1);
-
-    /* 检查是否收到 */
-    if (got_signal == SIGUSR1)
-        printf("Caught SIGUSR1!\n");
-    else
-        printf("No signal caught\n");
-
-    /* kill() 也可以给自己发信号 */
-    printf("Sending SIGUSR1 via kill()...\n");
-    kill(getpid(), SIGUSR1);
-
-    if (got_signal == SIGUSR1)
-        printf("Caught again!\n");
-
-    /* SIGKILL (9) 和 SIGSTOP (19) 不能被捕获/忽略/阻塞 */
-    printf("\nSIGKILL and SIGSTOP cannot be caught or ignored\n");
-    return 0;
-}
-
-```
+> 编译命令、完整实测输出、macOS↔Linux 差异表、Ch21/22 程序预演结论、Pi5 复测清单
+> 全部在 **[code/README.md](code/README.md)**。dist 的 `signals/` 目录混装三章程序，
+> 本章只镜像 Ch20 自己的 8 个文件（+2 自编），Ch21/22 的 12 个留到对应章升级时再镜像。
