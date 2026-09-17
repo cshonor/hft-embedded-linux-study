@@ -112,7 +112,7 @@
 
 1. **sigsuspend 原子性实测复现**：临界区（INT/QUIT 全屏蔽）内到达的 SIGINT 变 pending，`Caught signal 2` 精确落在 sigsuspend 点——22.9「先阻塞才不丢」的灵魂输出
 2. **标准信号合并 vs RT 排队**：`catch_rtsigs` 实测发 USR1×2 只 caught 1 次；RT 排队验证需 Linux（macOS NSIG=32 无 RT 段）
-3. **⚠️ ARM64 整数除零不触发 SIGFPE**：`demo_SIGFPE` 在 Apple Silicon 上 handler 根本不进（`sdiv` 无陷阱，x86 才有）——22.4 的演示在 M 系列 Mac 上必然落空
+3. **⚠️ `demo_SIGFPE` 进不了 handler —— 两层原因要拆开**：①**编译器**（主因，本轮 CE 新发现）：`x = 1 / y` 的分子是常量 `1`，GCC 前端就折成 `(y∈{0,1}) ? y : 0` 的分支选择，**`-O0` 也折** ⇒ 两侧都**没有除法指令**，x86-64 上也打印 `Shouldn't get here!`；②**架构**：即便指令真被执行，AArch64 的 `sdiv` 除零也不 trap（x86 的 `idiv` 才 trap）。想看真的 SIGFPE，得「**分子非常量 + x86**」两个条件同时满足
 4. **macOS 阻塞期延迟递送的信号不回填 si_pid/si_uid**（=0）；运行期直收则正常——Linux 会一直填
 5. `sig_speed_sigsuspend 2000` 实测 0.04s——sigsuspend 往返 ≈20µs，仍是「廉价 IPC」量级
 6. macOS 无 `sigqueue()/sigwaitinfo()/signalfd`——三个自编 RT demo 全部标注 Linux 专有，Pi5 编译复测

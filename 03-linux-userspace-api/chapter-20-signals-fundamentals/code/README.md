@@ -137,7 +137,7 @@ UNBLOCKING SIGINT               ← 之后解除阻塞，什么也不会发生
 | `t_sigsuspend` | Listing 22-5 | **sigsuspend 原子性完美复现**：临界区（INT/QUIT 全屏蔽）内到达的 SIGINT 变 pending，sigsuspend 一解除就递送，`Caught signal 2` 精确落在 sigsuspend 点；SIGQUIT 退出循环后掩码复原 |
 | `sigmask_longjmp` | Listing 21-2 | setjmp/longjmp 版：handler 内掩码 `2 (Interrupt)`，跳回后打印空集——非 sigsetjmp 语义（未保存掩码），平台相关，Pi5 上应再对照 |
 | `t_sigaltstack` | Listing 21-3 | 递归 83 层撑爆栈 → SIGSEGV，handler 明确跑在备择栈（`0x150037b58` vs 主栈 `0x16a9...`）[exit=1] |
-| `demo_SIGFPE` | Ch22 补充 | ⚠️ **ARM64 macOS 整数除零不触发 SIGFPE**：`x = 1/y`（y=0）直接算出结果继续跑，打印 "Shouldn't get here!" 后 [exit=1]，handler 根本没进——ARM64 `sdiv` 除零不设陷阱（x86 除零才 trap）。**书上的 SIGFPE 演示在 Apple Silicon 上必然落空** |
+| `demo_SIGFPE` | Ch22 补充 | ⚠️ **进不了 handler 的主因是编译器折叠，不是 ARM64**：`x = 1/y`（y=0）打印 "Shouldn't get here!" 后 [exit=1]——GCC 认出分子是常量 `1`，前端把 `1 / y` 折成 `(y∈{0,1}) ? y : 0` 的分支选择（**`-O0` 也折**），**两侧都没产生除法指令**（另在 CE 复核：x86-64 gcc 13.3 `-O0`/`-O2` 跑同源输出同样是 `Shouldn't get here! x=0 y=0`）。对照组 `x = argc / y`（分子非常量）在 x86 上真出 `idiv` → `Caught signal 8 (SIGFPE)`；AArch64 的 `sdiv` 除零不 trap 是**另一层**的差异 |
 | `sig_speed_sigsuspend` | Ch22 补充 | `time ... 2000`：**0.04s 完成 2000 次父子 sigsuspend 往返**（~20µs/往返，仍属「信号是廉价 IPC」量级） |
 | `nonatomic_uint64` | Ch21 补充 | 编译零警告；**实测被沙箱拦**：子进程紧密 `kill(getppid())` 到 ~第 1018 次报 `EPERM`（单发正常；父进程 1017 次成功 kill 只实收 4 次——合并语义反而被间接验证）。撕裂读未复现，Pi5 复测 |
 | `catch_rtsigs` | Listing 22-3 | SA_SIGINFO 正常；`si_code=0`→"other"、`si_pid/uid=0`（见差异表） |

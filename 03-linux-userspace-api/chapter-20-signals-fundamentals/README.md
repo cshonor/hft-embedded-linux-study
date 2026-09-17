@@ -103,7 +103,7 @@
 3. **跨平台信号编号完全不同**：macOS 是 BSD 系（`SIGUSR1=30/USR2=31`、`SIGBUS=10`、`SIGSYS=12`），Linux 是 System V 系（USR1=10/USR2=12）——`strsignal(10)` 在两边打印完全不同的文字，**编号只能用宏，不能硬编码**
 4. **`si_code` 语义有平台差**：Linux `SI_USER==0`，macOS `SI_USER==0x10001`（kill 发的信号 si_code=0）；macOS 的 `si_pid/si_uid` 填 0，追不了发送者
 5. **macOS 无实时信号段**：NSIG=32，没有 34–64 的 RT 区间——队列化信号实验只能去 Linux/Pi5
-6. （Ch21/22 预演）**ARM64 macOS 整数除零不触发 SIGFPE**：`1/0` 直接出结果继续跑，handler 根本不进——ARM64 `sdiv` 无除零陷阱，x86 演示在 Apple Silicon 上必然落空
+6. （Ch21/22 预演）**`1 / 0` 进不了 SIGFPE handler，根因是编译器折叠，不是平台**：GCC 认出分子是常量 `1`，在**前端**就把 `1 / y` 折成 `(y∈{0,1}) ? y : 0` 的分支选择（**`-O0` 也折**）⇒ 两侧**都不产生除法指令**，所以 x86-64 上同样打印 `Shouldn't get here!`。要让信号真的发生，**分子必须非常量**（`x = argc / y`）：这时 x86 的 `idiv` → `#DE` → `SIGFPE(8)` 进 handler，而 AArch64 的 `sdiv` 除零**仍不 trap**——**「编译器折叠」与「架构不 trap」是两层，别混成一句「Mac 不行」**
 
 ---
 

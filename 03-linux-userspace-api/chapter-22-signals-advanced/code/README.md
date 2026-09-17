@@ -108,7 +108,9 @@ Caught 2 signals                              ← 发了 USR1×2+HUP×1，USR1 �
 **对照**：Ch21 `siginfo_demo` 运行期直接收到 USR1 时 si_pid=10683/uid=501 正常填充——
 macOS 对「阻塞后延迟递送」的信号不回填发送者信息，Linux 会填。
 
-### ③ 官方补充 demo_SIGFPE：⚠️ ARM64 整数除零不触发 SIGFPE
+### ③ 官方补充 demo_SIGFPE：⚠️ 进不了 handler —— 两层原因，主因在编译器
+
+macOS 26.6.2 / arm64 真机输出：
 
 ```text
 Catching SIGFPE
@@ -117,8 +119,29 @@ Shouldn't get here!                ← x = 1/y（y=0）直接算出结果继续�
 [exit=1]                           ← handler 根本没进！
 ```
 
-ARM64 的 `sdiv` 除零不设陷阱（x86 `idiv` 才 trap）——**Apple Silicon 上 22.4 的
-SIGFPE 演示必然落空**；书上的输出只能在 x86 Linux 复现。
+**别把这条读成「Mac 不行」——要拆成两层，而且主因是编译器，跟 CPU 无关：**
+
+| 层 | 事实 | 证据（另在 Compiler Explorer 复核） |
+|----|------|-----------------------------------|
+| ① **编译器**（主因） | `x = 1 / y` 的**分子是常量 `1`**，GCC 在**前端**就把它折成 `(y∈{0,1}) ? y : 0` 的分支选择，**`-O0` 也折** ⇒ 两侧**根本没有除法指令** | x86-64 gcc 13.3 `-O0` 与 `-O2` 跑同源，输出**同样**是 `Shouldn't get here! x=0 y=0` |
+| ② **架构** | 即便除法指令真被执行：AArch64 `sdiv`/`udiv` 除零**不 trap**（结果为 0），x86 `idiv` 除零 → `#DE` → `SIGFPE(8)` | AArch64 clang 18.1 / gcc 13.3 的汇编是**裸 `sdiv`**：无 `cmp`、无分支、无 `__aeabi_idiv0` 之类的助手调用 |
+
+**对照组（CE 实测 x86-64 gcc 13.3）：把分子换成非常量，正证据立刻出现**
+
+```text
+Catching SIGFPE
+About to generate SIGFPE
+Caught signal 8 (SIGFPE)          ← 分子是 argc，idiv 真执行 → #DE → 内核发 SIGFPE
+```
+
+> 取这组输出时踩了两个本仓库的老朋友：① CE 的 stdout 是 **socket** ⇒ stdio **全缓冲**，
+> 进程被信号杀死时缓冲**全丢**（第一次跑拿到的是空 stdout，看着像"程序没跑"）；
+> ② handler 里 `printf` 后接 `_exit()` **不刷** stdio。改成 `setvbuf(stdout,NULL,_IONBF,0)`
+> ＋ handler 内用 `write()`，才拿到上面三行。
+
+**结论**：书上的 SIGFPE 演示失败**不是 Mac 独有**——同样的源在 x86-64 Linux 上一样失败。
+想在 Linux 上把这条演示做成功，必须同时满足 **分子非常量**（`x = argc / y`）**且是 x86**。
+Pi5 是 arm64，满足了前半条也仍旧不 trap。
 
 ### ④ 官方补充 sig_speed_sigsuspend：信号是廉价 IPC
 
