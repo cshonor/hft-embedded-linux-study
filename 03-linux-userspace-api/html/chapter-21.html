@@ -303,8 +303,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-15.html#intro"><span class="n">15</span>TLPI 第 15 章 — File Attributes</a>
           <a href="chapter-16.html#intro"><span class="n">16</span>TLPI 第 16 章 — Extended Attributes</a>
           <a href="chapter-17.html#intro"><span class="n">17</span>TLPI 第 17 章 — Access Control Lists</a>
-          <a href="chapter-18.html#intro"><span class="n">18</span>TLPI 第 18 章 — Directories and Links 目录与链接</a>
-          <a href="chapter-19.html#intro"><span class="n">19</span>TLPI 第 19 章 — Monitoring File Events 监控文件事件</a>
+          <a href="chapter-18.html#intro"><span class="n">18</span>TLPI 第 18 章 — Directories and Links</a>
+          <a href="chapter-19.html#intro"><span class="n">19</span>TLPI 第 19 章 — Monitoring File Events</a>
           <a href="chapter-20.html#intro"><span class="n">20</span>TLPI 第 20 章 — Signals: Fundamental Concepts</a>
           <a href="chapter-21.html#intro"><span class="n">21</span>TLPI 第 21 章 — Signals: Signal Handlers</a>
           <a href="chapter-22.html#intro"><span class="n">22</span>TLPI 第 22 章 — Signals: Advanced Features</a>
@@ -454,7 +454,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><code class="c">nonreentrant</code>（21-1）macOS 无 <code class="c">&lt;crypt.h&gt;</code> 编译不过——Linux 专有，Pi5 复测项</li>
 </ol>
 <hr />
-<h2>本仓库代码</h2>
+<h2>代码示例</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -782,7 +782,289 @@ void handler(int sig)
 </tbody>
 </table></div>
 <hr />
-<h2>代码示例：从危险到安全的三种写法</h2>
+<h2>代码示例</h2>
+<h3>一、<code class="c">flag_handler.c</code>（自编 · 21.1）</h3>
+<p>演示「handler 只置 <code class="c">volatile sig_atomic_t</code> 旗、主循环消费」这一最推荐范式；顺带演示 <code class="c">sa_mask</code>：<code class="c">sigemptyset</code> 后 <code class="c">sigaddset(&amp;sa.sa_mask, SIGTERM)</code>，表示<strong>仅在该 handler 执行期间</strong>额外屏蔽 SIGTERM（不是永久屏蔽）。</p>
+<p>完整源码（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/flag_handler.c"><code class="c">code/flag_handler.c</code></a>）：</p>
+<pre class="code" data-label="C"><code class="c">/* Canonical pattern: handler only sets volatile sig_atomic_t.
+ * Also blocks SIGTERM while handling SIGINT (sa_mask demo).
+ *
+ * cc -Wall -Wextra -o flag_handler flag_handler.c &amp;&amp; ./flag_handler
+ */
+#include &lt;signal.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;unistd.h&gt;
+
+static volatile sig_atomic_t got_sigint = 0;
+
+static void on_int(int sig)
+{
+    (void)sig;
+    got_sigint = 1;
+}
+
+int main(void)
+{
+    struct sigaction sa;
+    int count = 0;
+
+    memset(&amp;sa, 0, sizeof(sa));
+    sa.sa_handler = on_int;
+    sigemptyset(&amp;sa.sa_mask);
+    sigaddset(&amp;sa.sa_mask, SIGTERM); /* extra block only during handler */
+    sa.sa_flags = 0;
+
+    if (sigaction(SIGINT, &amp;sa, NULL) == -1) {
+        perror(&quot;sigaction&quot;);
+        return EXIT_FAILURE;
+    }
+
+    printf(&quot;pid=%ld  press Ctrl+C (exits after 3 deliveries)\n&quot;, (long)getpid());
+    while (count &lt; 3) {
+        if (got_sigint) {
+            got_sigint = 0;
+            count++;
+            printf(&quot;main: saw SIGINT #%d\n&quot;, count);
+        }
+        pause(); /* wake on signal; ok here for demo */
+    }
+    return 0;
+}
+</code></pre>
+<p>编译（macOS 26.6.2 / arm64 · clang 23.1.0）：</p>
+<pre class="code" data-label="shell"><code class="c">CC=clang   # cdev 环境的 clang 23.1.0
+$CC -Wall -Wextra -o flag_handler   flag_handler.c
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="text"><code class="c">pid=10686  press Ctrl+C (exits after 3 deliveries)
+main: saw SIGINT #1
+main: saw SIGINT #2
+main: saw SIGINT #3                        ← handler 只置旗，main 循环消费，exit=0
+</code></pre>
+<p><strong>逐条解读</strong>：</p>
+<ul>
+<li><strong>第 1 行 <code class="c">pid=10686  press Ctrl+C (exits after 3 deliveries)</code></strong>：<code class="c">getpid()</code> 的真实值；格式串用 <code class="c">%ld</code> 并强转 <code class="c">(long)</code>——macOS 上 <code class="c">pid_t</code> 是 <code class="c">int</code>，不转会触发 <code class="c">-Wall -Wextra</code> 的格式告警。<code class="c">printf</code> 带 <code class="c">\n</code>，终端行缓冲，立刻可见。</li>
+<li><strong>第 2–4 行 <code class="c">main: saw SIGINT #1..#3</code></strong>：每次 Ctrl+C → 内核递送 SIGINT → <code class="c">on_int()</code> 只执行 <code class="c">got_sigint = 1</code> 这一条赋值就返回 → 被打断的 <code class="c">pause()</code> 返回 <code class="c">-1/EINTR</code>（本程序没检查返回值，直接进入下一轮 <code class="c">while</code>）→ 主循环发现旗、清零、<code class="c">count++</code> 并打印。<strong>handler 里一次函数调用都没有</strong>，<code class="c">printf</code> 全在主循环——这就是「法则 1：把复杂逻辑移回主流程」的实测形态。</li>
+<li><strong><code class="c">got_sigint</code> 的 <code class="c">volatile</code> 也实测生效</strong>：<code class="c">while (count &lt; 3)</code> 里没有任何对 <code class="c">got_sigint</code> 的写，若编译器把它缓存进寄存器，主循环将永远看不到 handler 的写（见本节正文「三、<code class="c">volatile sig_atomic_t</code>」）。<code class="c">volatile</code> 迫使每轮从内存重读。<code class="c">sig_atomic_t</code> 保证这次单字节/单字读写原子——只用赋值、不做 <code class="c">got_sigint++</code>，所以不需要锁。</li>
+<li><strong>退出码</strong>：三次后 <code class="c">count == 3</code> 跳出循环，<code class="c">return 0</code>。README 标注 <code class="c">exit=0</code>——对照 21.2：handler 内<strong>没有</strong>终止进程，终止决策仍在主流程。</li>
+<li><strong><code class="c">sa_mask</code> 是「叠加」不是「替换」</strong>：<code class="c">on_int</code> 执行期间，掩码里除内核自动加入的 SIGINT 外，还多一个 SIGTERM；handler 返回后由 <code class="c">sigreturn</code> 自动恢复原掩码。本程序输出看不出这一点（没在 handler 里查掩码），要看实证得配合 <code class="c">sigprocmask</code>/<code class="c">printSigMask</code>——见 <a href="#s-21-2"><code class="c">sigmask_longjmp.c</code></a>。</li>
+</ul>
+<p><strong>源码坐标</strong>：TLPI 21.1「设计信号处理器」；<code class="c">sigaction(2)</code>（<code class="c">sa_mask</code> / <code class="c">SA_NODEFER</code> / 处理器期间自动阻塞本信号）、<code class="c">signal(7)</code>、<code class="c">signal-safety(7)</code>、<code class="c">pause(2)</code>；<code class="c">sig_atomic_t</code> 见 <code class="c">sigaction(2)</code> 的 NOTES 与本节正文「三、<code class="c">volatile sig_atomic_t</code>」。</p>
+<hr />
+<h3>二、<code class="c">sigchld_reap.c</code>（自编 · 21.1）</h3>
+<p>演示黄金法则在 <strong><code class="c">SIGCHLD</code> 回收僵尸</strong>场景的工程后果：<strong>标准信号不排队</strong>，所以 handler 里必须用 <code class="c">while (waitpid(-1, &amp;st, WNOHANG)) &gt; 0</code> 把已退出的子进程一次性收干净，写成 <code class="c">if</code> 就漏僵尸。</p>
+<p>完整源码（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/sigchld_reap.c"><code class="c">code/sigchld_reap.c</code></a>）：</p>
+<pre class="code" data-label="C"><code class="c">/* Reap all exited children in SIGCHLD handler via waitpid(WNOHANG) loop.
+ * cc -Wall -Wextra -o sigchld_reap sigchld_reap.c &amp;&amp; ./sigchld_reap
+ */
+#include &lt;signal.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/wait.h&gt;
+#include &lt;unistd.h&gt;
+
+static volatile sig_atomic_t kids_left = 0;
+
+static void on_chld(int sig)
+{
+    int status;
+    pid_t pid;
+
+    (void)sig;
+    /* Loop: standard SIGCHLD does not queue — one delivery may cover many */
+    while ((pid = waitpid(-1, &amp;status, WNOHANG)) &gt; 0) {
+        if (kids_left &gt; 0)
+            kids_left--;
+    }
+}
+
+int main(void)
+{
+    struct sigaction sa;
+    int i;
+
+    memset(&amp;sa, 0, sizeof(sa));
+    sa.sa_handler = on_chld;
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+
+    if (sigaction(SIGCHLD, &amp;sa, NULL) == -1) {
+        perror(&quot;sigaction&quot;);
+        return EXIT_FAILURE;
+    }
+
+    for (i = 0; i &lt; 3; i++) {
+        pid_t pid = fork();
+        if (pid == -1) {
+            perror(&quot;fork&quot;);
+            return EXIT_FAILURE;
+        }
+        if (pid == 0) {
+            _exit(10 + i);
+        }
+        kids_left++;
+    }
+
+    printf(&quot;spawned 3 children; waiting for reaps...\n&quot;);
+    while (kids_left &gt; 0)
+        pause();
+
+    printf(&quot;all children reaped (no zombies)\n&quot;);
+    return 0;
+}
+</code></pre>
+<p>编译（macOS 26.6.2 / arm64 · clang 23.1.0）：</p>
+<pre class="code" data-label="shell"><code class="c">$CC -Wall -Wextra -o sigchld_reap   sigchld_reap.c
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="text"><code class="c">spawned 3 children; waiting for reaps...
+all children reaped (no zombies)           ← while(waitpid(-1,...,WNOHANG))&gt;0 是唯一正确写法
+</code></pre>
+<p><strong>逐条解读</strong>：</p>
+<ul>
+<li><strong>第 1 行 <code class="c">spawned 3 children; waiting for reaps...</code></strong>：<code class="c">fork()</code> 三次，每个子进程立刻 <code class="c">_exit(10+i)</code>；父进程 <code class="c">kids_left</code> 累加到 3。</li>
+<li><strong>为什么一次投递要收多个</strong>：3 个子进程几乎同时退出，但 SIGCHLD 是<strong>标准信号</strong>——内核只保证「有一个 SIGCHLD 处于 pending」，<strong>不会</strong>为每个死掉的子进程各排一个。因此 handler 可能只被调用一次，却要负责 3 个已死子进程；也可能被调用多次。无论哪种，<strong>只有 <code class="c">while</code> 循环能保证收干净</strong>。</li>
+<li><strong>写成 <code class="c">if</code> 的后果</strong>：只 <code class="c">waitpid</code> 一次 → 剩下 2 个僵尸永久滞留（<code class="c">kids_left</code> 永远 &gt; 0）→ 父进程卡死在 <code class="c">wait()</code>/<code class="c">pause()</code>。这是生产事故级的 bug，且只在「多子同亡」的时序下出现，复现概率低。</li>
+<li><strong><code class="c">WNOHANG</code> 的含义</strong>：无已退出子进程时立即返回 <code class="c">0</code>，循环自然终止——保证 handler 内<strong>绝不阻塞</strong>（handler 阻塞会拖住整个进程）。</li>
+<li><strong><code class="c">waitpid</code> 是 async-signal-safe 的</strong>：它在 <code class="c">signal-safety(7)</code> 的安全清单里，所以可以在 handler 内直接调用；换成 <code class="c">wait3()</code>/<code class="c">wait4()</code> 也可，但 <code class="c">system()</code> 之类不行。</li>
+<li><strong>第 2 行 <code class="c">all children reaped (no zombies)</code></strong>：<code class="c">kids_left</code> 归零，父进程正常退出（退出码 0）。事后 <code class="c">ps</code> 应看不到 <code class="c">&lt;defunct&gt;</code>。</li>
+<li><strong><code class="c">sa_flags = SA_RESTART</code> 在本程序里没有实际作用</strong>：<code class="c">pause()</code> 属于「永远返回 <code class="c">EINTR</code>」的特例，不会被自动重启；写这句只是常见习惯。真正保证正确性的是 <code class="c">while (kids_left &gt; 0) pause()</code>。</li>
+</ul>
+<p><strong>源码坐标</strong>：TLPI 21.1 及 26.x 僵尸回收；<code class="c">waitpid(2)</code>（<code class="c">WNOHANG</code>、<code class="c">ECHILD</code>）、<code class="c">signal(7)</code>（标准信号合并/不排队 vs 实时信号排队）、<code class="c">signal-safety(7)</code>；参见 <a href="chapter-26.html#intro">Ch26 监控子进程</a>。</p>
+<hr />
+<h3>三、<code class="c">nonatomic_uint64.c</code>（官方补充 · 21.1.3）</h3>
+<p>官方 dist 的补充程序：证明 <strong><code class="c">volatile uint64_t</code> 不够用</strong>——在 32 位平台上 64 位读写会「撕裂」（memory tearing），主流程可能读到半新半旧的混合值。它是 <code class="c">sig_atomic_t</code> 那条规定存在的直接理由。</p>
+<p>完整源码（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/nonatomic_uint64.c"><code class="c">code/nonatomic_uint64.c</code></a>）：</p>
+<pre class="code" data-label="C"><code class="c">/*************************************************************************\
+*                  Copyright (C) Michael Kerrisk, 2026.                   *
+*                                                                         *
+* This program is free software. You may use, modify, and redistribute it *
+* under the terms of the GNU General Public License as published by the   *
+* Free Software Foundation, either version 3 or (at your option) any      *
+* later version. This program is distributed without any warranty.  See   *
+* the file COPYING.gpl-v3 for details.                                    *
+\*************************************************************************/
+
+/* Supplementary program for Chapter 21 */
+
+/* nonatomic_uint64.c
+
+   On x86-32, stores and fetches of a 64-bit integer are not atomic. This
+   can result in &quot;memory tearing&quot; on fetches and stores, where the memory
+   access requires two bus transactions. Consequently, a fetch of an integer
+   that is being modified on another CPU might receive half of the old value
+   and half of the new value. Thus, for example, a 64-bit integer can not be
+   safely used as the flag variable set by a signal handler and checked by
+   the main program.
+
+   This program demonstrates the behavior. The signal handler inverts a
+   64-bit integer whose initial value is zero, so that the value constantly
+   switches between all bits zero and all bits one. The main program
+   repeatedly fetches a copy of that integer and prints out a message
+   whenever the fetched value is not all zeros or all ones.
+
+   Compile this program with -m32, and run it:
+
+        $ cc -o nonatomic_uint64 -m32 nonatomic_uint64.c
+        $ ./nonatomic_uint64
+        Unexpected: ffffffff00000000 (loop 48533)
+        Unexpected: ffffffff00000000 (loop 171488)
+        Unexpected: 00000000ffffffff (loop 272321)
+        Unexpected: 00000000ffffffff (loop 297708)
+
+   On Ubuntu and Debian, you may need to install the package 'gcc-multilib'
+   in order to build this program as described above.
+*/
+#include &lt;inttypes.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;signal.h&gt;
+
+#define errExit(msg)    do { perror(msg); exit(EXIT_FAILURE); } while (0)
+
+#define SIG SIGUSR1
+
+static volatile uint64_t ip = 0;  /* 'volatile' included here just to show
+                                      that it really doesn't help. */
+
+/* Signal handler inverts bits in '*ip'; this may not be atomic. */
+
+static void
+handler(int sig)
+{
+    ip = ~ip;
+}
+
+int
+main(int argc, char *argv[])
+{
+    /* Set up signal handler. */
+
+    struct sigaction sa;
+
+    sa.sa_handler = handler;
+    sa.sa_flags = 0;
+    sigemptyset(&amp;sa.sa_mask);
+    if (sigaction(SIG, &amp;sa, NULL) == -1)
+        errExit(&quot;sigaction&quot;);
+
+    /* Create child that will blast signals at parent. */
+
+    pid_t childPid = fork();
+    if (childPid == -1)
+        errExit(&quot;fork&quot;);
+
+    if (childPid == 0) {
+        while (1) {
+            if (kill(getppid(), SIG) == -1)
+                errExit(&quot;kill() failed in child&quot;);
+        }
+    }
+
+    /* Parent falls through */
+
+    /* Loop, fetching the value of '*ip' (the fetch may not be atomic)
+       and checking whether the result is all bits zero or all bits one.
+       If it is not, print the fetched value and the loop counter. */
+
+    for (int long long j = 0; ; j++) {
+        uint64_t loc = ip;
+        if (loc != 0 &amp;&amp; loc != ~0)
+            printf(&quot;Unexpected: %016&quot; PRIx64 &quot; (loop %lld)\n&quot;, loc, j);
+    }
+
+    exit(EXIT_SUCCESS);
+}
+</code></pre>
+<p>编译（macOS 26.6.2 / arm64 · clang 23.1.0）：</p>
+<pre class="code" data-label="shell"><code class="c">$CC $D -Wall -Wextra -o nonatomic_uint64 nonatomic_uint64.c get_num.c signal_functions.c
+</code></pre>
+<p>实测输出：<strong>本机未取得</strong>。<code class="c">code/README.md</code>「macOS ↔ Linux 差异与未实测项」原文：</p>
+<blockquote>
+<p><code class="c">nonatomic_uint64</code> | 编译零警告；实测被沙箱拦（fork 子进程紧密 kill ~#1018 次报 EPERM，见 Ch20 code/README 预演）。撕裂读未复现，Pi5 复测</p>
+</blockquote>
+<p>源码头部注释给出的参考输出（<strong>x86-32 环境，非本机实测</strong>）：</p>
+<pre class="code" data-label="text"><code class="c">Unexpected: ffffffff00000000 (loop 48533)
+Unexpected: ffffffff00000000 (loop 171488)
+Unexpected: 00000000ffffffff (loop 272321)
+Unexpected: 00000000ffffffff (loop 297708)
+</code></pre>
+<p><strong>逐条解读</strong>：</p>
+<ul>
+<li><strong>为什么必须是 <code class="c">-m32</code> / x86-32</strong>：64 位整数在 32 位平台上要靠<strong>两次 32 位访存</strong>完成，中间给了信号插入的窗口。这与 <code class="c">sig_atomic_t</code> 的定义（保证原子读写的整数类型，Linux 上通常是 <code class="c">int</code>）互为对照：能被 <code class="c">sig_atomic_t</code> 覆盖的宽度才有原子保证。</li>
+<li><strong><code class="c">Unexpected: ffffffff00000000</code> 是什么</strong>：<code class="c">ip</code> 在「全 0」与「全 1（<code class="c">~0</code>）」之间翻转；混合值 <code class="c">ffffffff00000000</code> 表示主流程读到「高 32 位是新值、低 32 位是旧值」，<code class="c">00000000ffffffff</code> 则相反。这两种值<strong>既非 0 也非 <code class="c">~0</code></strong>，所以被判为异常打印。</li>
+<li><strong><code class="c">volatile</code> 为什么救不了</strong>：<code class="c">volatile</code> 只禁止编译器把变量缓存到寄存器、强制每次访存；它<strong>不提供任何原子性或内存序保证</strong>。源注释特意加了 <code class="c">volatile</code> 就是要点破这个常见误解。</li>
+<li><strong><code class="c">~ip</code> 是读-改-写</strong>：即便宽度够，<code class="c">ip = ~ip</code> 也不是单次原子操作——信号可能在「读」与「写」之间插入。所以旗变量不但要有原子类型，<strong>还必须只做单次写</strong>（如 <code class="c">flag = 1</code>），不能在 handler 里做 <code class="c">flag++</code>/<code class="c">~flag</code>。</li>
+<li><strong>工程结论</strong>：跨 handler / 主流程共享 64 位数据，不能靠 <code class="c">sig_atomic_t</code>（它只有 <code class="c">int</code> 宽）。要么改设计（handler 只置一个 <code class="c">sig_atomic_t</code>），要么换 IPC（eventfd / self-pipe / 无锁 SPSC 队列 / signalfd），见 21.1 正文「四、与主流程交换数据的正确模式」。</li>
+</ul>
+<p><strong>源码坐标</strong>：TLPI 21.1.3（<code class="c">sig_atomic_t</code> 的宽度局限）；<code class="c">signal(7)</code>、<code class="c">sigaction(2)</code>、<code class="c">sig_atomic_t</code> 定义见 <code class="c">siginfo_t</code> 同级的 <code class="c">sigaction(2)</code> NOTES 与 POSIX <code class="c">&lt;signal.h&gt;</code>；<code class="c">signal-safety(7)</code>。</p>
+<hr />
+<h3>四、教学补充片段（非 <code class="c">code/</code>，未实测）</h3>
+<p>以下是本笔记原有的教学片段（不在 <code class="c">code/</code> 下、未经实测编译），原样保留：</p>
 <pre class="code" data-label="C"><code class="c">/* handlerdesign.c —— 对比危险写法与安全写法
  * 编译: gcc -D_GNU_SOURCE -o handlerdesign handlerdesign.c */
 #define _GNU_SOURCE
@@ -1320,7 +1602,262 @@ if (fd == -1) {
 </tbody>
 </table></div>
 <hr />
-<h2>代码示例：正确的终止方式</h2>
+<h2>代码示例</h2>
+<h3>一、<code class="c">sigmask_longjmp.c</code>（原书 Listing 21-2 · 21.2.1）</h3>
+<p>handler 里用 <code class="c">[sig]longjmp</code> 跳出，观察<strong>跳转后信号掩码的残留状态</strong>。它同时是「handler 里不要随便 <code class="c">longjmp</code>」这条建议的实测证据。默认走 <code class="c">setjmp</code>/<code class="c">longjmp</code>；编译时加 <code class="c">-DUSE_SIGSETJMP</code> 走 <code class="c">sigsetjmp(env, 1)</code>/<code class="c">siglongjmp</code> 版本。</p>
+<p>完整源码（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/sigmask_longjmp.c"><code class="c">code/sigmask_longjmp.c</code></a>）：</p>
+<pre class="code" data-label="C"><code class="c">/*************************************************************************\
+*                  Copyright (C) Michael Kerrisk, 2026.                   *
+*                                                                         *
+* This program is free software. You may use, modify, and redistribute it *
+* under the terms of the GNU General Public License as published by the   *
+* Free Software Foundation, either version 3 or (at your option) any      *
+* later version. This program is distributed without any warranty.  See   *
+* the file COPYING.gpl-v3 for details.                                    *
+\*************************************************************************/
+
+/* Listing 21-2 */
+
+/* sigmask_longjmp.c
+
+   Demonstrate the different effects of longjmp() and siglongjmp()
+   on the process signal mask.
+
+   By default, this program uses setjmp() + longjmp(). Compile with
+   -DUSE_SIGSETJMP to use sigsetjmp() + siglongjmp().
+*/
+#define _GNU_SOURCE     /* Get strsignal() declaration from &lt;string.h&gt; */
+#include &lt;string.h&gt;
+#include &lt;setjmp.h&gt;
+#include &lt;signal.h&gt;
+#include &quot;signal_functions.h&quot;           /* Declaration of printSigMask() */
+#include &quot;tlpi_hdr.h&quot;
+
+static volatile sig_atomic_t canJump = 0;
+                        /* Set to 1 once &quot;env&quot; buffer has been
+                           initialized by [sig]setjmp() */
+#ifdef USE_SIGSETJMP
+static sigjmp_buf senv;
+#else
+static jmp_buf env;
+#endif
+
+static void
+handler(int sig)
+{
+    /* UNSAFE: This handler uses non-async-signal-safe functions
+       (printf(), strsignal(), printSigMask(); see Section 21.1.2) */
+
+    printf(&quot;Received signal %d (%s), signal mask is:\n&quot;, sig,
+            strsignal(sig));
+    printSigMask(stdout, NULL);
+
+    if (!canJump) {
+        printf(&quot;'env' buffer not yet set, doing a simple return\n&quot;);
+        return;
+    }
+
+#ifdef USE_SIGSETJMP
+    siglongjmp(senv, 1);
+#else
+    longjmp(env, 1);
+#endif
+}
+
+int
+main(int argc, char *argv[])
+{
+    struct sigaction sa;
+
+    printSigMask(stdout, &quot;Signal mask at startup:\n&quot;);
+
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = 0;
+    sa.sa_handler = handler;
+    if (sigaction(SIGINT, &amp;sa, NULL) == -1)
+        errExit(&quot;sigaction&quot;);
+
+#ifdef USE_SIGSETJMP
+    printf(&quot;Calling sigsetjmp()\n&quot;);
+    if (sigsetjmp(senv, 1) == 0)
+#else
+    printf(&quot;Calling setjmp()\n&quot;);
+    if (setjmp(env) == 0)
+#endif
+        canJump = 1;                    /* Executed after [sig]setjmp() */
+
+    else                                /* Executed after [sig]longjmp() */
+        printSigMask(stdout, &quot;After jump from handler, signal mask is:\n&quot; );
+
+    for (;;)                            /* Wait for signals until killed */
+        pause();
+}
+</code></pre>
+<p>编译（macOS 26.6.2 / arm64 · clang 23.1.0）：</p>
+<pre class="code" data-label="shell"><code class="c">CC=clang   # cdev 环境的 clang 23.1.0
+D='-D_DARWIN_C_SOURCE -I.'
+$CC $D -Wall -Wextra -o sigmask_longjmp  sigmask_longjmp.c  get_num.c signal_functions.c
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="text"><code class="c">Signal mask at startup:
+        &lt;empty signal set&gt;
+Calling setjmp()
+Received signal 2 (Interrupt: 2), signal mask is:
+        2 (Interrupt: 2)          ← handler 执行期 SIGINT 自动入掩码
+After jump from handler, signal mask is:
+        &lt;empty signal set&gt;        ← 本平台 longjmp 后掩码恢复为空（macOS 行为；
+                                     POSIX 说此值在 setjmp 版未定义，Linux 上常保持阻塞！）
+</code></pre>
+<p><strong>逐条解读</strong>：</p>
+<ul>
+<li><strong><code class="c">Signal mask at startup:</code> / <code class="c">&lt;empty signal set&gt;</code></strong>：<code class="c">printSigMask()</code> 来自 Listing 20-4（本目录镜像了 <code class="c">signal_functions.c/h</code>）。进程刚启动时掩码为空。</li>
+<li><strong><code class="c">Calling setjmp()</code></strong>：<code class="c">setjmp(env)</code> 首次返回 <code class="c">0</code> → <code class="c">canJump = 1</code> → 进入 <code class="c">for (;;) pause()</code> 等信号。<code class="c">canJump</code> 用 <code class="c">volatile sig_atomic_t</code>，防止 handler 里读到被编译器缓存的旧值。</li>
+<li><strong><code class="c">Received signal 2 (Interrupt: 2)</code></strong>：收到 Ctrl+C 的 SIGINT，<code class="c">strsignal(2)</code> 返回 <code class="c">"Interrupt: 2"</code>（macOS 的文案带信号号）。</li>
+<li><strong>掩码里为什么出现 <code class="c">2 (Interrupt: 2)</code></strong>：内核在<strong>进入 handler 时自动把该信号加入掩码</strong>（除非设了 <code class="c">SA_NODEFER</code>），避免同号信号递归打断自己；handler 返回时由 <code class="c">sigreturn</code> 自动撤除。这里因为 handler 还没返回（<code class="c">longjmp</code> 跳走了），所以打印时它是阻塞的。</li>
+<li><strong><code class="c">After jump from handler, signal mask is:</code> / <code class="c">&lt;empty signal set&gt;</code></strong>：<code class="c">longjmp(env, 1)</code> 让 <code class="c">setjmp</code> 点「再次返回」，这次返回 1 → 走 <code class="c">else</code> 分支打印跳转后的掩码。macOS 上结果是<strong>空集</strong>，即掩码被恢复成了 setjmp 时的状态。</li>
+<li><strong>这里是本节的核心考点，不是平台八卦</strong>：POSIX 对 <strong><code class="c">setjmp</code>/<code class="c">longjmp</code> 版跳转后的掩码</strong>明确说「未定义」——同一份代码在 Linux 上常表现为 SIGINT <strong>仍保持阻塞</strong>。若程序此后再收不到 Ctrl+C，就是这个原因。要掩码可移植，必须 <code class="c">-DUSE_SIGSETJMP</code>，用 <code class="c">sigsetjmp(env, 1)</code> 保存并在 <code class="c">siglongjmp</code> 时恢复掩码（第二个参数非 0 = 保存掩码）。</li>
+<li><strong>handler 里的 <code class="c">printf</code>/<code class="c">strsignal</code>/<code class="c">printSigMask</code> 全是 UNSAFE</strong>：源文件注释已自曝（<code class="c">see Section 21.1.2</code>）。本程序只为演示掩码语义；生产 handler 只能用 <code class="c">write(2)</code>。</li>
+</ul>
+<p><strong>源码坐标</strong>：TLPI <strong>Listing 21-2</strong>（21.2.1）；<code class="c">setjmp(3)</code>、<code class="c">sigsetjmp(3)</code>、<code class="c">longjmp(3)</code>、<code class="c">siglongjmp(3)</code>、<code class="c">sigaction(2)</code>（<code class="c">SA_NODEFER</code>）、<code class="c">sigprocmask(2)</code>、<code class="c">signal-safety(7)</code>；掩码打印依赖 Listing 20-4 的 <code class="c">printSigMask()</code>（<code class="c">signal_functions.c</code>）。</p>
+<hr />
+<h3>二、<code class="c">ex21_1_abort.c</code>（习题 21-1 · 21.2.2）</h3>
+<p>自实现 <code class="c">abort()</code>（<code class="c">my_abort()</code>），用三个场景验证 SUSv3 对 <code class="c">abort()</code> 的三条要求：① 无视 <code class="c">SIGABRT</code> 被阻塞/忽略，必须终止进程；② 若装了 handler，先让 handler 跑，handler 返回后把处置复位为 <code class="c">SIG_DFL</code> 再 <code class="c">raise</code> 一次 → 必死；③ 终止前 flush 并关闭 stdio 流。</p>
+<p>完整源码（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/ex21_1_abort.c"><code class="c">code/ex21_1_abort.c</code></a>）：</p>
+<pre class="code" data-label="C"><code class="c">/*************************************************************************\
+*                  Copyright (C) Michael Kerrisk, 2026.                   *
+*                                                                         *
+* This program is free software. You may use, modify, and redistribute it *
+* under the terms of the GNU General Public License as published by the   *
+* Free Software Foundation, either version 3 or (at your option) any      *
+* later version. This program is distributed without any warranty.  See   *
+* the file COPYING.gpl-v3 for details.                                    *
+\*************************************************************************/
+
+/* ex21_1_abort.c — 习题 21-1：实现 abort()
+
+   SUSv3 要求的 abort() 语义（TLPI 21.2.2 / P433）：
+   1. 无论 SIGABRT 被阻塞还是忽略，abort() 都必须终止进程（override 阻塞/忽略）
+   2. 若进程用 handler 捕获 SIGABRT，先让 handler 跑；
+      handler 若返回，则 abort() 把处置复位为 SIG_DFL 再 raise 一次 → 必死
+   3. 终止前 flush 并关闭 stdio 流
+
+   本程序实现 my_abort()，并用三个场景验证：
+     ⓪ 默认处置：直接终止
+     ① SIGABRT 被阻塞：解除阻塞语义 → 仍终止
+     ② handler 捕获并返回：复位 SIG_DFL → 第二次 raise 终止
+   实测环境：macOS 26.6.2 (arm64)，clang 23.1.0
+*/
+#include &lt;signal.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+
+/* —— 习题 21-1 的核心：my_abort() —— */
+static void
+my_abort(void)
+{
+    sigset_t mask;
+    struct sigaction sa;
+
+    /* SUSv3：abort() 必须无视阻塞 —— 先解除 SIGABRT 的阻塞 */
+    sigemptyset(&amp;mask);
+    sigaddset(&amp;mask, SIGABRT);
+    if (sigprocmask(SIG_UNBLOCK, &amp;mask, NULL) == -1) {
+        perror(&quot;sigprocmask&quot;);
+        _exit(EXIT_FAILURE);
+    }
+
+    /* 查当前处置：若装了 handler，让它跑（handler 可能 longjmp 不回来） */
+    if (sigaction(SIGABRT, NULL, &amp;sa) == -1) {
+        perror(&quot;sigaction&quot;);
+        _exit(EXIT_FAILURE);
+    }
+    if (sa.sa_handler != SIG_DFL &amp;&amp; sa.sa_handler != SIG_IGN)
+        raise(SIGABRT);                 /* handler 返回 = 没终止进程 */
+
+    /* 走到这里说明 handler 返回（或原处置是 SIG_IGN）：
+       复位 SIG_DFL，flush stdio，再 raise 一次 —— 这次必死 */
+    sa.sa_handler = SIG_DFL;
+    sa.sa_flags = 0;
+    sigemptyset(&amp;sa.sa_mask);
+    if (sigaction(SIGABRT, &amp;sa, NULL) == -1) {
+        perror(&quot;sigaction reset&quot;);
+        _exit(EXIT_FAILURE);
+    }
+    fflush(stdout);
+    raise(SIGABRT);
+
+    /* 若信号仍被忽略（理论上不可能，SIG_DFL 已复位）：兜底 */
+    _exit(EXIT_FAILURE);
+}
+
+/* —— 场景 ② 的 handler：捕获后直接返回 —— */
+static void
+handler(int sig)
+{
+    printf(&quot;    handler: 捕获 SIGABRT(%d) 后返回 → my_abort 应回位 SIG_DFL 再来一次\n&quot;, sig);
+}
+
+int
+main(int argc, char *argv[])
+{
+    printf(&quot;PID=%ld  用法：无参=⓪默认；b=①阻塞；h=②handler 返回\n&quot;,
+            (long) getpid());
+
+    if (argc &gt; 1 &amp;&amp; argv[1][0] == 'b') {
+        /* ① 阻塞 SIGABRT 再 abort —— SUSv3：必须仍终止 */
+        sigset_t mask;
+        sigemptyset(&amp;mask);
+        sigaddset(&amp;mask, SIGABRT);
+        sigprocmask(SIG_BLOCK, &amp;mask, NULL);
+        printf(&quot;[①] SIGABRT 已阻塞，调 my_abort() —— 应仍然终止\n&quot;);
+        printf(&quot;[①] 这行**能**打出来：abort() 终止前必须 flush stdio（SUSv3 要求）\n&quot;);
+        my_abort();
+
+    } else if (argc &gt; 1 &amp;&amp; argv[1][0] == 'h') {
+        /* ② handler 捕获并返回 —— 复位 SIG_DFL 后第二次 raise 终止 */
+        struct sigaction sa;
+        sa.sa_handler = handler;
+        sa.sa_flags = 0;
+        sigemptyset(&amp;sa.sa_mask);
+        sigaction(SIGABRT, &amp;sa, NULL);
+        printf(&quot;[②] 装 handler，调 my_abort()\n&quot;);
+        my_abort();
+
+    } else {
+        /* ⓪ 默认处置直接终止 */
+        printf(&quot;[⓪] 默认处置，调 my_abort() —— 直接 SIGABRT 终止\n&quot;);
+        my_abort();
+    }
+
+    printf(&quot;不应到达这里\n&quot;);
+    exit(EXIT_SUCCESS);
+}
+</code></pre>
+<p>编译（macOS 26.6.2 / arm64 · clang 23.1.0）：</p>
+<pre class="code" data-label="shell"><code class="c">$CC -Wall -Wextra -o ex21_1_abort   ex21_1_abort.c
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="text"><code class="c">$ ex21_1_abort        → [exit=134]  ⓪ 默认 SIGABRT 终止
+$ ex21_1_abort b      → [exit=134]  ① 阻塞也拦不住（SUSv3 override），且终止前 flush 了 stdio
+$ ex21_1_abort h      → [exit=134]  ② handler 捕获返回 → 复位 SIG_DFL → 第二次 raise 必死
+</code></pre>
+<p><strong>逐条解读</strong>：</p>
+<ul>
+<li><strong>三个场景退出码都是 <code class="c">134</code></strong>：<code class="c">134 = 128 + 6</code>，6 是 SIGABRT 的编号。shell 用 <code class="c">128+signo</code> 表示「进程被信号 N 杀死」，说明三次都走了 <strong>SIGABRT 默认动作</strong>——这正是 <code class="c">abort()</code> 语义正确的标志（对照：若在 handler 里 <code class="c">_exit(1)</code>，退出码会是 1，父进程 <code class="c">wait()</code> 看到的是 <code class="c">WIFEXITED</code> 而非 <code class="c">WIFSIGNALED</code>，见 21.2 正文「二、四种正确方式」）。</li>
+<li><strong>⓪ 默认处置</strong>：<code class="c">sigaction(SIGABRT, NULL, &amp;sa)</code> 查出 <code class="c">sa_handler == SIG_DFL</code> → 跳过第一次 <code class="c">raise</code> → 直接复位 <code class="c">SIG_DFL</code>、<code class="c">fflush</code>、<code class="c">raise(SIGABRT)</code> → 默认动作终止。</li>
+<li><strong>① 阻塞也拦不住</strong>：<code class="c">main</code> 先 <code class="c">sigprocmask(SIG_BLOCK, {SIGABRT})</code>，但 <code class="c">my_abort()</code> 开头立即 <code class="c">sigprocmask(SIG_UNBLOCK, {SIGABRT})</code>——这就是 SUSv3 要求的 <strong>override 阻塞</strong>。随后 <code class="c">raise</code> 直接生效。两行 <code class="c">[①] ...</code> 能打出来，证明 <code class="c">my_abort()</code> 在最终 <code class="c">raise</code> 前执行了 <code class="c">fflush(stdout)</code>（SUSv3 第 3 条：终止前 flush stdio）。</li>
+<li><strong>② handler 无法拦停 abort</strong>：处置不是 <code class="c">SIG_DFL</code>/<code class="c">SIG_IGN</code> → 先 <code class="c">raise(SIGABRT)</code> 让 <code class="c">handler()</code> 跑；<code class="c">handler()</code> 打印后<strong>正常返回</strong>（没终止进程）→ <code class="c">my_abort()</code> 继续走到「复位 <code class="c">SIG_DFL</code> + <code class="c">fflush</code> + 第二次 <code class="c">raise</code>」→ 这次没有任何 handler 可拦，默认动作必死。这就是 <code class="c">abort()</code> 与普通「发个 SIGABRT」的本质区别。</li>
+<li><strong>为什么第二次 <code class="c">raise</code> 之前要 <code class="c">fflush(stdout)</code></strong>：默认动作（<code class="c">do_coredump</code> + <code class="c">do_group_exit</code>）不会 flush 用户态 stdio 缓冲。若 stdout 重定向到文件/管道，<code class="c">handler</code> 里那句 <code class="c">printf</code> 的内容会随缓冲一起丢失；显式 <code class="c">fflush</code> 保证诊断信息落盘。</li>
+<li><strong>core 文件</strong>：README 差异表记录 macOS 默认不落盘 core（<code class="c">/cores</code> + sysctl 限制），所以这里只验证了<strong>退出状态</strong>；Linux 上要拿到 core 需 <code class="c">ulimit -c unlimited</code>，见 Pi5 复测清单「<code class="c">ex21_1_abort ⓪</code> + 查 <code class="c">/proc/sys/kernel/core_pattern</code>」。</li>
+<li><strong><code class="c">abort()</code> 不在严格的 async-signal-safe 清单里</strong>，但本实现只调 <code class="c">sigprocmask</code>/<code class="c">sigaction</code>/<code class="c">raise</code>/<code class="c">fflush</code>/<code class="c">_exit</code>，刻意不碰堆与 stdio 流以外的资源；glibc 的 <code class="c">abort()</code> 也是同样思路（见 21.2 正文的说明）。</li>
+</ul>
+<p><strong>源码坐标</strong>：TLPI <strong>习题 21-1</strong>（正文 21.2.2 / P433）；<code class="c">abort(3)</code>（SUSv3 语义）、<code class="c">raise(3)</code>、<code class="c">sigaction(2)</code>、<code class="c">sigprocmask(2)</code>、<code class="c">signal-safety(7)</code>；内核默认动作分派 <code class="c">do_coredump:2878</code> / <code class="c">do_group_exit:2892</code>（见本节正文「三、内核默认终止动作分派」）。</p>
+<hr />
+<h3>三、教学补充片段（非 <code class="c">code/</code>，未实测）</h3>
+<p>以下是本笔记原有的教学片段（不在 <code class="c">code/</code> 下、未经实测编译），连同其预期输出原样保留：</p>
 <pre class="code" data-label="C"><code class="c">/* termdemo.c —— 对比 exit() 与 _exit()，以及 re-raise 技巧
  * 编译: gcc -o termdemo termdemo.c
  * 用法: ./termdemo _exit | exit | reraise */
@@ -1975,7 +2512,125 @@ else
 </tbody>
 </table></div>
 <hr />
-<h2>代码示例：栈溢出后仍能诊断</h2>
+<h2>代码示例</h2>
+<h3>一、<code class="c">t_sigaltstack.c</code>（原书 Listing 21-3 · 21.3）</h3>
+<p>用一个 100KB 大栈帧的无限递归撑爆 8MB 主线程栈，触发 SIGSEGV；因为 handler 注册时带了 <code class="c">SA_ONSTACK</code>，它会在 <code class="c">sigaltstack()</code> 登记的备用栈上执行——打印出的 handler 栈地址与主栈地址分属完全不同的区段，这就是备用栈生效的实证。</p>
+<p>完整源码（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/t_sigaltstack.c"><code class="c">code/t_sigaltstack.c</code></a>）：</p>
+<pre class="code" data-label="C"><code class="c">/*************************************************************************\
+*                  Copyright (C) Michael Kerrisk, 2026.                   *
+*                                                                         *
+* This program is free software. You may use, modify, and redistribute it *
+* under the terms of the GNU General Public License as published by the   *
+* Free Software Foundation, either version 3 or (at your option) any      *
+* later version. This program is distributed without any warranty.  See   *
+* the file COPYING.gpl-v3 for details.                                    *
+\*************************************************************************/
+
+/* Listing 21-3 */
+
+/* t_sigaltstack.c
+
+   Demonstrate the use of sigaltstack() to handle a signal on an alternate
+   signal stack.
+*/
+#define _GNU_SOURCE             /* Get strsignal() declaration from &lt;string.h&gt; */
+#include &lt;string.h&gt;
+#include &lt;signal.h&gt;
+#include &quot;tlpi_hdr.h&quot;
+
+static void
+sigsegvHandler(int sig)
+{
+    int x;
+
+    /* UNSAFE: This handler uses non-async-signal-safe functions
+       (printf(), strsignal(), fflush(); see Section 21.1.2) */
+
+    printf(&quot;Caught signal %d (%s)\n&quot;, sig, strsignal(sig));
+    printf(&quot;Top of handler stack near     %10p\n&quot;, (void *) &amp;x);
+    fflush(NULL);
+
+    _exit(EXIT_FAILURE);                /* Can't return after SIGSEGV */
+}
+
+/* The following stops 'gcc -Wall' complaining that &quot;control reaches
+   end of non-void function&quot; because we don't follow the call to
+   overflowStack() stack in main() with a call to exit(). */
+
+#ifdef __GNUC__
+static void
+overflowStack(int callNum) __attribute__ ((__noreturn__));
+#endif
+
+static void             /* A recursive function that overflows the stack */
+overflowStack(int callNum)
+{
+    char a[100000];                     /* Make this stack frame large */
+
+    printf(&quot;Call %4d - top of stack near %10p\n&quot;, callNum, &amp;a[0]);
+    overflowStack(callNum+1);
+}
+
+int
+main(int argc, char *argv[])
+{
+    stack_t sigstack;
+    struct sigaction sa;
+    int j;
+
+    printf(&quot;Top of standard stack is near %10p\n&quot;, (void *) &amp;j);
+
+    /* Allocate alternate stack and inform kernel of its existence */
+
+    sigstack.ss_sp = malloc(SIGSTKSZ);
+    if (sigstack.ss_sp == NULL)
+        errExit(&quot;malloc&quot;);
+
+    sigstack.ss_size = SIGSTKSZ;
+    sigstack.ss_flags = 0;
+    if (sigaltstack(&amp;sigstack, NULL) == -1)
+        errExit(&quot;sigaltstack&quot;);
+    printf(&quot;Alternate stack is at         %10p-%p\n&quot;,
+            sigstack.ss_sp, (char *) sbrk(0) - 1);
+
+    sa.sa_handler = sigsegvHandler;     /* Establish handler for SIGSEGV */
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = SA_ONSTACK;           /* Handler uses alternate stack */
+    if (sigaction(SIGSEGV, &amp;sa, NULL) == -1)
+        errExit(&quot;sigaction&quot;);
+
+    overflowStack(1);
+}
+</code></pre>
+<p>编译（macOS 26.6.2 / arm64 · clang 23.1.0）：</p>
+<pre class="code" data-label="shell"><code class="c">CC=clang   # cdev 环境的 clang 23.1.0
+D='-D_DARWIN_C_SOURCE -I.'
+$CC $D -Wall -Wextra -o t_sigaltstack    t_sigaltstack.c    get_num.c signal_functions.c
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="text"><code class="c">Top of standard stack is near 0x16b163c14
+Alternate stack is at         0x150018000-0x104ea3fff
+Call    1 - top of stack near 0x16b14b52c
+...（递归 83 层撑爆 8MB 主线程栈）
+Call   83 - top of stack near 0x16a97816c
+Caught signal 11 (Segmentation fault: 11)
+Top of handler stack near     0x150037b58    ← handler 明确跑在 sigaltstack 的区间！
+</code></pre>
+<p><strong>逐条解读</strong>：</p>
+<ul>
+<li><strong><code class="c">Top of standard stack is near 0x16b163c14</code></strong>：<code class="c">&amp;j</code>（<code class="c">main</code> 的局部变量）大致就是主线程栈顶。macOS 主线程默认栈 8MB。</li>
+<li><strong><code class="c">Alternate stack is at 0x150018000-0x104ea3fff</code></strong>：<code class="c">sigstack.ss_sp</code>（<code class="c">malloc(SIGSTKSZ)</code> 返回的基址）到 <code class="c">sbrk(0)-1</code>（当前堆顶）。注意<strong>上限用的是堆顶</strong>，只说明这块内存在堆区的地址关系，并非备用栈的精确末端（精确大小是 <code class="c">ss_size = SIGSTKSZ</code>）。</li>
+<li><strong><code class="c">Call 1 .. Call 83</code></strong>：<code class="c">overflowStack()</code> 每层声明 <code class="c">char a[100000]</code>（≈100KB）；83 层 × 100KB ≈ 8MB，正好把 8MB 主线程栈耗尽。地址从 <code class="c">0x16b1...</code> 单调降到 <code class="c">0x16a9...</code>——栈向低地址增长。递归过程中 <code class="c">printf</code> 一直成功，说明<strong>栈还没溢出时 handler 尚未介入</strong>，这些是主流程打的。</li>
+<li><strong><code class="c">Caught signal 11 (Segmentation fault: 11)</code></strong>：主栈触底，写栈帧触发缺页 → 内核产生 SIGSEGV（11）。此时若没有备用栈，内核在已耗尽的栈上<strong>搭不出 sigframe</strong>，会走 <code class="c">signal_setup_done()</code> → <code class="c">force_sigsegv()</code>（<code class="c">kernel/signal.c:2935</code>），进程裸死，这两行<strong>根本不会出现</strong>。</li>
+<li><strong><code class="c">Top of handler stack near 0x150037b58</code></strong>：这是 handler 里 <code class="c">&amp;x</code> 的地址，落在 <code class="c">0x1500...</code> 段——与主栈 <code class="c">0x16a9...</code> <strong>完全不同的区段</strong>，证明 handler 确实跑在 <code class="c">sigaltstack</code> 登记的那块内存上。这是本程序唯一要证的事，也是嵌入式/生产环境「崩溃时还能打日志」的根据。</li>
+<li><strong>两个步骤缺一不可</strong>：本程序既有 <code class="c">sigaltstack(&amp;sigstack, NULL)</code>（登记），又有 <code class="c">sa.sa_flags = SA_ONSTACK</code>（让内核处理该信号时切栈）。去掉 <code class="c">SA_ONSTACK</code> 就退化成裸死——正是 21.3 正文「二、API」强调的点。</li>
+<li><strong>handler 里 <code class="c">printf</code>/<code class="c">strsignal</code>/<code class="c">fflush</code> 是 UNSAFE</strong>（源注释已声明 <code class="c">see Section 21.1.2</code>），本程序只为演示；生产应用 <code class="c">write(2)</code>，避免 stdio 锁在崩溃时刻被别的线程持有。</li>
+<li><strong><code class="c">_exit(EXIT_FAILURE)</code> 而非 <code class="c">exit()</code></strong>：SIGSEGV 之后不可能「返回」，而且 <code class="c">exit()</code> 会跑 atexit + flush stdio，非 async-signal-safe（见 21.2）。</li>
+</ul>
+<p><strong>源码坐标</strong>：TLPI <strong>Listing 21-3</strong>（21.3）；<code class="c">sigaltstack(2)</code>、<code class="c">sigaction(2)</code>（<code class="c">SA_ONSTACK</code>）、<code class="c">malloc(3)</code>、<code class="c">sbrk(2)</code>、<code class="c">signal-safety(7)</code>；内核侧 <code class="c">do_sigaltstack()</code>（<code class="c">kernel/signal.c:4205</code>）与 <code class="c">signal_setup_done()</code>（<code class="c">:2935</code>）见本节正文。</p>
+<hr />
+<h3>二、教学补充片段（非 <code class="c">code/</code>，未实测）</h3>
+<p>以下是本笔记原有的教学片段（不在 <code class="c">code/</code> 下、未经实测编译），连同其对照说明与预期输出原样保留：</p>
 <pre class="code" data-label="C"><code class="c">/* altstack.c —— 栈溢出后用备用栈 handler 打印现场
  * 编译: gcc -D_GNU_SOURCE -o altstack altstack.c */
 #define _GNU_SOURCE
@@ -2596,7 +3251,78 @@ typedef struct siginfo {
 </tbody>
 </table></div>
 <hr />
-<h2>代码示例：三种典型场景</h2>
+<h2>代码示例</h2>
+<h3>一、<code class="c">siginfo_demo.c</code>（自编 · 21.4）</h3>
+<p>最小可运行的 <code class="c">SA_SIGINFO</code> 例子：用三参数 <code class="c">sa_sigaction</code> 注册 SIGUSR1，在 handler 内<strong>只把 <code class="c">si_pid</code>/<code class="c">si_uid</code> 搬进 <code class="c">volatile sig_atomic_t</code></strong>，真正的打印交给主循环——既拿到 <code class="c">siginfo_t</code>，又守住 21.1 的黄金法则。</p>
+<p>完整源码（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/siginfo_demo.c"><code class="c">code/siginfo_demo.c</code></a>）：</p>
+<pre class="code" data-label="C"><code class="c">/* SA_SIGINFO: print sender pid/uid for SIGUSR1.
+ * cc -Wall -Wextra -o siginfo_demo siginfo_demo.c &amp;&amp; ./siginfo_demo
+ * Other shell: kill -USR1 &lt;pid&gt;
+ */
+#include &lt;signal.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;unistd.h&gt;
+
+static volatile sig_atomic_t done = 0;
+static volatile sig_atomic_t sender_pid;
+static volatile sig_atomic_t sender_uid;
+
+static void on_usr1(int sig, siginfo_t *info, void *ucontext)
+{
+    (void)sig;
+    (void)ucontext;
+    if (info != NULL) {
+        sender_pid = (sig_atomic_t)info-&gt;si_pid;
+        sender_uid = (sig_atomic_t)info-&gt;si_uid;
+    }
+    done = 1;
+}
+
+int main(void)
+{
+    struct sigaction sa;
+
+    memset(&amp;sa, 0, sizeof(sa));
+    sa.sa_sigaction = on_usr1;
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO;
+
+    if (sigaction(SIGUSR1, &amp;sa, NULL) == -1) {
+        perror(&quot;sigaction&quot;);
+        return EXIT_FAILURE;
+    }
+
+    printf(&quot;pid=%ld  waiting for SIGUSR1 (kill -USR1 %ld)\n&quot;,
+           (long)getpid(), (long)getpid());
+    while (!done)
+        pause();
+
+    printf(&quot;SIGUSR1 from pid=%ld uid=%ld\n&quot;,
+           (long)sender_pid, (long)sender_uid);
+    return 0;
+}
+</code></pre>
+<p>编译（macOS 26.6.2 / arm64 · clang 23.1.0）：</p>
+<pre class="code" data-label="shell"><code class="c">$CC -Wall -Wextra -o siginfo_demo   siginfo_demo.c
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="text"><code class="c">SIGUSR1 from pid=10683 uid=501             ← macOS SA_SIGINFO 的 si_pid/uid 正常填充
+                                              （对照：Ch20 catch_rtsigs 阻塞期收到的信号 si_pid=0）
+</code></pre>
+<p><strong>逐条解读</strong>：</p>
+<ul>
+<li><strong><code class="c">SIGUSR1 from pid=10683 uid=501</code></strong>：<code class="c">pid</code> 是<strong>发送者</strong>的 PID（在另一个 shell 执行 <code class="c">kill -USR1 &lt;pid&gt;</code> 时就是那个 shell 的 PID），<code class="c">uid=501</code> 是发送者的 real UID。要拿到这两个值，必须设 <code class="c">SA_SIGINFO</code> 并用 <code class="c">sa.sa_sigaction</code>——否则内核只按 <code class="c">void(int)</code> 调用，<code class="c">info</code> 根本不存在。</li>
+<li><strong>这行是 <code class="c">main()</code> 打印的，不是 handler 打印的</strong>：handler 只做了两次 <code class="c">sig_atomic_t</code> 赋值 + 置 <code class="c">done</code> 旗，<code class="c">printf</code> 回到主流程执行。这样既避开了 stdio 锁（21.1 法则 2），也避开了「handler 里解引用 <code class="c">siginfo_t</code> 出错」的风险。</li>
+<li><strong>为什么 <code class="c">si_pid</code>/<code class="c">si_uid</code> 有效</strong>：本信号由 <code class="c">kill(1)</code> 发送，<code class="c">si_code == SI_USER(0)</code>，属于「用户来源」，<code class="c">_sifields._kill</code> 分支被填充（见正文表格 <code class="c">si_pid</code>@<code class="c">:149</code>、<code class="c">si_uid</code>@<code class="c">:150</code>）。由此 <code class="c">SI_FROMUSER(info)</code> 为真。</li>
+<li><strong>code/README 记的对照很有意思</strong>：Ch20 的 <code class="c">catch_rtsigs</code> 演示的是<strong>信号在阻塞期间被挂起、之后同步取出</strong>的场景，那里的信号 <code class="c">si_pid=0</code>。两点合起来说明：<code class="c">si_pid</code> 有值的前提是「由 <code class="c">kill</code>/<code class="c">sigqueue</code> 发起且经由正常递送路径进入 handler」；对挂起后合并/同步取出的信号，不要想当然认为来源字段一定被填。</li>
+<li><strong>本程序读的是 <code class="c">_kill</code> 分支</strong>：在 SIGUSR1 handler 里读 <code class="c">si_addr</code>（<code class="c">_sigfault</code> 分支）就是读同一块内存的另一种解读，得到垃圾值——这正是正文「<code class="c">siginfo_t</code> 是 union」要防的错。</li>
+</ul>
+<p><strong>源码坐标</strong>：TLPI 21.4；<code class="c">sigaction(2)</code>（<code class="c">SA_SIGINFO</code>、<code class="c">siginfo_t</code>、<code class="c">si_pid</code>/<code class="c">si_uid</code>）、<code class="c">kill(1)</code>/<code class="c">kill(2)</code>、<code class="c">signal-safety(7)</code>；union 成员行号 <code class="c">include/uapi/asm-generic/siginfo.h:149-150</code>（见正文「二、<code class="c">siginfo_t</code> 是 union」）；<code class="c">SI_FROMUSER</code>/<code class="c">SI_FROMKERNEL</code> @ <code class="c">siginfo.h:190-191</code>。</p>
+<hr />
+<h3>二、教学补充片段（非 <code class="c">code/</code>，未实测）</h3>
+<p>以下是本笔记原有的教学片段（不在 <code class="c">code/</code> 下、未经实测编译），连同其预期输出原样保留：</p>
 <pre class="code" data-label="C"><code class="c">/* siginfodemo.c —— SA_SIGINFO 的三种典型用法
  * 编译: gcc -o siginfodemo siginfodemo.c */
 #define _GNU_SOURCE
@@ -3191,7 +3917,78 @@ if (n == -1) {
 </tbody>
 </table></div>
 <hr />
-<h2>代码示例：观察 <code class="c">SA_RESTART</code> 的效果</h2>
+<h2>代码示例</h2>
+<h3>一、<code class="c">eintr_read.c</code>（自编 · 21.5）</h3>
+<p>最小复现「无 <code class="c">SA_RESTART</code> 的阻塞 <code class="c">read</code> 被信号打断 → <code class="c">-1/EINTR</code>」。<code class="c">sa_flags</code> 特意留 <code class="c">0</code>（源注释写明 <code class="c">deliberately NO SA_RESTART</code>），一次 Ctrl+C 就能看到 <code class="c">EINTR</code> 与 handler 置的旗同时生效。</p>
+<p>完整源码（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/eintr_read.c"><code class="c">code/eintr_read.c</code></a>）：</p>
+<pre class="code" data-label="C"><code class="c">/* Without SA_RESTART, a signal during blocking read yields EINTR.
+ * cc -Wall -Wextra -o eintr_read eintr_read.c &amp;&amp; ./eintr_read
+ * Press Ctrl+C while waiting on stdin.
+ */
+#include &lt;errno.h&gt;
+#include &lt;signal.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;unistd.h&gt;
+
+static volatile sig_atomic_t got = 0;
+
+static void on_int(int sig)
+{
+    (void)sig;
+    got = 1;
+}
+
+int main(void)
+{
+    struct sigaction sa;
+    char buf[64];
+    ssize_t n;
+
+    memset(&amp;sa, 0, sizeof(sa));
+    sa.sa_handler = on_int;
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = 0; /* deliberately NO SA_RESTART */
+
+    if (sigaction(SIGINT, &amp;sa, NULL) == -1) {
+        perror(&quot;sigaction&quot;);
+        return EXIT_FAILURE;
+    }
+
+    printf(&quot;blocking read(STDIN)... press Ctrl+C\n&quot;);
+    n = read(STDIN_FILENO, buf, sizeof(buf));
+    if (n == -1) {
+        if (errno == EINTR)
+            printf(&quot;read interrupted: EINTR (got_flag=%d)\n&quot;, (int)got);
+        else
+            perror(&quot;read&quot;);
+        return 0;
+    }
+    printf(&quot;read %zd bytes (no interrupt)\n&quot;, n);
+    return 0;
+}
+</code></pre>
+<p>编译（macOS 26.6.2 / arm64 · clang 23.1.0）：</p>
+<pre class="code" data-label="shell"><code class="c">$CC -Wall -Wextra -o eintr_read     eintr_read.c
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="text"><code class="c">blocking read(STDIN)... press Ctrl+C
+read interrupted: EINTR (got_flag=1)     ← read 返回 -1/EINTR，handler 的旗也置上了
+</code></pre>
+<p><strong>逐条解读</strong>：</p>
+<ul>
+<li><strong><code class="c">blocking read(STDIN)... press Ctrl+C</code></strong>：<code class="c">printf</code> 带 <code class="c">\n</code>，终端行缓冲，立即可见；紧接着进程阻塞在 <code class="c">read(STDIN_FILENO, ...)</code>。因为 <code class="c">STDIN_FILENO</code> 是终端（慢设备），这个 <code class="c">read</code> 属于<strong>慢系统调用</strong>。</li>
+<li><strong><code class="c">read interrupted: EINTR (got_flag=1)</code></strong>：一行同时证明两件事——① <code class="c">read</code> 返回 <code class="c">-1</code> 且 <code class="c">errno == EINTR</code>（<strong>没有被内核自动重启</strong>）；② <code class="c">on_int()</code> 已经执行过，<code class="c">got</code> 被置 1。这就是 <code class="c">EINTR</code> 的因果链条：<strong>信号先让 handler 跑完，再让被中断的 syscall 以 <code class="c">-EINTR</code> 返回用户态</strong>——对应内核里 <code class="c">do_no_restart_syscall()</code> 返回 <code class="c">-EINTR</code>（<code class="c">kernel/signal.c:3040</code>，见正文）。</li>
+<li><strong>为什么前台 Ctrl+C 能精确命中</strong>：终端驱动把 SIGINT 发给<strong>前台进程组</strong>，本进程正在前台读终端，于是 <code class="c">read</code> 被打断。README 记录自动化时改用 <strong>FIFO 喂 stdin</strong>（<code class="c">mkfifo</code> + 后台写），因为终端里 Ctrl+C 会同时干扰输入节奏，不便脚本化。</li>
+<li><strong>对照实验——加上 <code class="c">SA_RESTART</code></strong>：把 <code class="c">sa.sa_flags</code> 改成 <code class="c">SA_RESTART</code>，同一个 <code class="c">read</code> 会被内核在 handler 返回后<strong>自动重新执行</strong>，用户态完全看不到 <code class="c">EINTR</code>，程序会一直阻塞到真正读到数据（或 EOF）。这正是 README「Pi5 复测清单」里 <code class="c">eintr_read</code> 要对照的行为：终端 Ctrl+C 与 FIFO 情形应一致。</li>
+<li><strong>本程序故意不重试</strong>：它只 <code class="c">read</code> 一次，目的是<strong>观察</strong>未重启时的返回，不是生产写法。生产代码应写成 <code class="c">do { n = read(...); } while (n == -1 &amp;&amp; errno == EINTR);</code>（见正文「四、防御性写法」），并且<strong>只重试 <code class="c">EINTR</code></strong>——把 <code class="c">EAGAIN</code> 也当 <code class="c">EINTR</code> 重试会变成忙等烧 CPU。</li>
+<li><strong><code class="c">errno</code> 在 handler 之后仍可信</strong>：<code class="c">on_int()</code> 只做一次 <code class="c">sig_atomic_t</code> 赋值，没碰任何可能改写 <code class="c">errno</code> 的库函数，所以 <code class="c">read</code> 返回后立刻判 <code class="c">errno == EINTR</code> 是安全的。若 handler 里调了别的库函数，就必须先保存/恢复 <code class="c">errno</code>（21.1 五）。</li>
+</ul>
+<p><strong>源码坐标</strong>：TLPI 21.5；<code class="c">read(2)</code>（ERRORS：<code class="c">EINTR</code>）、<code class="c">sigaction(2)</code>（<code class="c">SA_RESTART</code>）、<code class="c">signal(7)</code>（"Interruption of system calls"）、<code class="c">signal-safety(7)</code>；内核侧 <code class="c">do_no_restart_syscall</code>（<code class="c">kernel/signal.c:3040</code>）与 <code class="c">restart_syscall</code>（<code class="c">:3034</code>）见本节正文。</p>
+<hr />
+<h3>二、教学补充片段（非 <code class="c">code/</code>，未实测）</h3>
+<p>以下是本笔记原有的教学片段（不在 <code class="c">code/</code> 下、未经实测编译），原样保留：</p>
 <pre class="code" data-label="C"><code class="c">/* eintrdemo.c —— 对比设/不设 SA_RESTART 时 read 的行为
  * 编译: gcc -o eintrdemo eintrdemo.c
  * 运行: 另开终端 kill -USR1 &lt;pid&gt; 触发信号 */
@@ -3785,6 +4582,102 @@ if (n &gt;= 0) {
 <blockquote>
 <p><strong>HFT 视角</strong>：handler 会异步抢占关键路径、产生不可控延迟毛刺。让信号走 signalfd 进事件循环，把"异步抢占"变成"同步事件"——这才是低延迟系统的正确架构。</p>
 </blockquote>
+<hr />
+<h2>代码示例</h2>
+<p>小结篇内联全章最核心的 Listing 21-1——<strong>非可重入函数在 handler 里被重入的后果</strong>，它是「法则 2：只调用异步信号安全函数」的直接反例。</p>
+<h3>一、<code class="c">nonreentrant.c</code>（原书 Listing 21-1 · 21.1.2）</h3>
+<p><code class="c">crypt(3)</code> 返回指向<strong>静态缓冲区</strong>的指针，因此不可重入。程序先把 <code class="c">crypt(argv[1])</code> 的结果 <code class="c">strdup</code> 到自己的缓冲 <code class="c">cr1</code>，再在主循环里反复 <code class="c">strcmp(crypt(argv[1]), cr1)</code>；同时 handler 里也调 <code class="c">crypt(str2)</code>。一旦信号在主循环的 <code class="c">crypt</code> 返回后、<code class="c">strcmp</code> 前插入，静态缓冲会被 handler 覆盖，<code class="c">strcmp</code> 立刻报 <code class="c">Mismatch</code>。</p>
+<p>完整源码（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/nonreentrant.c"><code class="c">code/nonreentrant.c</code></a>）：</p>
+<pre class="code" data-label="C"><code class="c">/*************************************************************************\
+*                  Copyright (C) Michael Kerrisk, 2026.                   *
+*                                                                         *
+* This program is free software. You may use, modify, and redistribute it *
+* under the terms of the GNU General Public License as published by the   *
+* Free Software Foundation, either version 3 or (at your option) any      *
+* later version. This program is distributed without any warranty.  See   *
+* the file COPYING.gpl-v3 for details.                                    *
+\*************************************************************************/
+
+/* Listing 21-1 */
+
+/* nonreentrant.c
+
+   Demonstrate the nonreentrant nature of some library functions, in this
+   example, crypt(3).
+*/
+#if ! defined(_XOPEN_SOURCE) || _XOPEN_SOURCE &lt; 600
+#define _XOPEN_SOURCE 600
+#endif
+#include &lt;unistd.h&gt;
+#include &lt;signal.h&gt;
+#include &lt;string.h&gt;
+#include &lt;crypt.h&gt;
+#include &quot;tlpi_hdr.h&quot;
+
+static char *str2;                  /* Set from argv[2] */
+static volatile int handled = 0;    /* Counts number of calls to handler */
+
+static void
+handler(int sig)
+{
+    crypt(str2, &quot;xx&quot;);
+    handled++;
+}
+
+int
+main(int argc, char *argv[])
+{
+    char *cr1;
+    int callNum, mismatch;
+    struct sigaction sa;
+
+    if (argc != 3)
+        usageErr(&quot;%s str1 str2\n&quot;, argv[0]);
+
+    str2 = argv[2];                      /* Make argv[2] available to handler */
+    cr1 = strdup(crypt(argv[1], &quot;xx&quot;));  /* Copy statically allocated string
+                                            to another buffer */
+    if (cr1 == NULL)
+        errExit(&quot;strdup&quot;);
+
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = 0;
+    sa.sa_handler = handler;
+    if (sigaction(SIGINT, &amp;sa, NULL) == -1)
+        errExit(&quot;sigaction&quot;);
+
+    /* Repeatedly call crypt() using argv[1]. If interrupted by a
+       signal handler, then the static storage returned by crypt()
+       will be overwritten by the results of encrypting argv[2], and
+       strcmp() will detect a mismatch with the value in 'cr1'. */
+
+    for (callNum = 1, mismatch = 0; ; callNum++) {
+        if (strcmp(crypt(argv[1], &quot;xx&quot;), cr1) != 0) {
+            mismatch++;
+            printf(&quot;Mismatch on call %d (mismatch=%d handled=%d)\n&quot;,
+                    callNum, mismatch, handled);
+        }
+    }
+}
+</code></pre>
+<p>编译（macOS 26.6.2 / arm64 · clang 23.1.0）：</p>
+<pre class="code" data-label="shell"><code class="c"># nonreentrant.c：macOS 无 &lt;crypt.h&gt;，Linux 专有，Pi5 上编译
+#   cc -D_GNU_SOURCE -I. -o nonreentrant nonreentrant.c get_num.c signal_functions.c -lcrypt
+</code></pre>
+<p>实测输出：<strong>本机未取得</strong>——macOS 无 <code class="c">&lt;crypt.h&gt;</code>，编译不过，只能在 Linux / Pi5 上跑。<code class="c">code/README.md</code>「macOS ↔ Linux 差异与未实测项」原文：</p>
+<blockquote>
+<p><code class="c">nonreentrant</code>（21-1） | macOS 无 <code class="c">&lt;crypt.h&gt;</code> 编译不过；<strong>Linux 专有</strong>，Pi5 复测（预期：第二次进 handler 时 crypt 的静态缓冲已被上次调用覆盖）</p>
+</blockquote>
+<p><strong>逐条解读</strong>：</p>
+<ul>
+<li><strong><code class="c">cr1 = strdup(crypt(argv[1], "xx"))</code> 是整个演示的支点</strong>：<code class="c">strdup</code> 先把密文<strong>拷贝到程序自己的缓冲</strong>——否则 <code class="c">cr1</code> 也指向同一个静态缓冲，比较永远相等，bug 就暴露不出来。</li>
+<li><strong>为什么要 <code class="c">mismatch</code> 和 <code class="c">handled</code> 两个计数</strong>：<code class="c">handled</code> 是 handler 被调用的次数，<code class="c">mismatch</code> 是主流程抓到错配的次数。Linux 上的预期输出形如 <code class="c">Mismatch on call N (mismatch=M handled=H)</code>——只要 <code class="c">M &gt; 0</code>，就实测复现了「静态缓冲被 handler 覆盖」。</li>
+<li><strong><code class="c">crypt()</code> 为什么不可重入</strong>：它把结果写在自己的<strong>静态缓冲区</strong>并返回指针（<code class="c">crypt(3)</code> 的 <code class="c">RETURN VALUE</code> 明确写了这点）。<code class="c">crypt_r()</code> 才是可重入版本（调用者提供缓冲）。所以 <code class="c">crypt</code> 不在 <code class="c">signal-safety(7)</code> 的安全清单里。</li>
+<li><strong>这是「法则 2」的杀伤力展示</strong>：handler 里只调了一个「看起来无害」的库函数，没有 <code class="c">printf</code>、没有 <code class="c">malloc</code>，照样破坏主流程数据——因为它改的是主流程<strong>下一次要读的全局状态</strong>。这比死锁更隐蔽：程序不挂，只是偶尔算错。</li>
+<li><strong>修复方向</strong>：handler 里<strong>不要</strong>调 <code class="c">crypt</code>；改由 handler 只置旗，密文比较/重算全部留主流程；或者换 <code class="c">crypt_r()</code> 并给 handler 一块独立缓冲。更彻底的做法是让信号走 signalfd，根本不进 handler（见本章「七、更根本的方案：消灭 handler」）。</li>
+<li><strong>对齐本章小结的判据</strong>：<code class="c">handled</code> 是 <code class="c">volatile int</code>（不是 <code class="c">sig_atomic_t</code>）——官方镜像保留原样，只为演示非可重入性，并非推荐写法；生产旗变量应写成 <code class="c">volatile sig_atomic_t</code>。</li>
+</ul>
+<p><strong>源码坐标</strong>：TLPI <strong>Listing 21-1</strong>（21.1.2「异步信号安全」章节的原始示例）；<code class="c">crypt(3)</code>（静态缓冲）、<code class="c">crypt_r(3)</code>、<code class="c">strdup(3)</code>、<code class="c">sigaction(2)</code>、<code class="c">signal-safety(7)</code>。</p>
 <hr />
 <h2>衔接</h2>
 <ul>
@@ -4417,6 +5310,143 @@ int main(void)
 <p><strong>为什么 <code class="c">snprintf</code> 可以用</strong>：严格说它不在安全清单，但运行在<strong>干净的备用栈</strong>上且不涉及 stdio 流的锁（只格式化到局部 buf），实践上可接受。更严格的做法是手工转换或直接用 <code class="c">write</code> 输出固定串。</p>
 <p><strong>对照实验</strong>：去掉 <code class="c">SA_ONSTACK</code>，栈溢出时 handler 无法执行，进程裸死，看不到任何诊断输出。</p>
 </details>
+<hr />
+<h2>代码示例</h2>
+<p>本章唯一带官方习题编号的实现：<strong>习题 21-1</strong>（自实现 <code class="c">abort()</code>）。它与 <a href="#s-21-2">21.2</a> 内联的是同一份程序，这里从「练习」角度再列一次，方便对照 SUSv3 的三条要求。</p>
+<h3>一、<code class="c">ex21_1_abort.c</code>（习题 21-1 · 21.2.2）</h3>
+<p>自实现 <code class="c">my_abort()</code>，用三个场景验证 SUSv3 对 <code class="c">abort()</code> 的三条要求：① 无视 <code class="c">SIGABRT</code> 被阻塞/忽略，必须终止进程；② 若装了 handler，先让 handler 跑，handler 返回后把处置复位为 <code class="c">SIG_DFL</code> 再 <code class="c">raise</code> 一次 → 必死；③ 终止前 flush 并关闭 stdio 流。</p>
+<p>完整源码（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/ex21_1_abort.c"><code class="c">code/ex21_1_abort.c</code></a>）：</p>
+<pre class="code" data-label="C"><code class="c">/*************************************************************************\
+*                  Copyright (C) Michael Kerrisk, 2026.                   *
+*                                                                         *
+* This program is free software. You may use, modify, and redistribute it *
+* under the terms of the GNU General Public License as published by the   *
+* Free Software Foundation, either version 3 or (at your option) any      *
+* later version. This program is distributed without any warranty.  See   *
+* the file COPYING.gpl-v3 for details.                                    *
+\*************************************************************************/
+
+/* ex21_1_abort.c — 习题 21-1：实现 abort()
+
+   SUSv3 要求的 abort() 语义（TLPI 21.2.2 / P433）：
+   1. 无论 SIGABRT 被阻塞还是忽略，abort() 都必须终止进程（override 阻塞/忽略）
+   2. 若进程用 handler 捕获 SIGABRT，先让 handler 跑；
+      handler 若返回，则 abort() 把处置复位为 SIG_DFL 再 raise 一次 → 必死
+   3. 终止前 flush 并关闭 stdio 流
+
+   本程序实现 my_abort()，并用三个场景验证：
+     ⓪ 默认处置：直接终止
+     ① SIGABRT 被阻塞：解除阻塞语义 → 仍终止
+     ② handler 捕获并返回：复位 SIG_DFL → 第二次 raise 终止
+   实测环境：macOS 26.6.2 (arm64)，clang 23.1.0
+*/
+#include &lt;signal.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+
+/* —— 习题 21-1 的核心：my_abort() —— */
+static void
+my_abort(void)
+{
+    sigset_t mask;
+    struct sigaction sa;
+
+    /* SUSv3：abort() 必须无视阻塞 —— 先解除 SIGABRT 的阻塞 */
+    sigemptyset(&amp;mask);
+    sigaddset(&amp;mask, SIGABRT);
+    if (sigprocmask(SIG_UNBLOCK, &amp;mask, NULL) == -1) {
+        perror(&quot;sigprocmask&quot;);
+        _exit(EXIT_FAILURE);
+    }
+
+    /* 查当前处置：若装了 handler，让它跑（handler 可能 longjmp 不回来） */
+    if (sigaction(SIGABRT, NULL, &amp;sa) == -1) {
+        perror(&quot;sigaction&quot;);
+        _exit(EXIT_FAILURE);
+    }
+    if (sa.sa_handler != SIG_DFL &amp;&amp; sa.sa_handler != SIG_IGN)
+        raise(SIGABRT);                 /* handler 返回 = 没终止进程 */
+
+    /* 走到这里说明 handler 返回（或原处置是 SIG_IGN）：
+       复位 SIG_DFL，flush stdio，再 raise 一次 —— 这次必死 */
+    sa.sa_handler = SIG_DFL;
+    sa.sa_flags = 0;
+    sigemptyset(&amp;sa.sa_mask);
+    if (sigaction(SIGABRT, &amp;sa, NULL) == -1) {
+        perror(&quot;sigaction reset&quot;);
+        _exit(EXIT_FAILURE);
+    }
+    fflush(stdout);
+    raise(SIGABRT);
+
+    /* 若信号仍被忽略（理论上不可能，SIG_DFL 已复位）：兜底 */
+    _exit(EXIT_FAILURE);
+}
+
+/* —— 场景 ② 的 handler：捕获后直接返回 —— */
+static void
+handler(int sig)
+{
+    printf(&quot;    handler: 捕获 SIGABRT(%d) 后返回 → my_abort 应回位 SIG_DFL 再来一次\n&quot;, sig);
+}
+
+int
+main(int argc, char *argv[])
+{
+    printf(&quot;PID=%ld  用法：无参=⓪默认；b=①阻塞；h=②handler 返回\n&quot;,
+            (long) getpid());
+
+    if (argc &gt; 1 &amp;&amp; argv[1][0] == 'b') {
+        /* ① 阻塞 SIGABRT 再 abort —— SUSv3：必须仍终止 */
+        sigset_t mask;
+        sigemptyset(&amp;mask);
+        sigaddset(&amp;mask, SIGABRT);
+        sigprocmask(SIG_BLOCK, &amp;mask, NULL);
+        printf(&quot;[①] SIGABRT 已阻塞，调 my_abort() —— 应仍然终止\n&quot;);
+        printf(&quot;[①] 这行**能**打出来：abort() 终止前必须 flush stdio（SUSv3 要求）\n&quot;);
+        my_abort();
+
+    } else if (argc &gt; 1 &amp;&amp; argv[1][0] == 'h') {
+        /* ② handler 捕获并返回 —— 复位 SIG_DFL 后第二次 raise 终止 */
+        struct sigaction sa;
+        sa.sa_handler = handler;
+        sa.sa_flags = 0;
+        sigemptyset(&amp;sa.sa_mask);
+        sigaction(SIGABRT, &amp;sa, NULL);
+        printf(&quot;[②] 装 handler，调 my_abort()\n&quot;);
+        my_abort();
+
+    } else {
+        /* ⓪ 默认处置直接终止 */
+        printf(&quot;[⓪] 默认处置，调 my_abort() —— 直接 SIGABRT 终止\n&quot;);
+        my_abort();
+    }
+
+    printf(&quot;不应到达这里\n&quot;);
+    exit(EXIT_SUCCESS);
+}
+</code></pre>
+<p>编译（macOS 26.6.2 / arm64 · clang 23.1.0）：</p>
+<pre class="code" data-label="shell"><code class="c">$CC -Wall -Wextra -o ex21_1_abort   ex21_1_abort.c
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="text"><code class="c">$ ex21_1_abort        → [exit=134]  ⓪ 默认 SIGABRT 终止
+$ ex21_1_abort b      → [exit=134]  ① 阻塞也拦不住（SUSv3 override），且终止前 flush 了 stdio
+$ ex21_1_abort h      → [exit=134]  ② handler 捕获返回 → 复位 SIG_DFL → 第二次 raise 必死
+</code></pre>
+<p><strong>逐条解读</strong>：</p>
+<ul>
+<li><strong>三个场景退出码都是 <code class="c">134</code></strong>：<code class="c">134 = 128 + 6</code>（SIGABRT = 6）。shell 用 <code class="c">128+signo</code> 表示「被信号 N 杀死」——说明三次都走了 SIGABRT <strong>默认动作</strong>，而不是某个 <code class="c">exit(1)</code>。这就是本题验收标准：<code class="c">abort()</code> 必须产生 <code class="c">WIFSIGNALED</code> 语义（<a href="#s-21-2">21.2</a> 正文「二、四种正确方式」）。</li>
+<li><strong>⓪ 默认处置</strong>：<code class="c">sigaction(SIGABRT, NULL, &amp;sa)</code> 查到 <code class="c">SIG_DFL</code> → 跳过第一次 <code class="c">raise</code> → 复位 <code class="c">SIG_DFL</code> + <code class="c">fflush</code> + <code class="c">raise</code> → 终止。</li>
+<li><strong>① 阻塞也拦不住（SUSv3 第 1 条）</strong>：<code class="c">main</code> 先 <code class="c">SIG_BLOCK</code>，<code class="c">my_abort()</code> 开头立刻 <code class="c">SIG_UNBLOCK</code>——<strong>override 阻塞</strong>。两行 <code class="c">[①] ...</code> 能打出来，证明最终 <code class="c">raise</code> 前执行了 <code class="c">fflush(stdout)</code>（SUSv3 第 3 条）。</li>
+<li><strong>② handler 无法拦停（SUSv3 第 2 条）</strong>：处置非 <code class="c">SIG_DFL</code>/<code class="c">SIG_IGN</code> → 先 <code class="c">raise</code> 让 handler 跑；handler 打印后<strong>正常返回</strong> → <code class="c">my_abort()</code> 继续走到「复位 <code class="c">SIG_DFL</code> + <code class="c">fflush</code> + 第二次 <code class="c">raise</code>」→ 这次没有 handler 可拦，必死。这正是 <code class="c">assert()</code> 内部 <code class="c">abort()</code> 不可被拦截的原因。</li>
+<li><strong>为什么 <code class="c">fflush</code> 不能省</strong>：默认动作（<code class="c">do_coredump</code> + <code class="c">do_group_exit</code>）不会 flush 用户态 stdio；stdout 重定向到文件/管道时，handler 里那句 <code class="c">printf</code> 会连同缓冲一起丢。</li>
+<li><strong>core 文件是本机未验证项</strong>：README 差异表记录 macOS 默认不落盘 core，故只验证了退出状态；Linux 上 <code class="c">ulimit -c unlimited</code> 后应看到 <code class="c">Aborted (core dumped)</code>（Pi5 复测清单）。</li>
+</ul>
+<p><strong>源码坐标</strong>：TLPI <strong>习题 21-1</strong>（正文 21.2.2 / P433）；<code class="c">abort(3)</code>（SUSv3 语义）、<code class="c">raise(3)</code>、<code class="c">sigaction(2)</code>、<code class="c">sigprocmask(2)</code>、<code class="c">signal-safety(7)</code>。</p>
 <hr />
 <h2>衔接</h2>
 <ul>
