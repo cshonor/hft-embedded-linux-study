@@ -662,7 +662,7 @@ def build_appendix(book, letter, app_path, book_nav):
              "no": f"App {letter}",
              "secs": len(nav_items),
              "quiz": "—",
-             "from": str(app_path.relative_to(WORKSPACE))}
+             "from": app_path.relative_to(WORKSPACE).as_posix()}
     return page(title, book["sub_zh"], "\n".join(sections_html), "", nav_items, book_nav, stats)
 
 def build_book(book, chapters, appendices):
