@@ -1,4 +1,4 @@
-# 54-shmring — SHM 无锁环形缓冲 + 延迟基准（P2）
+# chapter-55.z-project-shmring — SHM 无锁环形缓冲 + 延迟基准（P2）
 
 **触发**：学完 Ch49–55（内存映射、POSIX IPC、文件锁）笔记后开写。
 **关键前置回补**：Ch35（SCHED_FIFO、sched_setaffinity）、Ch50（mlock）。
@@ -23,4 +23,4 @@
 
 ## HFT / 嵌入式关联
 
-这就是行情解码进程 → 策略进程之间真实在用的通道；本项目的 ring buffer 代码会被 63-t2t 直接复用。
+这就是行情解码进程 → 策略进程之间真实在用的通道；本项目的 ring buffer 代码会被 chapter-63.z-project-t2t 直接复用。
