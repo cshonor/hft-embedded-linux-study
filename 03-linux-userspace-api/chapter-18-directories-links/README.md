@@ -1,4 +1,4 @@
-# TLPI 第 18 章 — Directories and Links 目录与链接
+# TLPI 第 18 章 — Directories and Links
 
 **优先级**：🔴（路径树操作、临时文件、TOCTOU、可靠写入——HFT 落盘与部署安全的根基）
 **前置**：[Ch03 系统编程概念](../chapter-03-system-programming-concepts/README.md) · [Ch04 File I/O](../chapter-04-file-io-universal/README.md)（fd 与 inode 绑定）· [Ch14 FS/inode](../chapter-14-file-systems/README.md) · [Ch15 stat/lstat](../chapter-15-file-attributes/README.md)
@@ -100,7 +100,7 @@ int fd = openat(anchor, rel, O_RDONLY|O_NOFOLLOW);
 
 ---
 
-## 代码清单
+## 代码示例
 
 自编 demo（macOS 实测通过，`clang -Wall -Wextra` 零警告）+ 原书镜像（TLPI dist `dirs_links/` 逐字）+ 支撑文件，**全部明细与编译命令见 [`code/README.md`](code/README.md)**。
 

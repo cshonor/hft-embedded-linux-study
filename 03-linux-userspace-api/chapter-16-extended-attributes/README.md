@@ -36,6 +36,21 @@
 
 ---
 
+## 代码示例
+
+本章 `code/` 下有 **5 个可编译程序 + 1 个支撑头**，全部明细与编译命令见 [`code/README.md`](code/README.md)。
+
+| 类别 | 文件 | 覆盖节 |
+|------|------|--------|
+| 自编 demo（2） | `c16_1_xattr_basic.c`（set/get/list/remove 四件套 + `buf=NULL` 探大小 + 二进制值 + `ERANGE` + `ENOATTR`/`ENODATA` 双判）· `c16_2_namespaces.c`（namespace 试探 + symlink 限制 + `fsetxattr` + 写权限语义） | 16.1 / 16.2 / 16.3 |
+| 习题实现（1） | `ex16_1_setfattr.c`（16-1 简易 setfattr(1)：`user.*` 限定 + 回读验证） | 16.5 |
+| 原书镜像（2） | `xattr_view.c`（Listing 16-1）· `t_setxattr.c`（补充；**5 参 Linux 签名**） | 16.3 |
+| 支撑（1） | `tlpi_hdr.h` 替身（头注释标注 macOS/Linux 签名差异） | — |
+
+**实测边界**：自编 3 个程序在本机 **macOS 26.6.2 (arm64) / clang 23.1.0** 编译零警告、运行成功（xattr 依赖 FS 支持：APFS 支持 `user.*`，实验全部在 `/tmp` 一次性文件上做）；`t_setxattr.c` 是 Linux 专用签名，保留镜像待 Pi5 复测。demo 内用移植宏抹平 macOS 多出的 `position`/`options` 两参，同一份代码在 Linux 上直接可编。
+
+---
+
 ## 一条主线：**xattr 是 inode 上的小数据库，不是另一个存储引擎**
 
 它复用文件的权限模型（读写 xattr = 读写文件），复用 inode 的 cache 亲和（小属性随 inode 常驻），也复用 inode 的竞态面（fd 版才是稳的）。看懂"复用"二字，本章所有细节都顺理成章。

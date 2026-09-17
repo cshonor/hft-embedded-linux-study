@@ -46,6 +46,22 @@
 
 ---
 
+## 代码示例
+
+本章 `code/` 下有 **11 个自编程序 + 8 个原书镜像 + 4 个支撑 + 1 个 Linux 专有补充**，全部明细与编译命令见 [`code/README.md`](code/README.md)。
+
+| 类别 | 文件 | 覆盖节 |
+|------|------|--------|
+| 自编 demo（6） | `c15_1_stat_family.c` · `c15_2_timestamps.c` · `c15_3_futimens.c` · `c15_4_chown.c` · `c15_5_chmod_umask.c` · `c15_6_access.c` | 15.1 / 15.2 / 15.2.2 / 15.3 / 15.4 / 15.4 |
+| 习题实现（5） | `ex15_1_perms.c`(15-1) · `ex15_3_nanosecond_stat.c`(15-3) · `ex15_4_eaccess.c`(15-4) · `ex15_5_umask_peek.c`(15-5) · `ex15_6_chmod_arX.c`(15-6) | 15.7 |
+| 原书镜像（8） | `t_stat.c`(15-1) · `t_chown.c`(15-2) · `file_perms.h`(15-3) · `file_perms.c`(15-4) · `t_umask.c`(15-5) · `t_utime.c` · `t_utimes.c` · `chiflag.c` | 15.1–15.5 |
+| 支撑（4） | `tlpi_hdr.h` 替身 · `ugid_functions.{h,c}`（dist 原版）· `sys/sysmacros.h`（macOS 空壳 shim） | — |
+| Linux 专有补充 | `statx_btime.c`（`STATX_BTIME` = 真正的创建时间，Linux 4.11+） | 15.2 |
+
+**实测边界**：自编 11 个 + 原书 6 个可跑程序在本机 **macOS 26.6.2 (arm64) / clang 23.1.0** 编译零警告、运行成功，输出已钉进对应节的笔记；`chiflag.c`（依赖 `<linux/fs.h>`）与 `statx_btime.c`（依赖 `statx`/`STATX_BTIME`）是 Linux 专有，本机不可编译，保留镜像待 Pi5/ext4 复测。
+
+---
+
 ## 一条主线：**文件属性 = 内核 inode 的用户态投影**
 
 `stat()` 不是"读文件"，是**读 inode**；`utimensat/chmod/chown` 也不是"改文件"，是**改 inode**。看懂这一层，三个现象立刻自洽：

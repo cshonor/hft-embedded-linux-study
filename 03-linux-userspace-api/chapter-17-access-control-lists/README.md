@@ -41,6 +41,21 @@
 
 ---
 
+## 代码示例
+
+本章 `code/` 下有 **4 个程序 + 1 个支撑头**，全部明细与编译命令见 [`code/README.md`](code/README.md)。
+
+| 类别 | 文件 | 实测状态 |
+|------|------|---------|
+| 判定算法复现 | `c17_1_acl_algorithm.c`（9 用例 + mask 清零实验，与 §17.2 算法逐条一致） | ✅ 本机实测（纯逻辑，全平台可跑） |
+| 习题 17-1 | `ex17_1_listacls.c`（listacls，需 `-lacl`） | ⛔ Linux 专有，Pi5/ext4 复测 |
+| 原书镜像 | `acl_view.c`（Listing 17-1）· `acl_update.c`（补充） | ⛔ Linux 专有（libacl） |
+| 支撑 | `tlpi_hdr.h` 替身 | — |
+
+> ⚠️ POSIX draft ACL（`system.posix_acl_*` xattr + libacl）属于 Linux 生态，macOS 没有对应 API/常量。本机的「实测」只覆盖**判定算法的纯逻辑复现**；真机 ACL 行为（`getfacl`/`setfacl`/default 继承）列在 Pi5 复测清单里。
+
+---
+
 ## 一条主线：**ACL 不是"更多权限位"，而是一套带全局约束（mask）的判定协议**
 
 看懂 17.2 的四步算法，17.4 的 mask、17.3 的 #effective 注释、`ls -l` 的 `+` 全部自洽；看不懂算法，工具用得再多也是玄学。

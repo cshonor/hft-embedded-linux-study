@@ -1,8 +1,8 @@
-# TLPI 第 19 章 — Monitoring File Events 监控文件事件
+# TLPI 第 19 章 — Monitoring File Events
 
 **优先级**：🔴（热重载、配置监视、构建工具、日志跟随——配置热重载与落盘感知的根基）
 **前置**：[Ch18 Directories and Links](../chapter-18-directories-links/README.md)（safe-write 与 nftw）· [Ch04 File I/O](../chapter-04-file-io-universal/README.md)（read 语义）
-**后置**：[Ch20 Signals](../chapter-20-signals-fundamentals/README.md) · [Ch63 替代 I/O 模型](../../chapter-63-alternative-i-o-models/notes/63.4-the-epoll-api.md)（inotify fd 进 epoll）
+**后置**：[Ch20 Signals](../chapter-20-signals-fundamentals/README.md) · [Ch63 替代 I/O 模型](../chapter-63-alternative-i-o-models/notes/63.4-the-epoll-api.md)（inotify fd 进 epoll）
 
 > ⚠️ **本章是 Linux 专有章**：inotify（2.6.13+）与 dnotify 在 macOS 上都不存在（macOS 等价物是 kqueue/FSEvents，语义不对齐）。
 > **本轮实测环境不覆盖本章**——Pi（192.168.31.109）离线，本机无 docker/VM。全部笔记按 **man-pages 6.19** `inotify(7)`/`inotify_init(2)`/`inotify_add_watch(2)`/`fcntl(2)`(F_NOTIFY) + **Linux v6.6** `fs/notify/inotify/`（含 `IN_ONLYDIR`→`ENOTDIR` 这类错误码级的源码核验）撰写，所有程序标注「未实测」，Pi5 复测清单见下。
@@ -33,7 +33,7 @@
 
 ---
 
-## 本仓库代码（全部 Linux 专有）
+## 代码示例
 
 | 文件 | 性质 | 覆盖 | 节 |
 |------|------|------|----|
