@@ -527,7 +527,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <ol>
 <li><strong>sigsuspend 原子性实测复现</strong>：临界区（INT/QUIT 全屏蔽）内到达的 SIGINT 变 pending，<code class="c">Caught signal 2</code> 精确落在 sigsuspend 点——22.9「先阻塞才不丢」的灵魂输出</li>
 <li><strong>标准信号合并 vs RT 排队</strong>：<code class="c">catch_rtsigs</code> 实测发 USR1×2 只 caught 1 次；RT 排队验证需 Linux（macOS NSIG=32 无 RT 段）</li>
-<li><strong>⚠️ ARM64 整数除零不触发 SIGFPE</strong>：<code class="c">demo_SIGFPE</code> 在 Apple Silicon 上 handler 根本不进（<code class="c">sdiv</code> 无陷阱，x86 才有）——22.4 的演示在 M 系列 Mac 上必然落空</li>
+<li><strong>⚠️ <code class="c">demo_SIGFPE</code> 进不了 handler —— 两层原因要拆开</strong>：①<strong>编译器</strong>（主因，本轮 CE 新发现）：<code class="c">x = 1 / y</code> 的分子是常量 <code class="c">1</code>，GCC 前端就折成 <code class="c">(y∈{0,1}) ? y : 0</code> 的分支选择，<strong><code class="c">-O0</code> 也折</strong> ⇒ 两侧都<strong>没有除法指令</strong>，x86-64 上也打印 <code class="c">Shouldn't get here!</code>；②<strong>架构</strong>：即便指令真被执行，AArch64 的 <code class="c">sdiv</code> 除零也不 trap（x86 的 <code class="c">idiv</code> 才 trap）。想看真的 SIGFPE，得「<strong>分子非常量 + x86</strong>」两个条件同时满足</li>
 <li><strong>macOS 阻塞期延迟递送的信号不回填 si_pid/si_uid</strong>（=0）；运行期直收则正常——Linux 会一直填</li>
 <li><code class="c">sig_speed_sigsuspend 2000</code> 实测 0.04s——sigsuspend 往返 ≈20µs，仍是「廉价 IPC」量级</li>
 <li>macOS 无 <code class="c">sigqueue()/sigwaitinfo()/signalfd</code>——三个自编 RT demo 全部标注 Linux 专有，Pi5 编译复测</li>
@@ -1081,7 +1081,7 @@ prctl(PR_SET_DUMPABLE, 1);     /* 恢复 */
 <hr />
 <h2>代码示例</h2>
 <h3>一、<code class="c">demo_SIGFPE.c</code>（官方补充程序）</h3>
-<p>本节第一节把 <code class="c">SIGFPE</code>(8) 列进 <code class="c">SIG_KERNEL_COREDUMP_MASK</code>（默认动作含 core）。这个官方补充程序演示「整数除零 → SIGFPE」这条本该产生 core 的路径；但在 Apple Silicon 上它跑不到 handler——<strong>ARM64 的 <code class="c">sdiv</code> 除零不设陷阱</strong>，这是判断「能不能拿到 core」之前先要过的第一关。</p>
+<p>本节第一节把 <code class="c">SIGFPE</code>(8) 列进 <code class="c">SIG_KERNEL_COREDUMP_MASK</code>（默认动作含 core）。这个官方补充程序演示「整数除零 → SIGFPE」这条本该产生 core 的路径；实测它跑不到 handler——原因<strong>有两层，主因是编译器</strong>：① GCC 认出分子是常量 <code class="c">1</code>，前端就把 <code class="c">1 / y</code> 折成 <code class="c">(y∈{0,1}) ? y : 0</code> 的分支选择（<strong><code class="c">-O0</code> 也折</strong>）⇒ 两侧都不产生除法指令；② 即便指令真被执行，AArch64 的 <code class="c">sdiv</code> 除零也不产生异常。这是判断「能不能拿到 core」之前先要过的第一关。</p>
 <p>完整源码（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/demo_SIGFPE.c"><code class="c">code/demo_SIGFPE.c</code></a>）：</p>
 <pre class="code" data-label="C"><code class="c">/*************************************************************************\
 *                  Copyright (C) Michael Kerrisk, 2026.                   *
@@ -1186,10 +1186,33 @@ Shouldn't get here!                ← x = 1/y（y=0）直接算出结果继续�
 </code></pre>
 <p><strong>逐条解读</strong>：
 - <code class="c">Catching SIGFPE</code> / <code class="c">About to generate SIGFPE</code> 说明 <code class="c">sigaction(SIGFPE, …)</code> 安装成功、<code class="c">1 / y</code> 之前的流程全部按预期走到。
-- <code class="c">Shouldn't get here!</code> 本应是<strong>不可达</strong>的一行——x86 上 <code class="c">y=0</code> 的整数除法会 trap，内核发 SIGFPE 进 handler，程序不会继续向下执行。
-- 它偏偏打印出来了，且 <code class="c">[exit=1]</code>：说明 <strong>ARM64 根本没有产生信号</strong>，<code class="c">x = 1 / y</code> 直接把结果算出来继续跑（ARM64 的 <code class="c">sdiv</code> 不做除零陷阱，x86 的 <code class="c">idiv</code> 才 trap）。
-- 推论：在 M 系列 Mac 上演示 22.4 的 SIGFPE 必然落空；要复现书上的输出必须上 <strong>x86 Linux</strong>（Pi5 是 arm64，同样复现不了，需 qemu/真实 x86）。
-- 与本节主题的连接：SIGFPE 本在 <code class="c">SIG_KERNEL_COREDUMP_MASK</code> 里，正常路径是「除零 → SIGFPE → core」。信号压根没产生，<code class="c">ulimit -c unlimited</code>、<code class="c">core_pattern</code>、<code class="c">coredump_filter</code> 六道开关调得再对也<strong>没有 core 可写</strong>。</p>
+- <code class="c">Shouldn't get here!</code> 本应是<strong>不可达</strong>的一行——按书上的模型，<code class="c">y=0</code> 的整数除法会 trap，内核发 SIGFPE 进 handler，程序不会继续向下执行。
+- 它偏偏打印出来了，且 <code class="c">[exit=1]</code>。⭐ <strong>但「为什么」有两层，别只写「ARM64」</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>事实</th>
+<th>判据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 编译器（主因）</td>
+<td><code class="c">1 / y</code> 的分子是常量 <code class="c">1</code>，GCC <strong>前端</strong>就折成 <code class="c">(y∈{0,1}) ? y : 0</code> 的分支选择（<code class="c">-O0</code> 也折）⇒ <strong>没有除法指令</strong>，信号无从产生</td>
+<td>另在 Compiler Explorer 复核：x86-64 gcc 13.3 <code class="c">-O0</code>/<code class="c">-O2</code> 跑同源，输出同样是 <code class="c">Shouldn't get here! x=0 y=0</code></td>
+</tr>
+<tr>
+<td>② 架构</td>
+<td>即便指令真被执行：AArch64 <code class="c">sdiv</code> 除零<strong>不产生异常</strong>（结果为 0）；x86 <code class="c">idiv</code> 除零 → <code class="c">#DE</code> → <code class="c">SIGFPE(8)</code></td>
+<td>AArch64 clang 18.1 / gcc 13.3 汇编是裸 <code class="c">sdiv</code>：无 <code class="c">cmp</code>、无分支、无 <code class="c">__aeabi_idiv0</code> 调用</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>推论：要让这条路径真的产生信号，<strong>分子必须非常量</strong>（<code class="c">x = argc / y</code>）<strong>且平台是 x86</strong>——CE 实测该对照组在 x86-64 上拿到 <code class="c">Caught signal 8 (SIGFPE)</code>。Pi5 是 arm64，满足了前半条也仍旧不 trap，需 qemu-x86 或真实 x86。</li>
+<li>与本节主题的连接：SIGFPE 本在 <code class="c">SIG_KERNEL_COREDUMP_MASK</code> 里，正常路径是「除零 → SIGFPE → core」。信号压根没产生，<code class="c">ulimit -c unlimited</code>、<code class="c">core_pattern</code>、<code class="c">coredump_filter</code> 六道开关调得再对也<strong>没有 core 可写</strong>。</li>
+</ul>
 <p><strong>源码坐标</strong>：TLPI 第 22 章官方补充程序（无 Listing 编号，man7 dist <code class="c">signals/demo_SIGFPE.c</code>）；<code class="c">man 7 signal</code>（SIGFPE 默认动作 <code class="c">Core</code>）· <code class="c">man 2 sigaction</code>。本节正文的内核坐标见 <a href="#intro">README 实测硬结论第 3 条</a> 与 Ch20.2 的 <code class="c">SIG_KERNEL_COREDUMP_MASK</code> 名单。</p>
 <h3>二、教学补充片段（非 <code class="c">code/</code>，未实测）</h3>
 <h3>示例 1：可控地打开 core 并触发一次段错误</h3>
@@ -4515,9 +4538,33 @@ Shouldn't get here!                ← x = 1/y（y=0）直接算出结果继续�
 <p><strong>逐条解读</strong>：
 - <code class="c">Catching SIGFPE</code> 说明 <code class="c">sigaction(SIGFPE, &amp;sa, NULL)</code> 装好了 handler，并非 <code class="c">-i</code>（忽略）模式，<code class="c">SA_RESTART</code> 也设了。
 - <code class="c">About to generate SIGFPE</code> 后面紧跟着 <code class="c">Shouldn't get here!</code>：按本书及 x86 的预期，<code class="c">x = 1 / y</code>（<code class="c">y=0</code>）应触发 CPU trap → 内核 <code class="c">force_sig_fault(SIGFPE, FPE_INTDIV, …)</code> → handler 打印 <code class="c">Caught signal 8 (Floating point exception)</code>；<strong>它没有出现</strong>。
-- <code class="c">Shouldn't get here!</code> 本是不可达行，却打印了；<code class="c">[exit=1]</code> 对应源码末尾的 <code class="c">exit(EXIT_FAILURE)</code>。结论：<strong>ARM64 上整数除零根本不产生 SIGFPE</strong>——<code class="c">sdiv</code> 指令无陷阱（x86 的 <code class="c">idiv</code> 才 trap）。所以这条「硬件产生的信号」在 Apple Silicon 上亲手演示不出来。
-- 这条实测是 <code class="c">code/README.md</code>「实测硬结论」第 3 条，也解释了为什么本节的 <code class="c">force_sig_fault</code> 路径要看 <strong>x86 Linux</strong> 的运行输出；Pi5（arm64）同样不 trap，需 qemu-x86 或真实 x86 机。
-- 与本节其余内容的呼应：<code class="c">demo_SIGFPE</code> 里 <code class="c">SA_RESTART</code> 但没给 <code class="c">SA_SIGINFO</code>，所以拿不到 <code class="c">si_code</code>/<code class="c">si_addr</code>——要区分 <code class="c">FPE_INTDIV</code>/<code class="c">FPE_FLTDIV</code> 或取得故障指令地址，必须改用下方教学片段示例 1 的 <code class="c">SA_SIGINFO</code> 写法。</p>
+- ⭐ <strong>但「为什么没出现」不能归给 ARM64</strong>。拆成两层看，主因在编译器：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>事实</th>
+<th>判据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 编译器（主因）</td>
+<td><code class="c">x = 1 / y</code> 的分子是常量 <code class="c">1</code>，GCC <strong>前端</strong>就把它折成 <code class="c">(y∈{0,1}) ? y : 0</code> 的分支选择，<strong><code class="c">-O0</code> 也折</strong> ⇒ 两侧<strong>没有除法指令</strong>，信号无从产生</td>
+<td>另在 Compiler Explorer 复核：x86-64 gcc 13.3 <code class="c">-O0</code>/<code class="c">-O2</code> 跑同源，输出同样是 <code class="c">Shouldn't get here! x=0 y=0</code></td>
+</tr>
+<tr>
+<td>② 架构</td>
+<td>就算指令真被执行：AArch64 <code class="c">sdiv</code>/<code class="c">udiv</code> 除零<strong>不产生异常</strong>（结果为 0）；x86 <code class="c">idiv</code> 除零 → <code class="c">#DE</code> → <code class="c">SIGFPE(8)</code></td>
+<td>AArch64 clang 18.1 / gcc 13.3 的汇编是<strong>裸 <code class="c">sdiv</code></strong>：无 <code class="c">cmp</code>、无分支、无 <code class="c">__aeabi_idiv0</code> 之类的助手调用</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>于是 <code class="c">Shouldn't get here!</code> 打印、<code class="c">[exit=1]</code>（对应源码末尾的 <code class="c">exit(EXIT_FAILURE)</code>）是<strong>两个平台都会发生</strong>的结果；想看到真的 <code class="c">SIGFPE</code>，必须同时满足 <strong>分子非常量</strong>（<code class="c">x = argc / y</code>）<strong>且是 x86</strong>——CE 实测该对照组在 x86-64 上拿到 <code class="c">Caught signal 8 (SIGFPE)</code>。</li>
+<li>这条实测是 <code class="c">code/README.md</code>「实测硬结论」第 3 条，也解释了为什么本节的 <code class="c">force_sig_fault</code> 路径要看 <strong>x86 Linux</strong> 的运行输出；Pi5（arm64）即便改了分子也仍旧不 trap，需 qemu-x86 或真实 x86 机。</li>
+<li>与本节其余内容的呼应：<code class="c">demo_SIGFPE</code> 里 <code class="c">SA_RESTART</code> 但没给 <code class="c">SA_SIGINFO</code>，所以拿不到 <code class="c">si_code</code>/<code class="c">si_addr</code>——要区分 <code class="c">FPE_INTDIV</code>/<code class="c">FPE_FLTDIV</code> 或取得故障指令地址，必须改用下方教学片段示例 1 的 <code class="c">SA_SIGINFO</code> 写法。</li>
+</ul>
 <p><strong>源码坐标</strong>：TLPI 第 22 章官方补充程序（man7 dist <code class="c">signals/demo_SIGFPE.c</code>）；<code class="c">man 7 signal</code>（SIGFPE 默认动作 <code class="c">Core</code>）· <code class="c">man 2 sigaction</code>。内核坐标：本节正文的 <code class="c">force_sig_fault():1740</code> / <code class="c">force_sig_info_to_task():1336</code>。</p>
 <h3>二、教学补充片段（非 <code class="c">code/</code>，未实测）</h3>
 <h3>示例 1：捕获硬件信号，打印精确诊断信息</h3>
@@ -5643,7 +5690,8 @@ Shouldn't get here!                ← x = 1/y（y=0）直接算出结果继续�
 <p><strong>逐条解读</strong>：
 - <code class="c">Catching SIGFPE</code> 之后没有 <code class="c">Ignoring SIGFPE</code>，说明走的是 catch 分支（<code class="c">SA_RESTART</code> + <code class="c">sigfpeCatcher</code>），不是 <code class="c">-i</code> 忽略分支。
 - <code class="c">About to generate SIGFPE</code> 是源码 <code class="c">printf</code> 在 <code class="c">x = 1 / y</code> <strong>之前</strong>打的。按同步信号的模型，紧接着应发生 CPU trap → 内核强制递送 → handler 打印 <code class="c">Caught signal 8 …</code>；实测没有，直接跳到 <code class="c">Shouldn't get here!</code>。
-- <code class="c">Shouldn't get here!</code> / <code class="c">[exit=1]</code>：<strong>ARM64 的 <code class="c">sdiv</code> 整数除零不设陷阱</strong>，同步生成这一步根本没发生（x86 的 <code class="c">idiv</code> 才 trap）。所以「同步信号由故障指令当场触发」这条规律，在 Apple Silicon 上除了段错误（SIGSEGV）之外的算术类演示会落空。
+- ⭐ <strong>但这一跳不能只怪 ARM64，根因在编译器</strong>：<code class="c">1 / y</code> 的分子是常量 <code class="c">1</code>，GCC <strong>前端</strong>就把它折成 <code class="c">(y∈{0,1}) ? y : 0</code> 的分支选择（<strong><code class="c">-O0</code> 也折</strong>）⇒ <strong>两侧都没产生除法指令</strong>，「同步生成」在<strong>指令层面</strong>压根没发生。另在 Compiler Explorer 复核：x86-64 gcc 13.3 <code class="c">-O0</code>/<code class="c">-O2</code> 跑同源，输出同样是 <code class="c">Shouldn't get here! x=0 y=0</code>。
+- 第二层才是架构：即便除法指令真被执行，AArch64 的 <code class="c">sdiv</code> 除零也<strong>不产生异常</strong>（结果为 0），x86 的 <code class="c">idiv</code> 才 trap → <code class="c">#DE</code> → <code class="c">SIGFPE</code>。所以「同步信号由故障指令当场触发」这条规律本身没错，<strong>错的是这个 demo 的写法</strong>——CE 实测把分子换成非常量（<code class="c">x = argc / y</code>）后，x86-64 上立刻得到 <code class="c">Caught signal 8 (SIGFPE)</code>。
 - 这条差异是 <code class="c">code/README.md</code>「实测硬结论」第 3 条。要看真正的同步生成，用 <strong>x86 Linux</strong>；也可在 Pi5 上把 <code class="c">./demo_SIGFPE b</code> 跑一遍做对照——源码注释明写「<code class="c">b</code> 模式下行为取决于内核版本」，Linux 2.6+ 的预期是：即使先 <code class="c">SIG_BLOCK</code> 掉 SIGFPE，故障指令处仍会被内核<strong>强制解除阻塞并立即递送</strong>（对应本节正文「同步信号插队」）。
 - 与本节后半段的连接：<code class="c">force_sig_fault</code> 发出的信号 <code class="c">si_code &gt; 0</code>（如 <code class="c">FPE_INTDIV</code>），而 <code class="c">kill</code>/<code class="c">raise</code> 发出的 <code class="c">si_code &lt;= 0</code>（<code class="c">SI_USER</code>）——本程序未用 <code class="c">SA_SIGINFO</code>，拿不到这个判据；要看符号差异请见下方教学片段的示例 1。</p>
 <p><strong>源码坐标</strong>：TLPI 第 22 章官方补充程序（man7 dist <code class="c">signals/demo_SIGFPE.c</code>）；<code class="c">man 7 signal</code>（同步/异步生成、<code class="c">SIGFPE</code>）· <code class="c">man 2 sigaction</code>（<code class="c">SA_SIGINFO</code> 与 <code class="c">si_code</code>）。内核坐标：本节正文的 <code class="c">force_sig_info_to_task():1336</code> 与 <code class="c">SYNCHRONOUS_MASK</code>。</p>
