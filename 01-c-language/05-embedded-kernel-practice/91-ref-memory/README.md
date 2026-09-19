@@ -10,9 +10,9 @@
 
 | 章节 | 内容 |
 |------|------|
-| **[ch01](../06-ch6-toolchain-custom/1-toolchain)** | `gcc`、`gdb`、`make` |
+| **[ch01](../06-ch6-toolchain-custom/toolchain)** | `gcc`、`gdb`、`make` |
 | **[ch03](../92-ref-arm-asm)** | AAPCS、`push`/`pop`、`bl`、`objdump -dS` |
-| **[ch04](../06-ch6-toolchain-custom/2-compile-and-link)** | ELF `.text/.data/.bss`、`execve`、BSS、动态库 |
+| **[ch04](../06-ch6-toolchain-custom/compile-and-link)** | ELF `.text/.data/.bss`、`execve`、BSS、动态库 |
 
 ## 环境
 

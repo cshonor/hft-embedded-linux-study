@@ -1,6 +1,6 @@
 # 附录 A · OS 通识（原第 10 章）
 
-> **本书主线不在这里。** 原第 10 章的嵌入式部分（[10.1 裸机](../03-ch3-embedded-driver/10.1-bare-metal)、[10.3 中断](../03-ch3-embedded-driver/10.3-interrupt)、[10.8 寄存器](../03-ch3-embedded-driver/10.8-register/10.8-寄存器操作.md)）已归入 [主线二 · 嵌入式 C 落地](../03-ch3-embedded-driver)。
+> **本书主线不在这里。** 原第 10 章的嵌入式部分（[3.3 裸机](../03-ch3-embedded-driver/3.3-bare-metal)、[3.2 中断](../03-ch3-embedded-driver/3.2-interrupt)、[3.1 寄存器](../03-ch3-embedded-driver/3.1-register/3.1-寄存器操作.md)）已归入 [主线二 · 嵌入式 C 落地](../03-ch3-embedded-driver)。
 > 剩下的进程/线程/文件系统/IO/MMU 属 OS 通识，别的书讲得更深，按需查阅即可。
 
 **Multitasking, RTOS & OS Fundamentals for Embedded C**
@@ -15,8 +15,8 @@
 |------|------|
 | **[ch03](../92-ref-arm-asm)** | ARM 汇编、`stmfd`/`ldmfd`、栈 |
 | **[ch05](../91-ref-memory)** | 任务栈、栈溢出、canary |
-| **[ch08](../05-ch5-portable-modular/8-oop-in-c)** | TCB 结构体、ops/vtable |
-| **[ch09](../05-ch5-portable-modular/9-modular-c)** | 分层目录、Makefile、回调解耦 |
+| **[ch08](../05-ch5-portable-modular/oop-in-c)** | TCB 结构体、ops/vtable |
+| **[ch09](../05-ch5-portable-modular/modular-c)** | 分层目录、Makefile、回调解耦 |
 
 ## 环境
 
@@ -49,36 +49,36 @@ make clean
 
 | 模块 | 目录 | 核心 |
 |------|------|------|
-| **1 裸机多任务** | **10.1**、**10.1.1–10.1.3** | 并发/并行、前后台、TCB、时间片 |
+| **1 裸机多任务** | **3.3**、**3.3.1–3.3.3**（已迁 CH3） | 并发/并行、前后台、TCB、时间片 |
 | **2 OS/RTOS 原理** | **10.2**、**10.2.1–10.2.4** | 调度、栈、可重入、mutex/sem/queue |
-| **3 中断** | **10.3**、**10.3.1–10.3.3** | SysTick/PendSV、双栈、ISR 规范 |
+| **3 中断** | **3.2**、**3.2.1–3.2.3**（已迁 CH3） | SysTick/PendSV、双栈、ISR 规范 |
 | **4 系统调用** | **10.4**、**10.4.1–10.4.4** | API vs syscall、特权级、strace |
 | **5 文件系统** | **10.5**、**10.5.1–10.5.3** | VFS、mount、rootfs/initramfs |
 | **6 存储映射** | **10.6**、**10.6.1–10.6.3** | 总线、链接脚本、启动链 |
-| **7 I/O 与寄存器** | **10.7**、**10.7.1–10.7.3**、**10.8**、**10.8.1–10.8.3** | MMIO、驱动分层、位操作 |
+| **7 I/O 与寄存器** | **10.7**、**10.7.1–10.7.3**；**3.1**、**3.1.1–3.1.3**（已迁 CH3） | MMIO、驱动分层、位操作 |
 | **8 MMU 与进程模型** | **10.9**、**10.9.1–10.9.2**、**10.10**、**10.10.1–10.10.5** | 虚实地址、隔离、进程/线程/协程 |
 
 ## Demo 清单
 
 | Demo | 内容 | 对应小节 |
 |------|------|----------|
-| **demo01_foreground** | 前后台 super loop vs 响应延迟 | **10.1** |
-| **demo02_tcb_coop** | TCB、独立栈、协作式 `os_yield` | **10.1.1**、**10.2.1–10.2.2** |
-| **demo03_preempt** | 时间片、setjmp 主机版 / 可选 ARM SysTick | **10.1.3**、**10.2.1**、**10.3.1** |
+| **demo01_foreground** | 前后台 super loop vs 响应延迟 | **3.3** |
+| **demo02_tcb_coop** | TCB、独立栈、协作式 `os_yield` | **3.3.1**、**10.2.1–10.2.2** |
+| **demo03_preempt** | 时间片、setjmp 主机版 / 可选 ARM SysTick | **3.3.3**、**10.2.1**、**3.2.1** |
 | **demo04_semaphore** | 信号量同步、阻塞唤醒 | **10.2.4** |
 | **demo05_queue** | 消息队列、生产者-消费者 | **10.2.4**、**10.10.3** |
 | **demo06_mini_rtos** | 分层迷你 RTOS（kernel/sync/port/app） | **10.2**、**ch08/ch09** capstone |
 
 ## 考核要点
 
-1. 区分 **并发与并行**，举例单核 RTOS vs 多核 DPDK lcore（**10.1**、**10.10.2**）
-2. 画出 **协作式 vs 抢占式** 调度时序，说明 SysTick + PendSV 分工（**10.2.1**、**10.3.1**）
+1. 区分 **并发与并行**，举例单核 RTOS vs 多核 DPDK lcore（**3.3**、**10.10.2**）
+2. 画出 **协作式 vs 抢占式** 调度时序，说明 SysTick + PendSV 分工（**10.2.1**、**3.2.1**）
 3. 描述 **TCB 字段** 与 **每任务独立栈** 的必要性；说明 **canary** 检测栈溢出（**10.2.2**、**ch05**）
 4. 写出 ARM **上下文切换** 三步：`stmfd` 保存 → 换 SP → `ldmfd` 恢复（**ch03**、**demo03**）
 5. 解释 **就绪 bitmap** 如何 O(1) 选最高优先级任务（**10.2.1**）
 6. 对比 **mutex、semaphore、queue、event group** 适用场景（**10.2.4**）
 7. 说明 **优先级反转** 成因与 **优先级继承 mutex**（**10.2.4**）
-8. 列举 **ISR 禁止事项** 与 **FromISR** 唤醒任务流程（**10.3.3**）
+8. 列举 **ISR 禁止事项** 与 **FromISR** 唤醒任务流程（**3.2.3**）
 9. 区分 **libc API、syscall、RTOS API**；用 **strace** 追踪一次 `open`（**10.4**）
 10. 说明 **MMU 页表** 如何实现进程隔离；对比 RTOS 无 MMU 风险（**10.9**、**10.10.1**）
 11. 解释 **rootfs 挂载** 与 **initramfs** 在嵌入式 Linux 启动中的作用（**10.5.3**、**10.6.3**）
@@ -93,19 +93,19 @@ make clean
 
 ## 小节
 
-- [10.1 多任务的裸机实现](../03-ch3-embedded-driver/10.1-bare-metal/10.1-多任务的裸机实现.md)
-  - [10.1.1 多任务的模拟实现](../03-ch3-embedded-driver/10.1-bare-metal/10.1.1-多任务的模拟实现.md)
-  - [10.1.2 改变任务的执行频率](../03-ch3-embedded-driver/10.1-bare-metal/10.1.2-改变任务的执行频率.md)
-  - [10.1.3 改变任务的执行时间](../03-ch3-embedded-driver/10.1-bare-metal/10.1.3-改变任务的执行时间.md)
+- [3.3 多任务的裸机实现](../03-ch3-embedded-driver/3.3-bare-metal/3.3-多任务的裸机实现.md)
+  - [3.3.1 多任务的模拟实现](../03-ch3-embedded-driver/3.3-bare-metal/3.3.1-多任务的模拟实现.md)
+  - [3.3.2 改变任务的执行频率](../03-ch3-embedded-driver/3.3-bare-metal/3.3.2-改变任务的执行频率.md)
+  - [3.3.3 改变任务的执行时间](../03-ch3-embedded-driver/3.3-bare-metal/3.3.3-改变任务的执行时间.md)
 - [10.2 操作系统基本原理](./10.2-os-basics/10.2-操作系统基本原理.md)
   - [10.2.1 调度器工作原理](./10.2-os-basics/10.2.1-调度器工作原理.md)
   - [10.2.2 函数栈与进程栈](./10.2-os-basics/10.2.2-函数栈与进程栈.md)
   - [10.2.3 可重入函数](./10.2-os-basics/10.2.3-可重入函数.md)
   - [10.2.4 临界区与临界资源](./10.2-os-basics/10.2.4-临界区与临界资源.md)
-- [10.3 中断](../03-ch3-embedded-driver/10.3-interrupt/10.3-中断.md)
-  - [10.3.1 中断处理流程](../03-ch3-embedded-driver/10.3-interrupt/10.3.1-中断处理流程.md)
-  - [10.3.2 进程栈与中断栈](../03-ch3-embedded-driver/10.3-interrupt/10.3.2-进程栈与中断栈.md)
-  - [10.3.3 中断函数的实现](../03-ch3-embedded-driver/10.3-interrupt/10.3.3-中断函数的实现.md)
+- [3.2 中断](../03-ch3-embedded-driver/3.2-interrupt/3.2-中断.md)
+  - [3.2.1 中断处理流程](../03-ch3-embedded-driver/3.2-interrupt/3.2.1-中断处理流程.md)
+  - [3.2.2 进程栈与中断栈](../03-ch3-embedded-driver/3.2-interrupt/3.2.2-进程栈与中断栈.md)
+  - [3.2.3 中断函数的实现](../03-ch3-embedded-driver/3.2-interrupt/3.2.3-中断函数的实现.md)
 - [10.4 系统调用](./10.4-syscall/10.4-系统调用.md)
   - [10.4.1 操作系统的API](./10.4-syscall/10.4.1-操作系统的API.md)
   - [10.4.2 操作系统的权限管理](./10.4-syscall/10.4.2-操作系统的权限管理.md)
@@ -123,10 +123,10 @@ make clean
   - [10.7.1 内存与外存](./10.7-io/10.7.1-内存与外存.md)
   - [10.7.2 外部设备](./10.7-io/10.7.2-外部设备.md)
   - [10.7.3 I/O端口与I/O内存](./10.7-io/10.7.3-IO端口与IO内存.md)
-- [10.8 寄存器操作](../03-ch3-embedded-driver/10.8-register/10.8-寄存器操作.md)
-  - [10.8.1 位运算应用](../03-ch3-embedded-driver/10.8-register/10.8.1-位运算应用.md)
-  - [10.8.2 操作寄存器](../03-ch3-embedded-driver/10.8-register/10.8.2-操作寄存器.md)
-  - [10.8.3 位域](../03-ch3-embedded-driver/10.8-register/10.8.3-位域.md)
+- [3.1 寄存器操作](../03-ch3-embedded-driver/3.1-register/3.1-寄存器操作.md)
+  - [3.1.1 位运算应用](../03-ch3-embedded-driver/3.1-register/3.1.1-位运算应用.md)
+  - [3.1.2 操作寄存器](../03-ch3-embedded-driver/3.1-register/3.1.2-操作寄存器.md)
+  - [3.1.3 位域](../03-ch3-embedded-driver/3.1-register/3.1.3-位域.md)
 - [10.9 内存管理单元MMU](./10.9-mmu/10.9-内存管理单元MMU.md)
   - [10.9.1 地址转换](./10.9-mmu/10.9.1-地址转换.md)
   - [10.9.2 权限管理](./10.9-mmu/10.9.2-权限管理.md)

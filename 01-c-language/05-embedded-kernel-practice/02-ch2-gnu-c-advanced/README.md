@@ -17,7 +17,7 @@ CH1 的东西写错会**编译报错**，你立刻知道。CH2 的东西写错�
 | `packed` 取地址 | ARM 上 Bus Error | [2.2](./2.2-aligned/2.2-属性声明-aligned.md)：未对齐访问的 ABI 后果 |
 | `aligned` 用在 malloc 上 | 地址照样不对齐 | `aligned` 管不了运行时分配器 |
 | `if (hook)` 判空 | `-O2` 下判空被优化掉 | 编译器证明了 weak 符号地址非 NULL |
-| 忘记 `volatile` | 循环被优化成死循环 | [CH3 10.8](../03-ch3-embedded-driver/10.8-register/10.8-寄存器操作.md) |
+| 忘记 `volatile` | 循环被优化成死循环 | [CH3 3.1](../03-ch3-embedded-driver/3.1-register/3.1-寄存器操作.md) |
 
 **共同点：编译器按你写的做，而不是按你想的做。**
 
@@ -81,7 +81,7 @@ CH1 的东西写错会**编译报错**，你立刻知道。CH2 的东西写错�
 - **前置**：[CH1 · GNU C 基础扩展语法](../01-ch1-gnu-c-basics/)（`typeof` / 语句表达式是读懂 `__attribute__` 用法的前提）
 - **出口一**：[CH3 嵌入式驱动实战](../03-ch3-embedded-driver/)——`packed` 的位域、`volatile`、内存屏障
 - **出口二**：[CH4 内核模块应用](../04-ch4-kernel-module/)——`section`/`weak`/`alias` 在驱动注册里的角色
-- **工具**：反汇编与 nm 的用法见 [CH6 2-compile-and-link](../06-ch6-toolchain-custom/2-compile-and-link/)
+- **工具**：反汇编与 nm 的用法见 [CH6 compile-and-link](../06-ch6-toolchain-custom/compile-and-link/)
 
 <details><summary>代码自测（点击展开）</summary>
 

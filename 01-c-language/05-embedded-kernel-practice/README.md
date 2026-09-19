@@ -30,8 +30,8 @@
 |----|------|--------|------|
 | **CH1** | [GNU C 基础扩展语法](./01-ch1-gnu-c-basics/) | **写在源码里看得懂的扩展**：`typeof`、语句表达式、柔性数组、指定初始化 | 6 篇精写 129 KB |
 | **CH2** | [GNU C 高级特性](./02-ch2-gnu-c-advanced/) | **源码看不见却真实发生**：`__attribute__`、`packed`、`weak`、`inline asm` | 5 篇精写 135 KB |
-| **CH3** | [嵌入式驱动中的 GNU C 实战](./03-ch3-embedded-driver/) | **同样是 C，写寄存器时为什么要这样**：`volatile`、屏障、位操作、ISR 共享 | 10.8 已写 24 KB |
-| **CH4** | [内核模块与子系统的 GNU C 应用](./04-ch4-kernel-module/) | **工具放回它被用的地方**：`initcall`、`container_of`、`file_operations` | 骨架 6 KB，待补写 |
+| **CH3** | [嵌入式驱动中的 GNU C 实战](./03-ch3-embedded-driver/) | **同样是 C，写寄存器时为什么要这样**：`volatile`、屏障、位操作、ISR 共享 | 3.1 已写 24 KB |
+| **CH4** | [内核模块与子系统的 GNU C 应用](./04-ch4-kernel-module/) | **工具放回它被用的地方**：`initcall`、`container_of`、`.ko` 加载 | 4 篇精写 126 KB |
 | **CH5** | [基于 GNU C 的跨平台模块化设计](./05-ch5-portable-modular/) | **一份代码换个平台还对吗**：数据表示、OOP in C、头文件与模块划分 | 86 篇 294 KB |
 | **CH6** | [GNU C 编译链定制](./06-ch6-toolchain-custom/) | **代码之外决定它跑在哪**：链接脚本、静态/动态库、交叉编译 | 70 篇 190 KB |
 
@@ -54,20 +54,20 @@
 
 | 原书 | 归属 |
 |------|------|
-| 第 1 章 工具链 | [CH6 · 1 工具链](./06-ch6-toolchain-custom/1-toolchain/) |
+| 第 1 章 工具链 | [CH6 · 1 工具链](./06-ch6-toolchain-custom/toolchain/) |
 | 第 2 章 体系结构 | 🗑️ **已删**（CSAPP 更深） |
 | 3.1–3.5 / 3.9 ARM 指令 | 🗑️ **已删** |
 | 3.6 C/汇编混合编程 | [CH2](./02-ch2-gnu-c-advanced/2.6-mixed-programming/)（本质是 GNU 扩展） |
-| 3.7 GNU ARM 工具链 | [CH6](./06-ch6-toolchain-custom/3.7-gnu-arm/) |
+| 3.7 GNU ARM 工具链 | [CH6](./06-ch6-toolchain-custom/6.17-gnu-arm/) |
 | 3.8 AArch64 | [附录 C](./92-ref-arm-asm/) |
-| 第 4 章 编译链接 | [CH6 · 2 编译与链接](./06-ch6-toolchain-custom/2-compile-and-link/) |
+| 第 4 章 编译链接 | [CH6 · 2 编译与链接](./06-ch6-toolchain-custom/compile-and-link/) |
 | 4.10 / 4.11 / 4.12 内核模块与 U-Boot | [CH4](./04-ch4-kernel-module/) |
-| 4.14 链接脚本 | [CH6](./06-ch6-toolchain-custom/4.14-链接脚本.md) |
+| 4.14 链接脚本 | [CH6](./06-ch6-toolchain-custom/6.18-链接脚本.md) |
 | 第 5 章 内存堆栈 | [附录 B](./91-ref-memory/) |
 | **第 6 章 GNU C 扩展** | **[CH1](./01-ch1-gnu-c-basics/) + [CH2](./02-ch2-gnu-c-advanced/)** ← 本书核心 |
-| 第 7 章 数据与指针 | [CH5](./05-ch5-portable-modular/7-data-and-pointers/) |
-| 第 8 章 OOP in C | [CH5](./05-ch5-portable-modular/8-oop-in-c/) |
-| 第 9 章 模块化 | [CH5](./05-ch5-portable-modular/9-modular-c/) |
+| 第 7 章 数据与指针 | [CH5](./05-ch5-portable-modular/data-and-pointers/) |
+| 第 8 章 OOP in C | [CH5](./05-ch5-portable-modular/oop-in-c/) |
+| 第 9 章 模块化 | [CH5](./05-ch5-portable-modular/modular-c/) |
 | 10.1 / 10.3 / 10.8 嵌入式 | [CH3](./03-ch3-embedded-driver/) |
 | 第 10 章 其余 OS 通识 | [附录 A](./90-ref-os/) |
 
@@ -80,12 +80,12 @@ CH3/CH4 解决「知道了工具，但不知道什么场合该用」；CH5/CH6 �
 ## 学习进度
 
 - [x] **CH1 已全部收官** 🎉：1.1 C 标准与 gnu11 · 1.2 指定初始化 · 1.3 语句表达式 · 1.4 typeof/container_of · 1.5 柔性数组 · 1.6 inline · 1.7 变参宏（7 篇精写，约 176 KB，全部 WSL 实测）
-- [ ] **下一步**：CH2 的 2.3 format → 2.5 内建函数 → 2.6 内联汇编；或先打 B 批次（CH3 10.3 中断 / CH4 initcall 全解）
+- [ ] **下一步**：CH2 的 2.3 format → 2.5 内建函数 → 2.6 内联汇编；或先打 B 批次（CH3 3.2 中断 / CH4 4.2 initcall 全解）
 - [x] **CH2**：2.1 `__attribute__` ✅ · 2.2 aligned/packed ✅ · 2.4 weak/alias ✅
 - [ ] **CH2**：2.3 format · 2.5 内建函数 · 2.6 内联汇编
-- [x] **CH3**：10.8 嵌入式 C 开门（24 KB，WSL 实测）
-- [ ] **CH3**：10.3 中断改造 → 10.1 裸机
-- [ ] **CH4**：`initcall` → `container_of`/侵入式链表 → `.ko` 加载（**整章待补写**）
+- [x] **CH3**：3.1 嵌入式 C 开门（24 KB，WSL 实测）
+- [ ] **CH3**：3.2 中断改造 → 3.3 裸机
+- [x] **CH4**：4.1 `.ko` 加载与符号决议 · 4.2 initcall · 4.3 container_of/侵入式链表 · 4.4 packed 实践（126 KB，WSL 实测）
 - [ ] **CH5 / CH6**：素材已就位，按需查阅
 - [x] 🗑️ 已删 73 篇硬件内容
 

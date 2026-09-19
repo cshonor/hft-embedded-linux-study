@@ -272,8 +272,8 @@ runqlat       # 运行队列延迟分布
 
 | 本节概念 | C 语言笔记对应 |
 |----------|---------------|
-| gdb 基本操作 | C 笔记 `05-Embedded/1.5-gdb/1.5.1~1.5.5`（GDB 详解） |
-| core dump 分析 | C 笔记 `05-Embedded/1.5-gdb/1.5.4-GDB调试core-dump.md` |
+| gdb 基本操作 | C 笔记 `05-Embedded/6.5-gdb/1.5.1~1.5.5`（GDB 详解） |
+| core dump 分析 | C 笔记 `05-Embedded/6.5-gdb/6.5.4-GDB调试core-dump.md` |
 | vmlinux/vmcore ELF 格式 | C 笔记 `02-advanced-pointers-and-memory/ch18/18.4~18.9`（ELF 二进制分析） |
 | nm 看内核符号 | C 笔记 `02-advanced-pointers-and-memory/ch18/18.5-nm符号表查看.md` |
 | objdump 反汇编内核 | C 笔记 `02-advanced-pointers-and-memory/ch18/18.7-objdump反汇编.md` |
