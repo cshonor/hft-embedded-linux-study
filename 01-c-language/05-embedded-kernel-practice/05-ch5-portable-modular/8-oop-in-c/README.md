@@ -68,7 +68,7 @@ make clean
 | **demo03** | `DevOps` 表、`uart_ops`/`spi_ops` 分派 | **8.2.4**、**8.5** |
 | **demo04** | 静态/堆实例、生命周期配对 | **8.2.2**、**ch05** |
 | **demo05** | `CommOps` + `PowerOps` 多接口 mixin | **8.4.3** |
-| **demo06** | abstract/hw/app 目录、weak 覆盖 | **8.1**、**ch06 6.9** |
+| **demo06** | abstract/hw/app 目录、weak 覆盖 | **8.1**、**ch06 2.4** |
 
 ## 考核要点
 
@@ -77,7 +77,7 @@ make clean
 3. 解释**首成员继承**为何能 `(Device *)&uart_dev` 向上转型，并写出 `container_of` 向下转型（**8.2.3**、**demo02**）
 4. 设计 **`struct DevOps`** 并实现 `device_send()` 统一分派，含 NULL 检查（**8.2.4**、**demo03**）
 5. 对比**静态对象**与**堆对象**在生命周期、失败模式上的差异（**8.2.2**、**demo04**）
-6. 说明 **weak 符号** 在 abstract/hw 分层中如何替代 `#ifdef`（**8.1**、**demo06**、**ch06 6.9**）
+6. 说明 **weak 符号** 在 abstract/hw 分层中如何替代 `#ifdef`（**8.1**、**demo06**、**ch06 2.4**）
 7. 描述 **`list_head` 侵入式链表**的 embed、注册、遍历三步（**8.3.2**）
 8. 画出 **device_register → bus match → probe** 时序（**8.3.3–8.3.4**）
 9. 区分**单继承（首成员）**与**多接口（多 ops 指针）**的适用场景（**8.4.3**、**demo05**）

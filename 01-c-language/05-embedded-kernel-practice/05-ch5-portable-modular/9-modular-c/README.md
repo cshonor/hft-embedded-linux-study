@@ -65,7 +65,7 @@ make clean
 | **demo01_minimal** | app/driver/utils 最小模块化 | **9.2.3**、**9.3** |
 | **demo02_make** | 根 Makefile + `mod_uart` 子 Makefile → `.a` | **9.1**、**9.2.3** |
 | **demo03_cmake** | `add_library`、`target_link_libraries`、交叉编译 | **9.1** |
-| **demo04_weak** | platform weak 默认 + BSP 强符号覆盖 | **9.8.1**、**ch06 6.9** |
+| **demo04_weak** | platform weak 默认 + BSP 强符号覆盖 | **9.8.1**、**ch06 2.4** |
 | **demo05_log_err** | `LOG_INFO`/`LOG_ERR`、`err_t`/`err_str` | **9.5** |
 | **demo06_callback** | driver 事件 → app 注册回调解耦 | **9.7.2**、**ch08 ops** |
 

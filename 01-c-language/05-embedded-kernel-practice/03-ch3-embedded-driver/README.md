@@ -57,10 +57,10 @@ CH1、CH2 讲**工具本身**，这一章讲**什么时候必须用它**：
 | `volatile` 属性 | 寄存器轮询、ISR 共享标志（[10.8](./10.8-register/10.8-寄存器操作.md)） |
 | `__attribute__((packed))` | 硬件寄存器映射结构体、网络报文头（[10.8](./10.8-register/10.8-寄存器操作.md)） |
 | `__attribute__((aligned(n)))` | DMA 缓冲区、cache line 对齐（[10.8](./10.8-register/10.8-寄存器操作.md)） |
-| `__attribute__((weak))` | 板级 hook、可选驱动（[6.9](../02-ch2-gnu-c-advanced/6.9-weak/6.9-属性声明-weak.md)） |
+| `__attribute__((weak))` | 板级 hook、可选驱动（[2.4](../02-ch2-gnu-c-advanced/2.4-weak/2.4-属性声明-weak.md)） |
 | `__attribute__((section(".x")))` | 把数据/代码钉到指定地址（[4.14](../06-ch6-toolchain-custom/4.14-链接脚本.md)） |
 | `__builtin_bswap` / `ffs` / `popcount` | 字节序转换、位扫描（[10.8](./10.8-register/10.8-寄存器操作.md)） |
-| 柔性数组 | 变长报文、DMA 描述符（[6.5](../01-ch1-gnu-c-basics/6.5-zero-length-array/6.5-零长度数组.md)） |
+| 柔性数组 | 变长报文、DMA 描述符（[1.5](../01-ch1-gnu-c-basics/1.5-zero-length-array/1.5-零长度数组.md)） |
 
 ## 三条铁律（10.8 实测得来）
 

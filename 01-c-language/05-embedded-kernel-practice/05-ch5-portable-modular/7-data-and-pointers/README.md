@@ -1,6 +1,6 @@
 # 支撑 · 数据存储与指针（原第 7 章）
 
-> 读 [主线一 6.4 container_of](../../01-ch1-gnu-c-basics/6.4-typeof-container-of/6.4-typeof与container_of宏.md) 前建议先看这里的指针运算。
+> 读 [主线一 1.4 container_of](../../01-ch1-gnu-c-basics/1.4-typeof-container-of/1.4-typeof与container_of宏.md) 前建议先看这里的指针运算。
 
 **Data Storage, Types & Pointers for Kernel, Driver & DPDK**
 

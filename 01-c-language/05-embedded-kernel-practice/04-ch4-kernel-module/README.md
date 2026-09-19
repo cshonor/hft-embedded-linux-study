@@ -18,7 +18,7 @@ CH1/CH2 告诉你**有这些工具**。但你第一次打开 `include/linux/list
 2. **`module_init()` 没有任何地方调用它，它到底什么时候跑？**
 3. **一个 `.ko` 从 `insmod` 到 `.init` 段被释放，中间发生了什么？**
 
-第 3 问的答案跟 CH2 的 [6.6 section](../02-ch2-gnu-c-advanced/6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) 是同一件事：**用 `__attribute__((section))` 把一批函数指针放进同一个段，链接器自动收集成一张表。**
+第 3 问的答案跟 CH2 的 [2.1 section](../02-ch2-gnu-c-advanced/2.1-section/2.1.1-GNU-C编译器扩展关键字-__attribute__.md) 是同一件事：**用 `__attribute__((section))` 把一批函数指针放进同一个段，链接器自动收集成一张表。**
 
 ## 扩展 → 内核出处 速查表
 
@@ -26,19 +26,19 @@ CH1/CH2 告诉你**有这些工具**。但你第一次打开 `include/linux/list
 
 | 扩展（出处） | 内核里的样子 | 解决什么问题 |
 |---|---|---|
-| [`typeof`](../01-ch1-gnu-c-basics/6.4-typeof-container-of/6.4-typeof与container_of宏.md) | `min()`/`max()`/`swap()`、`ALIGN()` | 宏要能「看清」实参类型，避免二次求值副作用 |
-| [`container_of`](../01-ch1-gnu-c-basics/6.4-typeof-container-of/6.4-typeof与container_of宏.md) | `struct list_head`、`for_each_*` 系列 | **侵入式链表**：链表节点嵌在被管理对象里，由成员地址反推宿主地址 |
-| [语句表达式](../01-ch1-gnu-c-basics/6.3-statement-expr/6.3-宏构造-利器-语句表达式.md) | `min()` 的类型安全实现 | 宏里需要临时变量又不能污染外层作用域 |
-| [柔性数组](../01-ch1-gnu-c-basics/6.5-zero-length-array/6.5-零长度数组.md) | `skb` 的线性区、`hid_report` | 头部结构体 + 变长负载一个 `kmalloc` 搞定 |
-| **[指定初始化](../01-ch1-gnu-c-basics/6.2-designated-init/)** | `struct file_operations xxx_fops = { .owner = THIS_MODULE, .read = xxx_read, };` | **这是驱动最日常的写法**：结构体字段几十个，只填用到的 |
-| [`packed`](../02-ch2-gnu-c-advanced/6.7-aligned/6.7-属性声明-aligned.md) | `struct tcphdr`、各种协议头 | 报文结构体必须字节级贴合线上格式 |
-| [`aligned`](../02-ch2-gnu-c-advanced/6.7-aligned/6.7-属性声明-aligned.md) | cache line 对齐的 per-CPU 数据 | 避免 false sharing |
-| [`section` / `initcall`](../02-ch2-gnu-c-advanced/6.6-section/) | `module_init()` → `.initcall6.init` 段 | **不写注册代码**：链接器按段收集函数指针 |
-| [`weak`](../02-ch2-gnu-c-advanced/6.9-weak/6.9-属性声明-weak.md) | `__weak` 的默认钩子、`arch/*` 覆写 | 架构无关代码留默认实现，具体架构可覆盖 |
-| [`likely`/`unlikely`](../02-ch2-gnu-c-advanced/6.11-builtin/6.11.6-Linux内核中的likely和unlikely.md) | 全内核热点分支 | 分支概率提示，影响代码布局 |
-| [`format`](../02-ch2-gnu-c-advanced/6.8-format/6.8-属性声明-format.md) | `printk()` 的定义 | 编译期检查格式串与参数类型是否匹配 |
-| [`alias`](../02-ch2-gnu-c-advanced/6.9-weak/6.9.4-属性声明-alias.md) | `__attribute__((alias("__x")))` 符号别名 | 同一个实现挂多个符号名 |
-| 内联汇编 [3.6](../02-ch2-gnu-c-advanced/3.6-mixed-programming/) | `rmb()`/`wmb()`、`cpu_relax()`、原子操作 | 编译器不该优化掉的那些精确动作 |
+| [`typeof`](../01-ch1-gnu-c-basics/1.4-typeof-container-of/1.4-typeof与container_of宏.md) | `min()`/`max()`/`swap()`、`ALIGN()` | 宏要能「看清」实参类型，避免二次求值副作用 |
+| [`container_of`](../01-ch1-gnu-c-basics/1.4-typeof-container-of/1.4-typeof与container_of宏.md) | `struct list_head`、`for_each_*` 系列 | **侵入式链表**：链表节点嵌在被管理对象里，由成员地址反推宿主地址 |
+| [语句表达式](../01-ch1-gnu-c-basics/1.3-statement-expr/1.3-宏构造-利器-语句表达式.md) | `min()` 的类型安全实现 | 宏里需要临时变量又不能污染外层作用域 |
+| [柔性数组](../01-ch1-gnu-c-basics/1.5-zero-length-array/1.5-零长度数组.md) | `skb` 的线性区、`hid_report` | 头部结构体 + 变长负载一个 `kmalloc` 搞定 |
+| **[指定初始化](../01-ch1-gnu-c-basics/1.2-designated-init/)** | `struct file_operations xxx_fops = { .owner = THIS_MODULE, .read = xxx_read, };` | **这是驱动最日常的写法**：结构体字段几十个，只填用到的 |
+| [`packed`](../02-ch2-gnu-c-advanced/2.2-aligned/2.2-属性声明-aligned.md) | `struct tcphdr`、各种协议头 | 报文结构体必须字节级贴合线上格式 |
+| [`aligned`](../02-ch2-gnu-c-advanced/2.2-aligned/2.2-属性声明-aligned.md) | cache line 对齐的 per-CPU 数据 | 避免 false sharing |
+| [`section` / `initcall`](../02-ch2-gnu-c-advanced/2.1-section/) | `module_init()` → `.initcall6.init` 段 | **不写注册代码**：链接器按段收集函数指针 |
+| [`weak`](../02-ch2-gnu-c-advanced/2.4-weak/2.4-属性声明-weak.md) | `__weak` 的默认钩子、`arch/*` 覆写 | 架构无关代码留默认实现，具体架构可覆盖 |
+| [`likely`/`unlikely`](../02-ch2-gnu-c-advanced/2.5-builtin/2.5.6-Linux内核中的likely和unlikely.md) | 全内核热点分支 | 分支概率提示，影响代码布局 |
+| [`format`](../02-ch2-gnu-c-advanced/2.3-format/2.3-属性声明-format.md) | `printk()` 的定义 | 编译期检查格式串与参数类型是否匹配 |
+| [`alias`](../02-ch2-gnu-c-advanced/2.4-weak/2.4.4-属性声明-alias.md) | `__attribute__((alias("__x")))` 符号别名 | 同一个实现挂多个符号名 |
+| 内联汇编 [2.6](../02-ch2-gnu-c-advanced/2.6-mixed-programming/) | `rmb()`/`wmb()`、`cpu_relax()`、原子操作 | 编译器不该优化掉的那些精确动作 |
 
 ## 章节导航
 
@@ -58,7 +58,7 @@ CH1/CH2 告诉你**有这些工具**。但你第一次打开 `include/linux/list
 | ★★★ | **`initcall` 机制全解** | ✅ 已完成 | 唯一把 CH2 的 `section` 用到出神入化的地方；搞懂它，`module_init` 就再也不是黑魔法 |
 | ★★★ | **`container_of` 与侵入式链表** | ✅ 已完成 | CH1 讲了宏本身，这里讲内核为什么这么设计（对比「链表挂数据」的常规做法） |
 | ★★☆ | **`.ko` 的加载与符号决议** | ✅ 已完成 | 接 4.10；本质是 CH2 的强弱符号 + CH6 的动态链接 |
-| ★★☆ | **协议结构体的 `packed` 实践** | ✅ 已完成 | 接 4.10 + CH2 6.7；看 `struct tcphdr` 怎么处理位域与字节序 |
+| ★★☆ | **协议结构体的 `packed` 实践** | ✅ 已完成 | 接 4.10 + CH2 2.2；看 `struct tcphdr` 怎么处理位域与字节序 |
 | ★☆☆ | **per-CPU 与 `aligned`** | 待补 | 需要一点调度背景，见 [附录 A](../90-ref-os/) |
 | ★☆☆ | U-Boot 重定位 | 待补 | 深度可选，做 bootloader 才用得上 |
 

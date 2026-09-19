@@ -28,13 +28,13 @@ nm demo02_custom_section | grep g_custom
 ./demo07_reg_asm
 
 # format 属性：编译期诊断测试（不生成可执行程序，看编译器输出）
-cd 08-format && bash run.sh && bash run2.sh
+cd 2.3-format && bash run.sh && bash run2.sh
 
 # 内建函数：bitops/bswap/constant_p/expect/prefetch/overflow/libc folding
-cd 09-builtin && bash run.sh
+cd 2.5-builtin && bash run.sh
 
 # 内联汇编：四段式/约束/clobber/volatile/asm goto/ABI/内核实例
-cd 10-asm && bash run.sh
+cd 2.6-asm && bash run.sh
 ```
 
 ## 工具验证
@@ -42,13 +42,13 @@ cd 10-asm && bash run.sh
 ```bash
 size demo01_packed_struct demo02_custom_section
 objdump -t demo02_custom_section | grep my_
-gcc -Wall -Wformat -o fmt_test demo06_log_macro.c   # format 属性见 6.8
+gcc -Wall -Wformat -o fmt_test demo06_log_macro.c   # format 属性见 2.3
 # 完整的 format 属性实测矩阵（archetype 支持 / -Wformat 家族 / no_printk 零开销）
-cd 08-format && bash run.sh && bash run2.sh           # 见 6.8 与 08-format/README.md
+cd 2.3-format && bash run.sh && bash run2.sh           # 见 2.3 与 2.3-format/README.md
 # 内建函数实测（popcount 陷阱 / constant_p -O0 陷阱 / libc 折叠 / overflow）
-cd 09-builtin && bash run.sh                            # 见 6.11 与 09-builtin/README.md
+cd 2.5-builtin && bash run.sh                            # 见 2.5 与 2.5-builtin/README.md
 # 内联汇编全量实测（earlyclobber/漏clobber/gcc-clang分裂/volatile删除/asm goto）
-cd 10-asm && bash run.sh                               # 见 3.6 与 10-asm/README.md
+cd 2.6-asm && bash run.sh                               # 见 2.6 与 2.6-asm/README.md
 ```
 
 ## demo03 说明

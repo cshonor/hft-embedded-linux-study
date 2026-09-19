@@ -24,36 +24,36 @@
 
 | 序 | 小节 | 状态 | 一句话 |
 |----|------|------|--------|
-| 0 | [6.0 驱动向：要学多少 GNU C？](./6.0-driver-how-much-gnu-c.md) | 3 KB | 不打算写驱动的话可以跳过哪些 |
-| 1 | [6.1 C 标准与 gnu11](./6.1-c-standard/6.1-C语言标准和编译器.md) | ✅ 22 KB | 地基篇：**严格模式只关 typeof/asm 两个裸关键字**；`-std=c99` 连 POSIX 一起关 |
-| 2 | [6.2 指定初始化](./6.2-designated-init/6.2-指定初始化.md) | ✅ 30 KB | `.field = v`；稀疏不稀疏、padding 泄露、C/C++ 分歧 |
-| 3 | [6.3 语句表达式](./6.3-statement-expr/6.3-宏构造-利器-语句表达式.md) | ✅ 29 KB | 宏**有了局部作用域**：`({ ... })` |
-| 4 | [6.4 typeof 与 container_of](./6.4-typeof-container-of/6.4-typeof与container_of宏.md) | ✅ 28 KB | 宏**看得见实参类型**；内核最核心的宏 |
-| 5 | [6.5 零长度数组与柔性数组](./6.5-zero-length-array/6.5-零长度数组.md) | ✅ 39 KB | 变长报文 / DMA 描述符的标准写法 |
-| 6 | [6.10 inline 内联函数](./6.10-inline/6.10-内联函数.md) | ✅ 29 KB | C99/gnu89 语义反转；薛定谔链接；与 CH2 的 weak 语义对立 |
-| 7 | [6.12 可变参数宏](./6.12-vararg-macro/6.12-可变参数宏.md) | ✅ 23 KB | 四种写法空参矩阵；逗号陷阱；PP_NARG 零参 bug |
+| 0 | [1.0 驱动向：要学多少 GNU C？](./1.0-driver-how-much-gnu-c.md) | 3 KB | 不打算写驱动的话可以跳过哪些 |
+| 1 | [1.1 C 标准与 gnu11](./1.1-c-standard/1.1-C语言标准和编译器.md) | ✅ 22 KB | 地基篇：**严格模式只关 typeof/asm 两个裸关键字**；`-std=c99` 连 POSIX 一起关 |
+| 2 | [1.2 指定初始化](./1.2-designated-init/1.2-指定初始化.md) | ✅ 30 KB | `.field = v`；稀疏不稀疏、padding 泄露、C/C++ 分歧 |
+| 3 | [1.3 语句表达式](./1.3-statement-expr/1.3-宏构造-利器-语句表达式.md) | ✅ 29 KB | 宏**有了局部作用域**：`({ ... })` |
+| 4 | [1.4 typeof 与 container_of](./1.4-typeof-container-of/1.4-typeof与container_of宏.md) | ✅ 28 KB | 宏**看得见实参类型**；内核最核心的宏 |
+| 5 | [1.5 零长度数组与柔性数组](./1.5-zero-length-array/1.5-零长度数组.md) | ✅ 39 KB | 变长报文 / DMA 描述符的标准写法 |
+| 6 | [1.6 inline 内联函数](./1.6-inline/1.6-内联函数.md) | ✅ 29 KB | C99/gnu89 语义反转；薛定谔链接；与 CH2 的 weak 语义对立 |
+| 7 | [1.7 可变参数宏](./1.7-vararg-macro/1.7-可变参数宏.md) | ✅ 23 KB | 四种写法空参矩阵；逗号陷阱；PP_NARG 零参 bug |
 | 附 | [驱动向 GNU C 速查表](./DRIVER-GNU-C-CHEATSHEET.md) | 3 KB | 不必通读全章，先看这张表也行 |
 
-## 阅读顺序（不要按 6.1 → 6.12 的编号读）
+## 阅读顺序（不要按 1.1 → 1.7 的编号读）
 
 ```text
-6.1  C标准与 gnu11        <- 先确认站在哪条起跑线上
+1.1  C标准与 gnu11        <- 先确认站在哪条起跑线上
   |
-6.3  语句表达式  --+
-  |               |-- 两件套：宏既有作用域(6.3) 又能看见类型(6.4)
-6.4  typeof/container_of -+
+1.3  语句表达式  --+
+  |               |-- 两件套：宏既有作用域(1.3) 又能看见类型(1.4)
+1.4  typeof/container_of -+
   |
-6.5  柔性数组            <- 第一次体会「结构体末尾接一段动态内存」
+1.5  柔性数组            <- 第一次体会「结构体末尾接一段动态内存」
   |
-6.2  指定初始化          <- 读内核驱动代码必需
+1.2  指定初始化          <- 读内核驱动代码必需
   |
-6.10 inline ✅ -> 6.12 变参宏 ✅ -> 6.2 指定初始化 ✅ -> 6.1 C 标准与 gnu11 ✅（CH1 收官）
+1.6 inline ✅ -> 1.7 变参宏 ✅ -> 1.2 指定初始化 ✅ -> 1.1 C 标准与 gnu11 ✅（CH1 收官）
 ```
 
 **两个要点**：
 
-1. **6.3 + 6.4 是孪生两件套**。所有内核里的「类型安全宏」都同时用到二者（`container_of`、`min`/`max`、`swap`）。单独看任何一个都不完整。
-2. **6.5 柔性数组是 CH3 嵌入式实战的地基**。网络包、DMA 描述符、命令队列全靠它——到 [CH3](../03-ch3-embedded-driver/) 会频繁回头查。
+1. **1.3 + 1.4 是孪生两件套**。所有内核里的「类型安全宏」都同时用到二者（`container_of`、`min`/`max`、`swap`）。单独看任何一个都不完整。
+2. **1.5 柔性数组是 CH3 嵌入式实战的地基**。网络包、DMA 描述符、命令队列全靠它——到 [CH3](../03-ch3-embedded-driver/) 会频繁回头查。
 
 ## 跨平台 / 标准兼容提醒
 
@@ -73,7 +73,7 @@ struct pkt { uint16_t len; uint8_t data[FAM_SIZE]; };
 
 ## 衔接
 
-- **向下**（为什么需要这些）：[6.0 驱动向要学多少](./6.0-driver-how-much-gnu-c.md)
+- **向下**（为什么需要这些）：[1.0 驱动向要学多少](./1.0-driver-how-much-gnu-c.md)
 - **向上**（语法之外，编译/链接期发生什么）：**[CH2 · GNU C 高级特性](../02-ch2-gnu-c-advanced/)**
 - **实战出口**：[CH3 嵌入式驱动中的 GNU C 实战](../03-ch3-embedded-driver/) · [CH4 内核模块中的 GNU C 应用](../04-ch4-kernel-module/)
 
@@ -94,7 +94,7 @@ struct pkt { uint16_t len; uint8_t data[FAM_SIZE]; };
 **Q3：为什么零长度数组只能放在结构体末尾？**
 
 <details><summary>答案</summary>
-它不占任何字节（`sizeof` 不计入），只是给结构体末尾一个「地址锚点」。放中间会让后面成员的偏移量全乱，编译器直接拒绝（`flexible array member not at end of struct`）。详见 [6.5](./6.5-zero-length-array/6.5-零长度数组.md)。
+它不占任何字节（`sizeof` 不计入），只是给结构体末尾一个「地址锚点」。放中间会让后面成员的偏移量全乱，编译器直接拒绝（`flexible array member not at end of struct`）。详见 [1.5](./1.5-zero-length-array/1.5-零长度数组.md)。
 </details>
 
 </details>

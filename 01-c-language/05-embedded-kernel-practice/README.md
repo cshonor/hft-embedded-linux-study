@@ -57,7 +57,7 @@
 | 第 1 章 工具链 | [CH6 · 1 工具链](./06-ch6-toolchain-custom/1-toolchain/) |
 | 第 2 章 体系结构 | 🗑️ **已删**（CSAPP 更深） |
 | 3.1–3.5 / 3.9 ARM 指令 | 🗑️ **已删** |
-| 3.6 C/汇编混合编程 | [CH2](./02-ch2-gnu-c-advanced/3.6-mixed-programming/)（本质是 GNU 扩展） |
+| 3.6 C/汇编混合编程 | [CH2](./02-ch2-gnu-c-advanced/2.6-mixed-programming/)（本质是 GNU 扩展） |
 | 3.7 GNU ARM 工具链 | [CH6](./06-ch6-toolchain-custom/3.7-gnu-arm/) |
 | 3.8 AArch64 | [附录 C](./92-ref-arm-asm/) |
 | 第 4 章 编译链接 | [CH6 · 2 编译与链接](./06-ch6-toolchain-custom/2-compile-and-link/) |
@@ -79,10 +79,10 @@ CH3/CH4 解决「知道了工具，但不知道什么场合该用」；CH5/CH6 �
 
 ## 学习进度
 
-- [x] **CH1 已全部收官** 🎉：6.1 C 标准与 gnu11 · 6.2 指定初始化 · 6.3 语句表达式 · 6.4 typeof/container_of · 6.5 柔性数组 · 6.10 inline · 6.12 变参宏（7 篇精写，约 176 KB，全部 WSL 实测）
-- [ ] **下一步**：CH2 的 6.8 format → 6.11 内建函数 → 3.6 内联汇编；或先打 B 批次（CH3 10.3 中断 / CH4 initcall 全解）
-- [x] **CH2**：6.6 `__attribute__` ✅ · 6.7 aligned/packed ✅ · 6.9 weak/alias ✅
-- [ ] **CH2**：6.8 format · 6.11 内建函数 · 3.6 内联汇编
+- [x] **CH1 已全部收官** 🎉：1.1 C 标准与 gnu11 · 1.2 指定初始化 · 1.3 语句表达式 · 1.4 typeof/container_of · 1.5 柔性数组 · 1.6 inline · 1.7 变参宏（7 篇精写，约 176 KB，全部 WSL 实测）
+- [ ] **下一步**：CH2 的 2.3 format → 2.5 内建函数 → 2.6 内联汇编；或先打 B 批次（CH3 10.3 中断 / CH4 initcall 全解）
+- [x] **CH2**：2.1 `__attribute__` ✅ · 2.2 aligned/packed ✅ · 2.4 weak/alias ✅
+- [ ] **CH2**：2.3 format · 2.5 内建函数 · 2.6 内联汇编
 - [x] **CH3**：10.8 嵌入式 C 开门（24 KB，WSL 实测）
 - [ ] **CH3**：10.3 中断改造 → 10.1 裸机
 - [ ] **CH4**：`initcall` → `container_of`/侵入式链表 → `.ko` 加载（**整章待补写**）

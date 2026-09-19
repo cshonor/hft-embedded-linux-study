@@ -51,10 +51,10 @@
 
 | 前五章学到的 | 在这一章兑现为 |
 |-------------|--------------|
-| [CH2 `section`](../02-ch2-gnu-c-advanced/6.6-section/) | 链接脚本把该段放到指定地址；`.initcallN.init` 收集成表（→ [CH4](../04-ch4-kernel-module/)） |
-| [CH2 `weak`](../02-ch2-gnu-c-advanced/6.9-weak/6.9-属性声明-weak.md) | `nm` 输出里的 `W`/`V`；强弱决议规则；**为什么不触发静态库提取** |
-| [CH2 `packed`/`aligned`](../02-ch2-gnu-c-advanced/6.7-aligned/6.7-属性声明-aligned.md) | `-S` 看结构体字段偏移；`-Waddress-of-packed-member` 警告 |
-| [CH1 `inline`](../01-ch1-gnu-c-basics/6.10-inline/) | `-O2`/`-flto` 下内联是否真的发生；`objdump -dS` 是唯一裁判 |
+| [CH2 `section`](../02-ch2-gnu-c-advanced/2.1-section/) | 链接脚本把该段放到指定地址；`.initcallN.init` 收集成表（→ [CH4](../04-ch4-kernel-module/)） |
+| [CH2 `weak`](../02-ch2-gnu-c-advanced/2.4-weak/2.4-属性声明-weak.md) | `nm` 输出里的 `W`/`V`；强弱决议规则；**为什么不触发静态库提取** |
+| [CH2 `packed`/`aligned`](../02-ch2-gnu-c-advanced/2.2-aligned/2.2-属性声明-aligned.md) | `-S` 看结构体字段偏移；`-Waddress-of-packed-member` 警告 |
+| [CH1 `inline`](../01-ch1-gnu-c-basics/1.6-inline/) | `-O2`/`-flto` 下内联是否真的发生；`objdump -dS` 是唯一裁判 |
 | [CH5 符号可见性](../05-ch5-portable-modular/) | `-fvisibility=hidden`、`EXPORT_SYMBOL`、静态库 vs 动态库的符号表 |
 | [CH3 volatile](../03-ch3-embedded-driver/10.8-register/10.8-寄存器操作.md) | `-O2` 下挥发性访问是否被合并；只能看反汇编 |
 
@@ -64,12 +64,12 @@
 
 | 命令 | 用途 | 在本书哪里用得多 |
 |------|------|----------------|
-| `nm` | 看符号类型（`T/D/B/W/V/C/U`） | CH2 6.9 weak 全篇 |
+| `nm` | 看符号类型（`T/D/B/W/V/C/U`） | CH2 2.4 weak 全篇 |
 | `readelf -S` | 看段表（有哪些 section、地址、大小） | 4.14 链接脚本 |
-| `objdump -dS` | 源码+汇编对照，**验证优化是否发生** | CH1 6.10 inline / CH3 10.8 volatile |
+| `objdump -dS` | 源码+汇编对照，**验证优化是否发生** | CH1 1.6 inline / CH3 10.8 volatile |
 | `ld --verbose` | 打印默认链接脚本 | 4.14（写自定义脚本的模板） |
 | `gcc -S` / `-E` | 看编译/预处理结果 | 2/4.3-compilation |
-| `ar t` / `ar x` | 看静态库成员（**理解"成员提取"的前提**） | CH2 6.9 + 2/4.7 |
+| `ar t` / `ar x` | 看静态库成员（**理解"成员提取"的前提**） | CH2 2.4 + 2/4.7 |
 | `size` | 各段大小（嵌入式上斤斤计较） | 4.14 |
 | `file` | 目标文件架构（交叉编译第一件事） | 3.7 |
 
@@ -96,7 +96,7 @@
 **Q3：静态库和一堆 `.o` 直接链接有什么本质区别？**
 
 <details><summary>答案</summary>
-静态库是 `.o` 的打包，**但链接器只会提取当前未解析符号需要的成员**。这意味着：库里有强符号覆盖你的 weak 定义，但如果那个成员恰好没被提取，覆盖就不生效——这正是 [CH2 6.9](../02-ch2-gnu-c-advanced/6.9-weak/6.9-属性声明-weak.md) 实测的头号坑（六组对照）。用 `-Wl,--whole-archive` 或干脆直接链 `.o` 可绕开。
+静态库是 `.o` 的打包，**但链接器只会提取当前未解析符号需要的成员**。这意味着：库里有强符号覆盖你的 weak 定义，但如果那个成员恰好没被提取，覆盖就不生效——这正是 [CH2 2.4](../02-ch2-gnu-c-advanced/2.4-weak/2.4-属性声明-weak.md) 实测的头号坑（六组对照）。用 `-Wl,--whole-archive` 或干脆直接链 `.o` 可绕开。
 </details>
 
 </details>
