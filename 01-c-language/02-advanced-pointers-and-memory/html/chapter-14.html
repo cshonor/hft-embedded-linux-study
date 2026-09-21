@@ -2578,6 +2578,61 @@ static const char *const evt_str[] = {
     ...
 #endif
 </code></pre>
+<blockquote>
+<p><strong>官方原文（GCC CPP 手册 4.2.2 If）</strong>：
+Identifiers that are not macros, which are all considered to be the number zero.
+This allows you to write <code class="c">#if MACRO</code> instead of <code class="c">#ifdef MACRO</code>, if you know that MACRO,
+when defined, will always have a nonzero value. Function-like macros used without their
+function call parentheses are also treated as zero.
+In some contexts this shortcut is undesirable. The <code class="c">-Wundef</code> option causes GCC to warn
+whenever it encounters an identifier which is not a macro in an <code class="c">#if</code>.</p>
+</blockquote>
+<h4>⭐ 「未定义宏 ⇒ <code class="c">#if</code> 报错」是错的（CE 复核）</h4>
+<p>「如果宏根本没定义，<code class="c">#if MACRO &gt;= 2</code> 语法错误！」——这个说法流传很广，<strong>但它是错的</strong>。
+实测把四种情况分开（gcc 13.3，CE 端 <code class="c">cg133</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>实测结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">#if UNDEFINED_MACRO &gt;= 2</code></td>
+<td>✅ 编译通过、<strong>0 诊断</strong>，<code class="c">0 &gt;= 2</code> 为假走 <code class="c">#else</code></td>
+</tr>
+<tr>
+<td><code class="c">#if UNKNOWN_A + UNKNOWN_B == 0</code></td>
+<td>✅ 两个都当 0，条件成立（0 诊断）</td>
+</tr>
+<tr>
+<td>同上 + <code class="c">-Wundef</code></td>
+<td>⚠️ 才出声：<code class="c">warning: "UNDEFINED_MACRO" is not defined, evaluates to 0 [-Wundef]</code></td>
+</tr>
+<tr>
+<td><code class="c">#define EMPTY</code>（定义了但为空）+ <code class="c">#if EMPTY &gt;= 2</code></td>
+<td>❌ <strong><code class="c">error: operator '&gt;=' has no left operand</code></strong></td>
+</tr>
+<tr>
+<td><code class="c">#if sizeof(int) == 4</code></td>
+<td>❌ <strong><code class="c">error: missing binary operator before token "("</code></strong></td>
+</tr>
+<tr>
+<td><code class="c">#if FOO(1)</code>（<code class="c">FOO</code> 未定义）</td>
+<td>❌ 同上 —— <code class="c">FOO</code> 当 0，后面的 <code class="c">(</code> 就非法了</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>精确边界</strong>：未定义标识符<strong>本身永远不报错</strong>，它只是变成 <code class="c">0</code>。会报错的只有两种：</p>
+<ol>
+<li><strong>宏定义了但展开为空</strong> —— <code class="c">#if EMPTY &gt;= 2</code> 展开成 <code class="c">#if &gt;= 2</code>，左操作数没了；</li>
+<li><strong>替换成 0 之后整个表达式变非法</strong> —— <code class="c">sizeof</code>、<code class="c">enum</code> 常量、函数式宏名都归这类
+   （手册原句：<code class="c">sizeof</code> operators are not recognized in <code class="c">#if</code>, and neither are <code class="c">enum</code> constants.
+   They will be taken as identifiers which are not macros, and replaced by zero.
+   In the case of <code class="c">sizeof</code>, this is likely to cause the expression to be invalid.）。</li>
+</ol>
+<p>而「静默为假」比报错更危险，所以建议项目里默认开 <strong><code class="c">-Wundef</code></strong>。</p>
 <h3>调试开关：HFT 线上关日志</h3>
 <pre class="code" data-label="C"><code class="c">/* debug.h */
 #if HFT_DEBUG_LEVEL &gt;= 2
@@ -2771,6 +2826,21 @@ gcc -DHFT_DEBUG_LEVEL=0 ...
 <td>配对检查，注释 <code class="c">#endif // NAME</code></td>
 </tr>
 <tr>
+<td>宏<strong>定义了但为空</strong></td>
+<td><code class="c">error: operator '&gt;=' has no left operand</code></td>
+<td>别写 <code class="c">#define NAME</code> 这种空定义</td>
+</tr>
+<tr>
+<td><code class="c">#if sizeof(int) == 4</code></td>
+<td><code class="c">error: missing binary operator before token "("</code></td>
+<td>预处理期不认 <code class="c">sizeof</code>/<code class="c">enum</code> 常量</td>
+</tr>
+<tr>
+<td><code class="c">#if</code> 用未定义宏 + 没开 <code class="c">-Wundef</code></td>
+<td><strong>不报错</strong>，静默当 0（比报错更危险）</td>
+<td>默认加 <code class="c">-Wundef</code></td>
+</tr>
+<tr>
 <td>条件内语法错误</td>
 <td>被排除的块不检查，编译通过但运行错误</td>
 <td>用 <code class="c">#if 0</code> 暂时排除时仍需保证语法正确</td>
@@ -2791,6 +2861,46 @@ void experimental_feature(void) {
 #endif
 </code></pre>
 <p><code class="c">#if 0</code> 是注释掉大段代码的标准方式——比 <code class="c">/* */</code> 更可靠（C 不支持嵌套块注释）。恢复时改成 <code class="c">#if 1</code>。</p>
+<h3>⭐ 一个被抄来抄去的错误示例：用 <code class="c">#ifdef __STRICT_ANSI__</code> 选 <code class="c">__attribute__</code></h3>
+<p>网上有一道很流行的「快速小测验」：</p>
+<pre class="code" data-label="C"><code class="c">#ifdef __STRICT_ANSI__
+char buf[0];
+#else
+char buf[0] __attribute__((packed));   /* ← 号称「GNU 扩展分支，严格模式用不了」 */
+#endif
+</code></pre>
+<p>「<code class="c">-std=c17</code> 下保留前半段」这个<strong>结论对</strong>（<code class="c">__STRICT_ANSI__</code> 确实被定义）。
+但它想教的推论是错的，而且例码本身两边都站不住：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>疑点</th>
+<th>实测（gcc 13.3）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>「严格模式下不能用 <code class="c">__attribute__</code>」？</td>
+<td>❌ <code class="c">-std=c17 -DQUIZ</code> 下<strong>编译通过</strong>，<code class="c">sizeof(buf) = 0</code>，与 <code class="c">buf</code> 相关的诊断 <strong>0 条</strong></td>
+</tr>
+<tr>
+<td><code class="c">packed</code> 加在<strong>变量</strong>上有意义吗？</td>
+<td>❌ <code class="c">warning: 'packed' attribute ignored [-Wattributes]</code>——<code class="c">packed</code> 只对 struct/union/enum 有效（见 <a href="chapter-02.html#s-2-2-4">2.2.4 属性声明 packed</a>）</td>
+</tr>
+<tr>
+<td>真需要这个 <code class="c">#ifdef</code> 分支吗？</td>
+<td><strong>不需要</strong>。<code class="c">__attribute__</code> 是双下划线形态，任何方言、任何 <code class="c">-pedantic</code> 强度下都能用</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>该写 <code class="c">#ifdef __STRICT_ANSI__</code> 分支的只有裸关键字</strong>：<code class="c">typeof</code> / <code class="c">asm</code> / <code class="c">inline</code>——
+这也正是「内核必须用 <code class="c">gnu11</code>」的全部理由。完整实测、官方原文与二分心智模型见
+<a href="chapter-01.html#s-1-1">GNU C 书 §1.1 网传说法逐条勘误</a>。</p>
+<blockquote>
+<p>⚠️ 顺带一个反讽：<strong><code class="c">#warning</code> 自己就不是 ISO C</strong>（C23 才转正，见 <a href="#s-14-5">14.5</a>）。
+拿它去警示「GNU 扩展不可用」时，<code class="c">-std=c17 -pedantic-errors</code> 下会先挨一句
+<code class="c">error: #warning before C2X is a GCC extension</code>。</p>
+</blockquote>
 <h3><code class="c">#error</code> 编译期阻断</h3>
 <pre class="code" data-label="C"><code class="c">#if BURST_SIZE &gt; 256
     #error &quot;BURST_SIZE must be &lt;= 256&quot;
@@ -2815,6 +2925,8 @@ void experimental_feature(void) {
 <li>HFT 线上关日志用 <code class="c">#if HFT_DEBUG_LEVEL &gt;= 1 #define DBG_TRACE(...) ((void)0) #endif</code>。<strong><code class="c">((void)0)</code> 展开后编译器会做什么</strong>？为什么这是「零开销」？</li>
 <li>Clang 同时定义 <code class="c">__clang__</code> 和 <code class="c">__GNUC__</code>。<strong>检测编译器的 <code class="c">#elif defined</code> 链应该怎么排顺序</strong>？为什么 Clang 必须在 GCC 之前？</li>
 <li><code class="c">#if 0 ... #endif</code> 相比 <code class="c">/* ... */</code> 注释掉大段代码有什么优势？<strong>C 不支持什么</strong>导致块注释不可靠？<code class="c">#error</code> 在编译期阻断相比运行期崩溃有什么好处？</li>
+<li>有人说「<code class="c">#if VERSION &gt;= 2</code> 里 <code class="c">VERSION</code> 没定义，会预处理报错」。<strong>这话错在哪</strong>？未定义标识符在 <code class="c">#if</code> 里被替换成什么？那什么情况<strong>才真的会报错</strong>？（提示：想想 <code class="c">#define VERSION</code> 这种空定义，和 <code class="c">#if sizeof(int) == 4</code>。）</li>
+<li>一段代码用 <code class="c">#ifdef __STRICT_ANSI__</code> 在「标准版」和「<code class="c">__attribute__((packed))</code> 版」之间二选一。<strong>这个分支有必要吗</strong>？如果没有，那段 <code class="c">#ifdef</code> 在语义上其实等价于什么？</li>
 </ol>
       </section>
       <section class="section" id="s-14-4">
@@ -3946,6 +4058,37 @@ static inline int min_int(int a, int b) {
 #endif
 </code></pre>
 <p><code class="c">#warning</code> 是 GCC 扩展（非标准），打印警告但继续编译。用于提示性信息，不阻断编译。C23 引入标准 <code class="c">#warning</code>。</p>
+<p><strong>「C23 才转正」这条的实测边界</strong>（CE 复核，gcc 13.3）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>命令</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-std=c17 -Wall -Wextra</code></td>
+<td><code class="c">warning: #warning "..." [-Wcpp]</code>，<code class="c">build code = 0</code>（照常编译）</td>
+</tr>
+<tr>
+<td><code class="c">-std=c17 -Wall -Wextra -pedantic-errors</code></td>
+<td>❌ <strong><code class="c">error: #warning before C2X is a GCC extension</code></strong>，<code class="c">build code = 1</code></td>
+</tr>
+<tr>
+<td><code class="c">-std=gnu17 -Wall -Wextra</code></td>
+<td><code class="c">warning: #warning "..." [-Wcpp]</code>，<code class="c">build code = 0</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ 所以拿 <code class="c">#warning</code> 做「方言探测」是有反讽的：<strong>它自己就不是 ISO C</strong>。
+一段 <code class="c">#ifdef __STRICT_ANSI__ → #warning "标准 C 模式，GNU 扩展不可用"</code> 的代码，
+在 <code class="c">-std=c17 -pedantic-errors</code> 下会因为 <code class="c">#warning</code> 本身而编不过——
+用它来证明「GNU 扩展不可用」，代价是先被自己的 GNU 扩展绊一跤。
+想同时兼容 C17 严格模式，用 <code class="c">#pragma message</code>（同样是扩展）或干脆别用诊断指令。
+（见 <a href="#s-14-3">14.3</a> 末尾那个被抄来抄去的错误示例。）</p>
+</blockquote>
 <h3><code class="c">#pragma</code> — 编译器扩展</h3>
 <p><code class="c">#pragma</code> 是预处理器指令，但具体语义由编译器定义。主流用途：</p>
 <div class="tbl-wrap"><table>
