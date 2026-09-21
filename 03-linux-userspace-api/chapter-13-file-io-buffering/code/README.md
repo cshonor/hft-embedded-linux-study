@@ -8,7 +8,7 @@ TLPI 第 13 章（File I/O Buffering）的可编译代码。分三类：
 | 原书镜像 | **4** | `direct_read.c`(Listing 13-1, p.247)、`mix23_linebuff.c`(习题 13-4 解答, p.250)、`mix23io.c`(原书未编号)、`write_bytes.c`(原书未编号)，**逐字保真**（`sha256` 与原书一致） |
 | 框架替身 | **2** | `tlpi_hdr.h`（含 `errExit` / `fatal` / `usageErr` / `cmdLineErr`）+ `get_num.h`（`getInt` / `getLong` / `GN_GT_0`） |
 
-**全部 27 个作业**都在 Compiler Explorer（gcc 13.3.0 / x86-64 / Ubuntu 24.04）上跑过：`build code = 0`、`didExecute = True`、**`diagnostics = 0`**。其中 **3 个的 `exit code = 1` 是应然行为**：`direct_read --help` 与 `write_bytes --help` 走 `usageErr`（原书就是 `exit(EXIT_FAILURE)`）、`write_bytes ... 0 4096` 触发 `getLong("num-bytes", ..., GN_GT_0, ...)` 的报错路径。作业清单与其编译旗标在 `D:\.kernel-ref\run_ch13.py`。
+**全部 27 个作业**都在 Compiler Explorer（gcc 13.3.0 / x86-64 / Ubuntu 24.04）上跑过：`build code = 0`、`didExecute = True`、**`diagnostics = 0`**。其中 **3 个的 `exit code = 1` 是应然行为**：`direct_read --help` 与 `write_bytes --help` 走 `usageErr`（原书就是 `exit(EXIT_FAILURE)`）、`write_bytes ... 0 4096` 触发 `getLong("num-bytes", ..., GN_GT_0, ...)` 的报错路径。作业清单与其编译旗标由 run_ch13.py 驱动（本地脚本）。
 
 > 为什么走 Compiler Explorer：本机环境里 `wsl.exe` 被安全策略禁用，且没有任何 C 编译器（`gcc`/`clang`/`tcc`/`cl`/`cc`/`zig` 全无）。CE 提供真实的 gcc 13.3 编译诊断与真实运行输出；笔记里凡引用输出都标注「CE 实测」，**不当成本机实测**。
 >

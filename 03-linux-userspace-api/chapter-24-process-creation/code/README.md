@@ -272,7 +272,7 @@ gcc -O0 -Wall -Wextra -I. -o ex24_5_fork_sig_sync2 ex24_5_fork_sig_sync2.c curr_
 
 CE 的单次请求只能有一个翻译单元，本仓库的做法是把
 `get_num.h + tlpi_hdr.h + get_num.c + <主程序>` 用一个脚本拼成**一个 `.c`** 再上传
-（脚本 `D:\.kernel-ref\gen_ce_single.py`，驱动脚本 `run_ch24.py`）。
+（脚本 gen_ce_single.py 与驱动脚本 run_ch24.py，均为本地脚本）。
 
 拼接时踩过两个坑，都记在这里：
 

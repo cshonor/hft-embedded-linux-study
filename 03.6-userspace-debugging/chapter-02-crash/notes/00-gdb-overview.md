@@ -105,13 +105,13 @@ ASAN 版 27 条，真正的业务逻辑被淹没在**影子内存（shadow memor
 > ```
 > ==376==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x502000000020
 > WRITE of size 4 at 0x502000000020 thread T0
->     #0 0x5e31dc69a2a1 in main /mnt/d/.kernel-ref/demo-gdb/uaf.c:6     ← 精确到源码行
+>     #0 0x5e31dc69a2a1 in main /path/to/uaf.c:6     ← 精确到源码行
 >     #1 0x763c2c62a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9)
 >
 > 0x502000000020 is located 0 bytes after 16-byte region [0x502000000010,0x502000000020)
 > allocated by thread T0 here:
 >     #0 ... in malloc ...
->     #1 0x5e31dc69a25e in main /mnt/d/.kernel-ref/demo-gdb/uaf.c:5      ← 连分配点都给你
+>     #1 0x5e31dc69a25e in main /path/to/uaf.c:5      ← 连分配点都给你
 > 退出码=1
 > ```
 >

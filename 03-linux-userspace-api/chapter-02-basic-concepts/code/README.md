@@ -146,7 +146,7 @@ sudo setcap cap_sys_nice+ep ./c2_18_realtime && ./c2_18_realtime
 
 ---
 
-## 相关脚本（在 `D:\.kernel-ref\`）
+## 相关脚本（本地工作区脚本）
 
 | 脚本 | 用途 |
 |------|------|
@@ -161,6 +161,6 @@ sudo setcap cap_sys_nice+ep ./c2_18_realtime && ./c2_18_realtime
 
 ```powershell
 $PY = "C:\Users\12392\.workbuddy\binaries\python\envs\default\Scripts\python.exe"
-& $PY D:\.kernel-ref\cmp_note_code.py chapter-02-basic-concepts
-& $PY D:\.kernel-ref\verify_note_outputs.py chapter-02-basic-concepts tlpi-ch02/ch02-final.txt
+& $PY cmp_note_code.py chapter-02-basic-concepts
+& $PY verify_note_outputs.py chapter-02-basic-concepts tlpi-ch02/ch02-final.txt
 ```

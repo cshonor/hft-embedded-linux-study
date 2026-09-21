@@ -94,7 +94,7 @@
 
 uprobe 的开销大头不是 BPF 程序本身，而是**维持"断点 + 原指令挪位执行"这套机制**的固定成本——所以哪怕 BPF 体内只做一次 count()，单事件仍要 >1µs。这也是原书说"已知问题，未来 Linux 版本会改进"的原因（改进方向：如内核 5.18+ 的 uretprobe 蹦床优化等持续在削这块固定成本）。
 
-> 注：以上为机制通识级概要（uprobe 断点 + XOL 单步是 Documentation/trace/uprobetracer 文档化行为）；`D:\.kernel-ref` 缓存未含 uprobes.c，未做逐行源码核对，具体路径细节以对应内核版本源码为准。
+> 注：以上为机制通识级概要（uprobe 断点 + XOL 单步是 Documentation/trace/uprobetracer 文档化行为）；本地源码缓存未含 uprobes.c，未做逐行源码核对，具体路径细节以对应内核版本源码为准。
 
 ## 18.1.3 自行测试
 

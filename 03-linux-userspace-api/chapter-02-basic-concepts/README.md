@@ -43,7 +43,7 @@
 - 建立 **「内核边界 + 权限 + 进程/线程 + 内存 + IPC + 信号 + 时间」** 七块心智；
 - 每块都有对应的内核对象（`sys_call_table` / `cred` / `task_struct` / `vm_area_struct` / `signal_struct`），深入时跳 `05-linux-kernel` / `06-linux-mm` 追源码。
 
-**内核坐标已逐行核对**（Linux **v6.6**，脚本缓存于 `D:\.kernel-ref\ksrc\`）。核对中发现并修正 **1 处真错**：`kuid_t`/`kgid_t` 在 `include/linux/uidgid.h:21-28`，**不在** `include/linux/types.h:37-38`（详见 [2.3 源码坐标](notes/2.3-users-and-groups.md)）。
+**内核坐标已逐行核对**（Linux **v6.6**，源码逐行核对（本地 v6.6 缓存））。核对中发现并修正 **1 处真错**：`kuid_t`/`kgid_t` 在 `include/linux/uidgid.h:21-28`，**不在** `include/linux/types.h:37-38`（详见 [2.3 源码坐标](notes/2.3-users-and-groups.md)）。
 
 ---
 
