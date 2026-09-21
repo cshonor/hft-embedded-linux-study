@@ -314,6 +314,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-1-7-2"><span class="n">1.7.2</span>继续改进我们的宏</a>
           <a href="#s-1-7-3"><span class="n">1.7.3</span>可变参数宏的另一种写法</a>
           <a href="#s-1-7-4"><span class="n">1.7.4</span>内核中的可变参数宏</a>
+          <a href="#s-1-8"><span class="n">1.8</span>枚举：底层类型与「伪类型安全」</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -337,7 +338,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">《嵌入式 C 语言自我修养》· 从编译链接到内核素养</div>
           <h1>CH1 · GNU C 基础扩展语法</h1>
           <div class="meta">
-<span>book <b>01-c-language · 05-embedded-kernel-practice</b></span><span>chapter <b>Ch 1</b></span><span>sections <b>39</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>01-c-language · 05-embedded-kernel-practice</b></span><span>chapter <b>Ch 1</b></span><span>sections <b>40</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -450,6 +451,12 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <td><a href="#s-1-7">1.7 可变参数宏</a></td>
 <td>✅ 23 KB</td>
 <td>四种写法空参矩阵；逗号陷阱；PP_NARG 零参 bug</td>
+</tr>
+<tr>
+<td>8</td>
+<td><a href="#s-1-8">1.8 枚举底层类型与类型安全</a></td>
+<td>✅ 14 KB</td>
+<td>默认恒 4 不是挑最小；AAPCS 裸机陷阱；C23 <code class="c">enum : type</code>；内核三件套</td>
 </tr>
 <tr>
 <td>附</td>
@@ -9717,6 +9724,396 @@ pr_err(&quot;timeout: %d\n&quot;, rc);
 <details>
 <summary>参考答案</summary>
 <p>展开过程：(1) <code class="c">pr_err("timeout: %d\n", rc)</code> → <code class="c">printk(KERN_ERR pr_fmt("timeout: %d\n"), rc)</code>；(2) <code class="c">pr_fmt("timeout: %d\n")</code> → <code class="c">KBUILD_MODNAME ": " "timeout: %d\n"</code>，C 字符串字面量相邻自动拼接；(3) 最终：<code class="c">printk(KERN_ERR KBUILD_MODNAME ": " "timeout: %d\n", rc)</code>。<code class="c">KERN_ERR</code> 是 <code class="c">"&lt;3&gt;"</code>（日志级别字符串），也靠字符串拼接。<code class="c">##__VA_ARGS__</code> 确保无额外参数时也能编译。模块名通过 <code class="c">KBUILD_MODNAME</code> 宏自动注入。</p>
+</details>
+      </section>
+      <section class="section" id="s-1-8">
+        <div class="sec-head"><div class="sec-no">1.8</div><h2>枚举：底层类型与「伪类型安全」</h2></div>
+<blockquote>
+<p>一句话概括这一节：<strong>C 的 enum 是「贴了标签的整数」——常量名是真 int 常量，
+枚举变量的底层宽度却是 implementation-defined；它看起来像强类型，编译器却基本不拦你。</strong></p>
+</blockquote>
+<h2>目录</h2>
+<ul>
+<li><a href="#本节讲什么">本节讲什么</a></li>
+<li><a href="#一枚举常量--枚举变量先劈成两半">一、枚举常量 ≠ 枚举变量：先劈成两半</a></li>
+<li><a href="#二底层类型到底多大默认恒-4不是挑最小">二、底层类型到底多大：默认恒 4，不是「挑最小」</a></li>
+<li><a href="#三c-的类型检查有多松警告矩阵实测">三、C 的类型检查有多松：警告矩阵实测</a></li>
+<li><a href="#四c23-fixed-underlying-typeenum-x--type">四、C23 fixed underlying type：<code class="c">enum X : type</code></a></li>
+<li><a href="#五内核怎么写不用-enum--type用三件套">五、内核怎么写：不用 <code class="c">enum : type</code>，用三件套</a></li>
+<li><a href="#网传说法逐条勘误">网传说法逐条勘误</a></li>
+<li><a href="#误区速查表">误区速查表</a></li>
+<li><a href="#代码自测">代码自测</a></li>
+</ul>
+<hr />
+<h2>本节讲什么</h2>
+<p>enum 大概是 C 里被误传最多的语法：<strong>"底层是能装下的最小整数"、"enum 变量就是 int"、
+"GNU 扩展可以指定底层类型、内核大量使用"</strong>——这三条流传极广，两条半是错的。</p>
+<p>这一节把它们全部实测钉死（clang 23.1.0，arm64 Apple Silicon，<code class="c">-std=gnu17</code>，七轮测试，
+脚本与冻结输出见本节「代码自测」上方的实测记录）。标准依据：C17 §6.7.2.2、
+C23 草案 N3220 §6.7.3.3、gcc 源码 <code class="c">gcc/config/arm/arm.h</code>。</p>
+<p><strong>为什么放进 CH1</strong>：按<a href="#intro">章节分界</a>，enum 混赋恰恰是
+"链接通过、静默出错"的 CH2 型风险。放 CH1 是因为它是<strong>语法层就能讲清的认知地基</strong>——
+你写 <code class="c">enum Op x = 100;</code> 的时候必须立刻知道编译器不救你，而不是等调试时才悟。</p>
+<hr />
+<h2>一、枚举常量 ≠ 枚举变量：先劈成两半</h2>
+<p>这是理解一切 enum 问题的前提——<strong>它俩在标准里是两个完全不同的东西</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>枚举常量（enumerator）</th>
+<th>枚举变量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>是什么</td>
+<td><code class="c">OP_ADD</code>、<code class="c">OP_MAX</code> 这些<strong>名字</strong></td>
+<td><code class="c">enum Op x;</code> 里的 <code class="c">x</code></td>
+</tr>
+<tr>
+<td>类型</td>
+<td><strong>int</strong>（C17 §6.7.2.2p3："...have type int"）</td>
+<td>implementation-defined 的整数类型</td>
+</tr>
+<tr>
+<td>能做什么</td>
+<td>整型常量表达式：数组下标、case 标签、位宽、<code class="c">_Static_assert</code></td>
+<td>就是个整数变量，无任何类型隔离</td>
+</tr>
+<tr>
+<td>C23 变化</td>
+<td>无 fixed underlying type 时仍是 int；<strong>有</strong>时是该枚举类型</td>
+<td>可以显式指定（见 §四）</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以 <code class="c">static const char *op_name[OP_MAX];</code> 完全成立——<code class="c">OP_MAX</code> 是 int 常量表达式，
+<strong>下标从来只要求整型，不要求什么"enum 类型"</strong>。同理指定初始化
+<code class="c">[OP_ADD] = "add"</code> 也只是 int 下标的语法糖，这是 <a href="#s-1-2">1.2</a> 的延伸。</p>
+<hr />
+<h2>二、底层类型到底多大：默认恒 4，不是「挑最小」</h2>
+<p>网传"编译器选能装下所有枚举值的最小整数"——<strong>默认模式下没有这回事</strong>。</p>
+<p><strong>实测</strong>（clang 23.1.0，gnu17，无任何额外旗标）：</p>
+<pre class="code" data-label="C"><code class="c">enum Small { S0, S1 };                      /* 1 字节装得下 */
+enum Big   { B0 = 0, B1 = 2147483647 };     /* 需要 32 位   */
+enum Neg   { N0 = -1, N1 = 1 };             /* 有负有正     */
+/* sizeof 输出：4 4 4 —— 值域 1 字节装得下也照样 4 */
+</code></pre>
+<p>标准原文（N3220 §6.7.3.3p13）：<em>"The choice of type is </em><em>implementation-defined</em><em> but
+shall be capable of representing the values of all the members"</em>——标准只要求"装得下"，
+<strong>没说"选最小"</strong>。"选最小"只在两种情形发生：</p>
+<ol>
+<li><strong>显式开 <code class="c">-fshort-enums</code></strong>。实测同一份代码加旗标后：<code class="c">Small</code> 从 4 → <strong>1</strong>，<code class="c">Big</code> 保持 4。
+   而且这个旗标改的是 <strong>ABI</strong>——同一结构体在不同旗标下布局不同，链接期不会报错，运行期直接崩。
+   所以它必须全工程统一，这正是 <code class="c">_Static_assert(sizeof(enum X)==N, ...)</code> 存在的意义：</li>
+</ol>
+<p><code class="c">c
+   typedef enum { TASK_RUNNING, TASK_STOPPED } task_state_t;
+   _Static_assert(sizeof(task_state_t) == sizeof(int), "layout drift");
+   /* 开 -fshort-enums 重编：static assertion failed——炸在编译期，救你一命 */</code></p>
+<ol start="2">
+<li><strong>AAPCS 裸机 ABI 默认开</strong>。gcc 源码 <code class="c">gcc/config/arm/arm.h</code> 逐字注释：
+   <code class="c">/* AAPCS based ABIs use short enums by default. */</code>，
+   <code class="c">ARM_DEFAULT_SHORT_ENUMS = TARGET_AAPCS_BASED &amp;&amp; arm_abi != ARM_ABI_AAPCS_LINUX</code>。
+   <strong>对你最相关</strong>：<code class="c">arm-none-eabi-gcc</code>（STM32！）默认枚举真按最小存，<code class="c">enum{A,B}</code> 是 1 字节；
+   而 <code class="c">arm-linux-gnueabi</code> 明确用 <code class="c">aapcs-linux</code> ABI 把枚举关回 int 尺寸
+   （<code class="c">linux-eabi.h</code>：<em>"We default to the aapcs-linux ABI so that enums are int-sized by default"</em>）。</li>
+</ol>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>环境</th>
+<th>默认枚举尺寸</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86-64 / ARM64 Linux、macOS（System V / Darwin ABI）</td>
+<td><strong>恒 4</strong></td>
+<td>ABI 定死，实测</td>
+</tr>
+<tr>
+<td><code class="c">arm-none-eabi-gcc</code>（AAPCS 裸机，STM32）</td>
+<td><strong>按最小</strong>（1/2/4）</td>
+<td><code class="c">arm.h</code> 注释，ABI 要求</td>
+</tr>
+<tr>
+<td><code class="c">arm-linux-gnueabi</code>（AAPCS Linux 变体）</td>
+<td>恒 4</td>
+<td><code class="c">linux-eabi.h</code> 注释</td>
+</tr>
+<tr>
+<td>任意平台 + <code class="c">-fshort-enums</code></td>
+<td>按最小</td>
+<td>手动开启，改 ABI</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>嵌入式结论</strong>：同样一行 <code class="c">enum {A,B} x;</code>，在 Mac/Linux 上 sizeof=4，在 STM32 上 sizeof=1。
+跨端共享协议结构体时必须 <code class="c">_Static_assert</code> 锁死，否则这是最阴的 ABI 炸弹之一。</p>
+</blockquote>
+<hr />
+<h2>三、C 的类型检查有多松：警告矩阵实测</h2>
+<p>标准层面（C17 §6.5.16.1）：枚举类型就是算术类型，赋值约束只要求"双方是算术类型"——
+<strong>int→enum、enum→int、不同枚举互赋全部合法</strong>。没有 C++ 那种 <code class="c">enum class</code> 的隔离。
+也就是说 <code class="c">x = 100;</code>、<code class="c">op = RED;</code>（两个完全不同的枚举）都是<strong>合法 C 代码</strong>。</p>
+<p>但"编译器不拦你"要精确化——拦不拦是<strong>编译器警告策略</strong>的事，且新编译器越来越爱喊。
+clang 23.1.0 实测警告矩阵：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>赋值</th>
+<th>默认</th>
+<th><code class="c">-Wall -Wextra</code></th>
+<th><code class="c">-Wconversion</code></th>
+<th><code class="c">-pedantic</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">x = 100</code>（int→enum）</td>
+<td>静默</td>
+<td>静默</td>
+<td>⚠️ sign-conversion</td>
+<td>静默</td>
+</tr>
+<tr>
+<td><code class="c">y = OP_ADD</code>（常量→int）</td>
+<td>静默</td>
+<td>静默</td>
+<td>静默</td>
+<td>静默</td>
+</tr>
+<tr>
+<td><code class="c">op = RED</code>（不同枚举互赋）</td>
+<td><strong>⚠️ <code class="c">-Wimplicit-enum-enum-cast</code></strong></td>
+<td>同左（默认已含）</td>
+<td>⚠️</td>
+<td>⚠️</td>
+</tr>
+</tbody>
+</table></div>
+<p>注意第三行：<strong>clang 23 默认（不加任何旗标）就会报</strong>
+<code class="c">implicit conversion from enumeration type 'enum Color' to different enumeration type 'enum Op'</code>
+——只是警告不是错误。GCC 这边对应的是 GCC 13 新增的 <code class="c">-Wenum-int-mismatch</code>
+（针对函数声明里枚举/整数类型不匹配），赋值语句层面依然静默。</p>
+<p><strong>想要强类型检查，C 里只有三条路</strong>：</p>
+<ol>
+<li><code class="c">-Wimplicit-enum-enum-cast</code>（clang）/ <code class="c">-Wenum-int-mismatch</code>（gcc ≥13）开成 <code class="c">-Werror</code></li>
+<li><code class="c">_Static_assert</code> 锁宽 + 代码规范禁裸 int 赋给枚举</li>
+<li>换 C++ 的 <code class="c">enum class</code>——但那是另一个语言了</li>
+</ol>
+<hr />
+<h2>四、C23 fixed underlying type：<code class="c">enum X : type</code></h2>
+<p><strong>先纠正归类：这不是 GNU 扩展，是 C23 标准特性</strong>（提案 N3030，§6.7.3.3p2：
+"The underlying type can be explicitly specified using an enum type specifier and is its
+fixed underlying type"）。工具链支持：<strong>GCC 13 起实现</strong>（release notes 原文
+"Enumerations enhanced to specify underlying types"，属 C23 批次），Clang 17 起；
+<strong>GCC 12 及更早的 C 前端根本没有这个语法</strong>。</p>
+<p>实测（clang 23.1.0）：</p>
+<pre class="code" data-label="C"><code class="c">enum Op : unsigned char { OP_ADD, OP_SUB };
+_Static_assert(sizeof(enum Op) == 1, &quot;fixed&quot;);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译模式</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-std=gnu17</code></td>
+<td>✅ 静默通过，sizeof=1</td>
+</tr>
+<tr>
+<td><code class="c">-std=c17</code>（<code class="c">__STRICT_ANSI__</code>）</td>
+<td>✅ <strong>静默通过</strong>——网传"报错"不成立</td>
+</tr>
+<tr>
+<td><code class="c">-std=c17 -pedantic</code></td>
+<td>⚠️ <code class="c">warning: enumeration types with a fixed underlying type are a C23 extension [-Wc23-extensions]</code>——<strong>警告，不是 error</strong></td>
+</tr>
+<tr>
+<td><code class="c">-std=c23</code></td>
+<td>✅ 标准语法，零诊断</td>
+</tr>
+</tbody>
+</table></div>
+<p>附带收益：fixed underlying type 的枚举<strong>可以前置声明</strong>（N3030：complete by the end of the
+underlying type specifier），这是无 fixed 类型时做不到的（枚举的 complete type 依赖成员列表）。
+枚举值超出底层类型范围则是<strong>约束违规</strong>，编译期直接报错——比 <code class="c">-fshort-enums</code> 的静默缩窄安全得多。</p>
+<p><strong>为什么 C23 里基本可以淘汰 <code class="c">-fshort-enums</code></strong>：要省内存就 <code class="c">enum X : uint8_t</code>，语义明确、
+可前置声明、越界报错，且不改全局 ABI。<code class="c">-fshort-enums</code> 是全工程 ABI 开关，新代码别碰。</p>
+<hr />
+<h2>五、内核怎么写：不用 <code class="c">enum : type</code>，用三件套</h2>
+<p>网传"Linux 内核大量使用 <code class="c">enum X : u8</code> 扩展"——<strong>不成立，而且历史上不可能成立</strong>：
+内核长期以 <code class="c">-std=gnu11</code> 构建，而 GCC 12 及更早根本没有这个语法。主线也未见铺开——
+2025 年初内核还在打"C23 下 <code class="c">bool</code>/<code class="c">true</code>/<code class="c">false</code> 变关键字"的适配补丁
+（GCC 15 默认切 gnu23 引发的连锁反应），fixed underlying type 尚未成惯用法。</p>
+<p>内核实际的枚举三板斧：</p>
+<pre class="code" data-label="C"><code class="c">/* 1. typedef enum —— 把枚举类型名变成可用的类型名 */
+typedef enum {
+    TASK_RUNNING,
+    TASK_INTERRUPTIBLE,
+    TASK_STOPPED,
+} task_state_t;                    /* 内核不加 _t 后缀的例外惯例之外，驱动里 xxx_t 极常见 */
+
+/* 2. 匿名 enum + 尾部计数器 —— 只要常量不要类型 */
+enum {
+    MM_FILEPAGES,
+    MM_ANONPAGES,
+    MM_SWAPENTS,
+    NR_MM_COUNTERS                 /* = 3，天然的数量值，循环界/数组大小全靠它 */
+};                                 /* struct page 计数的真实写法，include/linux/mm.h */
+
+/* 3. 位域控宽 —— 要省内存时控制的是「字段」而不是「枚举类型」 */
+struct rq_flags {                  /* 意代码：把枚举塞进位域，宽度自己定 */
+    unsigned int state : 4;        /* 4 位，不管枚举值域多大 */
+    unsigned int pinned : 1;
+};
+</code></pre>
+<p>第三条的实测（clang 23.1.0）：<code class="c">struct { enum Small x : 1; unsigned int flag : 4; }</code>
+sizeof = <strong>4</strong>——位域打包进一个字，枚举本身的宽度根本不重要了。<strong>这就是内核绕过
+"枚举宽度不可控"的标准解法：不动 enum，动 struct。</strong></p>
+<hr />
+<h2>网传说法逐条勘误</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>网传</th>
+<th>实际</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"底层存储是 int（编译器选能装下的最小整数）"</td>
+<td>两半互相打架：默认<strong>恒 4</strong> 不挑最小（x86-64/ARM64 ABI）；"挑最小"只在 <code class="c">-fshort-enums</code> 或 AAPCS 裸机 ABI 下发生</td>
+<td>实测 <code class="c">Small/Big/Neg</code> 均 4；<code class="c">arm.h</code> 注释</td>
+</tr>
+<tr>
+<td>"C 编译器不会报错不会警告"</td>
+<td>标准不拦 ✔；但 clang 23 对<strong>不同枚举互赋默认就警告</strong>（<code class="c">-Wimplicit-enum-enum-cast</code>），GCC 对声明不匹配有 <code class="c">-Wenum-int-mismatch</code>（≥13）</td>
+<td>本节警告矩阵</td>
+</tr>
+<tr>
+<td>"<code class="c">enum Op : unsigned char</code> 是 GNU 扩展"</td>
+<td><strong>C23 标准特性</strong>（N3030）；GCC 13 起实现，GCC 12 及更早编不过；gnu17 模式下是「C23 扩展警告」而非 GNU 扩展</td>
+<td>N3220 §6.7.3.3p2；GCC 13 release notes</td>
+</tr>
+<tr>
+<td>"<code class="c">-std=cXX</code>（<code class="c">__STRICT_ANSI__</code>）下报错"</td>
+<td>clang 23 实测 <code class="c">-std=c17</code> <strong>静默通过</strong>；<code class="c">-pedantic</code> 才出警告且非 error</td>
+<td>本节实测表</td>
+</tr>
+<tr>
+<td>"Linux 内核大量使用这个扩展节省内存"</td>
+<td>不成立：内核 gnu11 + GCC 8–12 时代该语法不存在；内核用位域和 typedef enum 控宽度</td>
+<td>本节 §五</td>
+</tr>
+<tr>
+<td>"C 里想强类型只能靠 <code class="c">_Static_assert</code> 和代码规范"</td>
+<td>基本对，漏了警告旗标路线：<code class="c">-Wimplicit-enum-enum-cast</code> / <code class="c">-Wenum-int-mismatch</code> 开 <code class="c">-Werror</code></td>
+<td>本节 §三</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>小测验</strong>（<code class="c">enum E1 {A1,B1}; enum E2 {A2,B2}; enum E1 v = B2;</code>）：<strong>不报错，合法 C</strong>。
+gcc 静默；clang 23 默认警告 <code class="c">-Wimplicit-enum-enum-cast</code>。</p>
+<hr />
+<h2>误区速查表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>误区</th>
+<th>真相</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>enum 是强类型</td>
+<td>是「贴标签的整数」，标准里就是算术类型</td>
+</tr>
+<tr>
+<td>枚举变量默认按最小宽度存</td>
+<td>默认按 <strong>ABI</strong> 存（主流平台 4 字节）；arm-none-eabi 才按最小</td>
+</tr>
+<tr>
+<td><code class="c">-fshort-enums</code> 是无害的优化</td>
+<td><strong>改 ABI</strong>，全工程必须统一，混链接静默出错；新代码用 C23 fixed type</td>
+</tr>
+<tr>
+<td><code class="c">OP_MAX</code> 做数组下标是"enum 类型"的功劳</td>
+<td>枚举常量就是 int 常量表达式，下标只认整型</td>
+</tr>
+<tr>
+<td><code class="c">enum x : type</code> 是 GNU 私有货</td>
+<td>C23 标准，GCC 13/Clang 17 起</td>
+</tr>
+<tr>
+<td>内核靠 <code class="c">enum : u8</code> 省内存</td>
+<td>内核靠<strong>位域</strong>省，枚举宽度根本不碰</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上游</strong>：<a href="#s-1-1">1.1 C 标准与 gnu11</a>——<code class="c">-pedantic</code>
+  强度决定警告/硬错误的机制在 1.1 讲透了，本节 C23 扩展的诊断行为是它的又一实例</li>
+<li><strong>下游</strong>：<a href="#s-1-2">1.2 指定初始化</a>——<code class="c">[OP_ADD] = "add"</code>
+  跳转表是枚举常量 + 指定初始化的组合拳</li>
+<li><strong>横向</strong>：<a href="chapter-02.html#ch-2">CH2 · packed 属性</a>——<code class="c">-fshort-enums</code> 与
+  <code class="c">__packed</code> 同属"改 ABI 布局"的雷区，CH2 会把结构体布局这条线讲全</li>
+<li><strong>实战出口</strong>：<a href="chapter-03.html#s-3-1-2">CH3 寄存器</a>——
+  外设状态机用 <code class="c">typedef enum</code> + 位域塞进寄存器映像结构体，是本节三件套的合体场景</li>
+</ul>
+<details>
+<summary>代码自测（点击展开）</summary>
+<p><strong>环境</strong>：clang 23.1.0，arm64 Apple Silicon macOS，<code class="c">-std=gnu17</code>。以下全部为本节写作时的实测输出。</p>
+<p><strong>T1 混赋与默认尺寸</strong></p>
+<pre class="code" data-label="C"><code class="c">/* 输出：100 0 0 sizeof(enum Op)=4 */
+/* 三种混赋全部编译通过；-Wall -Wextra 下仅&quot;不同枚举互赋&quot;出 -Wimplicit-enum-enum-cast */
+</code></pre>
+<p><strong>T2 默认尺寸不受值域影响</strong></p>
+<pre class="code" data-label="C"><code class="c">/* Small{0,1} / Big{0,2147483647} / Neg{-1,1} 的 sizeof 输出：4 4 4 */
+</code></pre>
+<p><strong>T3 <code class="c">-fshort-enums</code> 改写尺寸</strong></p>
+<pre class="code" data-label="C"><code class="c">/* 同一份 Small/Big：输出 1 4（Small 从 4 缩到 1） */
+/* 且 _Static_assert(sizeof(task_state_t)==sizeof(int)) 直接编译失败——ABI 漂移被编译期抓住 */
+</code></pre>
+<p><strong>T4 fixed underlying type</strong></p>
+<pre class="code" data-label="C"><code class="c">/* enum Op : unsigned char —— gnu17 静默 sizeof=1；c17 静默；c17 -pedantic 出
+   [-Wc23-extensions] 警告；c23 零诊断 */
+</code></pre>
+<p><strong>T5 内核三件套</strong></p>
+<pre class="code" data-label="C"><code class="c">/* typedef enum {} task_state_t：sizeof==int（不开 short-enums 时） */
+/* struct { enum Small x : 1; unsigned int flag : 4; }：sizeof==4 */
+</code></pre>
+<p><strong>Q1：为什么 <code class="c">op_name[OP_MAX]</code> 不需要 cast？</strong></p>
+<details>
+<summary>答案</summary>
+<p>枚举常量在 C17 里类型就是 int（§6.7.2.2p3），而数组下标只要求整型。<code class="c">OP_MAX</code> 连"枚举类型"
+都不是——它是个 int 常量表达式，和 <code class="c">sizeof</code> 出来的数没区别。</p>
+</details>
+<p><strong>Q2：<code class="c">enum E1 v = B2;</code> 到底会不会报错？</strong></p>
+<details>
+<summary>答案</summary>
+<p>不会。枚举间赋值是合法的算术类型赋值（§6.5.16.1）。gcc 全静默；clang 23 默认警告
+<code class="c">-Wimplicit-enum-enum-cast</code>。想让它变成错误：<code class="c">-Wimplicit-enum-enum-cast -Werror</code>（clang）。</p>
+</details>
+<p><strong>Q3：为什么内核宁可用位域也不用 <code class="c">enum X : uint8_t</code>？</strong></p>
+<details>
+<summary>答案</summary>
+<p>历史 + 现实双重原因。历史上内核以 gnu11 构建，GCC 12 及更早没有这个语法，海量存量代码
+早已经用位域解决；现实中位域控制的是「结构体字段」宽度，一个字里能塞好几个状态/标志，
+比把每个枚举类型各自钉成 1 字节更省（实测两个位域字段共用 4 字节）。GCC 15 默认 gnu23
+之后这条惯例松动了，但存量代码不会重写。</p>
+</details>
 </details>
       </section>
 
