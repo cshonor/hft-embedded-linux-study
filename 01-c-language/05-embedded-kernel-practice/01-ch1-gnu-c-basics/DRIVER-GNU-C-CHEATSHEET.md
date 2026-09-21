@@ -4,7 +4,7 @@
 
 | 扩展 | 典型写法 | 驱动里干什么 | 深挖 |
 |------|----------|--------------|------|
-| **指定初始化** | `{ .compatible = "a,b" }, { .probe = fn }` | `of_match_table`、`file_operations`、`platform_driver` | [1.2](./1.2-designated-init/) · [struct 驱动向](../../01-basics-syntax-and-types/ch06-structures/1.0-struct-for-drivers.md) |
+| **指定初始化** | `{ .compatible = "a,b" }, { .probe = fn }` | `of_match_table`、`file_operations`、`platform_driver` | [1.2](./1.2-designated-init/) · [struct 驱动向](../../01-basics-syntax-and-types/ch06-structures/6.0-struct-for-drivers.md) |
 | **`packed`** | `__attribute__((packed))` | 寄存器/协议结构体紧凑布局，忌乱对齐 | [2.2.4](../02-ch2-gnu-c-advanced/2.2-aligned/2.2.4-属性声明-packed.md) |
 | **`section`** | `__attribute__((section("…")))` | 放到指定 ELF 段（init、特殊表） | [2.1](../02-ch2-gnu-c-advanced/2.1-section) |
 | **`unused` 等** | `__attribute__((unused))` | 消警告、标记 | 属性总览见 ch06 |
