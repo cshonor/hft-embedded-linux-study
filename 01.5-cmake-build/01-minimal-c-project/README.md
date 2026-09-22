@@ -2,7 +2,10 @@
 
 > **本节讲什么：** 你还不知道 CMake 是什么——很好，这章从你**已经会的东西**（手敲 gcc）出发，
 > 三级台阶走到 CMake，然后把 `build/` 目录拆开看它到底替你干了什么。
-> 全部命令在 macOS 26.6.2（clang 23.1.0 / CMake 4.x）实测，输出原样贴出。
+> 全部命令在 macOS 26.6.2（CMake 4.x）实测，输出原样贴出。
+> 示例统一用 **gcc**——实测时用的是 cdev 环境的 clang 23.1.0；
+> 本章场景下两者命令、flag、输出逐行等价（clang 驱动兼容 gcc 用法），
+> 唯一差别是配置输出里的编译器路径一行。
 
 ---
 
@@ -11,19 +14,19 @@
 一个 `main.c`，编译是一条命令：
 
 ```bash
-clang main.c -o demo
+gcc main.c -o demo
 ```
 
 程序长大：拆出 `math_utils.c`，加了 `-Wall -std=c11`，还得管头文件依赖：
 
 ```bash
-clang -Wall -Wextra -std=c11 main.c math_utils.c -o demo
+gcc -Wall -Wextra -std=c11 main.c math_utils.c -o demo
 ```
 
 实测（本仓库 `demo/` 工程的真实输出）：
 
 ```text
-$ clang -Wall -Wextra -std=c11 main.c math_utils.c -o demo_manual && ./demo_manual
+$ gcc -Wall -Wextra -std=c11 main.c math_utils.c -o demo_manual && ./demo_manual
 n=5  MA=100.4800  reported=100.4800
 ```
 
@@ -42,7 +45,7 @@ n=5  MA=100.4800  reported=100.4800
 
 1. **依赖关系** —— 谁依赖谁：`demo` ← `main.c.o` + `math_utils.c.o`；
    `main.c.o` ← `main.c` + `math_utils.h`
-2. **动作命令** —— 每个依赖节点上执行什么：`clang -c main.c -o main.c.o`
+2. **动作命令** —— 每个依赖节点上执行什么：`gcc -c main.c -o main.c.o`
 
 **Makefile 就是把这两件事写成规则**。你仓库里 147 个 demo Makefile 都是这么干的。
 那为什么还要 CMake？因为 Makefile 把这两件事**写死在了"本机"视角**：
@@ -54,7 +57,7 @@ n=5  MA=100.4800  reported=100.4800
 
 ```text
 你写的          CMake 替你生成的         真正干活的
-CMakeLists.txt → Makefile / Ninja / VS 工程 → clang / gcc / MSVC
+CMakeLists.txt → Makefile / Ninja / VS 工程 → gcc / clang / MSVC
 （描述工程）      （本机构建系统，自动生成）    （编译命令，自动拼装）
 ```
 
@@ -75,11 +78,11 @@ CMakeLists.txt → Makefile / Ninja / VS 工程 → clang / gcc / MSVC
 
 ```makefile
 demo: main.o math_utils.o
-	clang main.o math_utils.o -o demo
+	gcc main.o math_utils.o -o demo
 main.o: main.c math_utils.h      # ← 依赖要自己写对
-	clang -Wall -std=c11 -c main.c
+	gcc -Wall -std=c11 -c main.c
 math_utils.o: math_utils.c math_utils.h
-	clang -Wall -std=c11 -c math_utils.c
+	gcc -Wall -std=c11 -c math_utils.c
 ```
 
 增量编译解决了，但规则是**手写的、平台绑定的**。`STM32-/labs/00` 的 Makefile
@@ -116,13 +119,13 @@ cmake --build build   # 构建阶段
 ```text
 -- Detecting C compiler ABI info
 -- Detecting C compiler ABI info - done
--- Check for working C compiler: /Users/a0000/micromamba/envs/cdev/bin/clang - skipped
+-- Check for working C compiler: /usr/bin/gcc - skipped   # ← 实测时为 cdev 的 clang 路径，随本机编译器而变
 -- Configuring done (1.1s)
 -- Generating done (0.0s)
 -- Build files have been written to: .../demo/build
 ```
 
-读输出就是读 CMake 在干什么：**探测编译器**（找到 cdev 环境的 clang）→
+读输出就是读 CMake 在干什么：**探测编译器**（找到本机 gcc）→
 **执行你的 CMakeLists**（`add_executable` 等只是登记 target）→
 **生成**本机构建系统（macOS 上默认生成 Makefile）。
 

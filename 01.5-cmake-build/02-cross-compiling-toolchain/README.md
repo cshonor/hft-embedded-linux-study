@@ -127,7 +127,7 @@ cmake --build build-m3
 -- Generating done
 ```
 
-逐行读：编译器从本机 clang 换成了 `arm-none-eabi-gcc` ✓；
+逐行读：编译器从本机 gcc 换成了交叉前缀的 `arm-none-eabi-gcc` ✓；
 `Check for working ... - skipped` 正是 `TRY_COMPILE_TARGET_TYPE` 在起作用
 （跳过链接自检）✓。构建完验证产出物真的是 ARM 机器码：
 
