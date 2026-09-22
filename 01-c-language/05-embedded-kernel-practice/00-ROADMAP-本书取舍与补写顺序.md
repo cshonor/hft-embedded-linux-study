@@ -64,9 +64,9 @@
 | **A** | ch04 | [编译链接安装运行](./06-ch6-toolchain-custom/compile-and-link/) | 34 | 2222 | 88% | **嵌入式落地地基**：链接脚本、静态/动态库、内核模块、U-boot 重定位 | CSAPP ch7 只讲 ELF 与链接概念，不讲链接脚本与重定位实战 | 精写，目标 15–30 KB/篇 |
 | **A** | ch05 | [内存堆栈管理](./91-ref-memory/) | 33 | 2033 | 84% | **嵌入式最致命的部分**：栈布局、堆、mmap、泄漏、内存错误 | TLPI ch6/ch7/ch10 覆盖进程内存，但栈帧/裸机堆管理不重叠 | 精写，目标 15–30 KB/篇 |
 | **A** | ch01 | [工具链](./06-ch6-toolchain-custom/toolchain/) | 23 | 1403 | 73% | 天天要用的 binutils / ELF / make / gdb | 部分与平时工具使用重叠 | 精写常用部分（6.4 ELF、6.2 make），6.1 vim / 6.3 git 保持索引 |
-| **B** | ch09 | [模块化编程](./05-ch5-portable-modular/modular-c/) | 28 | 3677 | 3% | 工程实践：头文件、模块封装、goto | 已达标 | 维持，只补 5.20/5.25 |
-| **B** | ch07 | [数据存储与指针](./05-ch5-portable-modular/data-and-pointers/) | 43 | 2545 | 37% | **只挑与嵌入式强相关的节** | 指针基础与 [Pointers on C](../02-advanced-pointers-and-memory/) 重叠 | 精挑 5.2 对齐 / 5.3 可移植性 / 5.4 size_t / 5.13 void；其余维持 |
-| **B** | ch08 | [OOP in C](./05-ch5-portable-modular/oop-in-c/) | 18 | 3496 | 5% | 与 1.4 container_of 联动的面向对象套路 | 已达标 | 维持，与 1.4 双向链接 |
+| **B** | ch09 | [模块化编程](./05-ch5-portable-modular/5.19-modular-c/) | 28 | 3677 | 3% | 工程实践：头文件、模块封装、goto | 已达标 | 维持，只补 5.20/5.25 |
+| **B** | ch07 | [数据存储与指针](./05-ch5-portable-modular/5.01-data-and-pointers/) | 43 | 2545 | 37% | **只挑与嵌入式强相关的节** | 指针基础与 [Pointers on C](../02-advanced-pointers-and-memory/) 重叠 | 精挑 5.2 对齐 / 5.3 可移植性 / 5.4 size_t / 5.13 void；其余维持 |
+| **B** | ch08 | [OOP in C](./05-ch5-portable-modular/5.14-oop-in-c/) | 18 | 3496 | 5% | 与 1.4 container_of 联动的面向对象套路 | 已达标 | 维持，与 1.4 双向链接 |
 | **A** | ch10.8 | [寄存器操作（嵌入式 C 开门）](./03-ch3-embedded-driver/3.1-register/3.1-寄存器操作.md) | 3 | — | — | **嵌入式 C 第一课**：`volatile` / `barrier()` / `BIT()`·`GENMASK()` / 未对齐访问 / 字节序 | CSAPP 讲硬件不讲 C 表达，标准 C 教材两头都不讲 | ✅ 已写（实测篇，由 ch02 硬件内容改造而来） |
 | **B** | ch10 | [多任务与 OS](./90-ref-os/) | 45 | 2928 | 13% | **只挑嵌入式侧**：裸机、中断 | 进程/线程/文件系统/IO 属 OS 通识 | 精挑 3.3 裸机 / 3.2 中断；其余维持索引 |
 | **A** | ch03.6/3.7 | [C 与汇编混合编程 / GNU ARM 工具链](./92-ref-arm-asm/) | 12 | 1718 | — | **内联汇编本质是 GNU C 扩展**（`__asm__ __volatile__` 的操作数约束/clobber/volatile 语义全是编译器层面）；`.section` 与链接脚本联动 | CSAPP 不教 GNU 扩展汇编语法 | **A 档精写**，与 ch06 联动 |
@@ -146,10 +146,10 @@ cache line 64 B → 决定 padding / `aligned(64)`；分支预测失败 → 决�
 
 | 主题 | 主战场 | 关联笔记 |
 |------|--------|----------|
-| `container_of` / 侵入式链表 | [1.4](./01-ch1-gnu-c-basics/1.4-typeof-container-of/1.4-typeof与container_of宏.md) | [ch08 OOP in C](./05-ch5-portable-modular/oop-in-c/) |
+| `container_of` / 侵入式链表 | [1.4](./01-ch1-gnu-c-basics/1.4-typeof-container-of/1.4-typeof与container_of宏.md) | [ch08 OOP in C](./05-ch5-portable-modular/5.14-oop-in-c/) |
 | `__attribute__` 全族 | [2.1.1](./02-ch2-gnu-c-advanced/2.1-section/2.1.1-GNU-C编译器扩展关键字-__attribute__.md) | [Pointers on C 18.10 深度实测](../02-advanced-pointers-and-memory/ch18-runtime-environment/18.10-GCC属性总览.md) |
 | 变参 + format 属性 | [Pointers on C 7.6.2](../02-advanced-pointers-and-memory/ch07-functions/7.6-variable-argument-lists/7.6.2-可变参数的限制.md) | [2.3](./02-ch2-gnu-c-advanced/2.3-format/) |
-| 对齐 / 未对齐访问 | [2.2 aligned](./02-ch2-gnu-c-advanced/2.2-aligned/) | [CH5 5.2 对齐](./05-ch5-portable-modular/data-and-pointers/5.2-alignment/) |
+| 对齐 / 未对齐访问 | [2.2 aligned](./02-ch2-gnu-c-advanced/2.2-aligned/) | [CH5 5.2 对齐](./05-ch5-portable-modular/5.01-data-and-pointers/5.2-alignment/) |
 
 ---
 

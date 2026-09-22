@@ -13,6 +13,11 @@ WORKSPACE = SCRIPT.parent  # build_all.py 所在目录（hft-reclone/）
 REPO_GH = "https://github.com/cshonor/hft-embedded-linux-study/blob/main"
 STYLE = (WORKSPACE / "cfs-style.css").read_text(encoding="utf-8")
 
+def _nat_key(name):
+    """自然排序：把字符串里的数字段当整数比较，修复 5.10 排在 5.2 前面的字典序问题。
+    非数字段用 (1, str) 包一层避免 int 与 str 直接比较崩溃。"""
+    return [(0, int(t)) if t.isdigit() else (1, t) for t in re.split(r"(\d+)", name)]
+
 # 每本书：root 相对仓库根，out_dir 相对仓库根，title_zh、sub_zh 用于封面，group 用于顶层分组
 GROUP_ORDER = [
     ("c-lang",  "C 语言"),
@@ -977,7 +982,7 @@ def build_dir_indexes():
     for dirpath, dirnames, filenames in os.walk(WORKSPACE):
         # 排除版本控制与构建产物目录 —— 否则 cargo 的 target/ 会被逐级生成
         # 上千个 index.html（构建产物里再生成构建产物），既拖慢 build 又污染磁盘。
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        dirnames[:] = sorted((d for d in dirnames if d not in SKIP_DIRS), key=_nat_key)
         d = Path(dirpath)
         if d in cover_dirs:
             continue  # 封面页所在目录跳过（封面不覆盖）
@@ -1022,7 +1027,7 @@ def build_dir_indexes():
                     f'<span class="fname">{html_mod.escape(sub)}</span>'
                     f'<span class="fnote">{n_items} 项</span></a>')
         # 文件条目
-        for f in sorted(filenames):
+        for f in sorted(filenames, key=_nat_key):
             if f.startswith(".") or f == "index.html" or ".tmp" in f:
                 continue
             icon = FILE_ICONS.get(Path(f).suffix.lower(), "📄")

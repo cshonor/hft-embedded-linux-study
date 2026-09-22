@@ -114,9 +114,9 @@ make clean
   - [6.14.3 延迟绑定](./6.14-dynamic-linking/6.14.3-延迟绑定.md)
   - [6.14.4 共享库](./6.14-dynamic-linking/6.14.4-共享库.md)
 - [6.15 插件的工作原理](./6.15-插件的工作原理.md)
-- [4.1 Linux内核模块运行机制](../../04-ch4-kernel-module/4.1-Linux内核模块运行机制.md)
-- [4.2 Linux内核编译和启动分析](../../04-ch4-kernel-module/4.2-Linux内核编译和启动分析.md)
-- [4.3 U-boot重定位分析](../../04-ch4-kernel-module/4.3-U-boot重定位分析.md)
+- [4.1 内核模块加载与符号决议](../../04-ch4-kernel-module/4.1-module-loading/4.1-内核模块加载与符号决议.md)
+- [4.5 内核编译与启动分析](../../04-ch4-kernel-module/4.5-内核编译与启动分析.md)
+- [4.6 U-Boot 重定位分析](../../04-ch4-kernel-module/4.6-U-Boot重定位分析.md)
 - [6.16 常用的binutils工具集](./6.16-常用的binutils工具集.md)
 - [6.18 链接脚本](../6.18-链接脚本.md)
 

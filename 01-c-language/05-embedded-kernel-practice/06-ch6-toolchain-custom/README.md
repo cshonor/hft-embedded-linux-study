@@ -77,14 +77,14 @@
 
 - **应用层**（进程、线程、内存管理）不在本章：见 [附录 A OS 通识](../90-ref-os/) · [附录 B 内存堆栈](../91-ref-memory/)
 - **构建产物怎么排错**：见 [2/6.10 链接过程](./compile-and-link/6.10-linking/)
-- **内核模块怎么被加载**（动态链接的内核版）：见 [CH4 4.1](../04-ch4-kernel-module/4.1-Linux内核模块运行机制.md)
+- **内核模块怎么被加载**（动态链接的内核版）：见 [CH4 4.1](../04-ch4-kernel-module/4.1-module-loading/4.1-内核模块加载与符号决议.md)
 
 <details><summary>代码自测（点击展开）</summary>
 
 **Q1：链接脚本和 `-Wl,-Ttext=0x8000` 有什么区别？**
 
 <details><summary>答案</summary>
-`-Ttext` 只是把 `.text` 的起始地址改了，其余段仍在默认布局里；链接脚本是**完全接管**——你能指定每个段的地址、对齐、加载地址(LMA)与运行地址(VMA) 分离（`AT>`），还能 `PROVIDE` 自定义符号。U-Boot 重定位就是靠 **LMA ≠ VMA**：先从 Flash(LMA) 加载进去，代码自己把自己搬到 RAM(VMA) 跑。详见 [6.18](./6.18-链接脚本.md) 与 [CH4 4.3 U-Boot 重定位](../04-ch4-kernel-module/4.3-U-boot重定位分析.md)。
+`-Ttext` 只是把 `.text` 的起始地址改了，其余段仍在默认布局里；链接脚本是**完全接管**——你能指定每个段的地址、对齐、加载地址(LMA)与运行地址(VMA) 分离（`AT>`），还能 `PROVIDE` 自定义符号。U-Boot 重定位就是靠 **LMA ≠ VMA**：先从 Flash(LMA) 加载进去，代码自己把自己搬到 RAM(VMA) 跑。详见 [6.18](./6.18-链接脚本.md) 与 [CH4 4.6 U-Boot 重定位](../04-ch4-kernel-module/4.6-U-Boot重定位分析.md)。
 </details>
 
 **Q2：为什么要交叉编译？在目标机上装个 gcc 不行吗？**

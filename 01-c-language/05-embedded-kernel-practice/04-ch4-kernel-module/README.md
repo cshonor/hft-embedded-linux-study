@@ -48,6 +48,8 @@ CH1/CH2 告诉你**有这些工具**。但你第一次打开 `include/linux/list
 | 2 | [4.2 initcall 机制全解](./4.2-initcall/4.2-initcall机制全解.md) | ✅ 32 KB | **`module_init` 双版本**（`alias` vs `section`）/ 8 级别 / 链接脚本段收集 / `do_initcalls` 循环 / `__init` 释放 / PREL32 / KEEP 陷阱 |
 | 3 | [4.3 container_of 与侵入式链表](./4.3-container-of-list/4.3-container_of与侵入式链表.md) | ✅ 30 KB | **侵入式 vs 外挂** / 多链表（member 参数区分偏移）/ POISON 投毒 / 遍历宏家族（safe 版）/ hlist pprev 妙用 / RCU 写入顺序 / 零开销实测 / 数组比链表快 568 倍 |
 | 4 | [4.4 协议结构体的 packed 实践](./4.4-packed-protocol/4.4-协议结构体的packed实践.md) | ✅ 26 KB | **TCP/IP 头不加 packed**（成员自然对齐）/ 位域双版本（`__LITTLE_ENDIAN_BITFIELD`）/ `__be16`=`__u16 __bitwise`（sparse 标注零开销）/ 热路径 `union tcp_word_hdr`+整字 `TCP_FLAG_*` / `htonl`→`__builtin_bswap32`（1 条 BSWAP）/ `__struct_group` / USB 描述符为何加 packed |
+| 5 | [4.5 内核编译与启动分析](./4.5-内核编译与启动分析.md) | 📄 薄笔记 | `make defconfig`/`menuconfig`/`bzImage` 五步 / 交叉编译变量 / vmlinux→bzImage / 与 DPDK 衔接 |
+| 6 | [4.6 U-Boot 重定位分析](./4.6-U-Boot重定位分析.md) | 📄 薄笔记 | 为何重定位 / 典型步骤（概念）/ U-Boot ELF 分析命令 / 对照 Linux 启动 |
 
 ## 补写计划（按优先级）
 
@@ -60,7 +62,10 @@ CH1/CH2 告诉你**有这些工具**。但你第一次打开 `include/linux/list
 | ★★☆ | **`.ko` 的加载与符号决议** | ✅ 已完成 | 接 4.1；本质是 CH2 的强弱符号 + CH6 的动态链接 |
 | ★★☆ | **协议结构体的 `packed` 实践** | ✅ 已完成 | 接 4.1 + CH2 2.2；看 `struct tcphdr` 怎么处理位域与字节序 |
 | ★☆☆ | **per-CPU 与 `aligned`** | 待补 | 需要一点调度背景，见 [附录 A](../90-ref-os/) |
-| ★☆☆ | U-Boot 重定位 | 待补 | 深度可选，做 bootloader 才用得上 |
+| ★☆☆ | U-Boot 重定位 | 📄 已有薄笔记（[4.6](./4.6-U-Boot重定位分析.md)） | 深度可选，做 bootloader 才用得上；扩写时在 4.6 上就地加深 |
+
+> 编号说明：4.5/4.6 是原书 ch4 的老笔记（内核编译、U-Boot 重定位）在重编号后腾出的位置——
+> 原来的 4.1（模块运行机制）已被 4.1-module-loading 的 38 KB 精写版全面覆盖，2026-09-22 删除。
 
 > 前三项补完，读 LKD「设备驱动模型」一章就不会卡了。
 

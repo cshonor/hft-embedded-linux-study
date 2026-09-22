@@ -65,9 +65,9 @@
 | 4.14 链接脚本 | [CH6](./06-ch6-toolchain-custom/6.18-链接脚本.md) |
 | 第 5 章 内存堆栈 | [附录 B](./91-ref-memory/) |
 | **第 6 章 GNU C 扩展** | **[CH1](./01-ch1-gnu-c-basics/) + [CH2](./02-ch2-gnu-c-advanced/)** ← 本书核心 |
-| 第 7 章 数据与指针 | [CH5](./05-ch5-portable-modular/data-and-pointers/) |
-| 第 8 章 OOP in C | [CH5](./05-ch5-portable-modular/oop-in-c/) |
-| 第 9 章 模块化 | [CH5](./05-ch5-portable-modular/modular-c/) |
+| 第 7 章 数据与指针 | [CH5](./05-ch5-portable-modular/5.01-data-and-pointers/) |
+| 第 8 章 OOP in C | [CH5](./05-ch5-portable-modular/5.14-oop-in-c/) |
+| 第 9 章 模块化 | [CH5](./05-ch5-portable-modular/5.19-modular-c/) |
 | 10.1 / 10.3 / 10.8 嵌入式 | [CH3](./03-ch3-embedded-driver/) |
 | 第 10 章 其余 OS 通识 | [附录 A](./90-ref-os/) |
 
