@@ -43,6 +43,7 @@ BOOKS = [
     _b("01-c-language/04-modern-c-standards", "规范 · 现代 C 标准", "Jens Gustedt《Modern C》· C99–C23 精读", "c-lang"),
     _b("01-c-language/05-embedded-kernel-practice", "实战 · 嵌入式与内核", "《嵌入式 C 语言自我修养》· 从编译链接到内核素养", "c-lang"),
     _b("01-c-language/06-reference-pitfalls", "参考 · 陷阱与缺陷", "Koenig《C Traps and Pitfalls》· C 陷阱与缺陷", "c-lang"),
+    _b("01.5-cmake-build", "CMake 构建系统", "《CMake构建实战》+ Professional CMake · 任务节点式", "c-lang"),
     # ---- 数字逻辑 · 体系结构 ----
     _b("00-digital-logic-cpu", "数字逻辑与 CPU", "Digital Design 实践笔记 · RPi", "digital"),
     _b("02-computer-systems", "Computer Systems", "CSAPP · 深入理解计算机系统", "digital"),
