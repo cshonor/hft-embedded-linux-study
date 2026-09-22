@@ -12,6 +12,7 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
+| 🟢 5.0′ 第一次 strace 实战（零起点：三段式读法 + 卡住行识别） | [00-first-strace-trace.md](notes/00-first-strace-trace.md) |
 | 5.1 strace 入门（基本用法 / 输出格式 / 参数与 errno 解读） | `notes/01-strace-basics.md` |
 | 5.2 strace 实战分析（-c 统计 / -f 子进程 / -p attach / 阻塞与多余 syscall 定位） | `notes/02-strace-practical-analysis.md` |
 | 5.3 ltrace 库调用追踪（与 strace 对比 / malloc-free 追踪） | `notes/03-ltrace-library-calls.md` |

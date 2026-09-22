@@ -12,6 +12,7 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
+| 🟢 3.0′ 第一次读 ASan 报告（零起点：退出码 0 的越界 + 报告四段式） | [00-first-asan-report.md](notes/00-first-asan-report.md) |
 | 3.1 valgrind memcheck（泄漏 / 越界 / UAF 精确定位） | [01-valgrind-memcheck.md](notes/01-valgrind-memcheck.md) |
 | 3.2 AddressSanitizer（ASan 快速内存错误检测） | [02-addresssanitizer.md](notes/02-addresssanitizer.md) |
 | 3.3 UndefinedBehaviorSanitizer（UBSan 未定义行为） | [03-undefinedbehaviorsanitizer.md](notes/03-undefinedbehaviorsanitizer.md) |

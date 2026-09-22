@@ -276,6 +276,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-00"><span class="n">3.0</span>′ 第一次内存错误：ASan 报告逐行读</a>
           <a href="#s-01"><span class="n">3.1</span>valgrind memcheck（泄漏 / 越界 / UAF 精确定位）</a>
           <a href="#s-02"><span class="n">3.2</span>AddressSanitizer（ASan 快速内存错误检测）</a>
           <a href="#s-03"><span class="n">3.3</span>UndefinedBehaviorSanitizer（UBSan 未定义行为）</a>
@@ -300,7 +301,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">gdb / strace / valgrind / sanitizer / perf</div>
           <h1>Ch3 内存类：越界 / 泄漏 / use-after-free</h1>
           <div class="meta">
-<span>book <b>03.6-userspace-debugging</b></span><span>chapter <b>Ch 3</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>03.6-userspace-debugging</b></span><span>chapter <b>Ch 3</b></span><span>sections <b>5</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -385,6 +386,183 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><strong>越界是崩溃的潜伏根因</strong>：一块内存被写坏，可能几十万次调用后才在别处崩溃，ASan 在开发期就把它钉死；</li>
 <li><strong>valgrind 定性 → ASan 复测</strong>：valgrind 慢但无需重编，先定性；确认后 ASan 重编译快速回归。</li>
 </ul>
+      </section>
+      <section class="section" id="s-00">
+        <div class="sec-head"><div class="sec-no">3.0</div><h2>′ 第一次内存错误：ASan 报告逐行读</h2></div>
+<blockquote>
+<p>🟢 零起点 · 接续 <a href="chapter-07.html#s-00">1.0 学前篇</a></p>
+<p>内存类 bug 最气人的地方：<strong>程序不崩，退出码 0，结果是错的</strong>（或者今天不错明天错）。
+这类 bug 靠眼睛看不出来，但有件武器能让它现形——<strong>AddressSanitizer（ASan）</strong>。
+ASan 的报告第一次看像天书：十几行地址、数字、十六进制块。
+这一篇把一份真实报告的<strong>每一行</strong>拆开读完——读完会发现它其实只说了四件事。
+主角：<code class="c">code/c3_1_mem_bugs.c</code> 的 case 1（堆越界写）。</p>
+</blockquote>
+<hr />
+<h2>先看「不报错」有多危险</h2>
+<p>同一个程序，裸编译跑一遍：</p>
+<pre class="code" data-label="shell"><code class="c">gcc -g -O0 -Wall -Wextra -o c3_1_plain c3_1_mem_bugs.c
+./c3_1_plain 1
+</code></pre>
+<pre class="code" data-label="text"><code class="c">case 1: 写了 buf[8]（越界 1 字节）—— 裸编译下「成功」跑完
+case 1 跑完了 main
+$ echo $?
+0
+</code></pre>
+<p><strong>代码里明明越界写了（<code class="c">buf[8]</code>，buf 只有 8 字节），程序却一切正常</strong>。
+物理上那 1 字节确实写进去了（踩进了堆分配器自己的地盘），没触发任何保护。
+这就是内存 bug 的教学第一课：<strong>「不崩」和「没错」是两件事</strong>。
+它会在三天后、在另一个函数里、以完全无关的姿势崩——那时谁也想不到凶手在这里。</p>
+<h2>同一份代码，加一个 flag 就现形</h2>
+<pre class="code" data-label="shell"><code class="c">gcc -g -O0 -fsanitize=address -o c3_1_asan c3_1_mem_bugs.c
+#        └────────┬────────┘
+#        唯一的区别：请编译器在每次内存访问前后插入「这块地能不能碰」的检查
+./c3_1_asan 1
+</code></pre>
+<p><code class="c">-fsanitize=address</code> 一个选项做两件事：编译时<strong>插桩</strong>（每次读写内存先查岗）、
+链接时带上<strong>运行时库</strong>（管账本、报错、打印报告）。</p>
+<h2>报告逐行读：其实只说了四件事</h2>
+<p>跑 <code class="c">./c3_1_asan 1</code> 打出的报告（实测，已精简）：</p>
+<pre class="code" data-label="text"><code class="c">=================================================================
+==1==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x...   ①
+WRITE of size 1 at 0x... thread T0                                        ②
+    #0 crash_heap_overflow .../c3_1_mem_bugs.c:38                        ③
+    #1 main .../c3_1_mem_bugs.c:96
+
+0x... is located 0 bytes after 8-byte region [0x...,0x...)               ④
+allocated by thread T0 here:
+    #0 malloc ...
+    #1 crash_heap_overflow .../c3_1_mem_bugs.c:34                        ⑤
+
+Shadow bytes around the buggy address:
+=&gt;0x...: fa fa 00[fa]fa fa ...                                          ⑥
+SUMMARY: AddressSanitizer: heap-buffer-overflow c3_1_mem_bugs.c:38      ⑦
+ABORTING
+</code></pre>
+<p>逐条拆：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>行</th>
+<th>它说了什么</th>
+<th>人话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td><strong>错误类型</strong> <code class="c">heap-buffer-overflow</code> + 出事地址</td>
+<td>「堆上越界」——越界的种类直接写在第一行（heap/stack/use-after-free/double-free/leak 五种，c3_1 正好一种一例）</td>
+</tr>
+<tr>
+<td>②</td>
+<td><strong>动作</strong>：WRITE，长度 1 字节</td>
+<td>是「写」闯的祸（也可能是 READ），一次只越了 1 字节</td>
+</tr>
+<tr>
+<td>③</td>
+<td><strong>犯罪现场</strong>：调用栈，<code class="c">#0</code> 是动手的行</td>
+<td><code class="c">c3_1_mem_bugs.c:38</code>——打开文件第 38 行，就是 <code class="c">buf[8] = 1</code></td>
+</tr>
+<tr>
+<td>④</td>
+<td><strong>受害者</strong>：8 字节的地盘，你越到了它后面第 0 字节</td>
+<td>buf 只有 8 字节，你写了第 9 个</td>
+</tr>
+<tr>
+<td>⑤</td>
+<td><strong>这块地是谁分的</strong>：malloc 的调用栈，行号 <code class="c">:34</code></td>
+<td>越界事故经常「分的时候就算错大小」——所以 ASan 把分配点也给你</td>
+</tr>
+<tr>
+<td>⑥</td>
+<td><strong>影子内存图</strong>：<code class="c">00</code>=合法，<code class="c">fa</code>=红区（禁地），<code class="c">[fa]</code>=你踩的那格</td>
+<td>ASan 在每块合法内存周围撒「红区」，踩红区即报警——这就是它物理上怎么抓到你的</td>
+</tr>
+<tr>
+<td>⑦</td>
+<td><strong>一句话总结</strong>（SUMMARY）</td>
+<td>抄给同事/贴 issue 就用这行</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>四件事：什么错（①）→ 谁干的（③）→ 地是谁的（④⑤）→ 总结（⑦）。</strong>
+任何 ASan 报告都用这个顺序读，30 秒读完。</p>
+<h2>第二种形态：泄漏（连错误现场都没有）</h2>
+<p><code class="c">./c3_1_asan 5</code>（100 次 malloc 只借不还）的报告头部不一样：</p>
+<pre class="code" data-label="text"><code class="c">=================================================================
+==1==ERROR: LeakSanitizer: detected memory leaks
+Direct leak of 40000 byte(s) in 100 object(s) allocated from:
+    #0 malloc ...
+    #1 crash_leak .../c3_1_mem_bugs.c:84
+SUMMARY: AddressSanitizer: 40000 byte(s) leaked in 100 allocation(s).
+</code></pre>
+<p>泄漏没有「犯罪现场」（借的时候没错，错在<strong>没还</strong>），所以报告给的是
+「<strong>这笔钱在哪借的</strong>」——<code class="c">:84</code> 那行 malloc。100 次 × 400 字节 = 40000，
+数字对得上账。长跑服务（7×24 的交易进程）里泄漏是慢性自杀：
+每天漏 40 KB，一个月后 OOM——LeakSanitizer 就是体检里的「慢性病筛查」。</p>
+<h2>三条必须记住的纪律</h2>
+<ol>
+<li><strong>ASan 是开发期工具，不上线</strong>：它让程序慢约 2 倍、内存涨约 3 倍。
+   正确姿势 = 开发/测试环境每次全量测试都带 <code class="c">-fsanitize=address</code> 跑（见 01.5 第 5 章的 dev preset）。</li>
+<li><strong>配 <code class="c">-O0</code> 先保证现形</strong>：<code class="c">-O1</code> 下编译器可能把「出错代码」当死码删掉
+   （c3_1 的 case 3 UAF 在 <code class="c">-O1</code> 下就检不出——优化改变 bug 的存在性，见 code/README 坑 1）。</li>
+<li><strong>报告从头读，不要从中间读</strong>：新手容易被影子图（⑥）吓住，
+   其实 ①③⑤⑦ 四行就够定位；影子图是讲原理用的。</li>
+</ol>
+<h2>与 valgrind 的关系（一句话）</h2>
+<p>valgrind 是上一代工具：<strong>不用重新编译</strong>，把程序放在虚拟 CPU 上跑，
+但慢 10–50 倍；ASan 要重编但只慢 2 倍——<strong>能重编就 ASan，拿不到源码/不想重编才 valgrind</strong>。
+细节是 <a href="chapter-07.html#s-01">3.1 valgrind</a> 与 <a href="chapter-07.html#s-02">3.2 ASan</a> 的内容。</p>
+<h2>衔接</h2>
+<ul>
+<li>前置：<a href="chapter-07.html#s-00">1.0 学前篇</a>（编译命令逐词、退出码）</li>
+<li>展开：<a href="chapter-07.html#s-01">3.1 valgrind Memcheck</a>、<a href="chapter-07.html#s-02">3.2 AddressSanitizer</a></li>
+<li>demo：<code class="c">code/c3_1_mem_bugs.c</code> 五种内存错误各一例（建议 1–5 全跑，对照报告种类）；
+  <code class="c">code/c3_2_uninit_read.c</code>（ASan 的盲区：未初始化读）</li>
+<li>工程化：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/01.5-cmake-build/05-hft-compile-options/README.md">01.5 第 5 章</a>（把 ASan 做成 CMake preset）</li>
+</ul>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 裸编译跑 case 1 退出码 0、输出正常，能不能说明代码没问题？为什么？</p>
+<blockquote>
+<p>不能。越界写 1 字节踩进了堆分配器的内部区域，物理可写、不触发页错误，
+所以不崩——但那块地不属于你，里面可能是分配器的元数据或别的对象的内存，
+后果是延迟爆发的（别处、别的时间崩）。「不崩」只说明「这次没踩到雷管」，
+内存类 bug 必须用 ASan/valgrind 这类主动检查工具才能现形。</p>
+</blockquote>
+<p><strong>Q2:</strong> 一份 ASan 报告按什么顺序读？每段各回答什么问题？</p>
+<blockquote>
+<p>四段式：①错误类型行（heap-buffer-overflow 等）→ 什么错；
+③现场调用栈（#0 行号）→ 谁干的；
+④⑤受害者信息 + 分配点栈 → 地是谁的、当初怎么分的；
+⑦SUMMARY → 一句话结论。
+影子内存图（⑥）理解原理即可，定位不必细读。</p>
+</blockquote>
+<p><strong>Q3:</strong> ASan 为什么能抓到「只差 1 字节」的越界？（影子内存与红区）</p>
+<blockquote>
+<p>ASan 用影子内存记账：每 8 字节真实内存对应 1 字节影子，
+值 0 表示全部合法、fa 表示红区（禁地）。分配内存在两块合法区之间插入红区，
+每次内存访问前插桩代码先查影子——踩红区立即报警。
+所以哪怕只越 1 字节（踩进红区第一格）也逃不掉。
+代价是内存约 3 倍（影子 + 红区）、速度约 2 倍——所以不上线。</p>
+</blockquote>
+<p><strong>Q4:</strong> 泄漏报告为什么没有「犯罪现场」？它给的关键行号是什么？</p>
+<blockquote>
+<p>泄漏的错误是「该 free 时没 free」——借钱（malloc）那一刻完全合法，
+没有一个「出错的动作」可以指认。所以 LeakSanitizer 在进程退出时盘点：
+哪些块还活着但没有任何指针能找到它们，然后报告<strong>这些块的分配点</strong>（在哪行 malloc 的）。
+修泄漏就是顺着分配点找到应该配对的 free 该放在哪条路径上。</p>
+</blockquote>
+<p><strong>Q5:</strong> 为什么 ASan demo 要求先用 <code class="c">-O0</code> 构建？<code class="c">-O1</code> 会发生什么？</p>
+<blockquote>
+<p>优化器做死代码消除时不管「这段代码有没有副作用外的错误」。
+c3_1 case 3 的 UAF：<code class="c">-O1</code> 下「往已释放内存写 + 读回来」被整体判定为无外部效果，
+整段删掉——UAF 在二进制里「不存在」了，ASan 自然零报告。
+结论：调内存 bug 先 -O0 保证现形，再 -O1/-O2 复跑对照；
+优化改变的不只是报告措辞，还有 bug 的存在性。</p>
+</blockquote>
+</details>
       </section>
       <section class="section" id="s-01">
         <div class="sec-head"><div class="sec-no">3.1</div><h2>valgrind memcheck（泄漏 / 越界 / UAF 精确定位）</h2></div>

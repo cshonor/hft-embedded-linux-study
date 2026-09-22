@@ -10,6 +10,7 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
+| 🟢 7.0′ 第一次全流程实战（零起点：九种跑法一张表，四类雷各落哪个工具） | [00-first-full-debug.md](notes/00-first-full-debug.md) |
 | 7.1 程序结构（多线程 / 网络 / 共享内存的 bug 埋点） | `notes/01-program-structure.md` |
 | 7.2 崩溃 → coredump 回溯定位 | `notes/02-crash-coredump.md` |
 | 7.3 竞态 → TSan / gdb 多线程定位 | `notes/03-race-tsan.md` |

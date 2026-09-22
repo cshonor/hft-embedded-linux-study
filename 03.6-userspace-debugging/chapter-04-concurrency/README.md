@@ -12,6 +12,7 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
+| 🟢 4.0′ 第一次数据竞争（零起点：退出码 0 的丢更新 + TSan 报告逐行读） | [00-first-tsan-race.md](notes/00-first-tsan-race.md) |
 | 4.1 多线程调试（thread / thread apply all bt / scheduler-locking / 死锁） | `notes/01-thread-debugging.md` |
 | 4.2 rr 可逆调试（record / replay / reverse-*） | `notes/02-rr-reversible-debugging.md` |
 | 4.3 TSan / Helgrind 数据竞争检测 | `notes/03-threadsanitizer.md` |

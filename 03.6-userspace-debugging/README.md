@@ -100,8 +100,15 @@
 | 6 | 性能类：热点采样（深交 06.6） | performance | 选读 | [chapter-06-performance](./chapter-06-performance/) |
 | 7 | 实战：下单程序全流程调试 | （综合） | 🔴 精读 | [chapter-07-case-study](./chapter-07-case-study/) |
 
-> 注：Ch2–Ch7 逐章推进中（Ch2 崩溃类、Ch4 并发类、Ch5 行为类已有笔记；Ch3 内存、Ch6 性能、Ch7 实战待写）。
-> 🟢 **零起点入口**（没用过 gcc / gdb 先读这两篇）：[Ch1 · 1.0 学前 30 分钟](./chapter-01-methodology/notes/00-gcc-first-steps.md) → [Ch2 · 2.0′ 第一次段错误解剖](./chapter-02-crash/notes/00a-first-segfault.md)。
+> 🟢 **零起点入口**（没用过 gcc / gdb 先按这条链读）：
+> [1.0 学前 30 分钟](./chapter-01-methodology/notes/00-gcc-first-steps.md) →
+> [2.0′ 第一次段错误解剖](./chapter-02-crash/notes/00a-first-segfault.md) →
+> [3.0′ 第一次读 ASan 报告](./chapter-03-memory/notes/00-first-asan-report.md) →
+> [4.0′ 第一次数据竞争](./chapter-04-concurrency/notes/00-first-tsan-race.md) →
+> [5.0′ 第一次 strace 实战](./chapter-05-behavior/notes/00-first-strace-trace.md) →
+> [6.0′ 第一次看热点](./chapter-06-performance/notes/00-first-perf.md) →
+> [7.0′ 第一次全流程实战](./chapter-07-case-study/notes/00-first-full-debug.md)。
+> 七篇全部「真实输出逐行注释 + 5 道自测」，读完再进各章正文。
 
 ---
 

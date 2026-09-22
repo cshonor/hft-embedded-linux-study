@@ -276,6 +276,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-00"><span class="n">5.0</span>′ 第一次 strace 实战：把程序的每个动作看在眼里</a>
           <a href="#s-01"><span class="n">5.1</span>strace 入门（基本用法 / 输出格式 / 参数与 errno 解读）</a>
           <a href="#s-02"><span class="n">5.2</span>strace 实战分析（-c 统计 / -f 子进程 / -p attach / 阻塞与多余 syscall 定位）</a>
           <a href="#s-03"><span class="n">5.3</span>ltrace 库调用追踪（与 strace 对比 / malloc-free 追踪）</a>
@@ -301,7 +302,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">gdb / strace / valgrind / sanitizer / perf</div>
           <h1>Ch5 行为类：系统调用与库调用追踪</h1>
           <div class="meta">
-<span>book <b>03.6-userspace-debugging</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>5</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>03.6-userspace-debugging</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>6</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -350,6 +351,187 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><strong>审计调用链</strong>：追踪 socket 建连、<code class="c">send</code>/<code class="c">recv</code> 时序，还原下单链路是否按预期走；</li>
 <li><strong>别把缓冲当没输出</strong>：<code class="c">printf</code> 后进程被信号杀死时输出会丢（见 <code class="c">code/c5_1_write_buffering.c</code>），生产日志要关注刷盘时机，别让「最后几行日志」永远查不到。</li>
 </ul>
+      </section>
+      <section class="section" id="s-00">
+        <div class="sec-head"><div class="sec-no">5.0</div><h2>′ 第一次 strace 实战：把程序的每个动作看在眼里</h2></div>
+<blockquote>
+<p>🟢 零起点 · 接续 <a href="chapter-07.html#s-00">1.0 学前篇</a>（0.5 节已见过 strace 的第一行）</p>
+<p>行为类问题的特征是：<strong>程序不崩、结果也对，但「举止」不对</strong>——
+莫名卡住、反复重试、打开的文件不对、读到的字节不对。
+这类问题看源码经常一无所获（代码没问题，是它和操作系统的交互出了问题）。
+strace 的答案：<strong>不看代码，看程序对内核说的每一句话</strong>。
+这一篇把一次真实跟踪从头到尾读完：启动时的十几行在干什么、
+「卡住」在输出里长什么样、统计视图怎么一眼定位元凶。</p>
+</blockquote>
+<hr />
+<h2>先立框架：程序能「做」的事，90% 是系统调用</h2>
+<p>一个 C 程序自己能做的只有算数和读写自己的内存。<strong>凡是需要「出去」的动作
+——打印、读写文件、网络收发、申请内存、创建线程——都必须请求操作系统代劳，
+每一次请求就是一次系统调用（syscall）</strong>。strace 把这些请求逐条记下来。
+所以 strace 的输出 = 程序的「行为流水账」，与源码有没有 <code class="c">-g</code>、会不会调试无关。</p>
+<h2>第一次完整跟踪：三段式读法</h2>
+<blockquote>
+<p>⚠️ strace 需要真实 Linux（本仓库验证环境跑不了，以下为手册格式示意，
+语义均可用 <code class="c">code/</code> 下三个 demo 实测对照）。</p>
+</blockquote>
+<pre class="code" data-label="shell"><code class="c">strace -o trace.log ./c5_2_syscall_map      # -o：输出写文件，屏幕留给程序自己
+</code></pre>
+<p>打开 <code class="c">trace.log</code>，几十行看着吓人，其实只有<strong>三段</strong>：</p>
+<pre class="code" data-label="text"><code class="c">── 第一段：启动（exec 的惯性，与你代码无关）──
+execve(&quot;./c5_2_syscall_map&quot;, ...) = 0        ← ① 程序本身被加载，唯一一次
+brk(NULL)             = 0x5555...            ← ② C 库初始化：问内核&quot;我的堆在哪&quot;
+mmap(...)             = 0x7f...              ← ③ 加载 libc 等共享库（每个 .so 一行 mmap）
+openat(AT_FDCWD, &quot;/lib/x86_64-linux-gnu/libc.so.6&quot;, O_RDONLY) = 3
+...
+── 第二段：你的代码真正干的事（重点区）──
+openat(AT_FDCWD, &quot;payload.txt&quot;, O_RDWR|O_CREAT, 0666) = 3     ← ④
+openat(AT_FDCWD, &quot;no_such.txt&quot;, O_RDONLY) = -1 ENOENT (...)    ← ⑤
+write(1, &quot;open payload.txt -&gt; fd=3\n&quot;, 25)  = 25               ← ⑥
+── 第三段：退出 ──
+exit_group(0)         = ?                    ← ⑦ 程序谢幕（= ? 表示没有返回值）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>行</th>
+<th>读法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① <code class="c">execve ... = 0</code></td>
+<td>每个程序的第一行流水账：内核把程序本体加载起来</td>
+</tr>
+<tr>
+<td>②③ 一堆 <code class="c">brk/mmap/openat libc</code></td>
+<td><strong>启动开销</strong>，是 C 运行时和动态链接器干的，不是你的代码——跳过不看</td>
+</tr>
+<tr>
+<td>④ <code class="c">openat(...) = 3</code></td>
+<td>打开文件成功，<strong>返回值 3 是文件描述符（fd）</strong>——之后对这个文件的所有操作都报这个号码</td>
+</tr>
+<tr>
+<td>⑤ <code class="c">= -1 ENOENT</code></td>
+<td><strong>失败长这样</strong>：返回值 -1 + 错误名。ENOENT = 文件不存在</td>
+</tr>
+<tr>
+<td>⑥ <code class="c">write(1, "...", 25) = 25</code></td>
+<td>1 号 fd = 标准输出；你程序的每个 printf 最终都变成 write</td>
+</tr>
+<tr>
+<td>⑦ <code class="c">exit_group(0)</code></td>
+<td>进程退出，括号里是退出码</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>新手读 strace 的秘诀：第一段直接跳过，从「认出自己代码」的行开始看</strong>
+（比如你 printf 的字符串出现在 write 里，那前后就是你的逻辑）。</p>
+<h2>「卡住」长什么样：没有 <code class="c">=</code> 的那一行</h2>
+<p>strace 排查「程序卡死」是绝杀，因为<strong>卡住的状态在流水账里一目了然</strong>：</p>
+<pre class="code" data-label="text"><code class="c">recvfrom(5, &quot;GET...&quot;, 512, 0, NULL, NULL) = 18      ← 正常的行：有 = 有返回值
+recvfrom(5,                                          ← 卡住的行：括号没合上，没有 =
+</code></pre>
+<p><code class="c">recvfrom(5,</code> 后面什么都没有——<strong>这次系统调用还没返回</strong>，
+程序就停在这里等（等对端发数据）。程序「假死」时：</p>
+<pre class="code" data-label="shell"><code class="c">strace -p &lt;PID&gt;        # attach 到正在跑（正卡着）的进程，直接看它停在哪一句
+</code></pre>
+<p>最后一行没有 <code class="c">=</code> 的调用就是卡点：等网络（recvfrom）？等锁（futex）？
+等读不到的文件（read）？——行为类三秒定位，源码一个字符不用看。</p>
+<h2>统计视图：一百次调用一眼排序</h2>
+<p>逐行看适合找卡点；想知道「时间都花在哪类调用上」用 <code class="c">-c</code>（count）：</p>
+<pre class="code" data-label="shell"><code class="c">strace -c ./order_feeder
+</code></pre>
+<pre class="code" data-label="text"><code class="c">% time     seconds  usecs/call     calls    errors  syscall
+------ ----------- ----------- --------- --------- ----------------
+ 52.31    0.034000          85       400           recvfrom     ← 400 次网络接收吃掉一半时间
+ 28.15    0.018300          30       610      12   read         ← 610 次读，12 次失败
+ 12.77    0.008300          83       100           futex        ← 等锁 100 次：有锁竞争
+  ...
+</code></pre>
+<p>每列：<code class="c">% time</code> 占比、<code class="c">calls</code> 调用次数、<code class="c">errors</code> 失败次数。
+<strong>三个一眼能下的判断</strong>：某个调用次数远超预期（循环里多调了？）、
+errors 很高（在反复失败重试？）、futex 占比高（锁竞争）。
+这就是 5.2「实战分析」的入口。</p>
+<h2>read/write 的三种返回值：行为类最高频的坑</h2>
+<p><code class="c">code/c5_3_read_semantics.c</code> 实测演示：<code class="c">read</code> 的返回值<strong>不是</strong>「成功/失败」二值：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>返回值</th>
+<th>含义</th>
+<th>常见误判</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">= 16</code></td>
+<td>读到了 16 字节（<strong>也可能少于你请求的</strong>——部分读）</td>
+<td>以为请求多少给多少 → 数据截断</td>
+</tr>
+<tr>
+<td><code class="c">= 0</code></td>
+<td><strong>EOF，读完了</strong>（不是错误！）</td>
+<td>当失败处理 → 「读完了却报错」</td>
+</tr>
+<tr>
+<td><code class="c">= -1 EINTR</code> 等</td>
+<td>真错误/被信号打断</td>
+<td>把 -1 当 EOF → 静默截断</td>
+</tr>
+</tbody>
+</table></div>
+<p>write 同理（<code class="c">= 3</code> &lt; 请求的 5 说明内核只收了一部分，要循环补写）。
+strace 里这些数字全部裸露——行为类 bug 一半以上是「对返回值的假设错了」。</p>
+<h2>衔接</h2>
+<ul>
+<li>前置：<a href="chapter-07.html#s-00">1.0 学前篇 0.5 节</a>（strace 第一行输出四段读法）</li>
+<li>展开：<a href="chapter-07.html#s-01">5.1 strace 基础</a>、<a href="chapter-07.html#s-02">5.2 实战分析</a>、<a href="chapter-07.html#s-03">5.3 ltrace</a>（库调用级）、<a href="chapter-07.html#s-04">5.4 attach 运行中进程</a></li>
+<li>demo：<code class="c">code/c5_2_syscall_map.c</code>（把 C 语句翻译成 strace 行）、<code class="c">code/c5_3_read_semantics.c</code>（read 三种返回值）、<code class="c">code/c5_1_write_buffering.c</code>（全缓冲的坑：为什么崩溃前最后几行日志会丢）</li>
+</ul>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> strace 输出开头的 execve / brk / 一串 mmap 是什么？为什么排查时可以跳过？</p>
+<blockquote>
+<p>启动段：execve 是内核加载程序本体；brk/mmap/openat libc 是动态链接器和
+C 运行时的初始化（加载共享库、建堆）——全部发生在 main 之前，与你的代码无关。
+它们每次运行都长得几乎一样，不含 bug 信息。
+从「能认出自己代码」的行（如 printf 内容出现在 write 里）开始看才是重点区。</p>
+</blockquote>
+<p><strong>Q2:</strong> strace 里怎么一眼认出「程序卡住了」？卡住行和返回值为 -1 的行有什么区别？</p>
+<blockquote>
+<p>卡住行：右括号没合上、没有 <code class="c">=</code> 和返回值（如 <code class="c">recvfrom(5,</code>）——
+系统调用<strong>还没返回</strong>，进程正停在里面等。-1 行是<strong>已经返回</strong>但报告失败
+（如 <code class="c">= -1 EINTR</code> 被信号打断、<code class="c">= -1 ENOENT</code> 文件不存在）——属于「有结果的失败」，
+很多是要重试的正常路径。排查假死：strace -p attach 上去，
+最后一行没有 = 的调用就是卡点。</p>
+</blockquote>
+<p><strong>Q3:</strong> <code class="c">strace -c</code> 报告里 read 有 610 次调用 12 次 errors、futex 占 12%，能下哪两个初步判断？</p>
+<blockquote>
+<p>①read 失败率约 2%（12/610）：程序在反复读到错误——可能是非阻塞 fd 的
+EAGAIN（正常轮询）或真的读错对象，值得用 -e trace=read 细查；
+②futex（用户态锁）占比 12% 进前三：线程在锁上有明显等待，存在锁竞争，
+如果程序抱怨慢，这是一个候选方向。统计视图的价值就是把「感觉慢」
+变成「哪类调用、多少次、多少失败」的量化嫌疑名单。</p>
+</blockquote>
+<p><strong>Q4:</strong> read 返回 0 和返回 -1 各意味着什么？把两者搞反会写出什么 bug？</p>
+<blockquote>
+<p>0 = EOF（对端/文件到头，正常结束信号）；-1 = 出错（看 errno 区分：
+EINTR 被打断要重试、EAGAIN 非阻塞暂无数据、EBADF 描述符坏了）。
+搞反的两种 bug：把 0 当错误 → 「正常读完却报错退出」，程序永远跑不到
+成功路径；把 -1 当 EOF → 遇到 EINTR/EAGAIN 就静默截断，数据丢了还不报错。
+strace 里 <code class="c">= 0</code> 和 <code class="c">= -1 XXX</code> 的区别一目了然。</p>
+</blockquote>
+<p><strong>Q5:</strong> 为什么排查行为类问题可以「不看源码」，而崩溃/内存类不行？</p>
+<blockquote>
+<p>行为类问题的本质是「程序与内核的交互不符合预期」——卡在哪、调了什么、
+参数和返回值是什么，这些信息全部暴露在 syscall 边界上，strace 直接可见，
+不需要任何源码知识。崩溃/内存类的问题发生在<strong>进程内部的指令和内存层面</strong>
+（哪行代码、哪个变量、哪次非法访问），syscall 边界上看不到，
+必须回到源码级工具（gdb 查 DWARF 表、ASan 插桩）。
+这就是「行为不对先 strace，逻辑/内存不对再 gdb/ASan」的分工依据。</p>
+</blockquote>
+</details>
       </section>
       <section class="section" id="s-01">
         <div class="sec-head"><div class="sec-no">5.1</div><h2>strace 入门（基本用法 / 输出格式 / 参数与 errno 解读）</h2></div>
