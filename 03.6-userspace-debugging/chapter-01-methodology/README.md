@@ -10,6 +10,7 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
+| 1.0 学前 30 分钟：gcc / 退出码 / gdb / strace 的第一次（🟢 零起点，没用过 gcc 从这里开始） | `notes/00-gcc-first-steps.md` |
 | 1.1 问题分类学（崩溃 / 内存 / 并发 / 行为 / 性能） | `notes/01-problem-taxonomy.md` |
 | 1.2 症状 → 工具决策树 | `notes/02-symptom-to-tool.md` |
 | 1.3 最小可复现与二分定位 | `notes/03-minimal-reproducer.md` |
