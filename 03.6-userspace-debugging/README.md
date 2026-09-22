@@ -101,6 +101,7 @@
 | 7 | 实战：下单程序全流程调试 | （综合） | 🔴 精读 | [chapter-07-case-study](./chapter-07-case-study/) |
 
 > 注：Ch2–Ch7 逐章推进中（Ch2 崩溃类、Ch4 并发类、Ch5 行为类已有笔记；Ch3 内存、Ch6 性能、Ch7 实战待写）。
+> 🟢 **零起点入口**（没用过 gcc / gdb 先读这两篇）：[Ch1 · 1.0 学前 30 分钟](./chapter-01-methodology/notes/00-gcc-first-steps.md) → [Ch2 · 2.0′ 第一次段错误解剖](./chapter-02-crash/notes/00a-first-segfault.md)。
 
 ---
 

@@ -13,6 +13,7 @@
 | 小节 | 笔记文件 |
 |------|----------|
 | 2.0 GDB 总览：能干什么、不能干什么（能力边界 / ASAN 冲突 / 命令速记） | `notes/00-gdb-overview.md` |
+| 2.0′ 新手解剖课：第一次段错误，从 139 到根因（🟢 逐行注释，接续 1.0 学前篇） | `notes/00a-first-segfault.md` |
 | 2.1 gdb 入门与调试信息（-g 编译 / debuginfo / 加载方式） | `notes/01-gdb-intro-build.md` |
 | 2.2 断点与观察点（break / 条件断点 / watchpoint） | `notes/02-breakpoints.md` |
 | 2.3 栈帧与回溯（backtrace / frame / 调用约定 / 变量查看） | `notes/03-stack-backtrace.md` |
