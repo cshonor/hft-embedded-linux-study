@@ -61,9 +61,9 @@
 | 档 | 章 | 目录 | 篇 | 中位 | 骨架% | 定位 | 与已有资源的重叠 | 处置 |
 |----|----|------|----|------|-------|------|------|------|
 | **A** | ch06 | [GNU C 扩展](./01-ch1-gnu-c-basics/) | 67 | 2125 | 74% | **全书唯一核心**。标准 C → 内核的桥 | 无（唯一来源） | 逐节精写 + WSL 实测，目标 10–40 KB/篇 |
-| **A** | ch04 | [编译链接安装运行](./06-ch6-toolchain-custom/compile-and-link/) | 34 | 2222 | 88% | **嵌入式落地地基**：链接脚本、静态/动态库、内核模块、U-boot 重定位 | CSAPP ch7 只讲 ELF 与链接概念，不讲链接脚本与重定位实战 | 精写，目标 15–30 KB/篇 |
+| **A** | ch04 | [编译链接安装运行](./06-ch6-toolchain-custom/6.07-compile-and-link/) | 34 | 2222 | 88% | **嵌入式落地地基**：链接脚本、静态/动态库、内核模块、U-boot 重定位 | CSAPP ch7 只讲 ELF 与链接概念，不讲链接脚本与重定位实战 | 精写，目标 15–30 KB/篇 |
 | **A** | ch05 | [内存堆栈管理](./91-ref-memory/) | 33 | 2033 | 84% | **嵌入式最致命的部分**：栈布局、堆、mmap、泄漏、内存错误 | TLPI ch6/ch7/ch10 覆盖进程内存，但栈帧/裸机堆管理不重叠 | 精写，目标 15–30 KB/篇 |
-| **A** | ch01 | [工具链](./06-ch6-toolchain-custom/toolchain/) | 23 | 1403 | 73% | 天天要用的 binutils / ELF / make / gdb | 部分与平时工具使用重叠 | 精写常用部分（6.4 ELF、6.2 make），6.1 vim / 6.3 git 保持索引 |
+| **A** | ch01 | [工具链](./06-ch6-toolchain-custom/6.01-toolchain/) | 23 | 1403 | 73% | 天天要用的 binutils / ELF / make / gdb | 部分与平时工具使用重叠 | 精写常用部分（6.4 ELF、6.2 make），6.1 vim / 6.3 git 保持索引 |
 | **B** | ch09 | [模块化编程](./05-ch5-portable-modular/5.19-modular-c/) | 28 | 3677 | 3% | 工程实践：头文件、模块封装、goto | 已达标 | 维持，只补 5.20/5.25 |
 | **B** | ch07 | [数据存储与指针](./05-ch5-portable-modular/5.01-data-and-pointers/) | 43 | 2545 | 37% | **只挑与嵌入式强相关的节** | 指针基础与 [Pointers on C](../02-advanced-pointers-and-memory/) 重叠 | 精挑 5.2 对齐 / 5.3 可移植性 / 5.4 size_t / 5.13 void；其余维持 |
 | **B** | ch08 | [OOP in C](./05-ch5-portable-modular/5.14-oop-in-c/) | 18 | 3496 | 5% | 与 1.4 container_of 联动的面向对象套路 | 已达标 | 维持，与 1.4 双向链接 |

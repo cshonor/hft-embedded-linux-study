@@ -54,13 +54,13 @@
 
 | 原书 | 归属 |
 |------|------|
-| 第 1 章 工具链 | [CH6 · 1 工具链](./06-ch6-toolchain-custom/toolchain/) |
+| 第 1 章 工具链 | [CH6 · 1 工具链](./06-ch6-toolchain-custom/6.01-toolchain/) |
 | 第 2 章 体系结构 | 🗑️ **已删**（CSAPP 更深） |
 | 3.1–3.5 / 3.9 ARM 指令 | 🗑️ **已删** |
 | 3.6 C/汇编混合编程 | [CH2](./02-ch2-gnu-c-advanced/2.6-mixed-programming/)（本质是 GNU 扩展） |
 | 3.7 GNU ARM 工具链 | [CH6](./06-ch6-toolchain-custom/6.17-gnu-arm/) |
 | 3.8 AArch64 | [附录 C](./92-ref-arm-asm/) |
-| 第 4 章 编译链接 | [CH6 · 2 编译与链接](./06-ch6-toolchain-custom/compile-and-link/) |
+| 第 4 章 编译链接 | [CH6 · 2 编译与链接](./06-ch6-toolchain-custom/6.07-compile-and-link/) |
 | 4.10 / 4.11 / 4.12 内核模块与 U-Boot | [CH4](./04-ch4-kernel-module/) |
 | 4.14 链接脚本 | [CH6](./06-ch6-toolchain-custom/6.18-链接脚本.md) |
 | 第 5 章 内存堆栈 | [附录 B](./91-ref-memory/) |

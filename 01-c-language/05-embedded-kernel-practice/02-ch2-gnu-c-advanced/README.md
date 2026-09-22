@@ -81,7 +81,7 @@ CH1 的东西写错会**编译报错**，你立刻知道。CH2 的东西写错�
 - **前置**：[CH1 · GNU C 基础扩展语法](../01-ch1-gnu-c-basics/)（`typeof` / 语句表达式是读懂 `__attribute__` 用法的前提）
 - **出口一**：[CH3 嵌入式驱动实战](../03-ch3-embedded-driver/)——`packed` 的位域、`volatile`、内存屏障
 - **出口二**：[CH4 内核模块应用](../04-ch4-kernel-module/)——`section`/`weak`/`alias` 在驱动注册里的角色
-- **工具**：反汇编与 nm 的用法见 [CH6 compile-and-link](../06-ch6-toolchain-custom/compile-and-link/)
+- **工具**：反汇编与 nm 的用法见 [CH6 compile-and-link](../06-ch6-toolchain-custom/6.07-compile-and-link/)
 
 <details><summary>代码自测（点击展开）</summary>
 
