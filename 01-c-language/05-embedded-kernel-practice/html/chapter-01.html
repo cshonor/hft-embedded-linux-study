@@ -4585,6 +4585,66 @@ int *p = BAD_PTR();                          /* p 立刻悬垂 */
 <p>这是语句表达式最容易写错的地方之一：<strong>它给了你一个块，块里的自动变量活不过右括号</strong>。
 想要"返回一个数组"请用<strong>复合字面量</strong> <code class="c">(int[]){1,2,3}</code>，它的生命周期是<strong>所在块</strong>（实测有效）。</p>
 </blockquote>
+<h3>2.3 追问：<code class="c">printf("%d", *p)</code> 到底会发生什么？（实测）</h3>
+<p>答案只有一句"未定义行为"是不够的——UB 的可怕恰恰在于它<strong>有具体表现，而且每次不一样</strong>。Compiler Explorer（x86-64 gcc 13.3）实测四种形态：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>形态</th>
+<th>编译选项</th>
+<th>运行结果</th>
+<th>告警</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">int *p = BAD_PTR(); printf("%d", *p);</code></td>
+<td><code class="c">-O0</code></td>
+<td>打印 <strong>42</strong>（碰巧对）</td>
+<td><code class="c">-Wdangling-pointer</code></td>
+</tr>
+<tr>
+<td>同上</td>
+<td><code class="c">-O2</code></td>
+<td>打印 <strong>0</strong></td>
+<td>额外多出 <code class="c">'_x' is used uninitialized [-Wuninitialized]</code></td>
+</tr>
+<tr>
+<td><code class="c">BAD_PTR()</code> 和 <code class="c">printf</code> 之间夹一个写栈的函数调用</td>
+<td><code class="c">-O0</code></td>
+<td><strong>仍打印 42</strong></td>
+<td><code class="c">-Wdangling-pointer</code></td>
+</tr>
+<tr>
+<td>对照组：函数形态 <code class="c">int *bad(void){int x=42; return &amp;x;}</code></td>
+<td><code class="c">-O0</code> / <code class="c">-O2</code></td>
+<td><strong>SIGSEGV</strong>（exit 139）</td>
+<td><code class="c">-Wreturn-local-addr</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>① -O0 打印 42 —— 最危险的"碰巧对"。</strong> 看汇编就明白：<code class="c">_x</code> 的栈槽在 <strong>main 自己的帧</strong>里，生命周期结束 ≠ 内存被清：</p>
+<pre class="code" data-label="asm"><code class="c">main:
+    mov    DWORD PTR [rbp-12], 42    ; _x = 42
+    lea    rax, [rbp-12]             ; p = &amp;_x
+    mov    QWORD PTR [rbp-8], rax
+    ...
+    mov    eax, DWORD PTR [rax]      ; *p 读回的还是 [rbp-12] -&gt; 42
+</code></pre>
+<p>main 没返回，这个槽位没人复用，字节原封不动——所以"还能用"。bug 就这样藏住，换平台、换优化级别才发作。</p>
+<p><strong>② -O2 打印 0 —— 编译器放弃治疗。</strong> 优化器做完生命周期分析后，认定右括号之后那次读等价于<strong>读未初始化变量</strong>，告警 <code class="c">-Wuninitialized</code> 的同时直接把读折叠掉。同一份源码，<code class="c">-O0</code> 和 <code class="c">-O2</code> 结果不同——这是 UB 的标准症状。</p>
+<p><strong>③ 中间夹函数调用也没用 —— 栈向下生长。</strong> <code class="c">clobber()</code> 的帧在 main 的帧<strong>之下</strong>（更低地址），它写自己的 <code class="c">buf[64]</code> 永远压不到 main 的 <code class="c">[rbp-12]</code>。所以"调了别的函数就把值踩掉"只对<strong>函数形态</strong>成立，对 main 内的语句表达式<strong>不成立</strong>。</p>
+<p><strong>④ 函数形态：gcc 直接把返回值换成 NULL → 段错误。</strong> <code class="c">return &amp;x;</code> 在编译期被看穿，告警 <code class="c">-Wreturn-local-addr</code> 的同时，汇编里返回值被替换成 0：</p>
+<pre class="code" data-label="asm"><code class="c">bad_func:
+    mov    DWORD PTR [rbp-4], 42
+    mov    eax, 0                    ; &lt;- 返回 NULL 而不是 &amp;x
+    ret
+</code></pre>
+<p>于是 <code class="c">*p</code> 变成解引用空指针 → <strong>SIGSEGV</strong>（exit 139）。</p>
+<blockquote>
+<p><strong>一句话总账</strong>：同一段 UB 代码，实测能碰巧对（42）、出乱值（0）、直接崩（SIGSEGV）——三种结局都"正常"，因为 UB 根本就没有"正常"可言。
+（本节数据来自 Compiler Explorer 远端机器，绝对数值仅作示意；指令级行为在 x86-64 gcc 13.3 上可复现。）</p>
+</blockquote>
 <hr />
 <h2>三、跳转语义：return / break / continue / goto 全部穿透</h2>
 <p>这一点非常反直觉但很有用：语句表达式<strong>不是函数</strong>，跳转语句直接作用于<strong>外层的函数或循环</strong>。</p>
@@ -5003,7 +5063,7 @@ int r = min(_a, 1);        /* 展开成：__typeof__(_a) _a = (_a);  &lt;- 用�
 </code></pre>
 <p>❌ <strong>错误写法</strong>（很多人踩）：在宏体里多处写 <code class="c">CONCAT(_sa_, __COUNTER__)</code>——<code class="c">__COUNTER__</code> <strong>每次出现都递增</strong>，第二次引用拿到的是 <code class="c">_sa_2</code> 而不是 <code class="c">_sa_0</code>，直接 <code class="c">error: '_sa_2' undeclared</code>。</p>
 <h3>坑 2：返回内部变量的地址（见 <a href="#22-生命周期到此结束返回地址就是悬垂指针">2.2</a>）</h3>
-<p>gcc 能告警，clang 沉默。</p>
+<p>gcc 能告警，clang 沉默。<code class="c">*p</code> 的三种实测结局（碰巧对 / 乱值 / SIGSEGV）见 <a href="#23-追问printfd-p-到底会发生什么实测">2.3</a>。</p>
 <h3>坑 3：类型不匹配只是 warning</h3>
 <pre class="code" data-label="C"><code class="c">#define min_chk(a,b) ({ __typeof__(a) _a=(a); __typeof__(b) _b=(b); \
                         (void)(&amp;_a == &amp;_b);   /* 指针类型不兼容 -&gt; 告警 */ \
@@ -5235,6 +5295,7 @@ note: in expansion of macro 'MAX'
 <li><strong>gcc</strong>：<code class="c">-Wdangling-pointer=</code> 告警，并精确定位到宏定义里的 <code class="c">_x</code> 声明处</li>
 <li><strong>clang</strong>：<strong>零警告</strong></li>
 </ul>
+<p>后续 <code class="c">*p</code> 的实测结局有三种（<a href="#23-追问printfd-p-到底会发生什么实测">详见 2.3</a>）：<code class="c">-O0</code> 碰巧打印 42、<code class="c">-O2</code> 打印 0、换成函数形态直接 SIGSEGV。</p>
 <p>要返回一块临时数据，用<strong>复合字面量</strong> <code class="c">(int[]){1,2,3}</code>，它的生命周期是所在块（实测有效）。</p>
 </details>
 <p><strong>题目 8：</strong> 语句表达式里的 <code class="c">return</code> 从哪返回？<code class="c">break</code> 跳出哪个循环？</p>
