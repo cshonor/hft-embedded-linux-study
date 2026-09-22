@@ -20,6 +20,7 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 |---|--------|------|:-----:|
 | **00** | [digital-logic-cpu](./00-digital-logic-cpu/) | 硬件底层：组合/时序/CPU 词汇 | **1** |
 | **01** | [c-language](./01-c-language/) | C / 指针 / GNU-C | 2 |
+| **01.5** | [cmake-build](./01.5-cmake-build/) | CMake 构建系统：最小工程 → 交叉编译 → 多目录库 → west build → HFT 编译选项 | 2 |
 | **02** | [computer-systems](./02-computer-systems/) | 程序=机器：栈/缓存/VM/并发 | 2 |
 | **03** | [linux-userspace-api](./03-linux-userspace-api/) | 用户态系统编程（TLPI） | 3 |
 | **03.5** | [unix-network-api](./03.5-unix-network-api/) | Socket API 精读（UNP） | 3 |
@@ -55,7 +56,7 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 ```
 Phase1  00 数字逻辑/CPU
    ↓
-Phase2  01 C → 02 计算机系统
+Phase2  01 C → 01.5 CMake → 02 计算机系统
    ↓
 Phase3  03 用户态 API → 03.5 socket → 03.6 调试 → 穿插 04 C++
    ↓

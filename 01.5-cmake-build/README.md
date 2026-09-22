@@ -16,11 +16,14 @@
 
 | 章 | 标题 | 一句话 | 状态 |
 |----|------|--------|------|
-| [第 1 章](./01-minimal-c-project/) | **最小工程：CMake 到底在干什么** | 从手敲 gcc → Makefile → CMake 三级台阶，解剖 `build/` 目录里到底生成了什么 | ✅ 实测完成 |
-| 第 2 章 | toolchain file：交叉编译怎么说 | `--target=armv7m-none-eabi` 这套从 Makefile 挪进 toolchain file，给 STM32- 仓库用 | ⬜ 跟随 STM32- 进度 |
-| 第 3 章 | 库与多目录：工程长大之后 | `add_subdirectory` / `target_link_libraries`，static lib 组织术 | ⬜ 跟随 STM32- labs/04 |
-| 第 4 章 | 解剖 `west build`：Zephyr 里的 CMake | Kconfig ↔ CMake 联动，与 Kbuild 的 Kconfig ↔ Kbuild 对照 | ⬜ 跟随 Zephyr 主线 |
-| 第 5 章 | HFT 编译选项工程化 | `-O3` / `-march` / LTO / sanitizers 在 CMake 里的管理 | ⬜ 跟随 P10 |
+| [第 1 章](./01-minimal-c-project/) | **最小工程：CMake 到底在干什么** | 从手敲 gcc → Makefile → CMake 三级台阶，解剖 `build/` 目录里到底生成了什么 | ✅ macOS 实测 |
+| [第 2 章](./02-cross-compiling-toolchain/) | toolchain file：交叉编译怎么说 | 三元组 / sysroot / find_* 边界；ARM Linux 与 Cortex-M 两份 toolchain file 逐行解剖 | ✅ 成稿* |
+| [第 3 章](./03-libraries-multi-dir/) | 库与多目录：工程长大之后 | `add_subdirectory` / `add_library` / `target_link_libraries`；PRIVATE/PUBLIC 用真实报错来记 | ✅ 成稿* |
+| [第 4 章](./04-zephyr-west-build/) | 解剖 `west build`：Zephyr 里的 CMake | west → cmake 调用链；Kconfig ↔ CMake 四站链路，与内核 Kbuild 逐项对照 | ✅ 成稿* |
+| [第 5 章](./05-hft-compile-options/) | HFT 编译选项工程化 | 构建类型 / per-target `-O3 -march` / LTO / sanitizers / CMakePresets | ✅ 成稿* |
+
+> \* 第 2–5 章（2026-09-22 补写）：demo 文件齐全可直接复跑；正文输出按 CMake 3.16+ 标准格式整理，
+> 尚未在 Mac 逐条复跑（第 1 章为 macOS 实测）。复跑后把状态改为"实测"并删掉本注。
 
 ## 快速上手（30 秒版）
 
