@@ -1,141 +1,27 @@
 # 第 5 章 · HFT 编译选项工程化
 
-> **本节讲什么：** `-O3`、`-march=native`、LTO、ASan——这些 flag 在 Makefile 里
+> **本章讲什么：** `-O3`、`-march=native`、LTO、ASan——这些 flag 在 Makefile 里
 > 都是随手一写。HFT 工程的真正问题是：**哪套 flag 给哪个环境用，怎么保证所有人、
 > 所有机器、所有 CI 跑出来的二进制是一致的**。这章把编译选项从"命令行参数"
 > 升级成"工程资产"：构建类型、per-target 优化、sanitizer 开关、CMakePresets。
 >
 > 前置：第 1、3 章。说明：命令与输出按 CMake 3.21+ / clang/gcc 标准格式整理。
+> **示例工程：** [`demo/`](./demo/)——含三个 preset（dev / bench / prod）与 sanitizer 开关。
 
----
+## 章节导航
 
-## 5.1 问题的起点：flag 散落在三个地方
+| 节 | 标题 | 一句话 |
+|----|------|--------|
+| [5.1](./5.1-flag散落在三个地方.md) | flag 散落在三个地方 | 三起真实事故：压测与上线比的不是同一个二进制 |
+| [5.2](./5.2-CMAKE_BUILD_TYPE四档预设.md) | CMAKE_BUILD_TYPE 四档预设 | Debug / Release / RelWithDebInfo / MinSizeRel；不给默认值的坑 |
+| [5.3](./5.3-优化挂在哪里.md) | 优化挂在哪里 | 生成器表达式按档挂 per-target flag；`-march=native` 的 SIGILL 前提 |
+| [5.4](./5.4-LTO让内联跨过c文件边界.md) | LTO：让内联跨过 .c 边界 | 跨文件内联 + 消死代码；只给 Release 开 |
+| [5.5](./5.5-Sanitizers开发期的bug收割机.md) | Sanitizers | 编译链接成对挂，`option()` 做成开关；开发期最便宜的质量投资 |
+| [5.6](./5.6-CMakePresets固化进git.md) | CMakePresets.json | "环境名 → 参数组合"固化进 git：dev / bench / prod |
+| [5.7](./5.7-本章验收清单.md) | 本章验收清单 | 六条自查（含写出自己的三个 preset） |
+| [5.8](./5.8-与后续衔接.md) | 与后续衔接 | 03.6 调试工具 / 06.6 性能分析 / 20 编译器实现 |
 
-一个真实的 HFT 小团队常见事故现场：
-
-| 事故 | 根因 |
-|---|---|
-| 压测机上延迟漂亮，上线后毛刺一堆 | 压测用 `-O3 -march=native` 手工编的，上线包是 CI 默认参数编的——**比较的不是同一个二进制** |
-| 同事编不出同样的 .so | flag 写在"老大机器的 .bashrc 别名"里，新人环境永远差一点 |
-| Debug 版上线 | 构建脚本忘了传 `-O2`，`-O0` 的二进制跑了一周才发现延迟翻倍 |
-
-Makefile 时代这些靠"纪律"防；CMake 提供的是**机制**：把每套环境的 flag 组合
-固化成文件、纳入 git 评审，让"压测和上线不同二进制"在结构上不可能发生。
-
-## 5.2 CMAKE_BUILD_TYPE：四档预设，先选档再微调
-
-CMake 内置四档构建类型，每档是一组默认 flag（单配置生成器：Makefile/Ninja）：
-
-| 档位 | 默认 flag（gcc/clang） | HFT 场景的用途 |
-|---|---|---|
-| `Debug` | `-g -O0` | 调 bug：零优化，变量不被优化掉，gdb 里所见即所得 |
-| `Release` | `-O3 -DNDEBUG` | 上线包：全优化 + 关掉 assert |
-| `RelWithDebInfo` | `-O2 -g -DNDEBUG` | **压测/性能分析首选**：优化接近上线，还留着符号给 perf |
-| `MinSizeRel` | `-Os -DNDEBUG` | 嵌入式固件体积敏感时用 |
-
-指定方式：`cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo`。
-**不给默认值是新手最常见的坑**——CMakeLists 里补一行兜底（demo/ 里有）：
-
-```cmake
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE RelWithDebInfo)
-endif()
-```
-
-注意 `RelWithDebInfo` 默认 `-O2`，HFT 热路径想要 `-O3` 怎么办？下一节：
-**按档位追加自己的 flag**，而不是改全局变量。
-
-## 5.3 per-target、per-config：优化挂在哪里
-
-第 3 章的原则在这里收利息：**优化是 target 的属性，不是工程的泼水**。
-行情解析库要 `-O3 -march=native`，但日志工具、测试程序不需要——
-全工程 `-march=native` 意味着连调试工具都被绑死在特定 CPU 上。
-
-按档位挂 flag 用**生成器表达式**（`$<CONFIG:...>`，配置阶段不求值、生成阶段才展开）：
-
-```cmake
-target_compile_options(latency_demo PRIVATE
-    $<$<CONFIG:Release>:-O3 -march=native>
-    $<$<CONFIG:Debug>:-O0 -g3>)
-```
-
-**`-march=native` 的部署前提（HFT 必须知道的一条）**：它让编译器按**编译机**的
-CPU 特性生成指令（AVX-512 等）。编译机有 AVX-512、线上机没有 → 线上一执行到那条
-指令就是 `SIGILL`（非法指令，进程直接死）。三个安全的姿势：
-
-1. 编译机 = 线上机同型号 CPU（HFT 常见：专用构建机对齐线上硬件）；
-2. 不用 `native`，显式写目标微架构：`-march=icelake-server`（可评审、可复现）；
-3. 交叉/异构部署走第 2 章 toolchain file，把 `-march` 写在那里。
-
-## 5.4 LTO：让内联跨过 .c 文件的边界
-
-普通编译以 .c 为单位：`ma.c` 里的函数没法内联进 `risk.c`——热路径上隔着
-编译单元的函数调用，就是延迟。LTO（Link Time Optimization）把优化推迟到链接期：
-**链接器拿到所有编译单元的中间表示，跨文件内联、跨文件消死代码**。
-
-Makefile 里要手工给编译和链接都加 `-flto`，CMake 抽象成一个属性：
-
-```cmake
-set_target_properties(latency_demo PROPERTIES
-    INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)   # 只给 Release 档开
-```
-
-两个心理预期：①链接明显变慢（正常，优化在链接期干活）；
-②调试体验变差（跨文件内联后，gdb 里"函数"边界模糊）——所以只给 Release 开，
-Debug 保持直来直去。这也是 5.2 说"按档配置"的又一个实例。
-
-## 5.5 Sanitizers：开发期的 bug 收割机
-
-`-O3` 的二极管另一面：**正确性工具**。03.6 模块讲过 ASan/UBSan 的定位，
-这里只解决"在 CMake 里怎么管"——编译和链接**成对**挂，用 `option()` 做成开关：
-
-```cmake
-option(ENABLE_ASAN "AddressSanitizer" OFF)
-if(ENABLE_ASAN)
-    target_compile_options(demo PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-    target_link_options(demo PRIVATE -fsanitize=address)   # 漏了链接这半：undefined reference to __asan_*
-endif()
-```
-
-打开：`cmake -B build/dev -DENABLE_ASAN=ON`。demo/main.c 里留了一处注释掉的越界，
-取消注释后用 ASan 构建跑一遍，就是一份标准的 buffer-overflow 报告——
-**开发机上每次全量测试都带 sanitizer 跑，是 HFT 团队成本最低的质量投资**。
-（线上不开：ASan 有 2x 量级减速，那是 03.6 讲的"开发期工具"。）
-
-## 5.6 CMakePresets.json：把"哪套环境用哪套 flag"固化进 git
-
-到这一步，参数已经很多：构建类型、sanitizer 开关、build 目录、生成器……
-`CMakePresets.json` 把它们命名成**预设**，进 git、进评审：
-
-```json
-{ "name": "dev",
-  "binaryDir": "${sourceDir}/build/dev",
-  "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug",
-                      "ENABLE_ASAN": "ON", "ENABLE_UBSAN": "ON" } }
-```
-
-使用：`cmake --preset dev && cmake --build build/dev`。
-demo/ 里给了三个预设：`dev`（调试+双 sanitizer）/ `bench`（压测档）/ `prod`（上线档）。
-
-5.1 的三起事故到此全部有机制兜底：**参数在 git 里、有名字、所有人用同一套名字**。
-"你压测用的哪个 preset？"成为团队的标准问法。
-
-## 5.7 本章验收清单
-
-- [ ] 四档构建类型的默认 flag 和 HFT 用途能对号入座，知道不给默认值的坑
-- [ ] 会用生成器表达式按 CONFIG 挂 per-target flag
-- [ ] 说清 `-march=native` 的部署前提和三个安全姿势
-- [ ] LTO 解决什么问题、为什么只给 Release 开
-- [ ] sanitizer 为什么编译链接要成对，`-DENABLE_ASAN=ON` 全流程走一遍
-- [ ] 写出自己项目的三个 preset（dev / bench / prod）
-
-## 5.8 与后续衔接
-
-- **03.6-userspace-debugging**：sanitizer 报出来的东西怎么读、core dump 怎么配——那边是工具课
-- **06.6-systems-performance**：`-O3` 之后还想快，就进入 perf / 火焰图的世界
-- **20-compilers-llvm**：`-march`、LTO 在编译器内部是怎么实现的
-- 小练习：`bench` preset 编出的二进制和 `dev` 的对比 `size` 和 `objdump -d | wc -l`，
-  直观感受 LTO + O3 消掉了多少代码
+> 快速上手（30 秒版）：`cmake --preset dev && cmake --build build/dev`
 
 ## 代码自测
 
