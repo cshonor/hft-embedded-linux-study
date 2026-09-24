@@ -49,6 +49,7 @@
   - [7.2.2 函数的缺省认定](./7.2-function-declarations/7.2.2-函数的缺省认定.md)
   - [7.2.3 跨TU签名不一致](./7.2-function-declarations/7.2.3-跨TU签名不一致.md)
   - [7.2.4 C为什么没有重载](./7.2-function-declarations/7.2.4-C为什么没有重载.md)
+  - [7.2.5 不用include手写extern声明行不行](./7.2-function-declarations/7.2.5-不用include手写extern声明行不行.md)
 - [7.3 函数的参数](./7.3-函数的参数.md)
   - [7.3.1 值拷贝无例外](./7.3.1-值拷贝无例外.md) ← int/指针/struct/数组 · 思考题
 - [7.4 ADT 和黑盒](./7.4-ADT和黑盒.md)
