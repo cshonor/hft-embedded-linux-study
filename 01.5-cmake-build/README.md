@@ -17,13 +17,16 @@
 | 章 | 标题 | 一句话 | 状态 |
 |----|------|--------|------|
 | [第 1 章](./01-minimal-c-project/) | **最小工程：CMake 到底在干什么** | 从手敲 gcc → Makefile → CMake 三级台阶，解剖 `build/` 目录里到底生成了什么 | ✅ macOS 实测 |
-| [第 2 章](./02-cross-compiling-toolchain/) | toolchain file：交叉编译怎么说 | 三元组 / sysroot / find_* 边界；ARM Linux 与 Cortex-M 两份 toolchain file 逐行解剖 | ✅ 成稿* |
+| [第 2 章](./02-cross-compiling-toolchain/) | toolchain file：交叉编译怎么说 | 三元组 / sysroot / find_* 边界；ARM Linux 与 Cortex-M 两份 toolchain file 逐行解剖；**2.8 补 clang 路线实测（296 字节逐字节核对）** | ✅ 2.8 macOS 实测，其余成稿* |
 | [第 3 章](./03-libraries-multi-dir/) | 库与多目录：工程长大之后 | `add_subdirectory` / `add_library` / `target_link_libraries`；PRIVATE/PUBLIC 用真实报错来记 | ✅ 成稿* |
 | [第 4 章](./04-zephyr-west-build/) | 解剖 `west build`：Zephyr 里的 CMake | west → cmake 调用链；Kconfig ↔ CMake 四站链路，与内核 Kbuild 逐项对照 | ✅ 成稿* |
 | [第 5 章](./05-hft-compile-options/) | HFT 编译选项工程化 | 构建类型 / per-target `-O3 -march` / LTO / sanitizers / CMakePresets | ✅ 成稿* |
 
-> \* 第 2–5 章（2026-09-22 补写）：demo 文件齐全可直接复跑；正文输出按 CMake 3.16+ 标准格式整理，
-> 尚未在 Mac 逐条复跑（第 1 章为 macOS 实测）。复跑后把状态改为"实测"并删掉本注。
+> \* 第 3–5 章（2026-09-22 补写）：demo 文件齐全可直接复跑；正文输出按 CMake 3.16+ 标准格式整理，
+> 尚未在 Mac 逐条复跑。复跑后把状态改为"实测"并删掉本注。
+> 第 2 章已于 2026-09-23 补 [2.8 节](./02-cross-compiling-toolchain/2.8-本机实测复跑.md)：
+> clang 路线（不装 arm-none-eabi-gcc）Cortex-M 交叉构建实测跑通，产物 296 字节与
+> STM32-/labs/00 Makefile 版逐字节一致；2.4 的 GNU 路线在本机仍属成稿状态（未装该工具链）。
 
 ## 快速上手（30 秒版）
 

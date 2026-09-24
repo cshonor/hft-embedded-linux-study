@@ -13,6 +13,7 @@
 | [1.1](./1.1-编译命令什么时候失控.md) | 编译命令什么时候失控 | 从手敲 gcc 出发，看它怎么在增量性和环境两个维度失控 |
 | [1.2](./1.2-构建系统只管两件事.md) | 构建系统只管两件事 | 依赖关系 + 动作命令；CMake 在 Makefile 的上一层 |
 | [1.3](./1.3-三级台阶.md) | 三级台阶 | 同一个工程：手动 gcc → Makefile → CMakeLists 逐行注解 |
+| [1.3b](./1.3b-警告开关-Wall与Werror.md) | 附注：警告开关 | `-Wall`/`-Wextra`/`-Werror` 逐级实测：警告≠错误、怎么当门禁 |
 | [1.4](./1.4-两条命令每一步发生了什么.md) | 两条命令拆解 | `cmake -B build` / `cmake --build build` 的真实输出逐行读 |
 | [1.5](./1.5-拆开build目录.md) | 拆开 build/ | CMakeCache / flags.make / link.txt / **.o.d（依赖自动化的答案）** |
 | [1.6](./1.6-现代CMake三原则.md) | 现代 CMake 三原则 | 一切皆 target / 属性挂 target / 禁止全局操作 |
