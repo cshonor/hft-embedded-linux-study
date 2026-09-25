@@ -17,6 +17,18 @@
 
 ---
 
+## 🟢 新手从这里开始（不用按章节序硬啃）
+
+没用过 gcc / 没敲过 gdb？按这个顺序走，每一步都是零起点笔记：
+
+1. **[1.0 学前 30 分钟](./chapter-01-methodology/notes/00-gcc-first-steps.md)** —— gcc 逐词解剖 / 退出码 / gdb 与 strace 的第一条命令（🟢 没用过 gcc 从这开始）
+2. **[2.0′ 新手解剖课](./chapter-02-crash/notes/00a-first-segfault.md)** —— 第一次段错误：从退出码 139 一路追到根因（🟢 逐行注释）
+3. 回到 Ch1 从 [1.1 问题分类学](./chapter-01-methodology/notes/01-problem-taxonomy.md) 进入正式章节
+
+已有基础的老手可以跳过这两节，直接从症状速查表反查章节。
+
+---
+
 ## 为什么「按问题类型」组织
 
 调试工具本质是**滤镜**，每个工具只能观测某一类问题（strace 只看 syscall、valgrind 只看内存、TSan 只看竞态）。所以正确的学习顺序不是「背工具清单」，而是「**先分类问题 → 再选工具**」。

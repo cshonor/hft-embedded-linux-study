@@ -1,6 +1,7 @@
 # Linux Kernel Debugging — Kaiwan N. Billimoria
 
 > **定位：** 内核**正确性调试** — 内核代码出了 BUG 怎么定位根因、怎么修
+> **🟢 新手从这里开始：** [Ch0 新手起步](./chapter-00-basics/)（零起点：为什么内核调试难 / 看懂第一屏 Oops / 术语表与学习路径），再进 Ch1-Ch12
 > **作者：** Kaiwan N. Billimoria · **出版：** Packt, 2022 · **页数：** 638 · **内核版本：** 5.x
 > **硬件适配：** ✅ 明确支持 ARM / 树莓派（书中示例同时覆盖 x86 和 ARM）
 >
@@ -99,7 +100,15 @@ chapter-XX-english-slug/
 
 ---
 
-## 全书章节（3 Part · 12 章）
+## 全书章节（Ch0 新手起步 + 3 Part · 12 章）
+
+### Ch0：新手起步（原创，零起点）
+
+| 节 | 标题 | 目录 |
+|----|------|------|
+| 0.1 | 内核调试为什么难：与用户态调试的六个不同 | [chapter-00-basics](./chapter-00-basics/notes/00-why-kernel-debug-is-hard.md) |
+| 0.2 | 第一次看懂 dmesg：printk 与 Oops 骨架 | [chapter-00-basics](./chapter-00-basics/notes/01-first-dmesg-oops.md) |
+| 0.3 | 术语速查表 + 新手学习路径 | [chapter-00-basics](./chapter-00-basics/notes/02-glossary-path.md) |
 
 ### Part 1: Introduction & Approaches
 
