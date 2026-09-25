@@ -10,6 +10,7 @@
   - [2.2.2 变量、常量与 static](./2.2-variables/2.2.2-变量常量与static.md)
   - [2.2.3 变量遮蔽](./2.2-variables/2.2.3-变量遮蔽.md)
   - [2.2.4 extern 与头文件分工](./2.2-variables/2.2.4-extern与头文件分工.md)
+  - [2.2.5 跨文件调用为什么必须 include 头文件（含 C 对照实测）](./2.2-variables/2.2.5-跨文件调用为什么必须include头文件.md)
 - [2.3 复合类型](./2.3-compound-types/2.3-复合类型.md)
   - [2.3.1 引用](./2.3-compound-types/2.3.1-引用.md)
   - [2.3.2 指针与 nullptr](./2.3-compound-types/2.3.2-指针与nullptr.md)
