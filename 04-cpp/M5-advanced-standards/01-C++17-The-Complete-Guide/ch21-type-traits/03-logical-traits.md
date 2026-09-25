@@ -83,3 +83,35 @@ void process_ptrs(Ts... ts) { /* ... */ }
 3. `negation<is_pointer<T>>` 等价于什么？
 4. 用 `conjunction` 写一个约束"所有参数都是 trivially_copyable"的模板。
 5. `conjunction` 的底层实现用了什么技巧来实现短路？
+
+<details>
+<summary>参考答案</summary>
+
+1. `std::conjunction<Bs...>` 对应逻辑**与**（`&&`），全部为 `true` 才是 `true`；`std::disjunction<Bs...>` 对应逻辑**或**（`||`），至少一个 `true` 即为 `true`；配套的 `std::negation<B>` 对应逻辑**非**（`!`）。
+它们操作的都是 trait（有 `::value` 的类型），结果本身也是一个 `bool_constant`，可以取 `::value` 或用 `_v` 变量模板。
+2. 短路的重要性在于**避免实例化后面的 trait**。例如要先确认 `T::value_type` 存在，再判断它是否整型：手写 `is_integral_v<T> && is_integral_v<typename T::value_type>` 时两侧都会被实例化，`T` 没有 `value_type` 就是**硬编译错误**。
+普通 `&&` 是表达式求值，所有操作数都要先实例化/求值，不存在模板层面的短路；`conjunction` 则保证一旦遇到 `false` 就不再实例化后续 trait，从而把硬错误变成「返回 false」。
+3. `std::negation<std::is_pointer<T>>` 等价于 `!std::is_pointer_v<T>`。
+标准把 `negation<B>` 定义为派生自 `bool_constant<!bool(B::value)>`，即把 `B` 的布尔值取反；C++17 同时提供 `negation_v<B>`，所以 `std::negation_v<std::is_pointer<T>>` 就是 `!std::is_pointer_v<T>`。
+4. 用 `conjunction_v` 折叠参数包即可：
+```cpp
+template <typename... Ts>
+constexpr bool all_trivially_copyable =
+    std::conjunction_v<std::is_trivially_copyable<Ts>...>;
+
+template <typename... Ts,
+          typename = std::enable_if_t<all_trivially_copyable<Ts...>>>
+void bulk_copy(Ts&&... ts) { /* 可走 memcpy 快路径 */ }
+```
+注意空包时 `conjunction_v<>` 为 `true`（与「所有元素都满足」的空真一致），`disjunction_v<>` 为 `false`。
+5. 核心是**递归继承 + `conditional_t` 的惰性实例化**：
+```cpp
+template <typename...> struct conjunction : std::true_type {};
+template <typename B> struct conjunction<B> : B {};
+template <typename B, typename... Bs>
+struct conjunction<B, Bs...>
+  : std::conditional_t<bool(B::value), conjunction<Bs...>, B> {};
+```
+`std::conditional` 只会「选中」其中一个类型，另一个不会被实例化；所以当 `B::value` 为 `false` 时 `conjunction<Bs...>` 根本不会被实例化，后面的 trait 也就不会被求值，这就是短路（`disjunction` 是镜像写法，命中 `true` 时停止）。
+
+</details>

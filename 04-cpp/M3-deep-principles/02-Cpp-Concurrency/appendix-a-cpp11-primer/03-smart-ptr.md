@@ -127,6 +127,22 @@ w->start();  // 线程持有 w 的 shared_ptr → 安全
 4. `weak_ptr` 如何打破循环引用？`lock()` 做了什么？
 5. `enable_shared_from_this` 解决了什么问题？为什么不能 `shared_ptr<T>(this)`？
 
+<details>
+<summary>参考答案</summary>
+
+1. `unique_ptr` 表示独占所有权且可移动不可复制；`shared_ptr` 通过控制块共享所有权。
+   `weak_ptr` 是不增加强引用计数的观察者，用于检测对象是否仍存活。
+2. 默认删除器下 `unique_ptr` 通常只保存一个指针，析构时自动 `delete`，抽象可被优化到与手写 RAII 相当。
+   与裸指针不同，它表达并执行所有权转移；有状态 deleter 可能增加对象大小，故“零开销”不是无条件的。
+3. 不同 `shared_ptr` 对象共享同一控制块时，引用计数增减可并发进行，但同一个句柄对象的非 const 读写仍会竞争。
+   被管理对象也不因 `shared_ptr` 自动同步；需外部锁或使用相应的原子 `shared_ptr` 操作。
+4. 循环关系中的一边改用 `weak_ptr` 后不会增加强计数，所有强所有者消失时对象即可销毁。
+   `lock()` 原子地尝试取得一个 `shared_ptr`；对象已过期则得到空指针，否则暂时延长其寿命。
+5. `enable_shared_from_this` 让对象取得复用现有控制块的 `shared_ptr`，避免创建第二个所有权系统。
+   `shared_ptr<T>(this)` 会建立独立控制块，多个控制块最终可能对同一地址重复删除，产生未定义行为。
+
+</details>
+
 ---
 
 ## 参考与延伸

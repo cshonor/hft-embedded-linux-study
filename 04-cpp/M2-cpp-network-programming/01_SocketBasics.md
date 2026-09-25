@@ -175,6 +175,21 @@ int main(int argc, char** argv) {
 4. 为什么 `write` 一个对端已关闭的连接不会返回错误而是收到 SIGPIPE？（提示：错误是 **异步** 到达的）
 5. `INADDR_ANY` 和绑定具体网卡 IP 的区别？多网卡机器上行情接收该用哪个？
 
+<details>
+<summary>参考答案</summary>
+
+1. `listenfd` 是"前台接待"：只持有四元组的**本地半边**（本机 IP:port），本身不承载任何数据，读它无意义。`accept` 从已完成握手的队列里取出一条连接，**新建一个 fd（connfd）**，它才拥有完整四元组，代表这条具体连接；listenfd 继续留着收新连接。所以一个监听端口对应 1 个 listenfd + N 个 connfd。**关掉 listenfd 不影响已建立的 connfd**（它们照常收发、照常 FIN），只是不能再 `accept` 新连接，后续 SYN 会被拒绝/丢弃；反之误关某个 connfd 只断那一条连接。注意 fork 后 `close` 只是引用计数减一，计数未归零不会发 FIN。
+
+2. 不能。Linux 上 accept 队列的实际长度是 `min(backlog, net.core.somaxconn)`，旧内核 `somaxconn` 默认 **128**（新内核多为 4096），所以 `listen(fd, 512)` 会被截到 128。必须同时改内核：`sysctl -w net.core.somaxconn=512`（写进 `/etc/sysctl.conf` 持久化）。另外两点：glibc 的 `SOMAXCONN` 宏是老值 128，用宏也上不去；**半连接队列**是另一条队列，由 `net.ipv4.tcp_max_syn_backlog` 控制，抗 SYN flood 还要看 SYN cookie 与 `tcp_abort_on_overflow`。
+
+3. 因为**三次握手由内核协议栈完成，不需要应用参与**：客户端发完最后一个 ACK 就进入 ESTABLISHED，服务端内核把这条连接放进 listen socket 的 accept（完成）队列，`connect` 随即成功返回。`accept` 只是"从成品队列里取货"，可能几百微秒甚至更久之后才被调用。所以 `connect` 成功只说明握手完成，**不代表对端已 `accept`，更不代表应用已处理**——数据会先堆在接收缓冲里。这是理解 SYN flood、`TCP_DEFER_ACCEPT`、自连接的前提。
+
+4. 因为错误是**异步**到达的。第一次 `write` 只是把数据拷进发送缓冲并发出报文，此时内核还不知道对端已关闭，于是**正常返回**（返回值＝请求长度）。随后对端回一个 RST，本端收到后才把 socket 标记为错误：此后的 `write` 返回 -1/`EPIPE`，同时内核向进程发 **SIGPIPE**（默认动作是**杀死进程**）。所以"write 成功"既不代表对端收到，也不代表连接健康。对策：服务端 `signal(SIGPIPE, SIG_IGN)`（muduo 全局忽略）或 `send(..., MSG_NOSIGNAL)`，并永远检查 `write` 返回值。
+
+5. `INADDR_ANY`（0.0.0.0）是**通配地址**：监听本机所有网卡上的该端口，无论报文从哪张卡进来都能被接受；绑定具体 IP 则只收目的地址是该 IP 的连接（其它网卡/地址的流量到达不了这个 socket）。多网卡行情接收的结论：**TCP 服务器场景通常绑具体网卡 IP**，这样每条会话明确对应一张物理卡，便于隔离行情网段、避免路由非对称和"接错网"，也允许每卡起一个实例；只有"不在乎从哪张卡来、要全覆盖"时才用 `INADDR_ANY`。若是 **UDP 组播**接收，推荐直接 `bind` 到组播地址 + 端口（绑 `INADDR_ANY` 也能收，但会顺带收到该端口上的单播流量），并用 `imr_interface` 指定从哪张卡入组。
+
+</details>
+
 <a id="pnp-01-refs"></a>
 
 ## 交叉引用

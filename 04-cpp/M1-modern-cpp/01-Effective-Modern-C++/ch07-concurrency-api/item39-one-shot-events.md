@@ -68,6 +68,22 @@ std::latch init_done(1);
 2. condition_variable 的虚假唤醒是什么？promise+future 有这个问题吗？
 3. C++20 的 `std::latch` 解决什么问题？
 
+<details>
+<summary>参考答案</summary>
+
+1. ①**代码极简**：`promise.set_value()` + `future.get()` 两行就完成"一次通知"，不需要额外的 flag、mutex、条件判断。②**不存在虚假唤醒与丢失唤醒**：`get()` 只关心"共享状态是否就绪"，等待者在 `set_value()` 之前调用也不会错过事件（状态是持久的），不需要 `while (!flag) cv.wait(...)` 这种循环和谓词。③**不需要互斥量**：condition_variable 必须配 `std::mutex` 保护共享 flag，promise/future 的共享状态本身是线程安全的，少一把锁、少一次加锁开销。④**能传递结果与异常**：`future` 可携带返回值，或用 `set_exception()` 把异常传播到等待方；cv + flag 只能表示"发生了"。⑤**一次性语义明确**：promise 只能 `set_value` 一次，正好匹配"初始化完成"这类单次事件。
+
+2. 虚假唤醒（spurious wakeup）指等待在 condition_variable 上的线程**可能在没有收到任何 `notify` 的情况下被唤醒**——标准允许实现这么做（为的是在某些平台上效率更高），因此正确代码必须把 `wait` 放在谓词循环里：
+```cpp
+std::unique_lock<std::mutex> lk(m);
+cv.wait(lk, []{ return ready; });   // 必须带谓词
+```
+只用 flag + 一次 `wait` 的写法在虚假唤醒时会提前继续，误以为事件已发生。promise + future **没有**这个问题：`future::get()` 只在共享状态真正就绪时返回，中间没有任何"无缘无故醒来"的可能，语义由标准保证。
+
+3. `std::latch`（C++20）是一个**一次性的、向下计数的同步点**：用初始计数值 N 构造，工作线程完成任务后 `count_down()`，等待方 `wait()` 直到计数归零才被唤醒。它解决的是"等待 N 个事件/线程全部完成"这一常见模式——如等 N 个行情连接/初始化线程就绪后再开始下单——比手写"计数器 + mutex + condition_variable"简洁得多，且不要求参与方持有锁、也不会虚假唤醒。与 `std::barrier` 的区别是：`latch` 是一次性的（计数到 0 后不能重置），`barrier` 可重复使用于多轮同步。单次事件（N=1）用 `promise/future` 或 `latch(1)` 都可以，多事件汇聚用 `latch` 更自然。
+
+</details>
+
 ---
 
 ## 参考与延伸

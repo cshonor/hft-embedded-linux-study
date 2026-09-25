@@ -140,6 +140,21 @@ Widget w1(1, 2);   // 调哪个？
 Widget w2{1, 2};   // 调哪个？
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. `vector<int> v(10, 20)` 得到含 10 个元素、每个都是 20 的 vector；`vector<int> v{10, 20}` 得到含 2 个元素（10 和 20）的 vector。根因是重载决议：`{}` 是 list-initialization，编译器**优先**匹配 `std::initializer_list` 形参的构造函数，所以 `{10, 20}` 被当作两个元素逐个放入；`()` 走普通重载决议，匹配 `vector(size_type count, const T& value)`。
+
+2. "最烦人解析"（most vexing parse）指 `Widget w();` 被编译器解析成一个名为 `w`、返回 `Widget` 的**函数声明**，而不是默认构造一个对象。因为 `()` 无法表达"空参数列表的对象定义"，而 `{}` 不会被解析成函数声明，所以写成 `Widget w{};` 就一定是默认构造。同理 `Widget w(args);` 也可能被解析成声明，而 `Widget w{args};` 不会。
+
+3. `int{3.14}` 按标准是 ill-formed（编译器必须诊断）：list-initialization 禁止**窄化转换**，`double → int` 会丢失信息，而 `3.14` 又不是能精确表示为 `int` 的常量表达式，所以 clang 直接报 error，GCC 也报 `-Wnarrowing`（部分版本/选项下为警告）。`int(3.14)` 可以编译：它是函数式强制转换，直接截断为 3，编译器通常一声不响。这正是 `{}` 的价值——把静默截断变成编译期诊断。（若写 `int{3.0}`，因为常量 3.0 能被 `int` 精确表示，标准允许通过。）
+
+4. 空 `{}` 调用**默认构造函数**（对有默认构造的类型）；若类型是 aggregate，则做聚合初始化、每个成员值初始化。区别：`vector<int> v{};` 定义并默认构造一个空 vector；而 `vector<int> v();` 是函数声明（最烦人解析），并没有创建任何对象——这是两者最关键的差别。
+
+5. `Widget w1(1, 2);` 调用 `Widget(int, int)`，因为 `()` 不走 initializer_list 优先规则。`Widget w2{1, 2};` 调用 `Widget(std::initializer_list<int>)`，因为 `{}` 初始化时 `initializer_list` 构造函数被强烈优先。这就是"同一份参数、两种语义"的经典陷阱：给已有类增加一个 `initializer_list` 构造函数，可能**静默改变**所有 `{}` 调用点的行为，新增重载时要格外小心。
+
+</details>
+
 ---
 
 ## 参考与延伸

@@ -60,6 +60,19 @@ std::cout << boost::typeindex::type_id_with_cvr<T>().pretty_name();
 3. 为什么生产 HFT 代码通常用 `-fno-rtti`？这对调试方式有何影响？
 4. 方法 1（故意编译错误）的原理是什么？
 
+<details>
+<summary>参考答案</summary>
+
+1. ①**编译期诊断**：声明一个只声明不定义的类模板 `template<class T> class TypeDisplay;`，再用 `TypeDisplay<decltype(x)> td;` 实例化，编译器在报"不完整类型/未定义特化"时会把 `T` 的实际类型打印出来。缺点：完全依赖编译器报错格式，信息冗长，不同编译器输出不一致，且必须触发一次编译失败。②**运行时 RTTI** `typeid(x).name()`：缺点是要运行程序、名字是编译器内部 mangled name（`PKc` 之类，需 `abi::__cxa_demangle` 解码），还会退化引用与顶层 const。③**Boost.TypeIndex**（`type_id_with_cvr`）：能精确保留 const/volatile/reference 并输出可读名字，缺点是引入 Boost 依赖、且仍是运行时手段。
+
+2. 因为 `typeid` 的操作数在求值时按"按值"语义处理：表达式的引用性被剥掉，顶层 `const`/`volatile` 也不参与（这与模板按值推导的行为一致）。所以 `typeid(const int&)`、`typeid(int)` 得到相同结果，你无法区分推出来的是 `int`、`int&` 还是 `const int&`；此外 `name()` 返回的是实现相关的 mangled name。要精确保留 cv 与引用，应使用 `boost::typeindex::type_id_with_cvr<T>()`。
+
+3. HFT 生产环境关闭 RTTI 是为了省掉 `type_info` 相关的二进制体积与运行时开销（虚表/类型信息表占用 cache 与指令空间），并避免 `dynamic_cast`/`typeid` 引入不可预测的分支。影响是：热路径代码里不能再用 `typeid` 打印类型做调试，只能改用编译期手段（方法 1 的故意编译错误、`static_assert(std::is_same_v<T, U>)`）或在专门的调试构建里单独打开 RTTI。
+
+4. 利用"不完整类型不能定义对象"这条规则：只声明 `template<class T> class TypeDisplay;` 而不定义它，写 `TypeDisplay<decltype(x)> td;` 时编译器必须生成对象，却发现该特化未定义，于是报错；报错信息里会附带模板实参 `T` 的实际类型，从而间接打印出推导结果。因为是编译期机制，零运行开销、也不受 RTTI 开关影响。
+
+</details>
+
 ---
 
 ## 参考与延伸

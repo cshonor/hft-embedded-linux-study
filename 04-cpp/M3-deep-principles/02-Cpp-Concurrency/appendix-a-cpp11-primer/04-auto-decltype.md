@@ -126,6 +126,22 @@ auto&& ref = get_something();
 4. `auto&&` 为什么叫"万能引用"？它能绑定什么？
 5. `auto` 会影响运行时性能吗？
 
+<details>
+<summary>参考答案</summary>
+
+1. 普通 `auto` 按模板值参数规则推导，会去掉顶层 `const` 和引用；可写 `const auto`、`auto&` 或 `const auto&` 明确保留。
+   在需要精确保留表达式值类别和 cv/ref 限定时使用 `decltype(auto)`。
+2. 对未加括号的变量名 `x`，`decltype(x)` 得到它声明时的类型。
+   `(x)` 是左值表达式，所以 `decltype((x))` 通常得到 `T&`；若 `x` 本身有 cv 限定也会保留。
+3. C++11 尾置返回类型能直接写出依赖参数的 `decltype(expr)`，并精确采用该表达式类型。
+   C++14 的返回 `auto` 由 return 表达式按 `auto` 规则推导，更简洁但会丢顶层引用；需 `decltype(auto)` 才精确保留。
+4. 当 `auto&&` 的类型来自初始化式推导时，它是 forwarding reference，可经引用折叠绑定左值或右值。
+   左值使其推导为左值引用，右值使其成为右值引用；并非所有写成 `T&&` 的形式都是 forwarding reference。
+5. `auto` 是纯编译期类型推导，不引入动态类型检查或额外运行时代码。
+   性能只会因最终推导类型及写法改变，例如意外按值复制大对象，而不是 `auto` 关键字本身。
+
+</details>
+
 ---
 
 ## 参考与延伸

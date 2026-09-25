@@ -182,6 +182,22 @@ value.notify_one();  // 唤醒一个等待者
 4. `atomic_flag` 和 `atomic<bool>` 有什么区别？哪个保证无锁？
 5. 为什么 HFT 用 `acquire/release` 而非 `seq_cst`？
 
+<details>
+<summary>参考答案</summary>
+
+1. `load` 原子读取，`store` 原子写入；`exchange` 原子写新值并返回旧值。
+   `fetch_add` 原子加法并返回修改前的值，后二者都是 read-modify-write 操作。
+2. `relaxed` 只提供该原子对象的原子性和 modification order；acquire 禁止其后的操作越过并接收 release 发布的数据。
+   release 发布之前的操作；acq_rel 兼具两者；consume 依赖序且实践中常按 acquire 实现；seq_cst 还建立单一全序。
+3. weak CAS 允许值相等时伪失败，适合循环重试；strong 仅在比较不等或竞争变化时失败。
+   两者失败时都会把 observed value 写回 expected，且失败内存序不能是 release/acq_rel。
+4. `atomic_flag` 是最小的原子布尔标志，标准保证其操作无锁；它主要提供 test-and-set/clear 接口。
+   `atomic<bool>` 有常规 load/store/exchange/CAS，但标准不保证其实现一定 lock-free，可查询 `is_lock_free()`。
+5. 当算法只需要明确的发布-消费边时，acquire/release 已提供正确 happens-before，表达的约束更精确。
+   `seq_cst` 的全局总序在部分架构/操作上需要更强屏障；采用弱序前必须证明正确，并以目标平台实测收益。
+
+</details>
+
 ---
 
 ## 参考与延伸

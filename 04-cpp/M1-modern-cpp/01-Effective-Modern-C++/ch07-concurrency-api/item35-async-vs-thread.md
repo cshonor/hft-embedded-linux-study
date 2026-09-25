@@ -145,6 +145,19 @@ t.join();
 // 怎么拿 compute() 的返回值？
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. 三点主要优势：①**能拿返回值**：`std::async` 返回 `std::future`，可以直接 `get()` 拿到任务的返回值（也能传异常）；`std::thread` 没有任何返回值通道，只能靠 `std::promise` 或输出参数自己搭。②**异常安全**：任务里抛的异常会被捕获并存入 future 的共享状态，在 `get()` 时重新抛出，由调用方处理；`std::thread` 里逃逸的异常直接调用 `std::terminate`，进程崩溃。③**生命周期更简单**：`std::thread` 析构时若仍 joinable 会 `terminate`，必须自己 join/detach（或用 RAII 封装）；`async` 返回的 future 由库管理底层线程，不必手动 join。另外 `async` 还能让运行时选择线程池等实现。
+
+2. `std::thread` 里抛出的异常若没被线程函数捕获，会调用 `std::terminate()`——整个进程直接终止（栈展开不会跨线程传播，没有其他线程能 catch 到它）。`std::async` 里抛的异常被库捕获并存储到 future 的共享状态中，等到调用 `future::get()`/`wait()` 时在**调用方线程**重新抛出，可以正常 try-catch 处理；如果没人调用 `get()`，异常就被静默丢弃（这也是要记得取结果的原因）。
+
+3. 通过返回的 `std::future<T>`：`auto fut = std::async(std::launch::async, f, args...);`，之后 `T r = fut.get();`。`get()` 会阻塞直到任务完成（若未完成），并**只能调用一次**（它是移动语义，调用后 future 失效）；可用 `wait()`/`wait_for()` 做非阻塞或超时等待。若不需要返回值，`async` 返回的 `std::future<void>` 仍要用 `get()` 来同步与传播异常。
+
+4. 拿不到——`std::thread` 没有返回值的机制，lambda 的返回值被直接丢弃（甚至 `[]{ return compute(); }` 这种写法本身没有意义）。可行的改法有两类：①改用 `std::async`，直接 `auto fut = std::async(std::launch::async, compute);` 然后 `fut.get()`；②坚持用 `thread` 则自己搭通道，例如 `std::promise<T> p; auto fut = p.get_future();` 在线程里 `p.set_value(compute());`，或用 `std::packaged_task` 包住可调用对象再 `get_future()`。异常路径下还要记得 `set_exception`。推荐第 ① 种，代码最短且异常安全。
+
+</details>
+
 ---
 
 ## 参考与延伸

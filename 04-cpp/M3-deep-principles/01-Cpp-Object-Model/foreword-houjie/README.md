@@ -12,3 +12,13 @@
 
 1. 侯捷认为 C++ 程序员最普遍的问题是什么？
 2. 如何用编译器工具验证对象布局？
+
+<details>
+<summary>参考答案</summary>
+
+1. 最普遍的问题是“会使用语言特性，却不了解其底层对象模型和成本”。
+   这容易让人把继承、virtual 和构造等机制视为无代价语法，进而写出布局或运行时行为不符合预期的代码。
+2. 可先用 `sizeof`、`alignof` 检查大小和对齐；仅对适用的 standard-layout 类型用 `offsetof` 检查成员偏移。
+   再用 GCC 的 class-layout dump 或 Clang 的 `-Xclang -fdump-record-layouts`，配合反汇编观察调用；结果应注明典型 Itanium C++ ABI / 对应编译器版本，不当作标准保证。
+
+</details>

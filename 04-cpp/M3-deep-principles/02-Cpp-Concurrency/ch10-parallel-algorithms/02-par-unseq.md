@@ -132,6 +132,22 @@ for (int i = 1; i < n; ++i)
 4. 为什么 `if-else` 分支会破坏向量化？如何改写？
 5. HFT 热路径用 `par_unseq` 还是手动 SIMD？为什么？
 
+<details>
+<summary>参考答案</summary>
+
+1. `par_unseq` 允许多个元素调用在同一线程上 unsequenced 交错；某个 SIMD lane 阻塞可阻止持锁 lane 获得执行机会。
+   `mutex::lock` 是 vectorization-unsafe 的同步操作，不能从这种回调中调用，并可能造成死锁。
+2. 对保证 lock-free 的原子类型使用不建立同步关系的原子操作可满足无阻塞要求，但并非任意 `atomic::fetch_add` 都可盲目使用。
+   多个 lane/线程更新同一原子会串行化并产生 cache line 争用，通常抵消向量化收益。
+3. 好回调应无阻塞、无跨元素依赖、连续访问数据且控制流简单，例如 `out[i] = a[i] * scale + b[i]`。
+   坏例子是在每个元素中加锁、分配内存、做 I/O，或更新同一个共享计数器。
+4. 各 lane 走不同分支会产生 divergence，硬件可能分别执行分支并用 mask 合并，降低利用率。
+   可改为条件选择、掩码运算，或先按类别分组数据；是否更快需以编译器向量化报告和基准确认。
+5. 对极低延迟核心循环通常优先经过验证的编译器 intrinsics/`std::simd` 风格显式 SIMD，以控制指令和数据布局。
+   `par_unseq` 更简洁但调度、是否向量化和生成代码不完全可控，可用于非关键批处理并通过测量选择。
+
+</details>
+
 ---
 
 ## 参考与延伸

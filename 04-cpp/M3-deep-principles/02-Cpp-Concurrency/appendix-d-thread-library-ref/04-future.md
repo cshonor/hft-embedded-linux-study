@@ -171,6 +171,22 @@ auto worker = [&](int result) {
 4. 如何通过 `future` 传递异常？在哪个点重新抛出？
 5. future 有哪些局限？为什么 HFT 热路径不用 future？
 
+<details>
+<summary>参考答案</summary>
+
+1. `promise<T>` 是生产端，向共享状态写入值或异常；`future<T>` 是对应的一次性消费端。
+   先由 `promise.get_future()` 取得 future，生产者调用 `set_value`/`set_exception`，消费者 wait 或 get。
+2. `launch::async` 要求异步执行，`launch::deferred` 推迟到等待/取值线程首次触发时同步执行。
+   默认策略是两者组合，由实现选择，因此任务可能并未并发运行；所谓“三种”指这两种显式策略及默认组合。
+3. `future` 只可移动，通常只能调用一次 `get()`；`shared_future` 可复制并允许多个观察者反复取得共享结果。
+   对返回引用或非复制类型等情形仍须遵守对应 `get` 语义和对象寿命。
+4. producer 可直接抛出到 `packaged_task`/`async` 的共享状态，或用 `promise.set_exception(current_exception())` 保存异常。
+   consumer 在 `future::get()` 时重新抛出；单纯 `wait()` 只等待就绪，不传播该异常。
+5. future 的共享状态可能分配内存，等待可能阻塞，`async` 的调度策略也不完全可控，且标准 future 缺少完善 continuation 组合。
+   这些都会增加热路径开销和尾延迟；HFT 常用预分配 SPSC、序号或回调式固定流水线。
+
+</details>
+
 ---
 
 ## 参考与延伸

@@ -166,6 +166,25 @@ std::vector<Widget> v;
 v.push_back(std::move(w));
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. 容器在扩容（重分配）搬移元素时，会在编译期判断元素类型的移动构造是否 `noexcept`（准确说是 `std::is_nothrow_move_constructible`）：如果是 `noexcept`，就用移动构造搬移——快，且能提供强异常保证；如果不是 `noexcept`，为了在搬移过程中抛异常时不破坏原容器（保证强异常安全），容器会退回使用**拷贝构造**。也就是说 `noexcept` 是"走移动还是走拷贝"的编译期开关：移动没标 `noexcept`，`push_back` 扩容就悄悄退化成拷贝，性能大幅下降。
+
+2. 如果异常从 `noexcept` 函数内部逃逸出来，标准规定调用 `std::terminate()`——程序直接终止（实现上通常先 `std::unexpected` 相关处理，最终 abort）。它不会像普通异常那样向外传播、也不会给你栈展开和 catch 的机会，因为编译器已经按"不抛"做了优化、省略了 unwind 信息。因此 `noexcept` 是严肃的契约而非提示。
+
+3. 按本 Item 的优先级，**移动构造函数、移动赋值运算符、swap、析构函数**这四类最该标。原因：前两者直接决定 STL 容器扩容走移动还是拷贝；`swap` 是许多异常安全惯用法（copy-and-swap）的基础，必须不抛；析构函数自 C++11 起默认就是 `noexcept`，析构里抛异常同样触发 `terminate`。
+
+4. 因为漏标 `noexcept` 的后果只是"性能没那么好"（退回拷贝），而**错标**（标了却可能抛）的后果是程序直接 `terminate`——在 HFT 里这意味着进程崩溃、订单状态不明，远比慢一点严重。此外 `noexcept` 是接口的一部分，一旦标了就很难在不破坏调用方的前提下撤回，所以只对"确实不会抛、且经过审查"的函数标注。
+
+5. 问题在于 `Widget(Widget&& o)` 没有标 `noexcept`。它做的是指针/资源搬移，本身不会抛，但编译器按"可能抛"处理，于是 `vector<Widget>` 扩容（以及 `resize`、`insert` 等需要搬移的场景）会保守地改用**拷贝构造**，`v.push_back(std::move(w))` 的移动优势被浪费——这正是笔记里说的"隐形开关"。修正：
+```cpp
+Widget(Widget&& o) noexcept : data_(o.data_) { o.data_ = nullptr; }
+```
+用初始化列表接管资源，并显式声明 `noexcept`。
+
+</details>
+
 ---
 
 ## 参考与延伸

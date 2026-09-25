@@ -175,6 +175,30 @@ std::vector<Buffer> v;
 v.push_back(Buffer(64));
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. 声明了移动构造函数后，拷贝构造函数**不再自动生成**（被定义为 deleted，因为已有移动操作说明资源管理方式已定制）。反过来，声明了拷贝构造/拷贝赋值/移动赋值/析构，移动构造和移动赋值也都不会自动生成。声明析构函数（C++11 起）：移动构造与移动赋值**不会**生成；拷贝构造与拷贝赋值**仍会**生成，但这一生成已被标准标记为 deprecated——因为"需要自定义析构"几乎总是意味着"需要自定义拷贝"，编译器生成的浅拷贝往往是错的，所以不要依赖它。
+
+2. "大五律"（Rule of Five）指五个特殊成员函数：**析构函数、拷贝构造函数、拷贝赋值运算符、移动构造函数、移动赋值运算符**。它的含义是：如果你需要自定义其中任何一个（通常是因为类持有资源），就应该显式地把五个都声明清楚（或 `= default` / `= delete`），否则编译器按抑制规则生成的行为很可能不符合你的意图。
+
+3. 因为标准认为"用户写了析构函数"意味着该类在手动管理资源（否则不需要析构），此时编译器默认的逐成员移动很可能是错的，所以干脆不生成移动操作——于是移动请求会退化成拷贝（若拷贝可用）。性能影响：STL 容器扩容、`push_back`、排序等需要搬移对象的场合，本该 O(1) 的指针搬移退化成深拷贝（甚至因浅拷贝而出错），在 HFT 里表现为扩容时的延迟尖峰，且这种退化是**静默**的——代码能跑，只是慢。
+
+4. 因为编译器生成特殊成员函数的规则（谁抑制谁）相当繁琐且会随标准演进（C++11 起引入移动操作后规则更复杂），靠记忆容易出错，一旦漏掉某个就可能出现"编译通过但行为错误/性能退化"。显式声明五个（能 default 的用 `= default`，不需要的用 `= delete`）把意图写进代码：既避免编译器生成错误的浅拷贝/缺失的移动，也让后来者一眼看清这个类的拷贝/移动语义，重构时不会因为新增成员或改动析构而悄悄改变行为。
+
+5. 违反大五律，有严重 bug。`Buffer` 有裸指针和析构函数，但没有拷贝/移动操作：移动构造/赋值被抑制，编译器生成的拷贝构造做**浅拷贝**（只复制 `data` 指针）。`v.push_back(Buffer(64))` 时临时对象被浅拷贝进 vector，随后临时对象析构执行 `delete[] data`，vector 里的元素就持有**悬垂指针**；后续再拷贝、扩容或析构时会重复释放同一块内存（double free）与读野指针，属于未定义行为。修正：遵循大五律，例如改用 `std::unique_ptr<char[]>` 或 `std::vector<char>` 管理内存（让编译器生成的移动/拷贝正确），或者显式实现：
+```cpp
+Buffer(size_t n) : data(new char[n]), size(n) {}
+~Buffer() { delete[] data; }
+Buffer(const Buffer& o) : data(new char[o.size]), size(o.size) { std::memcpy(data, o.data, size); }
+Buffer& operator=(const Buffer& o) { Buffer tmp(o); swap(tmp); return *this; }
+Buffer(Buffer&& o) noexcept : data(o.data), size(o.size) { o.data = nullptr; o.size = 0; }
+Buffer& operator=(Buffer&& o) noexcept { if (this != &o) { delete[] data; data = o.data; size = o.size; o.data = nullptr; o.size = 0; } return *this; }
+```
+注意移动操作要标 `noexcept`，容器扩容才会走移动而不是拷贝。
+
+</details>
+
 ---
 
 ## 参考与延伸

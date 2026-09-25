@@ -148,6 +148,29 @@ std::vector<std::string> v;
 v.emplace_back(std::string("hello"));
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. 省掉**一个临时对象的构造 + 移动构造 + 析构**。`push_back(Widget(42))` 的流程是：先构造临时 `Widget(42)`，再把它作为右值**移动**进容器，最后析构临时对象；而 `emplace_back(42)` 把实参 `42` 完美转发给 `Widget` 的构造函数，直接在容器尾部的**未初始化存储上原地构造**（placement new），中间不产生临时对象，因此少一次移动构造和一次析构。注意它省的是"移动"，不是"拷贝"——`push_back` 传右值时本来也不会拷贝。
+
+2. 会**泄漏那块 `new` 出来的内存**。实参 `new Widget` 在调用 `emplace_back` **之前**就先求值，得到一个裸指针；随后 `emplace_back` 内部可能因容器扩容而分配内存，若这次分配抛 `std::bad_alloc`（或元素构造抛异常），那个裸指针还没有被任何 `unique_ptr` 接管，就永远丢失了——对象泄漏。正确写法是先把裸指针交给 RAII 对象，再插入：
+```cpp
+v.push_back(std::make_unique<Widget>());   // 或 v.emplace_back(std::make_unique<Widget>());
+```
+`make_unique` 在 `push_back` 之前就完成了所有权接管，即使后续扩容抛异常，临时 `unique_ptr` 也会在栈展开时正常析构并释放对象。
+
+3. 常见三类：①**实参已经是元素类型**（`emplace_back(std::string("hello"))`）——它只是转发给移动构造，与 `push_back` 完全等价、毫无收益。②**需要隐式转换的场景**：`emplace_back` 做的是直接初始化，会调用 `explicit` 构造函数，可能构造出你没想到的对象（如 `std::vector<std::string> v; v.emplace_back(nullptr);` 会用 `nullptr` 构造 `string`，是未定义行为；而 `push_back(nullptr)` 直接编译失败，反而更安全）。③**需要异常安全的资源类**：插入智能指针时 `push_back(std::make_unique<T>())` 比 `emplace_back(new T)` 安全（见第 2 题）。另外，`emplace` 的实参是引用传递，若传入的是容器自身的元素引用，扩容后可能引用已失效的存储——也不如先拷贝再 `push_back` 稳妥。
+
+4. 因为它同时满足两点：①**异常安全**——`make_unique<T>()` 在调用 `push_back` 之前就构造好了 `unique_ptr`，对象已被 RAII 接管；即使 `push_back` 内部扩容分配失败抛异常，这个临时 `unique_ptr` 也会在栈展开时析构并释放对象，不存在"裸指针没人管"的窗口。②**写法合法且简洁**——`push_back(new T)` 在 `vector<unique_ptr<T>>` 上根本编译不过（`unique_ptr` 的裸指针构造函数是 `explicit`，`push_back` 需要的是隐式转换），必须先包成 `unique_ptr`。而 `emplace_back(new T)` 虽然能编译（emplace 是直接初始化，允许 explicit），却有第 2 题的泄漏风险。所以 `push_back(std::make_unique<T>())` 是最安全的写法。
+
+5. 没有正确性 bug，但**白白放弃了 emplace 的收益，还多敲了代码**。`std::string("hello")` 先在调用点构造一个临时 string，`emplace_back` 再把实参转发给 `string` 的移动构造函数——等价于 `push_back(std::string("hello"))`，仍有"临时对象构造 + 移动 + 析构"。要真正原地构造，应直接传构造 `string` 所需的实参：
+```cpp
+v.emplace_back("hello");   // 用 const char* 直接在容器内构造 string，省掉临时对象
+```
+或者写 `v.push_back("hello");`（同样省掉显式临时对象，可读性也更好）。
+
+</details>
+
 ---
 
 ## 参考与延伸

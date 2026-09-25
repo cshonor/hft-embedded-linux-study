@@ -145,6 +145,31 @@ process_other();
 int result = fut.get();
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. 默认策略是 `std::launch::async | std::launch::deferred`——标准允许实现**二选一**，由运行时按负载自行决定。如果它选了 `deferred`，任务根本不会立即在新线程上跑，而是被推迟到你对 future 调用 `get()`/`wait()` 时才**同步执行**（在调用 `get()` 的那个线程上）。于是你以为"已经异步跑起来了"的计算，实际是在 `get()` 那一刻才同步完成的——这就是"以为是异步实际是同步"的来源，而且它因平台、负载而异，极难复现。
+
+2. `std::launch::async`：任务**必须**在新的执行线程上异步执行，调用 `async` 后立即开始（不等待 `get()`）。`std::launch::deferred`：任务**延迟**执行，直到对返回的 future 调用 `get()` 或 `wait()` 时才在**调用者线程**上同步执行；如果始终没人调用 `get()`/`wait()`，任务就**永远不会执行**。二者可以组合（`async | deferred` 即默认策略），也可以只给其中一个来固定行为。
+
+3. 因为 HFT 对延迟有确定性要求：默认策略下，一段本该在后台跑的重活（风控检查、日志落盘）可能被推迟到 `get()` 时同步执行，让热路径在不可预测的时点被阻塞，造成延迟尖峰。显式写 `std::async(std::launch::async, ...)` 才能保证"调用后立即在另一个线程上执行"，把耗时真正移出关键路径；反过来，若确实想延迟计算（如配置懒加载），就显式写 `std::launch::deferred` 以表明意图。核心是**不要依赖默认策略**。
+
+4. 用 `future::wait_for(std::chrono::seconds(0))` 判断：`deferred` 任务的 future 在没被调用 `get()`/`wait()` 之前永远不会开始，因此 `wait_for(0)` 必然返回 `std::future_status::deferred`；而真正异步执行的任务会返回 `ready`（已完成）或 `timeout`（还在跑）。示例：
+```cpp
+if (fut.wait_for(std::chrono::seconds(0)) == std::future_status::deferred) {
+    // 该任务是 deferred，只有在 get() 时才会同步执行
+}
+```
+注意这只是"事后检测"，正确做法仍是在创建时就显式指定 `launch::async`。
+
+5. 问题在于**没有指定启动策略**，用了默认的 `async | deferred`。于是 `heavy_work()` 有可能根本没有在后台执行，而是在 `fut.get()` 时才同步跑完——`process_other()` 与它并没有真正并行，最后那行 `fut.get()` 可能在热路径上突然阻塞一次完整计算。修正：显式指定策略——
+```cpp
+auto fut = std::async(std::launch::async, []{ return heavy_work(); });
+```
+若本意就是延迟计算（不用就不算），则应写 `std::launch::deferred` 并明确注释。
+
+</details>
+
 ---
 
 ## 参考与延伸

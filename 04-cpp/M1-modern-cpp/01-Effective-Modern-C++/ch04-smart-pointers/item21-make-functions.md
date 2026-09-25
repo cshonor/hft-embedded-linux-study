@@ -152,6 +152,24 @@ auto sp = std::make_shared<Widget>(new Widget());  // 两次 new！
 auto sp = std::make_shared<Widget>(new Widget(42));
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. 省在一次内存分配：`shared_ptr<T>(new T)` 需要两次分配（一次给 `T` 对象，一次给控制块），`make_shared<T>` 把对象和控制块放在**同一块连续内存**里一次分配完成。收益有三：分配次数减半（malloc 是 HFT 里的锁竞争与碎片来源）、控制块与对象相邻因而 **cache 局部性更好**、少一个指针间接与一块元数据内存。此外 `make_shared` 也消除了异常安全问题（见第 2 题），且代码更短。
+
+2. 问题在于实参求值顺序未指定：编译器可能先 `new T`（分配并构造对象），再调用 `may_throw()`，然后才构造 `shared_ptr`。若 `may_throw()` 抛异常，那块已 `new` 出来但还没交给任何智能指针的内存就**永久泄漏**了（`shared_ptr` 根本没被构造）。`make_shared` 把"分配"和"交给智能指针"合成一个函数调用，返回的 `shared_ptr` 立刻拥有对象：即使后续实参求值抛异常，`shared_ptr` 临时对象也会在栈展开时正常析构并释放内存。同理 `std::make_unique` 解决了 `unique_ptr` 的同类问题。
+
+3. 主要三类：①需要**自定义删除器**或自定义分配器（`make_*` 不支持指定删除器，只能 `shared_ptr<T>(p, deleter)`）；②需要**大括号初始化**（`make_shared` 转发的是圆括号，无法传 `initializer_list`，如 `auto v = std::make_shared<std::vector<int>>({1,2,3})` 不行，需 `std::shared_ptr<std::vector<int>>(new std::vector<int>{1,2,3})`）；③对象构造失败/需要特殊内存布局（重载了 `operator new`/`operator delete` 的类、需要 `new (ptr)` 放置构造、或类有 protected 构造需要友元工厂）。另外需要 `weak_ptr` 长期持有大对象时也不宜用 `make_shared`（见第 4 题）。
+
+4. 因为 `make_shared` 把对象和控制块放在**同一块内存**里，而 `weak_ptr` 依赖控制块存活（弱计数）。只要还有任何一个 `weak_ptr` 存在，控制块就不能释放，于是与之同块分配的**整个对象存储**（哪怕对象早已析构）也无法归还——大对象会因此长期占用内存。用 `shared_ptr<T>(new T)` 时对象与控制块分开分配，对象析构后立即单独释放，只有小的控制块会留存到最后一个 `weak_ptr` 消失。
+
+5. 既冗余又泄漏。`make_shared<Widget>(args...)` 会把 args 转发给 `Widget` 的构造函数，这里传的是 `new Widget(42)`（一个 `Widget*`），于是它尝试用 `Widget(Widget*)` 构造——若无匹配构造函数则编译失败；若恰好有 `Widget(Widget*)` 构造函数能编译，那块 `new` 出来的 `Widget` 就没人接管，永远泄漏。正确写法是把构造参数直接传给 `make_shared`：
+```cpp
+auto sp = std::make_shared<Widget>(42);   // 传构造实参，不传 new
+```
+
+</details>
+
 ---
 
 ## 参考与延伸

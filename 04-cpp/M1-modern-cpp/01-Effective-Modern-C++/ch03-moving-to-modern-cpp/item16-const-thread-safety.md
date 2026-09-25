@@ -183,6 +183,21 @@ public:
 };
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. `const` 成员函数只保证"不修改对象的**逻辑**状态"，编译器层面它只是把 `this` 变成 `const T*`，从而禁止修改非 mutable 成员；它**完全不提供**任何线程安全保证。一旦函数通过 `mutable` 成员（缓存、计数器、延迟统计）或指针/引用间接修改了共享数据，多个线程同时调用这个 `const` 函数就是在并发写同一份数据，产生 data race。`mutable` 正是这个后门：它让"看起来只读"的函数实际上在写状态，把并发风险隐藏在 const 的外衣下。
+
+2. 两种：①**`std::atomic`**（无锁）：把被修改的成员改成 `mutable std::atomic<T>`，适用于单个变量的读-改-写（计数器、缓存命中的 bool 标记、指针交换），开销最小、不会阻塞，HFT 热路径首选。②**`std::mutex`**（加锁）：在 const 函数里用 `std::lock_guard` 保护临界区，适用于需要保护**多个变量**或需要维持跨变量不变量的场景（如同时更新缓存值和版本号），代价是阻塞与上下文切换开销。另可考虑读写锁（`std::shared_mutex`）保护"多读少写"的缓存。
+
+3. 因为在 `const` 成员函数里，`this` 的类型是 `const T*`，所有非 mutable 成员都变成 `const`，而 `mutex::lock()` 是非 const 成员函数——不加 `mutable` 就没法在 const 函数里加锁。把锁声明为 `mutable std::mutex m_;` 是在表达"锁本身不影响对象的逻辑状态，加锁只是实现细节"，这与 `mutable` 的语义正好吻合。同理 `mutable std::atomic<...>` 也是这个道理（`atomic::fetch_add` 需要非 const 对象）。
+
+4. 不能。`std::atomic` 只保证**单个对象**上的读、写、读-改-写（如 `fetch_add`、`compare_exchange`）是原子的，并提供内存序控制；它无法让"对多个变量的一组操作"整体表现为原子——其他线程可能观察到中间状态，破坏跨变量的不变量。复合操作（如"更新缓存值 + 更新时间戳 + 递增计数器"必须一致）仍然需要 `std::mutex`（或把所有不变量压缩进一个 atomic，如用一个原子打包的结构/序号做版本控制）。
+
+5. 数据竞争：`count` 是普通 `int`，`++count` 编译成"读-改-写"三条指令，多个线程并发调用 `get()` 时是未定义行为（可能丢更新、读到撕裂值），而且 `const` 的外衣完全掩盖了这个风险。正确写法取决于需求：无锁计数用 `mutable std::atomic<int> count{0};` 配 `return count.fetch_add(1) + 1;`；若需要更强的一致性则加 `mutable std::mutex m_;` 并用 `std::lock_guard<std::mutex> g(m_);` 保护。
+
+</details>
+
 ---
 
 ## 参考与延伸

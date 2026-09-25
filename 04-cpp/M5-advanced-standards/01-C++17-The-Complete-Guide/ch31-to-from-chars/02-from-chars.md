@@ -115,3 +115,45 @@ struct from_chars_result {
 3. 错误码 `invalid_argument` 和 `result_out_of_range` 分别什么意思？
 4. 如何用 `from_chars` 链式解析 FIX 消息？
 5. `from_chars` 支持 16 进制浮点吗？
+
+<details>
+<summary>参考答案</summary>
+
+1. **不跳前导空白**——必须一开始就遇到数字（或 `-`），否则解析失败。
+与 `strtol` 的主要区别：
+   - `strtol` 会跳前导空白、`+`/`-` 都接受、受 locale 影响、`base == 0/16` 时识别 `0x` 前缀、失败靠 `errno`/返回值判断；
+   - `from_chars` **不跳空白**、只接受 `-`（不接受 `+`，且只对有符号类型）、**无 locale**、不分配、不抛异常、base 为 16 时也**不识别 `0x`/`0X` 前缀**、错误通过 `std::errc` 返回。
+所以 `"  123"`、`"+123"`、`"0x1f"`（base 16）对 `from_chars` 都是解析失败或只解析出部分。
+2. 成功时 `ptr` 指向**第一个不匹配模式的字符**（即"未解析部分的起点"），若全部匹配则 `ptr == last`，`ec` 为值初始化。
+失败时：`ec == errc::invalid_argument` → `ptr == first`（一个字符都没匹配上）；`ec == errc::result_out_of_range` → `ptr` 指向第一个不匹配模式的字符（模式匹配上了但值超出范围）。
+两种情况 `value` 都**不被修改**，这是它作为"快速解析器"的重要保证之一。
+3. `invalid_argument`：字符串**根本不匹配数字模式**（如 `"AAPL"`、空串、只有符号没有数字）→ 解析失败，`ptr == first`，`value` 不变。
+`result_out_of_range`：模式匹配上了，但解析出的数值**超出目标类型可表示的范围**（溢出/下溢）→ `ec == result_out_of_range`，`value` 不变。
+排查意义：前者通常是"字段类型判断错了"（比如拿字符串字段当数字解析），后者是"数值太大要换更宽的类型"。
+4. 用返回的 `ptr` 作为下一次解析的起点，逐字段推进：
+```cpp
+std::string_view msg = "55=AAPL|44=150.25|38=100";
+const char* p = msg.data();
+const char* end = msg.data() + msg.size();
+
+int tag;
+auto r = std::from_chars(p, end, tag);   // tag = 55，r.ptr 指向 '='
+if (r.ec != std::errc{}) { /* 处理错误 */ }
+p = r.ptr + 1;                            // 跳过 '='
+
+const char* sep = std::find(p, end, '|');
+double price;
+auto r2 = std::from_chars(p, sep, price); // 只在本字段范围内解析
+if (r2.ec != std::errc{}) { /* 该字段不是数字，按字符串处理 */ }
+```
+要点：每次用 `ptr` 推进；用 `|` 分隔符先切出字段区间再传给 `from_chars`；对每个返回的 `ec` 都做检查（`from_chars` 不抛异常）。
+5. 支持 `std::chars_format::hex` 这种格式，但有两条限制：
+   - **不接受 `0x` / `0X` 前缀**——`"0x123"` 会被解析成数值 `0`，剩下 `"x123"` 未解析。
+   - hex 格式下**不允许指数部分**（而 `scientific` 要求必须有指数、`fixed` 下指数不允许）。
+```cpp
+double d;
+auto r = std::from_chars(first, last, d, std::chars_format::hex);
+```
+也就是说它能解析十六进制浮点**数字**，但不能解析带 `0x` 前缀的 C 风格字面量——前缀要自己先跳过。
+
+</details>

@@ -152,6 +152,37 @@ void f(T container) {
 ```
 5. 用 `using` 写一个模板别名，让 `HashMap<K,V>` 等价于 `std::unordered_map<K, V, CustomHash<K>>`。
 
+<details>
+<summary>参考答案</summary>
+
+1. 普通别名上二者**语义完全等价**，`using X = Y;` 与 `typedef Y X;` 声明的是同一个类型，没有性能或行为差别；区别只在可读性和书写习惯。模板别名上则有本质差别：`using` 支持带模板参数（`template<class T> using X = ...`），可以直接实例化出别名模板；`typedef` 没有别名模板语法，做不到。
+
+2. 因为 `typedef` 的语法本质是"为一个**已确定的类型**起名字"（`typedef 类型 名字;`），它没有位置放置模板参数列表，也无法生成"带参数的别名"。`using` 的别名语法是"名字 = 类型"，天然可以在前面加 `template<...>` 形成别名模板（alias template）。要在 C++11 之前用 typedef 模拟，只能包一层 `struct` + 内部 `typedef`，使用时还要写 `typename`，非常笨拙。
+
+3. 可读性：`using` 的形式是"新名字在左边、类型在右边"，和 `T x = expr;` 的书写方向一致，函数指针这种"名字被类型包在中间"的写法尤其明显——`using Callback = void(*)(int);` 一眼看出 `Callback` 是"接受 int、返回 void 的函数指针"；`typedef void (*Callback)(int);` 名字藏在中间，读起来要拆。此外 `using` 能直接模板化，`typedef` 不能。
+
+4. 会编译失败。`T::value_type` 是**依赖类型**（dependent type），编译器在解析模板定义时不知道 `T` 是什么，无法判断 `T::value_type` 是类型还是静态成员，必须显式加 `typename` 前缀。正确写法：
+```cpp
+template<class T>
+void f(T container) {
+    typename T::value_type x;          // 或
+    using VT = typename T::value_type; // using 同样需要 typename
+    VT y;
+}
+```
+注意：即使换用 `using`，依赖类型的 `typename` 也不能省（C++20 起在部分语境可省略）。
+
+5. 用别名模板：
+```cpp
+template<class K, class V>
+using HashMap = std::unordered_map<K, V, CustomHash<K>>;
+
+HashMap<std::string, Order> orders;   // 即 unordered_map<string, Order, CustomHash<string>>
+```
+`using` 声明的别名模板可以直接出现在模板实参推导和特化中，这是 `typedef` 无法做到的。
+
+</details>
+
 ---
 
 ## 参考与延伸

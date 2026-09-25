@@ -112,6 +112,22 @@ V get_or_default_safe(const K& k, const V& def) {
 4. 读写锁在什么情况下比普通 `mutex` 更慢？
 5. `get_or_default` 的 double-checked 模式中，第二次检查为什么必要？
 
+<details>
+<summary>参考答案</summary>
+
+1. 读锁使用 `std::shared_lock<std::shared_mutex>`，多个读者可并发进入。
+   写锁使用 `std::unique_lock<std::shared_mutex>` 或 `lock_guard`，与所有其他读写互斥。
+2. 写者饥饿是写线程长期无法取得独占锁，因为新的读者持续进入、读者集合一直不归零。
+   `shared_mutex` 的公平策略不由标准保证，读流量持续且实现偏向读者时尤其可能发生。
+3. 标准 `shared_mutex` 不提供原子的 shared-to-exclusive 升级；持读锁再请求写锁可能等待自己及其他升级者而死锁。
+   应释放读锁后获取写锁，并在写锁下重新验证条件，或使用明确支持升级语义的专用锁。
+4. 读临界区很短、竞争低、写比例高，或实现维护读者计数的共享原子成为热点时，读写锁可能更慢。
+   它的状态管理、唤醒和公平策略都比普通 mutex 复杂，必须针对 workload 基准测试。
+5. 从释放读锁到取得写锁之间，另一线程可能已经插入了该 key 或改变相关状态。
+   写锁下第二次检查可避免覆盖现值、重复构造或违反“仅初始化一次”的语义。
+
+</details>
+
 ---
 
 ## 参考与延伸

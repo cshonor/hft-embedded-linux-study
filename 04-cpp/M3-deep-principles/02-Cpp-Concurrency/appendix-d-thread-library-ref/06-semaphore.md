@@ -146,6 +146,22 @@ for (auto& t : threads) t.join();
 4. 如何用信号量实现"资源池"模式？
 5. 为什么 HFT 热路径不用信号量？
 
+<details>
+<summary>参考答案</summary>
+
+1. `counting_semaphore<LeastMaxValue>` 保存多个 permit，计数可大于一；`binary_semaphore` 是最大值至少为一的特化别名。
+   二值信号量适合事件/单个 permit，计数信号量适合有 N 个并发配额的资源。
+2. mutex 表示具有所有权的互斥临界区，通常必须由加锁线程解锁；信号量表示可由不同线程 acquire/release 的计数许可。
+   限流、资源池、生产消费计数或线程间通知更适合信号量，而共享对象不变量通常用 mutex。
+3. `release(n)` 原子增加 n 个 permit，并可使至多相应数量的等待 acquire 获得许可后继续。
+   它不保证具体唤醒顺序或恰好立即运行 n 个线程，且不能让计数超过实现允许的最大值。
+4. 用初值 N 表示 N 个可用资源；取得资源前 `acquire()`，归还资源时 `release()`。
+   应用 RAII guard 确保异常路径也归还 permit，并另行保护具体资源的选取与状态。
+5. permit 不足时 acquire 可能阻塞并触发调度，竞争计数也会形成共享原子热点。
+   HFT 热路径更偏好固定资源归属、预分配和无等待数据通道，以获得稳定尾延迟。
+
+</details>
+
 ---
 
 ## 参考与延伸

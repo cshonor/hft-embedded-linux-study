@@ -87,3 +87,27 @@ std::inclusive_scan(pnls.begin(), pnls.end(), cumulative_pnl.begin());
 3. `transform_inclusive_scan` 的 map 和 scan 各做什么？
 4. 所有 scan 算法支持执行策略吗？
 5. 用 `inclusive_scan` 计算累计成交量的写法？
+
+<details>
+<summary>参考答案</summary>
+
+1. 对 `{1, 2, 3, 4}`：
+   - `exclusive_scan(v.begin(), v.end(), out.begin(), 0)` 得到 `out = [0, 1, 3, 6]`（`out[i]` 是 `v[0..i-1]` 的和，**不含** `v[i]`）。
+   - `inclusive_scan(v.begin(), v.end(), out.begin())` 得到 `out = [1, 3, 6, 10]`（`out[i]` 是 `v[0..i]` 的和，**含** `v[i]`）。
+两者输出长度都等于输入长度，默认运算为 `std::plus<>`。
+2. `exclusive_scan` 的 `init` 是**必需的**：它就是 `out[0]`，是整个前缀和的起点，`out[i] = init ⊕ v[0] ⊕ ... ⊕ v[i-1]`。
+`inclusive_scan` 有**不带** `init` 的重载（`out[0] = v[0]`），也有带 `init` 和 `binary_op` 的重载（`out[i] = init ⊕ v[0] ⊕ ... ⊕ v[i]`，此时 `init` 参与每一个元素）。
+3. `transform_inclusive_scan(first, last, out, binary_op, unary_op)` 里：`unary_op` 是 **map**，先作用在每个输入元素上；`binary_op` 是 **scan**，再做前缀和归约。
+例：输入 `{1,2,3,4}`、`unary_op` 为 `x*2`、`binary_op` 为 `plus`，则 map 后是 `{2,4,6,8}`，scan 后是 `{2,6,12,20}`。
+注意参数顺序是**先二元（归约）后一元（map）**，容易写反。
+4. 支持。`exclusive_scan`、`inclusive_scan`、`transform_exclusive_scan`、`transform_inclusive_scan` 都有接受执行策略的重载，可写成 `std::inclusive_scan(std::execution::par, v.begin(), v.end(), out.begin())` 等。
+但前缀和本质上是**有依赖的递推**，并行实现需要多趟（分块求和 → 块间前缀和 → 回填），加速比不如 `reduce` 那么理想，是否划算要实测。
+5. ```cpp
+std::vector<int> trades = {100, 200, 150, 300};
+std::vector<int> cumulative(trades.size());
+std::inclusive_scan(trades.begin(), trades.end(), cumulative.begin());
+// cumulative = [100, 300, 450, 750]
+```
+输出区间要先分配好空间；也可以用 `std::back_inserter(cumulative)` 代替裸迭代器以避免长度不匹配。
+
+</details>

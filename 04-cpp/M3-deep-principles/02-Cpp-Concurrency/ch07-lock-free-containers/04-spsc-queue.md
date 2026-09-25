@@ -108,6 +108,22 @@ alignas(64) std::atomic<size_t> read_pos;
 4. 容量为什么必须是 2 的幂？用什么代替取模？
 5. 为什么 C 程序员用 `volatile` 做 SPSC 队列是错的？
 
+<details>
+<summary>参考答案</summary>
+
+1. SPSC 中生产者独占写 `write_pos`，消费者独占写 `read_pos`，不存在多个线程竞争修改同一索引。
+   双方只需原子地发布和观察对方进度，因此不需要 CAS 这种 read-modify-write 仲裁。
+2. producer 对 `read_pos` 的 acquire 读取观察消费者 release 发布的空槽，确保不会过早覆盖仍在使用的元素。
+   producer 写完元素后以 release 更新 `write_pos`，consumer 的 acquire 读取便能看到该元素的完整初始化。
+3. 两个索引分别被不同核频繁写，若落在同一 cache line，会因一致性协议反复迁移该行。
+   分离到不同 cache line 可降低 false sharing；`64` 是常见硬件假设，更可移植时可参考硬件干扰大小常量。
+4. “必须为 2 的幂”是这种快速索引实现的约束，不是所有环形队列的标准要求。
+   容量为 2 的幂时可用 `index & (capacity - 1)` 替代取模；其他容量可正确使用 `%`。
+5. C++ `volatile` 只约束特定优化和可观察访问，不提供跨线程原子性、同步或 happens-before。
+   用它并发读写索引仍可能 data race；应使用 `std::atomic` 和正确的 acquire/release 配对。
+
+</details>
+
 ---
 
 ## 参考与延伸

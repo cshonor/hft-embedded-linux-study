@@ -110,3 +110,44 @@ static_assert(validate_config());
 3. `consteval` 函数能在运行期调用吗？
 4. `constinit` 解决什么问题？
 5. HFT 中如何用 `consteval` 做编译期配置表？
+
+<details>
+<summary>参考答案</summary>
+
+1. 三者层次不同：
+   - **`constexpr`**（C++11）：修饰**函数**表示"可以在常量表达式中求值"（但也可以在运行时调用）；修饰**变量**表示它是编译期常量。
+   - **`consteval`**（C++20）：**立即函数**，它的**每一次调用都必须**产生编译期常量，否则直接编译错误；因此它根本不会在运行期被调用，也不能取地址/做函数指针。
+   - **`constinit`**（C++20）：修饰**变量**，强制该变量必须**常量初始化**（静态初始化阶段完成），用来消灭动态初始化的顺序问题；它**不**要求变量是 `const`，也不要求类型是字面类型。
+一句话：`constexpr` 是"能用于编译期"，`consteval` 是"只能用于编译期"，`constinit` 是"必须在编译期初始化"。
+2. C++20 的 `constexpr` 函数体已经相当接近普通函数，可以包含：
+   - 所有控制流：`if`、`switch`、以及全部循环（`for`、range-`for`、`while`、`do-while`）；
+   - **`try` / `catch`**（C++20 新增，但不允许真的 `throw` 出常量求值）；
+   - 局部变量（含可变局部变量）、`static_assert`；
+   - `new` / `delete`（临时分配必须在常量求值结束前释放）；
+   - **`std::vector` / `std::string`** 等 constexpr 容器，以及 `<algorithm>`、`<numeric>` 中大部分算法（C++20 起大量算法也变成 constexpr）；
+   - `dynamic_cast` / `typeid`、**虚函数调用**（C++20 新增）。
+仍不允许：`goto`、非字面类型的变量、未初始化的变量、`asm`、以及调用任何非 constexpr 函数。
+3. **不能**。`consteval` 函数（immediate function）的任何调用都必须在常量表达式语境中完成——一旦编译器发现某次调用无法在编译期求值，就是**编译错误**（而不是退化成运行期调用）。
+这也意味着不能取它的地址、不能把它赋给函数指针。若只想要"能编译期求值但不强制"，就用 `constexpr`。
+4. 它解决**静态初始化顺序问题（Static Initialization Order Fiasco）**：命名空间作用域或静态存储期的变量，如果初始化不是常量初始化，就会变成运行期的动态初始化，而**跨翻译单元的初始化顺序是未定义的**——A 的初始化用到 B 时，B 可能还没初始化。
+加上 `constinit` 后，编译器**强制**该变量必须常量初始化（否则编译错误），从而保证它在程序开始前就已完成初始化，彻底消除顺序不确定性：
+```cpp
+constinit int counter = 0;                 // ✅ 常量初始化
+// constinit int x = runtime_value();     // ❌ 编译错误（这正是它的价值）
+```
+它不要求 `const`（变量仍可变），也不要求字面类型——只保证"初始化是编译期完成的"。
+5. 把配置表在编译期算好，运行时只读，零初始化成本：
+```cpp
+consteval std::array<double, 256> make_fee_table() {
+    std::array<double, 256> t{};
+    for (std::size_t i = 0; i < t.size(); ++i)
+        t[i] = /* 手续费档位公式 */;
+    return t;
+}
+constinit auto fee_table = make_fee_table();   // 编译期即完成，无动态初始化
+
+inline double fee(std::uint8_t tier) { return fee_table[tier]; }  // 运行期只是一次查表
+```
+好处：表在编译期生成（可用循环、`std::array`、算法），放进只读段；启动阶段**没有任何**初始化代码，也没有初始化顺序风险；运行期只是一次数组索引。
+
+</details>

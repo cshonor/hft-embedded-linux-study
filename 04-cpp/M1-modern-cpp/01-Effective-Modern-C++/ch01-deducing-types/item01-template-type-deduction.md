@@ -249,6 +249,33 @@ void g(int&& x);
 ```
 7. 写一个模板函数，能在编译期推导出 C 风格数组的长度（提示：用引用形参防止退化）。
 
+<details>
+<summary>参考答案</summary>
+
+1. `T` 推导为 `int`。按值形参（`ParamType` 就是 `T`）的推导规则是：先忽略实参的引用性，再忽略顶层 `const`/`volatile`。因为 `param` 是实参的一份独立拷贝，拷贝的 const 属性与实参无关，标准规定此时 `T` 不带顶层 const，所以 `const` "消失"了。
+
+2. 左值 `f(x)`：`T` 推导为 `int&`，`param` 的类型 `int& &&` 经引用折叠变成 `int&`。右值 `f(27)`：`T` 推导为 `int`，`param` 类型是 `int&&`。这正是万能引用（universal reference）的专属规则：形参写成 `T&&` 且 `T` 需要推导时，左值实参会把 `T` 推成左值引用类型。
+
+3. `T` 推导为 `const int`，`param` 的类型是 `const int&`。引用性被忽略是因为形参已经声明成引用，推导只关心"实参所引用对象的类型"；而 const 必须保留，否则就能通过 `param` 修改一个原本是 const 的对象，破坏 const 正确性。
+
+4. `T` 是 `const char*`（指向 `const char` 的指针）。顶层 const（`p` 自己不可改指向）被丢弃；底层 const（指向的字符不可改）被保留。因此 `param` 可以重新赋值指向别的字符串，但不能通过它修改字符内容。
+
+5. 能编译，`T` = `int`。`param` 是 `cx` 的一份 `int` 拷贝，`param = 10` 修改的是副本，`cx` 仍是 5。这也说明"按值传参会丢 const"是安全的——它没有绕过原对象的 const。
+
+6. `template<class T> void f(T&& x)` 是万能引用（universal reference / forwarding reference），因为它的形参形式恰好是 `T&&` 且 `T` 在该函数模板中被推导。`void g(int&& x)` 是普通右值引用：`int` 是具体类型、不涉及类型推导，只能绑定右值。判断口诀：形如 `T&&` 且 `T` 需要推导 → 万能引用；否则 → 右值引用。
+
+7. 关键是形参必须写成数组引用，阻止数组退化成指针：
+```cpp
+template<class T, std::size_t N>
+constexpr std::size_t arraySize(T (&)[N]) noexcept { return N; }
+
+int a[10];
+static_assert(arraySize(a) == 10);
+```
+`T (&)[N]` 让 `N` 在编译期被推导出来，配合 `constexpr` 可作为编译期常量使用，零运行开销。
+
+</details>
+
 ---
 
 ## 参考与延伸

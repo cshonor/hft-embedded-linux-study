@@ -159,6 +159,22 @@ void compute_worker(int id) {
 4. `barrier` 如何实现"多阶段流水线同步"？
 5. 为什么 HFT 系统启动用 `latch` 而热路径不用 `barrier`？
 
+<details>
+<summary>参考答案</summary>
+
+1. `latch` 是一次性的递减门闩，计数到零后永久开放；`barrier` 按 phase 重复使用，每轮参与者到齐后进入下一轮。
+   barrier 还可在每个 phase 完成时执行 completion function，并允许参与者永久退出后续阶段。
+2. 当当前 phase 的 expected count 降到零时，completion step 在释放该阶段等待者之前执行一次。
+   具体由哪个参与调用的线程执行不应依赖；若无人调用 wait 时是否执行还受标准版本/实现规则影响。
+3. 可让 N 个 worker 初始化后各自调用同一 `latch(N)` 的 `count_down_and_wait()`，最后一个到达后所有线程继续。
+   若必须由主线程控制发令，可另设 ready latch 和 start latch：主线程等 ready 后再放开 start。
+4. 所有参与线程完成阶段工作后调用 `arrive_and_wait()`；最后到达触发 completion 并开始下一 phase。
+   每一轮自动重置 expected count，因此可同步“计算—合并—再计算”等重复阶段。
+5. 启动初始化只发生一次，latch 能确保依赖就绪后统一放行，开销不在持续交易路径上。
+   热路径 barrier 让最快线程等待最慢线程，形成同步尖峰和尾延迟传播，固定异步流水线通常更合适。
+
+</details>
+
 ---
 
 ## 参考与延伸

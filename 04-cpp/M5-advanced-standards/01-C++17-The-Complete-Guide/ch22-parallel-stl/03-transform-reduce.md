@@ -99,3 +99,27 @@ std::transform_reduce(ex::par, v.begin(), v.end(), 0.0,
 3. reduce 操作为什么要满足结合律？map 操作为什么不能有副作用？
 4. 用 `transform_reduce` 计算向量内积的写法？
 5. 初值为什么必须是幺元？
+
+<details>
+<summary>参考答案</summary>
+
+1. **一次遍历完成 map + reduce**，省掉了 `transform` 写中间结果的那一次完整遍历和中间存储，对 cache 与内存带宽更友好，代码也更短。
+此外 `transform_reduce` 支持执行策略，map 阶段天然可并行；而 `transform` + `reduce` 两段各自处理，多一次数据落地。
+2. 两种重载语义不同：
+   1. **内积形式**（两个区间）：`transform_reduce(first1, last1, first2, init)`，等价于 `init + (a0*b0) + (a1*b1) + ...`，二元运算固定为加法与乘法。
+   2. **map + reduce 形式**（单区间）：`transform_reduce(first, last, init, binary_op, unary_op)`，先对每个元素做 `unary_op`（map），再用 `binary_op` 归约，初值为 `init`。
+第二种更通用：把 `unary_op` 设为恒等、`binary_op` 设为 `std::plus<>` 就退化成 `reduce`。
+3. **结合律**：并行把区间分块后任意合并，只有 `(a∘b)∘c == a∘(b∘c)` 时结果才与分组方式无关；否则结果依赖线程数和分块方式，变成不确定、不可复现的值。
+**map 不能有副作用**：`unary_op` 会被并发调用，调用次数与顺序标准未作规定，实现还可能复制函数对象；一旦有写共享状态之类的副作用就会产生数据竞争（未定义行为）或不确定结果。同理两个 op 都不应使迭代器失效、不应修改区间元素。
+4. 用内积形式的重载最直接：
+```cpp
+double dot = std::transform_reduce(
+    std::execution::par,
+    a.begin(), a.end(), b.begin(),
+    0.0);          // init 必须是对 + 的幺元
+```
+它等价于 `0.0 + a[0]*b[0] + a[1]*b[1] + ...`。若要显式指定运算，可用七参数版本 `transform_reduce(par, a.begin(), a.end(), b.begin(), 0.0, std::plus<>{}, std::multiplies<>{})`。
+5. 并行 `reduce` 把区间切成 k 块，每块都以 `init` 为起点归约，最后再把 k 个结果合并——`init` 实际参与了 **k 次**运算，而串行只参与 1 次。
+只有当 `init` 是 `binary_op` 的**幺元**（identity：`std::plus` 为 `0`，`std::multiplies` 为 `1`，`std::min` 为极大值）时，多出来的那些 `init` 才不改变结果，并行与串行的答案才一致。
+
+</details>

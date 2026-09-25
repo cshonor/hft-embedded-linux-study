@@ -150,6 +150,19 @@ public:
 Buffer b(1024);
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. 因为万能引用 `T&&` 几乎能对**任何实参**推导出一个"精确匹配"的形参类型：接左值变 `T&`、接右值变 `T&&`，const/volatile 也照单全收，转换序列恒为 identity（精确匹配）。而其它重载（如 `f(const std::string&)` 接收 `const char*`、`f(int)` 接收 `short`）往往需要一次标准/用户定义转换，排名更差。于是万能引用在重载决议中"吃掉"本该由其他重载处理的调用，尤其是它会劫持非 const 左值的拷贝构造（见第 2 题）。
+
+2. 会匹配**万能引用构造**，而不是拷贝构造。`p1` 是非 const 左值时：万能引用版本把 `T` 推为 `Person&`，形参是 `Person&`——精确匹配；拷贝构造的形参是 `const Person&`，绑定非 const 左值需要一次"限定符调整"，排名**劣于**精确匹配。所以 `Person p2(p1);` 走的是模板构造，函数体里把 `p1` 当成"任意类型"去初始化成员，通常是编译错误或语义完全错误。（若 `p1` 是 `const Person` 左值，两者同为精确匹配，此时"非模板优先于模板"的决胜规则会让拷贝构造胜出——所以这个坑只在非 const 左值时出现，更隐蔽。）
+
+3. Item 26 的核心建议是**不要对万能引用做重载**，改用具名重载（方案 3）；确实需要泛型时，用 Item 27 的三种替代方案：①**放弃万能引用**，直接写 `set(const std::string&)` / `set(int)` 这样的具名重载；②**标签分发**（tag dispatch），外层万能引用只做入口，把实参加编译期标签转发给 `impl` 的多个重载；③**`std::enable_if` / C++20 `requires`** 约束模板，让它只在 `T` 不是本类型时参与重载（如 `requires !std::is_same_v<std::remove_cvref_t<T>, Person>`）。另外也可考虑按值传参 + `std::move`（Item 41）。
+
+4. 这段代码的意图是"传 `int` 走 `Buffer(int size)`"，但设计很脆弱。对 `Buffer b(1024);` 这一行，实参 `1024` 是 `int`，`Buffer(int)` 是精确匹配，模板 `T = int` 的 `Buffer(int&&)` 也是精确匹配；此时"非模板优先于模板"的决胜规则让 `Buffer(int size)` 胜出，所以**这一行本身不会出错**。真正的隐患是：一旦实参类型不是恰好 `int`——如 `Buffer b(1024u)`、`Buffer b(1024L)`、`Buffer b(short)`——模板就能推导出精确匹配并劫持调用，然后 `buf(std::forward<T>(data))` 失败，报出一长串难读的模板错误；更危险的是拷贝/移动构造也会被劫持（`Buffer b2(b1);` 中 `b1` 是非 const 左值，模板胜出，导致 `buf` 被用一个 `Buffer` 初始化）。修正方向同第 3 题：给模板加约束（`requires !std::is_same_v<std::remove_cvref_t<T>, Buffer>` 且 `std::is_integral_v<T>` 等），或直接用具名重载替代万能引用。
+
+</details>
+
 ---
 
 ## 参考与延伸

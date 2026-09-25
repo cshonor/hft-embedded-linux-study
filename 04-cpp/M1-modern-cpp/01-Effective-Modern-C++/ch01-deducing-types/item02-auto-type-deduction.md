@@ -67,6 +67,19 @@ f({11});              // 编译失败！无法推导 T
 3. C++17 的 `auto x{11};` 和 C++14 的 `auto x{11};` 有何不同？
 4. 为什么说 `auto` 推导和模板推导"几乎一致"？唯一的例外是什么？
 
+<details>
+<summary>参考答案</summary>
+
+1. `auto x = 27;` → `x` 是 `int`（按值形态，忽略 const 与引用）。`auto& rx = x;` → `rx` 是 `int&`（`auto` 推为 `int`，加上声明的 `&`）。`auto&& uref = x;` → `uref` 是 `int&`（`x` 是左值，`auto` 被推为 `int&`，`int& &&` 引用折叠成 `int&`）。若写成 `auto&& uref2 = 27;`，右值使 `auto` 推为 `int`，结果是 `int&&`。
+
+2. `x` 的类型是 `std::initializer_list<int>`。原因是标准专门为 `auto` 规定了一条推导规则：当初始化表达式是 braced-init-list 时，`auto` 被推导为该列表的 `std::initializer_list<T>`。模板推导没有这条规则，`{1,2,3}` 不属于可由模板实参推导的表达式形式（`T` 无从下手），所以 `f({1,2,3})` 直接编译失败——除非形参显式写成 `std::initializer_list<T>`。这是 `auto` 与模板推导唯一的语义差异。
+
+3. C++14（`auto x{11};`）：`x` 是 `std::initializer_list<int>`，沿用与 `auto x = {11}` 相同的规则。C++17 起：标准改为单元素花括号按"直接初始化"处理，`x` 推导为 `int`。也就是说 C++17 让 `auto x{11}` 与 `auto x = 11` 行为一致，消除了最常见的歧义。
+
+4. 因为 `auto` 推导就是把 `auto` 当成模板参数 `T`、把声明的修饰符（`&`、`&&`、`const`）当成 `ParamType`，然后套用 Item 1 的三条模板推导规则：引用形态忽略引用性保留 const；`T&&` 形态左值推成 `T&` 再引用折叠；按值形态剥掉引用和顶层 const。唯一例外是 braced-init-list：`auto` 会推导出 `std::initializer_list<T>`，而等价的模板调用无法推导、编译失败。
+
+</details>
+
 ---
 
 ## 参考与延伸

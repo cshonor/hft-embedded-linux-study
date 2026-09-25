@@ -142,6 +142,21 @@ const auto it = v.begin();
 ++it;
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. `const_iterator` 是一个**指向 const 元素**的迭代器类型（`std::vector<T>::const_iterator`）：解引用得到 `const T&`，不能通过它修改元素，但迭代器本身可以自增。`const iterator` 是"迭代器对象本身是 const"：`const std::vector<T>::iterator it = ...`，它不能 `++it`（迭代器被 const 限定），但 `*it = 10` 修改元素是允许的。可见二者 const 修饰的对象层级不同——一个修元素，一个修迭代器。
+
+2. C++11 起容器提供了 `cbegin()`/`cend()` 成员函数，可以直接拿到 `const_iterator`（此前只能用 `const` 容器或强制转换拿到）。C++14 进一步补充了**非成员**版本 `std::cbegin(c)` / `std::cend(c)` / `std::cbegin(arr)`，对原生数组和任何提供 `begin()/end()` 的容器（含泛型代码里的第三方容器）都能统一使用，泛型代码的通用性在 C++14 才补齐。
+
+3. 因为 `begin()` 的返回类型取决于容器的常量性：非 const 容器上 `begin()` 返回 `iterator`，一旦后续有人通过它修改元素，与"只读遍历"的意图相悖。`cbegin()` 无条件返回 `const_iterator`，把"不修改"这一意图写进类型、由编译器强制检查，且完全不依赖容器本身是否 `const`。在 `auto it = c.begin();` 这种写法下尤其重要——`auto` 不会替你表达只读意图。
+
+4. `const auto& x : v` 用于**只读**遍历：避免拷贝（引用），又禁止修改元素，是默认首选；`auto& x : v` 用于需要**就地修改**元素时。若元素是小标量（`int`、`double`）且不介意拷贝，`auto x : v` 也可以，但引用写法能避免大对象拷贝。注意代理类型（如 `vector<bool>`）用 `const auto&` 可能接到代理引用，需要 `static_cast<bool>`。
+
+5. 编译不过。`const auto it = v.begin();` 中 `auto` 推为 `std::vector<int>::iterator`，`const` 修饰迭代器自身，所以 `++it` 非法（const 对象不能调用非 const 的 `operator++`）。而 `*it = 10` 反而是合法的——因为 const 的是迭代器不是元素，这是"const iterator 而非 const_iterator"的典型误用。正确写法：`auto it = v.cbegin();`（只读遍历）或 `const auto it = v.cbegin();`（连迭代器也不许动），修改元素则写 `auto it = v.begin();`。
+
+</details>
+
 ---
 
 ## 参考与延伸

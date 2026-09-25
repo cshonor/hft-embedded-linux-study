@@ -114,6 +114,22 @@ public:
 4. `tail` 为什么用裸指针而不是 `unique_ptr`？它的所有权由谁管理？
 5. 空队列时 `head.get() == tail`，此时 pop 需要锁 tail_mutex 吗？
 
+<details>
+<summary>参考答案</summary>
+
+1. 单 mutex 同时保护头和尾，任何 push 与 pop 都必须依次进入同一临界区。
+   即使操作不同端也无法重叠，热点锁的争用和 cache line 迁移就是瓶颈。
+2. 自有链表可让头尾位于不同节点，并分别定义所有权和锁保护范围；`std::queue` 的内部结构不暴露这种并发协议。
+   环形缓冲当然可以，尤其适合有界 SPSC；MPMC 环形队列则需要每槽状态/CAS 等不同设计。
+3. dummy 始终占据空尾位置，使空判断和首/末元素转换无需专门处理 null/唯一真实节点。
+   没有它时，空队列首次 push 与最后一次 pop 都会同时修改头尾，双锁协调和所有权转移更复杂。
+4. `head` 及其 `unique_ptr` 链拥有全部节点，`tail` 只是指向链中最后 dummy 的非 owning observer。
+   若 tail 也用 `unique_ptr` 会形成重复所有权；其访问必须遵循锁协议以避免悬空和 data race。
+5. 需要。producer 在 `tail_mutex` 下写 `tail`，pop 若直接读取它会与该写形成 data race。
+   通常在持有 `head_mutex` 时短暂获取 `tail_mutex` 读取尾快照，并统一锁序；所示简化代码缺少这一步同步。
+
+</details>
+
 ---
 
 ## 参考与延伸

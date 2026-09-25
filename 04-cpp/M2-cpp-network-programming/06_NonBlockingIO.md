@@ -153,6 +153,21 @@ void handleWrite(int fd, Buffer* pending) {
 4. `MSG_DONTWAIT` 与 `O_NONBLOCK` 的区别？为什么热路径自旋用前者？
 5. 进程被唤醒到真正跑起来，中间发生了什么？这笔开销大概是多少？
 
+<details>
+<summary>参考答案</summary>
+
+1. LT 的含义是"只要缓冲里**还有**数据就一直报告"，这恰恰意味着**同一件事可能被处理两次**：两个事件循环/两个线程同时持有该 fd、回调里又同步跑了一次事件循环（重入）、或本轮只处理了部分数据。此时再 `read`，如果 fd 是阻塞的而数据已被前一个处理者读干，就会**阻塞整个事件循环**（所有其它连接一起卡死）。非阻塞 fd 保证"碰了也不会卡住"——读到 `EAGAIN` 就退出，最坏情况是多一次无效调用。ET 则更严格：必须循环读到 `EAGAIN`，**强制**非阻塞。
+
+2. 剩下 900 字节**根本没进内核**（`tcp_sendmsg` 发现发送缓冲只剩 100 字节空间，拷完就返回了），也不会自动重发。责任在**应用层**：必须按返回值记账——把已发出的 100 字节从 pending buffer 取走，剩下的继续挂在输出 Buffer 上，然后注册 `EPOLLOUT`，等可写事件再续写；全部发完**立刻注销 EPOLLOUT**（LT 下不注销会 100% CPU）。muduo 的 `TcpConnection::send()` 就是这个逻辑。牢记：非阻塞 `write` 是"有一点空间就部分写"，返回 `0 < n < 请求值` 是常态，只看 `EAGAIN` 不处理部分写 = 静默丢数据。
+
+3. 用 `getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len)` 取 **pending error**：`err == 0` 即连接成功；`err != 0` 就是失败原因（`ECONNREFUSED`、`ETIMEDOUT`、`EHOSTUNREACH` 等），此时应关闭 fd 并按错误处理。原因是：非阻塞 connect **成功和失败都表现为"fd 可写"**——收到 RST 同样让 socket 变为可写——所以"可写 ≠ 成功"。辅助判据：成功后再次 `connect` 返回 `EISCONN`，且 `getpeername()` 有效。
+
+4. `O_NONBLOCK` 是 **fd 上的持久标志**（存在 `struct file->f_flags`），影响该 fd 上**所有**读写；`MSG_DONTWAIT` 是**单次调用**的 flag，只让这一次 `recv`/`send` 非阻塞，不改 fd 状态。热路径自旋用 `MSG_DONTWAIT`：自旋循环本来就是自己反复调用 `recv`，单次非阻塞已足够；改 fd 标志反而会波及**共享同一 `struct file` 的其它路径**（dup/fork 后标志是共享的），让别处意外拿到 `EAGAIN`，也破坏"阻塞/非阻塞"约定。另外 `O_NONBLOCK` 要用 `F_GETFL`→改→`F_SETFL`，直接 `F_SETFL` 会清掉 `O_APPEND` 等标志。
+
+5. 数据到达 → 网卡硬中断 → 软中断把 skb 放入接收队列 → `sk_data_ready` 唤醒等在 `sk_wq` 上的进程（置为 `TASK_RUNNING` 挂进 runqueue）→ **调度器择机上 CPU**（可能被更高优先级任务抢占，跨核还要等 IPI/迁移）→ 恢复上下文、cache/TLB 冷启动。这笔开销通常是 **微秒级**（几 µs，负载高或跨核时更大）。正是这笔"唤醒 + 调度"延迟，催生了 busy polling（`SO_BUSY_POLL`，进程自旋问内核"有了吗"）和内核旁路（DPDK，用户态轮询驱动直接收包）。
+
+</details>
+
 <a id="pnp-06-refs"></a>
 
 ## 交叉引用

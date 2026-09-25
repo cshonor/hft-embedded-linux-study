@@ -172,6 +172,22 @@ cargo run -- 127.0.0.1 9000
 4. `CLOSE_WAIT` 大量出现，是本端 bug 还是对端 bug？
 5. 收到 RST 与收到 FIN，本端 `read` 的表现分别是什么？
 
+<details>
+<summary>参考答案</summary>
+
+1. `shutdown(fd, SHUT_WR)` 后：**还能 `read`，不能 `write`**。它只关本端发送方向（内核立刻在发送队列尾排 FIN，进入 `FIN_WAIT_1`，对端 ACK 后 `FIN_WAIT_2`），**接收方向照常工作**，可以继续把对端的剩余数据读完直到 `read` 返回 0。之后再 `write` 会失败（`EPIPE` + `SIGPIPE`，且对端会回 RST）。这正是"发完请求 → 半关闭 → 继续读响应"的优雅关闭写法；fd 本身没关，最后仍要 `close`。
+
+2. **不会**。socket 的 `struct file` 有引用计数，fork 后父子各持一份；子进程 `close` 只是计数减一，父进程的引用还在，计数未归零就不触发 FIN。这是"多进程 close 拖着不发 FIN"的经典陷阱。要立刻发 FIN 用 `shutdown(fd, SHUT_WR)`（作用于连接而非 fd 计数）；要从源头避免继承，用 `socket(..., SOCK_CLOEXEC)` 或在 fork 后的子进程里立刻关掉不用的 fd。
+
+3. stdin 到达 EOF 后处于**永久可读**状态（`read` 立刻返回 0），还留在 `select` 集合里的话 `select` 每次都**立即返回**，循环空转成 **busy loop（CPU 100%）**，同时 timeout 语义也失效。正确做法（示例代码里的 `stdin_eof`）：EOF 后把 stdin 从集合摘除，并 `shutdown(sockfd, SHUT_WR)` 通知对端"我发完了"，但**保留 socket 继续收**对端的剩余数据，直到 `read` 返回 0 才退出。
+
+4. 是**本端 bug**。`CLOSE_WAIT` 的含义是：对端已发 FIN（对端主动关闭，属于正常行为），本端内核收到后标记 `sk_shutdown |= RCV_SHUTDOWN`，**等应用层 `close`** —— 应用不关它就一直停在 `CLOSE_WAIT`。大量堆积说明本端没正确响应对端关闭：常见于 `read` 返回 0 时忘了 `close`、事件循环没处理 `EPOLLRDHUP`/`EPOLLHUP`、或连接对象泄漏（泄漏的是代码逻辑不是内核参数）。反之若本端大量 `FIN_WAIT_2`，才是对端没关。排查：`ss -tn state close-wait | head` + `lsof -p <pid>`。
+
+5. - **收到 FIN（优雅关闭）**：`read` 先把接收队列里已排队的数据读完，之后返回 **0（EOF）**，这是正常语义，不是错误；可以继续 `write`（对端收方向还开着，除非它也关了）。
+   - **收到 RST（异常终止）**：`read` 返回 **-1，`errno == ECONNRESET`**；此后 `write` 同样报 `ECONNRESET`，继而 `EPIPE` + `SIGPIPE`。RST 是粗暴的：可能**丢弃接收缓冲里未读的数据**，没有"读完剩余"的机会。所以交易链路一律走 `shutdown` + 读完 + `close` 的优雅关闭，不用 `SO_LINGER{1,0}` 硬断。
+
+</details>
+
 <a id="pnp-04-refs"></a>
 
 ## 交叉引用

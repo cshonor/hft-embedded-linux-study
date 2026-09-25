@@ -147,6 +147,26 @@ int main() {
 4. 如何用 `ss`/`netstat` 一条命令找出当前系统里的自连接？
 5. `ip_local_port_range` 用尽时 `connect` 报什么错？
 
+<details>
+<summary>参考答案</summary>
+
+1. 因为 TCP 连接的**唯一身份就是四元组** `(本地IP, 本地port, 对端IP, 对端port)`，内核在连接哈希表 **`ehash`** 里按四元组查找 `tcp_sock`（监听侧则是 request_sock / accept 队列）。四元组相同即命中同一个 socket，因此被判定为"同一条连接"，重复的四元组无法共存——这是自连接、`TIME_WAIT` 不能立刻复用、`SO_REUSEADDR` 语义的全部根源。
+
+2. 会**原样收到自己刚写进去的字节**。自连接是一条真实 ESTABLISHED 连接，只是两端是同一个 socket：`write` 的数据进发送缓冲，经回环 `tcp_v4_rcv` 又回到自己的接收队列，`read` 就把这些字节读出来了（像接了一根短路的线）。若只写不读，数据堆满接收缓冲后 `write` 会阻塞（或返回 `EAGAIN`），表现为"莫名其妙卡住"。识别方法：`connect` 成功后比对 `getsockname()` 与 `getpeername()`，两者相同即自连接，应立刻 `close` 重连。
+
+3. 因为监听 socket 只持有四元组的**本地半边**（自己 bind 的 IP:port），用它匹配入站 SYN 的**目的地址**；而自连接的两半完全相同，那个 SYN 发出后在 `ehash` 里**先命中处于 SYN_SENT 的自己**（源=目），握手在这个 socket 内部自洽完成（`tcp_rcv_state_process`），从未进入 listen 的半连接/accept 队列。换句话说：匹配到的是"自己这一端那个发起方 socket"，不是 LISTEN socket，所以 `accept` 永远取不到它。
+
+4. 一条命令即可（比较"本地地址:端口"列与"对端地址:端口"列是否相同）：
+   ```bash
+   ss -tn | awk '$4==$5'          # 输出形如 ESTAB 0 0 127.0.0.1:10013 127.0.0.1:10013
+   ss -tan state established | awk '$4==$5'   # 只筛已建连
+   ```
+   `netstat -tn | awk '$4==$5'` 同理（列号一致）。也可以用 `ss -tnp` 带上进程信息定位是谁建的连。
+
+5. 报 **`EADDRNOTAVAIL`**（Cannot assign requested address）：`inet_hash_connect()` 在 `ip_local_port_range` 里找不到空闲的临时端口。注意别混淆：`EADDRINUSE` 是指定地址/端口已被占用（bind 或四元组冲突），`ECONNREFUSED` 是对端无监听/回了 RST。排查命令：`cat /proc/sys/net/ipv4/ip_local_port_range`、`ss -s`（看 TIME_WAIT/已用端口量）、`netstat -s | grep -i fail`。缓解：调大端口范围、开启 `tcp_tw_reuse`、减少短连接（连接池/长连接）、重连做退避而不是无限重试。
+
+</details>
+
 <a id="pnp-03-refs"></a>
 
 ## 交叉引用

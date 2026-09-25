@@ -149,6 +149,21 @@ register_cb(0);       // A
 register_cb(nullptr); // B
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. `f(0)` 调用 `void f(int)`——`0` 是 `int` 字面量，精确匹配整型重载；`f(nullptr)` 调用 `void f(Widget*)`——`nullptr` 只能转换成指针类型，不能转成整型。`nullptr` 的引入正是为了让"空指针"在重载决议中不再和整数竞争。
+
+2. `nullptr` 的类型是 `std::nullptr_t`（定义于 `<cstddef>`）。它不能隐式转换成整型（`int`、`bool` 之外的整数类型都不行），只能转换成任意指针类型、`bool`（仅限直接初始化/特定语境）以及 `std::nullptr_t` 自身。所以 `int x = nullptr;` 是非法的。
+
+3. 因为 C++ 里 `NULL` 通常被定义为 `0` 或 `0L`，是**整型**而非指针类型：在重载决议中它会选中整型重载而不是指针重载；在模板推导中会被推成 `int`/`long` 而不是指针；还容易被当成数值参与算术。C 的 `NULL` 常定义为 `((void*)0)`，而 C++ 不允许 `void*` 隐式转换成其他对象指针，所以 C++ 只能把它定义成整型，这正是它不安全的根源。
+
+4. `g(nullptr)` 推出 `T = std::nullptr_t`（`nullptr` 有自己的类型，按值形参剥掉引用后就是 `nullptr_t`）。`g(0)` 推出 `T = int`。这意味着在模板里传 `0` 表达"空指针"是错的——函数体里拿到的是整数 `0`，无法赋给指针，通常编译失败或语义错误。
+
+5. A 行 `register_cb(0)` 选中的是 `void register_cb(int id)`，即"注册 id 为 0"，而程序员的意图很可能是"清除回调"——这是 `NULL`/`0` 导致的经典误选重载 bug。B 行 `register_cb(nullptr)` 明确调用 `void register_cb(void(*cb)())`，表达清除回调的意图，编译期就能保证选对重载。
+
+</details>
+
 ---
 
 ## 参考与延伸

@@ -170,6 +170,21 @@ struct Msg {
 ```
 5. `struct X { int a; std::string b; X() = default; };` 是 trivially copyable 吗？为什么？
 
+<details>
+<summary>参考答案</summary>
+
+1. `A() {}` 是**用户提供的**（user-provided）构造函数，即使函数体为空，它也使类型不再是 trivially default constructible、不再 trivial、不再是 POD；`A() = default;`（写在类内、首次声明即 defaulted）则是显式要求编译器生成默认实现，编译器生成的版本不算 user-provided，因此**保持 trivial / POD 性质**。所以保持 trivial 的是 `A() = default;`。另外 `= default` 的默认构造通常还是 `constexpr`/`noexcept` 友好的，且比手写空函数更容易被优化。
+
+2. `memcpy` 的前提是"对象的对象表示就是它的值表示"：trivially copyable 类型没有用户自定义的拷贝/移动/析构，字节序列复制到另一个同类型对象的存储后，得到的是一个等价的有效对象。non-trivial 类型（含 `std::string`、虚函数、用户定义拷贝构造等）内部持有资源指针/不变量，逐字节复制会产生两个对象共享同一资源（双重释放、悬垂指针），或破坏类不变量，因此标准规定对 non-trivially-copyable 类型用 `memcpy` 是未定义行为。
+
+3. 需要建立类不变量或非零初始化的场景：成员需要非默认初值（`Member m{42};`）、需要申请资源/注册/初始化锁、需要保证成员被值初始化（内置类型默认构造时是不确定的，需要 `int x = 0;`）、需要 `explicit` 或有副作用（日志、统计）。这些都无法用 `= default` 表达，只能手写。
+
+4. 隐患是：`Msg() {}` 是用户提供的构造函数，它对 `std::string topic` 会调用默认构造（这没问题），但对 `char buf[64]` **不做任何初始化**——数组元素是未定义值。若把 `Msg` 序列化发到网络或写日志，就会泄漏之前缓冲区里的残留数据（典型的信息泄漏 + 不可复现的脏数据 bug）。修正：用 `Msg() = default;` 加成员默认初始化（`char buf[64]{};`），或在初始化列表里 `Msg() : buf{} {}`。
+
+5. **不是** trivially copyable。决定性因素是 `std::string` 成员：`std::string` 自身有用户定义的拷贝构造、移动构造和析构函数，因此它不是 trivially copyable 类型；一个类只要有任何非 trivially copyable 的非静态成员，它自己就不是 trivially copyable。`X() = default;` 只保证默认构造是平凡的，不影响拷贝相关性质（而且这里默认构造实际上也不平凡——`std::string` 的默认构造本身非 trivial）。
+
+</details>
+
 ---
 
 ## 参考与延伸

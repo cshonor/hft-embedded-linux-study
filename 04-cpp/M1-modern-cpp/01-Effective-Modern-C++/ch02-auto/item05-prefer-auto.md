@@ -54,6 +54,19 @@
 3. 为什么 lambda 的类型无法手写，只能用 `auto`？
 4. 举一个"重构时 auto 比显式类型更省事"的例子。
 
+<details>
+<summary>参考答案</summary>
+
+1. `auto` 的类型需要从初始化表达式推导，没有初始化器就无从推导，所以 `auto x;` 是语法错误（缺初始化器）。这天然杜绝了"未初始化变量"：用 `auto` 声明就必须同时赋初值，因而不会像 `int x;` 那样带着不确定值被使用（这在 HFT 里正是典型的随机 bug 来源）。
+
+2. `vec.size()` 返回 `std::size_t`（通常 64 位）。`unsigned sz = vec.size()` 会把 64 位值截断成 32 位，元素数超过 `UINT_MAX` 时静默回绕，得到一个错误的小尺寸，后续循环/索引越界或漏处理——属于资损级 bug。`auto sz = vec.size()` 直接得到 `std::size_t`，宽度完全匹配，不会发生截断。
+
+3. lambda 表达式的类型是编译器在编译期生成的唯一匿名闭包类型（closure type），它没有名字、只在源码里由该 lambda 表达式本身产生，程序员无法书写这个类型名。因此只能用 `auto` 接住它；若需要传递或存储，就用 `std::function` 或模板参数（后者无类型擦除开销）。
+
+4. 例如把容器从 `std::unordered_map<std::string, Order>` 换成 `std::map<std::string, Order>`，或把返回类型从 `iterator` 改成 `const_iterator`：显式写法需要逐个修改 `std::unordered_map<std::string, Order>::iterator it = m.find(k);` 这样的长类型名；写成 `auto it = m.find(k);` 则一处都不用改，编译器自动跟随新类型。同理，函数返回值从 `int` 改成 `int64_t` 时 `auto` 自动跟随，避免截断。
+
+</details>
+
 ---
 
 ## 参考与延伸

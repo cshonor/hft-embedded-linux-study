@@ -137,6 +137,26 @@ void on_tick(const Tick& t) {
 }
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. `std::thread` 析构时若仍 joinable，直接调用 `std::terminate()`（程序终止），它**不会**帮你等待线程。而 `std::future`（由 `std::async` 产生、且是最后一个引用共享状态的 future）析构时行为分两种：对 `launch::async` 且尚未 `get()`/`wait()` 的 future，析构函数会**隐式阻塞等待任务完成**；对 `launch::deferred` 任务（以及 `std::packaged_task`/`promise` 产生的 future），析构只是丢弃结果、不阻塞。也就是说 `future` 的析构可能"偷偷"同步等待，而 `thread` 的析构是崩溃——两者都不是"什么都不做"。
+
+2. 因为 `std::async` 创建的异步任务需要一个"存放结果/异常"的共享状态，而标准规定：由 `async` 返回的、**最后一个**引用该共享状态的 future 在析构时必须等待任务结束（相当于隐式 `join`）。这样设计可以避免"任务还在跑，其引用的资源（甚至主线程局部对象）已经消失"的悬垂问题——即防止异步任务悄悄变成野线程。代价是：这个隐式等待出现在完全不显眼的地方（一个临时 future 的析构点），容易在热路径造成不可预期的阻塞。
+
+3. 因为 `std::shared_future` 可以被拷贝、多个对象共享同一状态，析构它并不代表"没有人在等这个结果了"——共享状态的生命周期由所有 `shared_future` 共同维持。标准只把"隐式等待"绑定在 `std::async` 返回的那个**唯一的 `std::future`** 上；`shared_future`（以及由 `packaged_task`/`promise` 得到的 future）析构时不承担这个等待义务，只释放自己对共享状态的引用。这也是笔记里"把 future 转成 `shared_future` 存起来"能避免析构阻塞的原因。
+
+4. 问题在于 `std::async(...)` 的**返回值被丢弃**了：它产生的临时 `std::future` 在这一行结束时立即析构，而按标准，这个由 `launch::async` 产生、从未 `get()`/`wait()` 的 future 析构时会**阻塞直到 `check_risk` 执行完毕**。于是"异步风控"完全没异步——`on_tick` 在这一行同步卡住等风控跑完，然后才执行 `process(t)`，热路径被阻塞。修正：把 future 保存下来，转移到后台线程或成员变量/队列中处理（或转成 `shared_future`），确保它不在热路径析构：
+```cpp
+void on_tick(const Tick& t) {
+    futures_.push(std::async(std::launch::async, check_risk, t));  // 存起来，由后台线程收割
+    process(t);
+}
+```
+另需注意：任务里抛出的异常若不 `get()` 就会被静默丢弃，所以后台收割时要取结果。
+
+</details>
+
 ---
 
 ## 参考与延伸

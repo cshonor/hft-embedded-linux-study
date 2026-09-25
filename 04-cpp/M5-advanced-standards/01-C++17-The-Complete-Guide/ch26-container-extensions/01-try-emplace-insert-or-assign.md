@@ -88,3 +88,36 @@ cache.try_emplace(key, [&]() { return expensive_factory(); });
 3. `insert_or_assign` 和 `operator[]` 的区别？
 4. `try_emplace` 的参数是先求值还是延迟构造？如何实现真正延迟？
 5. 配置热更新用哪个方法？合约表初始化用哪个？
+
+<details>
+<summary>参考答案</summary>
+
+1. `emplace(args...)` 会**先把节点构造出来**（用 `args...` 就地构造 `value_type`，或者至少先把参数转成 `value_type`），再去查找 key；如果 key 已存在，这个刚构造出来的节点/临时对象就被白白丢弃。
+当 `value_type` 构造昂贵（要分配内存、打开文件、跑一次工厂函数）时，这就是纯粹的浪费：`emplace` 的开销按「每次都插入」付，而不是按「真正插入」付。
+2. **不构造**。`try_emplace(key, args...)` 的语义是：先查找 `key`，只有 `key` 不存在时才用 `args...` 就地构造 `value_type`；若 `key` 已存在，则什么也不做（不构造、不赋值、不改动已有元素），并返回指向已有元素的迭代器加 `false`。
+这也带来一个额外好处：`try_emplace` 的 `key` 参数类型是 `const key_type&`（不是转发引用），不会因为转发而发生意外的移动。
+3. `insert_or_assign(key, obj)`：**存在则赋值、不存在则插入**（C++17 新增），不会产生默认构造的中间步骤。
+`m[key] = obj` 走的是 `operator[]`：key 不存在时先**默认构造**一个 `value_type` 再赋值，因此要求 `value_type` 可默认构造，且付了一次多余的默认构造 + 赋值；key 存在时则等价于赋值。
+所以：`value_type` 不可默认构造时只能用 `insert_or_assign`；能默认构造时 `insert_or_assign` 也少一次构造。
+4. **先求值**。C++ 的实参求值发生在进入函数体之前，`try_emplace` 只是「key 存在时不再用这些参数去构造 value」，并不意味着参数不求值：
+```cpp
+cache.try_emplace(key, expensive_factory());   // expensive_factory() 一定被调用
+```
+真正要延迟，得先自己判断：
+```cpp
+if (auto it = cache.find(key); it == cache.end()) {
+    cache.emplace(key, expensive_factory());   // 只有缺失时才构造
+}
+```
+或者用 `try_emplace(key)` + `emplace(std::piecewise_construct, ...)` 组合，或让 value 本身持有可调用物按需求值。标准库没有提供「惰性构造」版本的 `try_emplace`。
+5. **配置热更新**用 `insert_or_assign`：存在就覆盖成新配置，不存在就插入。
+```cpp
+configs.insert_or_assign("strategy_1", new_config);
+```
+**合约表初始化**用 `try_emplace`：合约已存在时保持原对象不动（不重复构造、不破坏已有状态），不存在时才构造。
+```cpp
+contracts.try_emplace("AAPL", "AAPL", exchange_id, tick_size);
+```
+一句话区分：`try_emplace` 偏「只在缺失时初始化」，`insert_or_assign` 偏「缺失则插入、已有则覆盖」。
+
+</details>

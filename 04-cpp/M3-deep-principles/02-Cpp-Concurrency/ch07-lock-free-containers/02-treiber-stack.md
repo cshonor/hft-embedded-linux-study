@@ -119,6 +119,22 @@ delete old_head;   // 如果另一个线程的 pop 也在读 old_head->next？
 4. pop 中直接 `delete old_head` 有什么危险？
 5. 为什么 push 前的 `new node` 在 HFT 中应该改成 mempool 分配？
 
+<details>
+<summary>参考答案</summary>
+
+1. push 先令新节点的 `next` 指向观察到的 head，再用 CAS 把 head 从该旧值改为新节点。
+   其他线程可能先改变 head，CAS 失败后会更新 expected 并重连重试，因此必须循环到成功。
+2. release 发布保证节点构造和 `next` 写入先于 head 的发布；读到该值的 acquire pop 与之同步。
+   因此 pop 在成功取得节点后能看到完整初始化；失败路径通常可用更弱的 memory order。
+3. weak 允许在值相等时伪失败，通常在循环内成本更合适；strong 不允许伪失败，但仍会因真实竞争失败。
+   循环 CAS 常用 weak，单次条件转换或伪失败处理不便时用 strong。
+4. 另一个线程可能已经读取 `old_head`，甚至正准备解引用它；当前 pop 立即删除会造成 use-after-free。
+   还可能因地址复用触发 ABA，必须采用 hazard pointer、epoch、引用计数等安全回收机制。
+5. 通用 `new` 可能获取全局分配器锁、触发系统调用或产生不可预测尾延迟。
+   预分配 mempool 可提供有界、局部且稳定的分配路径，并减少碎片；节点复用仍须配合 ABA/安全回收方案。
+
+</details>
+
 ---
 
 ## 参考与延伸

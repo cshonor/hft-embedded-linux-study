@@ -149,6 +149,27 @@ auto pw = std::make_unique<Widget>();
 auto f = std::bind(&Widget::process, pw, _1);
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. 主要缺陷：①**可读性差**：`_1`、`_2` 占位符与实际参数没有名字关联，读代码要先在脑子里做一遍"占位符 ↔ 形参"映射，远不如 `[config](const Tick& t){ check(t, config); }` 直白。②**难以内联**：bind 返回一个类型擦除的、通过 `operator()` 间接调用的对象，编译器通常无法看到最终调用目标，从而阻止内联与后续优化。③**捕获语义反直觉**：默认把实参**按值拷贝**进 bind 对象（想要引用必须显式 `std::ref`/`std::cref`，想要移动必须 `std::move`），而且这些拷贝在 bind 时就发生。④**转发不完美**：调用时把存储的实参一律按左值传出，原始值类别丢失（C++11 的 bind 不保留右值性）。⑤嵌套 bind 会被"立即求值"，需要额外包装才能延迟求值，行为容易搞错；重载函数名/成员函数取地址还要 `static_cast` 消歧义。
+
+2. 因为 C++14 补齐了 lambda 相对 bind 的最后两个短板：**初始化捕获**（可以移动捕获，bind 也能做但要 `std::move` 且写法更绕）和 **`auto` 形参的泛型 lambda**（bind 的"延迟绑定/泛型"能力被覆盖）。在此之后 lambda 在可读性、可内联性、编译错误友好度、捕获控制上全面优于 bind，bind 剩下的适用场景基本只有 C++11 代码库、以及需要"部分应用 + 重排参数"的极少数场合。
+
+3. 因为 HFT 热路径（每 tick 的过滤、聚合、回调分发）对每一次函数调用开销都敏感：lambda 的闭包类型在编译期完全已知，编译器能把它**内联**进调用点，消除函数调用与间接跳转，并进一步做常量传播、循环展开、寄存器分配优化，指令与分支预测都更友好；而 `bind`/`std::function` 通常是不可内联的间接调用（甚至有一次类型擦除的动态分派），在每 tick 执行成千上万次时会累积成可观的延迟。所以在回测/撮合循环里传 lambda 而不是 bind 或函数指针。
+
+4. 编译失败。`std::bind` 会把实参**按值**存进 bind 对象，而 `pw` 是左值 `std::unique_ptr<Widget>`——不可拷贝，bind 内部对 `unique_ptr` 的 decay-copy 无法通过编译。必须显式移动：
+```cpp
+auto f = std::bind(&Widget::process, std::move(pw), _1);  // OK，但要意识到 pw 外部已空
+```
+不过更推荐的现代写法是用初始化捕获的 lambda，语义清晰、可内联、还能按需 `mutable`：
+```cpp
+auto f = [pw = std::move(pw)](auto&& x){ pw->process(std::forward<decltype(x)>(x)); };
+```
+另外要注意：无论哪种写法，`std::move` 之后外层的 `pw` 就变为空，再使用它是未定义行为。
+
+</details>
+
 ---
 
 ## 参考与延伸

@@ -134,6 +134,22 @@ t.join();
 4. `promise::set_exception` 和 `future::get()` 如何配合传递异常？
 5. 为什么 HFT 系统的线程函数必须有顶层 try-catch？
 
+<details>
+<summary>参考答案</summary>
+
+1. joinable 的 `std::thread` 对象析构会调用 `std::terminate()`，即使析构发生在异常展开期间。
+   应使用作用域 guard 确保 join，或采用析构会请求停止并 join 的 `std::jthread`。
+2. 异常若逃出线程入口函数，标准要求调用 `std::terminate()`；它不会自动传播到创建线程。
+   在线程边界捕获后应记录并通过 `promise`/错误通道上报，执行必要清理，再按系统策略退出或触发停机。
+3. `std::async` 捕获任务抛出的异常并存入共享状态。
+   当调用关联 `future::get()` 时异常在调用者线程重新抛出；仅等待就绪不会取得或抛出结果。
+4. producer 在 catch 中调用 `promise.set_exception(std::current_exception())`，使共享状态就绪并保存异常。
+   consumer 调用对应 `future.get()` 时重新抛出同一异常对象；promise 未满足就析构则得到 broken_promise。
+5. 未捕获异常会直接终止整个进程，可能来不及撤单、持久化状态或发出告警。
+   顶层 catch 提供最后的故障边界，用于报告并触发受控 fail-fast/优雅停机，而不是盲目吞掉错误继续交易。
+
+</details>
+
 ---
 
 ## 参考与延伸

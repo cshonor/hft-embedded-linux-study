@@ -122,6 +122,22 @@ std::jthread t([](std::stop_token st){
 4. 为什么 C++ 不提供类似 `pthread_cancel` 的强制取消？
 5. HFT 系统关机时如何用 `stop_token` 实现优雅退出？
 
+<details>
+<summary>参考答案</summary>
+
+1. `jthread` 可自动把 `stop_token` 传给兼容的线程函数，并提供停止源；`thread` 本身没有协作取消机制。
+   joinable 的 `jthread` 析构时先 `request_stop()` 再 `join()`，而 joinable 的 `thread` 析构会调用 `std::terminate()`。
+2. 协作式中断是 worker 在安全点查询 token，自行清理状态并返回。
+   强制终止可能发生在持锁、更新一半或拥有资源时，破坏不变量并泄漏资源，协作退出可避免这些问题。
+3. `stop_source` 持有并触发共享停止状态，`stop_token` 用于观察停止请求。
+   `stop_callback` 在请求发生时执行已注册动作，常用于唤醒阻塞等待或转发取消信号。
+4. C++ 对象的析构、锁释放和异常安全依赖正常控制流，异步杀线程无法保证停在安全点。
+   类似强制取消还会使库函数和用户不变量难以推理，因此标准采用可组合的协作取消。
+5. 控制线程先请求停止并唤醒可能阻塞的 worker；worker 在循环或批次边界检查 token。
+   各线程停止接收新任务、处理或回滚在途工作、刷新必要状态后返回，再由 `jthread` 完成 join。
+
+</details>
+
 ---
 
 ## 参考与延伸

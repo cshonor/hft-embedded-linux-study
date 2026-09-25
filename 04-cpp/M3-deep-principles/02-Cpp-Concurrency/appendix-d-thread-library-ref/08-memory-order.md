@@ -158,6 +158,22 @@ a.fetch_add(1, std::memory_order_seq_cst);  // lock xadd [a], 1（相同）
 4. x86 上 `seq_cst` 的 store 为什么比 `release` 慢？多了什么指令？
 5. HFT 为什么优先用 acquire/release 而非 seq_cst？
 
+<details>
+<summary>参考答案</summary>
+
+1. `relaxed` 仅保证原子性和该对象的 modification order；acquire 约束其后的操作并接收同步发布，release 约束其前的操作并发布。
+   acq_rel 用于 RMW 同时具备两者；consume 只建立依赖序但实现通常提升为 acquire；seq_cst 再要求所有 seq_cst 操作处于单一全序。
+2. 生产者先写普通数据，再对标志做 release store；消费者以 acquire load 读到该发布值后再读数据。
+   该读写形成 synchronizes-with，生产者先前操作 happens-before 消费者后续操作，从而安全发布数据。
+3. relaxed 不建立跨对象的 synchronizes-with，因此不会把周围普通读写按发布-消费关系传递给另一线程。
+   它适合只要求原子计数、统计、唯一序号，或同步关系已由其他原语建立的场景。
+4. 典型 x86-64 主流编译器下，release store 常可编译为普通 `mov`；seq_cst store 还须参与全局总序。
+   实现可能使用带锁的 `xchg`，或 store 配合 `mfence` 等更强序列化手段；具体指令必须看编译器和目标平台。
+5. acquire/release 正好表达单向发布边，可能减少屏障与全局排序，并降低跨核协调成本。
+   但正确性优先：只有能证明同步图时才放宽内存序，收益也依架构和具体操作实测，不能机械替换。
+
+</details>
+
 ---
 
 ## 参考与延伸

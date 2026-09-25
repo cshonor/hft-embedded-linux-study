@@ -60,6 +60,19 @@ auto b = static_cast<bool>(vb[0]);   // 强制转 bool，b 是真正的 bool
 3. `vector<int>` 的 `operator[]` 返回什么类型？为什么 `auto` 安全？
 4. 列举两种你可能在 HFT 代码中遇到的代理类型。
 
+<details>
+<summary>参考答案</summary>
+
+1. `b` 的真实类型是 `std::vector<bool>::reference`（一个代理类，不是 `bool&`，也不是 `bool`）。它内部持有指向位压缩存储的指针和位偏移。风险在于：`vector<bool>` 是按位压缩存储的，`operator[]` 返回的是临时代理对象；若把它绑定给 `auto&&` 或跨越 `vector` 的生命周期/重分配保存（例如 `auto b = v[0];` 之后再 `v.push_back(...)` 或销毁 `v`），代理就指向已失效的存储，读写变成未定义行为。正确做法是立即转成值：`bool b = v[0];` 或 `auto b = static_cast<bool>(v[0]);`。
+
+2. 即"显式写出目标类型、让初始化表达式向它转换"：`auto x = expr;` 改成 `T x = expr;`（或用 `static_cast<T>`）。`auto` 会照抄表达式的推导结果，遇到代理类就原样接住；而显式类型会强制一次转换，把代理对象转成它代理的真实值（`bool`），从而避免"我以为拿到值、实际拿到代理"的陷阱。
+
+3. `std::vector<int>::operator[]` 返回 `int&`（真正的左值引用），不存在代理层，所以 `auto b = v[0];` 会推导出 `int`（按值拷贝一份），`auto& b = v[0];` 得到 `int&`，语义都符合直觉、无隐藏间接层。
+
+4. 常见代理类型：①`std::vector<bool>::reference`（位压缩容器的位代理）；②`std::bitset<N>::reference`；③表达式模板里的中间对象（如 Eigen 的 `CwiseBinaryOp`、部分线性代数库）；④自定义 `string_view`/字段访问器这类"看起来像值、实际持有引用"的轻量包装。共同特征是它们持有所指容器的引用，生命周期必须短于容器。
+
+</details>
+
 ---
 
 ## 参考与延伸

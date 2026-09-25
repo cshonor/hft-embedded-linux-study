@@ -152,6 +152,25 @@ int x = s;
 if (s == 0) { }
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. 三个主要区别：①**作用域**：`enum class` 的枚举量被限定在枚举类型作用域内，必须写 `Side::Buy`，不会泄漏到外层作用域；传统 `enum` 的枚举量直接注入外围作用域（`Buy`）。②**类型安全**：`enum class` 的枚举量不会隐式转换成整型，也不能与整数直接比较/算术；传统 `enum` 会隐式转成整型。③**可指定底层类型**：`enum class` 可以显式指定 underlying type（`enum class E : uint8_t`），传统 enum（C++11 前）由实现决定，C++11 起的 unscoped enum 虽然也能写 `enum E : uint8_t`，但 scoped enum 是这一特性的主要用法。
+
+2. 因为 `enum class` 的枚举量类型就是该枚举类型本身，标准不提供到整型的隐式转换，也没有与整数类型的内建比较运算符。所以 `Side::Buy == 1` 或 `OrderState::Filled == 3` 这类比较在编译期就被拒绝；要做数值比较必须显式 `static_cast`（如 `static_cast<int>(s)`），这一步显式转换会提醒程序员检查语义是否正确。
+
+3. 好处有两点：①**控制存储大小**：可以把状态压缩到 1 字节（`uint8_t`），在协议字段、大规模订单簿状态数组里节省内存、提高 cache 命中率；②**前向声明与 ABI 稳定**：确定了底层类型后，枚举可以前向声明（`enum class E : uint8_t;`），改动枚举量不必重编译所有包含该头文件的代码，二进制布局也稳定可预测。
+
+4. 主要场景：需要枚举量隐式转整型参与数值运算或位标志组合时——例如用 unscoped enum 定义位掩码并直接 `A | B`、`flags & A`，或作为数组下标/整型常量使用而不想到处 `static_cast`；还有需要把它当作"整型常量"喂给只接受 `int` 的旧接口（如某些 C API）时。另外，希望在作用域内直接使用短名字（`Red` 而非 `Color::Red`）也是常见理由。
+
+5. 不能编译。`int x = s;` 失败：scoped enum 不能隐式转换成 `int`，必须写 `int x = static_cast<int>(s);`。`if (s == 0)` 也失败：`Side` 与 `int` 之间没有可用的内建比较运算符。修正后：
+```cpp
+auto v = static_cast<std::underlying_type_t<Side>>(s);
+if (s == static_cast<Side>(0)) { }
+```
+
+</details>
+
 ---
 
 ## 参考与延伸

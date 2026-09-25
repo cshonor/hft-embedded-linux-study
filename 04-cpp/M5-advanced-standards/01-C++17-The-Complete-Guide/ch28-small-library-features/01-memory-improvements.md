@@ -108,3 +108,48 @@ public:
 3. `uninitialized_default_construct` 和 `uninitialized_value_construct` 的区别？
 4. `std::destroy_n` 做什么？
 5. HFT 如何用 `std::align` 做 cache 行对齐内存池？
+
+<details>
+<summary>参考答案</summary>
+
+1. `std::align(alignment, size, ptr, space)` 在给定的缓冲区里**找到第一个满足对齐要求的地址**并返回。
+参数含义：`alignment` —— 要求的对齐值（必须是 2 的幂）；`size` —— 要放置的对象字节数；`ptr` —— 输入/输出的 `void*&`，传入缓冲区当前起始地址，返回对齐后的地址；`space` —— 输入/输出的 `size_t&`，传入缓冲区剩余字节数，返回对齐后剩余的字节数。
+返回值：成功返回对齐后的指针（等于调整后的 `ptr`），空间不够则返回 `nullptr`（并且此时 `ptr`/`space` 不被修改）。
+2. 它解决「**在已有存储里重新创建对象后，如何合法地拿到指向新对象的指针**」的问题。
+典型场景：用 placement new 在旧对象的存储上构造新对象（尤其旧类型是 const 限定的、或含 const 成员/引用成员），或者从 `std::optional`/小缓冲里取出新构造的对象——直接沿用旧指针是未定义行为，编译器可以假定那个指针仍指向旧对象。
+```cpp
+alignas(T) std::byte buf[sizeof(T)];
+T* p = new (buf) T{};
+p->~T();
+T* q = new (buf) T{};      // 复用存储
+q = std::launder(q);       // 告诉编译器：这里现在是新对象
+```
+只有在「存储被复用、旧指针仍要继续使用」这类场合才需要；普通的 placement new 直接用 new 返回的指针即可，不必 `launder`。
+3. 区别在于被构造元素的初始化方式：
+   - `uninitialized_default_construct` 做**默认初始化**（等价于 `::new (p) T;`）：对类类型调用默认构造函数，对 `int`/`double` 等平凡类型**不初始化**，值是未定的。
+   - `uninitialized_value_construct` 做**值初始化**（等价于 `::new (p) T();`）：对类类型调用默认构造函数，对平凡类型**清零**。
+所以想让 `int` 数组拿到确定的 0，要用 `uninitialized_value_construct`（或对应的 `_n` 版本），用 default 版本读到的值是不确定的。
+4. `std::destroy_n(first, n)` 对 `[first, first + n)` 范围内的 n 个已构造对象**按序调用析构函数**（`std::destroy(first, last)` 的计数版本）。
+对平凡类型（trivially destructible）它什么都不做（可被优化掉）；对类类型则逐个析构，但不释放存储——释放仍由 allocator/deallocate 负责。它常与 `uninitialized_*` 系列配对，用于手写容器的析构。
+5. 思路是：先用 `alignas` 让整块缓冲区按 cache line 对齐，再用 `std::align` 在块内逐个切出对齐的对象槽位：
+```cpp
+class AlignedPool {
+    alignas(64) std::byte buf[64 * 1024];   // 64KB，按 cache line 对齐
+    void*  ptr   = buf;
+    std::size_t space = sizeof(buf);
+public:
+    template <typename T>
+    T* alloc() {
+        if (std::align(64, sizeof(T), ptr, space)) {   // 对齐到 64 字节
+            auto p = static_cast<T*>(ptr);
+            ptr   = static_cast<std::byte*>(ptr) + sizeof(T);
+            space -= sizeof(T);
+            return new (p) T();          // placement new，注意自行 destroy
+        }
+        return nullptr;                  // 空间不足
+    }
+};
+```
+这样每个对象都独占一条 cache line（或至少不跨界），避免伪共享（false sharing）；配合 `uninitialized_*` / `destroy_n` 管理生命周期即可。
+
+</details>

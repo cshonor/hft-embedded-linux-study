@@ -61,6 +61,19 @@ decltype(auto) wrapper(T&& x) { return std::forward<T>(x); }
 3. 为什么泛型转发函数推荐用 `decltype(auto)` 而非 `auto` 做返回类型？
 4. `const int& cx = x;` `decltype(cx)` 是什么？
 
+<details>
+<summary>参考答案</summary>
+
+1. `decltype(x)` 是 `int`，`decltype((x))` 是 `int&`。`decltype` 有两条分支：如果参数是一个**未加括号的标识符/类成员访问**，就返回该变量的声明类型；否则把它当作表达式，按表达式的值类别处理——`(x)` 是一个左值表达式，左值表达式的 `decltype` 结果就是 `T&`。所以多一对括号就把语义从"查名字的类型"变成了"查表达式的类型"。
+
+2. `auto` 用模板推导规则：会剥掉引用和顶层 const，且对 braced-init-list 推成 `initializer_list`。`decltype(auto)` 用 `decltype` 的规则（C++14 起）：完全按初始化表达式的形式推导，保留引用性和 cv 限定。例如 `int x; auto a = x;` 得 `int`，而 `decltype(auto) b = x;` 也得 `int`；但 `decltype(auto) c = (x);` 得 `int&`。
+
+3. 因为 `auto` 返回类型会按模板规则剥掉引用和顶层 const，把本该返回的引用变成一份拷贝——对返回容器元素（`c[i]`）或成员引用的转发函数，这会多一次拷贝、甚至改变语义（调用方拿不到原对象的修改）。`decltype(auto)` 精确保留返回表达式的类型与值类别，配合 `std::forward<T>` 才能真正做到完美转发。注意风险：`return (x);` 这种加括号写法会返回局部变量的引用，导致悬垂。
+
+4. `const int&`。`cx` 是一个未加括号的变量名，`decltype` 直接返回它的声明类型，引用和 const 都原样保留。
+
+</details>
+
 ---
 
 ## 参考与延伸

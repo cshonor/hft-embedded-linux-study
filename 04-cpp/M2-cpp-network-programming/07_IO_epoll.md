@@ -201,6 +201,29 @@ int main() {
 4. `EPOLLOUT` 应该常驻注册还是按需注册？为什么？
 5. `epoll_wait` 返回的 fd 已被别的分支 close 了，如何防御？
 
+<details>
+<summary>参考答案</summary>
+
+1. 完整路径分"注册"和"通知"两段：
+   - **注册**：`epoll_ctl(ADD)` → `ep_insert()` 把 fd 包装成 **epitem 插入红黑树**（只做一次，后续 `epoll_wait` 不再传 fd 集合），同时在目标 socket 的等待队列 `sk_wq` 上挂回调 **`ep_poll_callback`**。
+   - **通知**：网卡中断 → softirq `tcp_v4_rcv` → 数据入 `sk_receive_queue` → `sk->sk_data_ready` 触发 `ep_poll_callback` → 把该 epitem **挂进就绪链表 rdllist** → 唤醒阻塞在 `epoll_wait` 的进程。回调发生在软中断上下文，等于"事件一到就已经排好队"。
+   - **取事件**：`epoll_wait` 只把 rdllist 上的事件 `copy_to_user`，不遍历任何 fd，成本与**就绪数**成正比、与注册总数无关。对比 select：每次调用全量拷贝 fd 集 + O(n) 遍历，这个成本每个循环都付一遍。
+
+2. 那 500 字节**再也不会有通知**——ET 只在状态"无→有"的**边沿**上报一次，缓冲里一直有数据不构成新事件。结果：残留字节（以及依赖它才能凑齐的半包）被永久滞留，对端等响应、本端不读，连接**假死**。所以 ET 的硬纪律是：配合非阻塞 fd，**循环 `read` 直到返回 `EAGAIN`**（或 `EPOLLIN` 事件里一次读干），绝不能"一次事件只读一次"。
+
+3. 因为两者的性价比不对等。LT 的优势在**正确性**：漏读一次事件，下次 `epoll_wait` 还会报告（缓冲还有数据），最多是慢一点；`EPOLLOUT` 忘了注销也只是多几次空事件。ET 的优势仅在"`epoll_wait` 返回次数少一点"（每 fd 少几次系统调用），而真实成本在 `read`/`write` 与协议处理上，占比很小；代价却是漏读即死连接、`EPOLLOUT` 注销逻辑更绕、必须强制非阻塞。陈硕《Linux 多线程服务端编程》6.2 的判断：**性能差距微小，正确性差距巨大**，生产系统选 LT。
+
+4. **按需注册**。只在输出 Buffer 有剩余数据时（上次 `write` 部分写或返回 `EAGAIN`）才 `EPOLL_CTL_MOD` 加上 `EPOLLOUT`，写完立刻 `disableWriting()` 注销。因为**发送缓冲几乎总是可写**，常驻注册会让每次 `epoll_wait` 都返回 `EPOLLOUT` → 无意义事件风暴，LT 模式下 CPU 直接打满（这是 LT 最经典的 bug）。muduo 里对应 `Channel::enableWriting()/disableWriting()`。ET 同理：ET 只在"不可写→可写"的边沿触发一次，常驻反而可能错过，也应按需注册 + 循环写到 `EAGAIN`。
+
+5. 核心是**不要把裸 fd 号当身份**——fd 号 close 后会被内核复用，旧事件里的 fd 号可能已经指向一条全新连接，按号查表就会串线。防御组合拳：
+   - `epoll_event.data` 存**指针**（muduo 存 `Channel*`）而非 fd 号，处理前先校验该 Channel 仍有效、`isNoneEvent` 就跳过；
+   - 关闭顺序固定为**先 `EPOLL_CTL_DEL` 再 `close`**；
+   - 用**引用计数/弱引用/世代号（generation）**确认对象在处理期间还活着（`shared_ptr<TcpConnection>` 延长生命期是 muduo 的做法）；
+   - 残留事件的来源常常是 `dup`/`fork` 让 `struct file` 引用未归零（epitem 不注销、通知照发），用 `SOCK_CLOEXEC` 并避免无谓 dup；
+   - 对已关闭 fd 的 I/O 返回 `EBADF`，应当记日志忽略而不是崩溃。
+
+</details>
+
 <a id="pnp-07-refs"></a>
 
 ## 交叉引用

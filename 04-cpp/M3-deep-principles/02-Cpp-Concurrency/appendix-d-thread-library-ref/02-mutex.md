@@ -173,6 +173,22 @@ if (result == -1) {
 4. `recursive_mutex` 什么时候用？为什么不推荐？
 5. `call_once` 解决了什么问题？
 
+<details>
+<summary>参考答案</summary>
+
+1. `lock_guard` 轻量地在构造时锁定、析构时解锁，适合整个作用域持锁且无需手动控制。
+   `unique_lock` 可延迟锁定、解锁/重锁、移动并配合 condition_variable，功能更多且对象状态更复杂。
+2. `scoped_lock` 接收多个 mutex，并采用与 `std::lock` 等价的死锁避免方式取得全部锁。
+   成功后由 RAII 一并释放；标准不规定固定内部算法，调用方也不能在别处违反整体锁协议。
+3. 读锁使用 `std::shared_lock<std::shared_mutex>`，允许多个读者并发持有。
+   写锁使用 `std::unique_lock<std::shared_mutex>` 或 `lock_guard`，独占访问受保护状态。
+4. 仅在同一线程确实需要重入同一把锁、且短期无法重构递归调用关系时使用 `recursive_mutex`。
+   它会掩盖锁层次和职责问题、增加开销，并不能解决跨线程死锁，通常应拆分已持锁/未持锁函数。
+5. `std::call_once` 配合 `once_flag` 保证某个初始化函数在并发调用中成功执行一次，并安全发布结果。
+   若该函数抛异常，此次不算完成，后续调用会重试，避免手写一次性初始化的竞争。
+
+</details>
+
 ---
 
 ## 参考与延伸

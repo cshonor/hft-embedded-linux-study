@@ -144,6 +144,22 @@ t.join();
 4. 如何用 `native_handle()` 实现线程绑核？
 5. 为什么 HFT 热路径用忙等而非 `sleep_for`？
 
+<details>
+<summary>参考答案</summary>
+
+1. 若 `std::thread` 对象析构时仍为 joinable，标准要求调用 `std::terminate()`，不会自动 join 或 detach。
+   应在所有退出路径显式处理，或使用 RAII 包装/`std::jthread`。
+2. `jthread` 析构时会请求停止并 join，还可把关联的 `stop_token` 注入兼容的线程函数。
+   这降低异常路径遗漏 join 的风险，并提供标准协作取消机制。
+3. `yield()` 向调度器提示当前线程愿意让出剩余时间片，但是否切换及何时再次运行都不保证。
+   可在短暂自旋的退避策略中使用，不能作为同步原语或可靠等待机制。
+4. `native_handle()` 取得实现定义的原生句柄，再调用平台 API 设置 CPU affinity，例如 Linux 的 `pthread_setaffinity_np`。
+   代码不可移植，必须检查返回值，并结合 NUMA、隔离核和线程启动时机验证实际绑定结果。
+5. `sleep_for` 可能进入内核并经历定时器粒度、唤醒和重新调度，尾延迟通常不可预测。
+   忙等可持续轮询并快速响应，但独占 CPU、耗能且会干扰同核线程，只适合专用核和极短等待。
+
+</details>
+
 ---
 
 ## 参考与延伸

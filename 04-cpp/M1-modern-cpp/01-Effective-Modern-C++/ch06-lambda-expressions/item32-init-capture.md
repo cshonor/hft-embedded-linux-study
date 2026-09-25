@@ -146,6 +146,23 @@ auto cb = [sp = std::move(sp)]{ sp->do_work(); };
 sp->do_work();
 ```
 
+<details>
+<summary>参考答案</summary>
+
+1. 这是 C++14 的**初始化捕获**（init capture / generalized lambda capture）：等号左边 `sp` 是闭包类型的一个新数据成员的名字，右边 `std::move(sp)` 是在**外围作用域**求值的初始化表达式。语义是：用 `std::move(sp)` 初始化闭包的成员 `sp`，即把外层 `shared_ptr` 的所有权**转移进闭包**（只移动，不增加引用计数），闭包持有它直到闭包销毁。这样闭包能安全地在异步场景里延长对象生命周期，且避免了引用计数递增的原子开销。
+
+2. 它解决了 C++11 捕获列表只能"按值拷贝"或"按引用"的两种固定形式，无法做到：①**移动捕获**（把 `unique_ptr`、大对象、`std::string` 移进闭包而不拷贝）；②**捕获任意表达式的结果**（`[x = compute()]`、`[p = std::make_shared<T>()]`），不必先在外层定义一个具名变量；③给捕获成员起一个与外层不同的名字（`[name = this->name_]`），从而避免 `[=]` 实际只捕获 `this` 的陷阱。
+
+3. 常用变通是"**bind + 按值传参**"：用 `std::bind` 把要移动的对象作为实参塞进 bind 对象，再让 lambda 接收它——
+```cpp
+auto cb = std::bind([](std::unique_ptr<Widget>& p){ p->do_work(); }, std::move(pw));
+```
+或者更直观地：在外层先 `auto tmp = std::move(pw);`，再用一个 `shared_ptr` 或按值捕获的容器把资源"包"起来交给 lambda（代价是引用计数或额外拷贝）。C++14 引入初始化捕获后，这些变通都不再需要。
+
+4. 崩溃（未定义行为）。`[sp = std::move(sp)]` 把外层 `sp` 的所有权**移进闭包**，外层的 `sp` 变成空的 `shared_ptr`（移动后的 shared_ptr 保证为空）。紧接着的 `sp->do_work()` 就是对一个空 `shared_ptr` 解引用——未定义行为，实际通常直接段错误。修正：如果想两边都能用，就按值**拷贝**捕获一份（`[sp]` 或 `[sp = sp]`，引用计数 +1）；如果本意就是把所有权交给闭包，则删掉后面那行，只在闭包内使用 `sp`。
+
+</details>
+
 ---
 
 ## 参考与延伸

@@ -115,3 +115,33 @@ int total = std::accumulate(first10_qty.begin(), first10_qty.end(), 0);
 3. `filter` 和 `transform` 的区别？
 4. 视图会拷贝数据吗？为什么说"零拷贝"？
 5. HFT 中如何用管道提取特定合约的订单价格？
+
+<details>
+<summary>参考答案</summary>
+
+1. 视图（view）的四个关键特性：
+   1. **是 range**：能用 `begin`/`end` 遍历。
+   2. **轻量**：拷贝、移动、析构都是 **O(1)**（只持有引用/迭代器 + 变换函数，`sizeof` 很小），可随便按值传递。
+   3. **惰性（lazy）**：只在被迭代时才计算，不提前跑一遍。
+   4. **非拥有（non-owning）**：不持有元素的所有权，只是对底层范围的一层"看法"（因此底层容器必须活得比视图久）。
+2. `|` 把左边的范围"喂给"右边的**范围适配器闭包（range adaptor closure）**：`r | c` 等价于 `c(r)`。
+`std::views::filter(f)` 这类适配器在只给一个参数时返回一个闭包对象（而不是立即计算），多个闭包还能用 `|` 继续串接（闭包之间也定义了 `|`），于是
+```cpp
+v | views::filter(f) | views::transform(g)   // 等价 transform(g)(filter(f)(v))
+```
+写起来像 Unix 管道，读起来是数据从左到右依次流过。
+3. `filter(pred)` 按谓词**筛选元素**：保留满足条件的，元素个数可能变少，**元素值本身不变**。
+`transform(fn)` 对每个元素做**映射**：元素个数不变，**值被替换成 `fn(elem)` 的结果**。
+一句话：`filter` 决定"要哪些"，`transform` 决定"变成什么"。
+4. 不拷贝。视图只保存**对底层范围的引用/迭代器**以及变换函数本身，不复制任何元素；遍历时才按需逐个元素计算（惰性）。
+所以 `sizeof(view)` 很小、构造是 O(1)、管道组合层数再多也不会产生中间容器——这就是"零拷贝"的含义。
+注意：零拷贝也意味着**底层容器必须比视图活得久**（否则迭代器悬垂），且 `filter` 这类适配器要求被适配的范围至少是 `viewable_range`。
+5. ```cpp
+auto aapl_prices = orders
+    | std::views::filter([](const Order& o) { return o.sym == "AAPL"; })
+    | std::views::transform(&Order::price);
+for (double px : aapl_prices) { /* ... */ }
+```
+全程不创建中间 `vector<Order>` 或 `vector<double>`：一次遍历、按需取值，热路径外的分析/统计代码因此既简洁又不产生额外分配。
+
+</details>

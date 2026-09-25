@@ -175,6 +175,22 @@ void reader() {
 4. `notify_one` 和 `notify_all` 各适合什么场景？
 5. 为什么 HFT 热路径不用 condition_variable？
 
+<details>
+<summary>参考答案</summary>
+
+1. `wait` 必须原子地释放 mutex、阻塞，并在返回前重新加锁；`unique_lock` 支持这种可控解锁/重锁。
+   `lock_guard` 只提供作用域 RAII，没有供 condition_variable 操作的 unlock/lock 接口。
+2. 非谓词版返回后需要调用方自己写 `while (!condition) wait(lk)`。
+   谓词版封装该循环，可正确处理虚假唤醒和通知先于等待，同时使等待条件显式化。
+3. 虚假唤醒是没有对应通知或条件仍不成立时 wait 也可能返回。
+   必须在持有同一 mutex 时重新检查受保护谓词，使用循环或直接调用谓词版 wait。
+4. 一个新任务通常只需唤醒一个可处理它的等待者，用 `notify_one` 避免惊群。
+   状态变化可能让所有等待者继续、或关闭系统时，用 `notify_all`；最终正确性仍由谓词保证。
+5. 阻塞和唤醒可能进入内核、触发上下文切换并争抢 mutex，造成不可预测尾延迟。
+   热路径常在专用核上轮询无锁队列；非关键路径仍可用 condition_variable 节省 CPU。
+
+</details>
+
 ---
 
 ## 参考与延伸
