@@ -21,6 +21,7 @@
 | [2.5](./2.5-交叉编译的找库边界.md) | 交叉编译的找库边界 | find_* 三组开关：PROGRAM=NEVER / LIBRARY、INCLUDE=ONLY + CMAKE_SYSROOT |
 | [2.6](./2.6-本章验收清单.md) | 本章验收清单 | 五条自查 |
 | [2.7](./2.7-与后续衔接.md) | 与后续衔接 | 第 3 章多目录 / 08 模块 sysroot / 缓存对比小练习 |
+| [2.9](./2.9-ABI与交叉编译的边界.md) | ABI 与交叉编译的边界 | ISA / ABI / API 三层分清；为什么"一份二进制到处跑"是假的（含实测） |
 | [2.8](./2.8-本机实测复跑.md) | 本机实测复跑：clang 路线 | 不装 arm-none-eabi-gcc，用 clang 把 Cortex-M 裸机交叉构建跑通，产物与 Makefile 版核对 |
 
 > 快速上手（30 秒版）：`cmake -B build-m3 -DCMAKE_TOOLCHAIN_FILE=arm-none-eabi.cmake && cmake --build build-m3`
