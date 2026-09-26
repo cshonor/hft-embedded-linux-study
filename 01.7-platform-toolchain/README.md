@@ -35,16 +35,16 @@
 | **[CH2](./02-windows-msvc/)** | **Windows / MSVC** | `cl.exe` 长什么样；选项三 language 对照全表；`_MSC_VER` 版本号迷宫；CRT 选型；PDB 与其他两家的调试信息容器 | ⚠️ 成稿待实测 |
 | **[CH3](./03-macos-xcode/)** | **macOS / Xcode** | Xcode 三层结构与被许可卡住的 shim；Apple clang vs LLVM clang；lldb 全程实测；Mach-O 与 dSYM 分离税 | ✅ **本机实测** |
 | **[CH4](./04-linux-gnu/)** | **Linux / GNU** | gcc 其实只是"司机"；`-fanalyzer` 也会沉默；gdb 全程实测；DWARF 就住在 ELF 里；Linux 上写 C 用什么 | ✅ **Pi 实测** |
-| **[CH5](./05-boundary/)** | 平台边界 | MSVC 的 C 标准缺口、`<unistd.h>` 与 Winsock、UTF-8/CRLF、为什么 TLPI 必须在 Linux 上跑 | ✅ 官方核实 |
+| **[CH5](./05-boundary/)** | 平台边界 | MSVC 的 C 标准缺口、`<unistd.h>` 与 Winsock、UTF-8/CRLF、为什么 TLPI 必须在 Linux 上跑、**MSVC 不吃 GNU 扩展怎么办**、**内核模块要真 Linux 吗（WSL2 够不够 + Pi insmod 实测）** | ✅ 官方核实 + Pi 实测 |
 | **[CH6](./06-cheatsheet/)** | 速查表 | 一页纸：三族选项映射、调试命令、常见坑 | — |
-| **—** | [demo/](./demo/) | 60 行的 `ptrbug.c`，当四套编译器 + 三个调试器的共同靶子 | ✅ Mac + Pi |
+| **—** | [demo/](./demo/) | 60 行的 `ptrbug.c`，当四套编译器 + 三个调试器的共同靶子；另有 [`hello-mod/`](./demo/hello-mod/) 最小可加载内核模块 | ✅ Mac + Pi |
 
 > **状态约定：** ✅ 实测 = 在 `demo/` 上真实跑过，输出为真机输出。
 > ⚠️ 成稿待实测 = 依官方文档整理；Windows 工具链**本机与 Pi 均无法执行**，未逐条复跑。
 
 ---
 
-## 先看这四条（全部为实测或官方核实）
+## 先看这五条（全部为实测或官方核实）
 
 | # | 事实 | 出处 | 后果 |
 |---|------|------|------|
