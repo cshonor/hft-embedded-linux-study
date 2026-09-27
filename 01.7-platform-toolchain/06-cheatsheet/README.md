@@ -16,3 +16,4 @@
 | Mac 侧 `-g` 没反应 / lldb 连不上 | [CH3 macOS/Xcode](../03-macos-xcode/README.md) |
 | Linux 侧工具太多搞不清 | [CH4 Linux/GNU](../04-linux-gnu/README.md) |
 | 这段代码为什么在 VS 里编译不过 | [CH5 平台边界](../05-boundary/README.md) |
+| 报错编号看不懂（`C2065` / `LNK2019` / `LNK2005`） | [2.6 错误编号速查](../02-windows-msvc/2.6-错误编号速查.md) |
