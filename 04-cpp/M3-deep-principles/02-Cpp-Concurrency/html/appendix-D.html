@@ -516,6 +516,21 @@ t.join();
 <li>如何用 <code class="c">native_handle()</code> 实现线程绑核？</li>
 <li>为什么 HFT 热路径用忙等而非 <code class="c">sleep_for</code>？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>若 <code class="c">std::thread</code> 对象析构时仍为 joinable，标准要求调用 <code class="c">std::terminate()</code>，不会自动 join 或 detach。
+   应在所有退出路径显式处理，或使用 RAII 包装/<code class="c">std::jthread</code>。</li>
+<li><code class="c">jthread</code> 析构时会请求停止并 join，还可把关联的 <code class="c">stop_token</code> 注入兼容的线程函数。
+   这降低异常路径遗漏 join 的风险，并提供标准协作取消机制。</li>
+<li><code class="c">yield()</code> 向调度器提示当前线程愿意让出剩余时间片，但是否切换及何时再次运行都不保证。
+   可在短暂自旋的退避策略中使用，不能作为同步原语或可靠等待机制。</li>
+<li><code class="c">native_handle()</code> 取得实现定义的原生句柄，再调用平台 API 设置 CPU affinity，例如 Linux 的 <code class="c">pthread_setaffinity_np</code>。
+   代码不可移植，必须检查返回值，并结合 NUMA、隔离核和线程启动时机验证实际绑定结果。</li>
+<li><code class="c">sleep_for</code> 可能进入内核并经历定时器粒度、唤醒和重新调度，尾延迟通常不可预测。
+   忙等可持续轮询并快速响应，但独占 CPU、耗能且会干扰同核线程，只适合专用核和极短等待。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -730,6 +745,21 @@ if (result == -1) {
 <li><code class="c">recursive_mutex</code> 什么时候用？为什么不推荐？</li>
 <li><code class="c">call_once</code> 解决了什么问题？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">lock_guard</code> 轻量地在构造时锁定、析构时解锁，适合整个作用域持锁且无需手动控制。
+   <code class="c">unique_lock</code> 可延迟锁定、解锁/重锁、移动并配合 condition_variable，功能更多且对象状态更复杂。</li>
+<li><code class="c">scoped_lock</code> 接收多个 mutex，并采用与 <code class="c">std::lock</code> 等价的死锁避免方式取得全部锁。
+   成功后由 RAII 一并释放；标准不规定固定内部算法，调用方也不能在别处违反整体锁协议。</li>
+<li>读锁使用 <code class="c">std::shared_lock&lt;std::shared_mutex&gt;</code>，允许多个读者并发持有。
+   写锁使用 <code class="c">std::unique_lock&lt;std::shared_mutex&gt;</code> 或 <code class="c">lock_guard</code>，独占访问受保护状态。</li>
+<li>仅在同一线程确实需要重入同一把锁、且短期无法重构递归调用关系时使用 <code class="c">recursive_mutex</code>。
+   它会掩盖锁层次和职责问题、增加开销，并不能解决跨线程死锁，通常应拆分已持锁/未持锁函数。</li>
+<li><code class="c">std::call_once</code> 配合 <code class="c">once_flag</code> 保证某个初始化函数在并发调用中成功执行一次，并安全发布结果。
+   若该函数抛异常，此次不算完成，后续调用会重试，避免手写一次性初始化的竞争。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -971,6 +1001,21 @@ value.notify_one();  // 唤醒一个等待者
 <li><code class="c">atomic_flag</code> 和 <code class="c">atomic&lt;bool&gt;</code> 有什么区别？哪个保证无锁？</li>
 <li>为什么 HFT 用 <code class="c">acquire/release</code> 而非 <code class="c">seq_cst</code>？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">load</code> 原子读取，<code class="c">store</code> 原子写入；<code class="c">exchange</code> 原子写新值并返回旧值。
+   <code class="c">fetch_add</code> 原子加法并返回修改前的值，后二者都是 read-modify-write 操作。</li>
+<li><code class="c">relaxed</code> 只提供该原子对象的原子性和 modification order；acquire 禁止其后的操作越过并接收 release 发布的数据。
+   release 发布之前的操作；acq_rel 兼具两者；consume 依赖序且实践中常按 acquire 实现；seq_cst 还建立单一全序。</li>
+<li>weak CAS 允许值相等时伪失败，适合循环重试；strong 仅在比较不等或竞争变化时失败。
+   两者失败时都会把 observed value 写回 expected，且失败内存序不能是 release/acq_rel。</li>
+<li><code class="c">atomic_flag</code> 是最小的原子布尔标志，标准保证其操作无锁；它主要提供 test-and-set/clear 接口。
+   <code class="c">atomic&lt;bool&gt;</code> 有常规 load/store/exchange/CAS，但标准不保证其实现一定 lock-free，可查询 <code class="c">is_lock_free()</code>。</li>
+<li>当算法只需要明确的发布-消费边时，acquire/release 已提供正确 happens-before，表达的约束更精确。
+   <code class="c">seq_cst</code> 的全局总序在部分架构/操作上需要更强屏障；采用弱序前必须证明正确，并以目标平台实测收益。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1177,6 +1222,21 @@ auto worker = [&amp;](int result) {
 <li>如何通过 <code class="c">future</code> 传递异常？在哪个点重新抛出？</li>
 <li>future 有哪些局限？为什么 HFT 热路径不用 future？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">promise&lt;T&gt;</code> 是生产端，向共享状态写入值或异常；<code class="c">future&lt;T&gt;</code> 是对应的一次性消费端。
+   先由 <code class="c">promise.get_future()</code> 取得 future，生产者调用 <code class="c">set_value</code>/<code class="c">set_exception</code>，消费者 wait 或 get。</li>
+<li><code class="c">launch::async</code> 要求异步执行，<code class="c">launch::deferred</code> 推迟到等待/取值线程首次触发时同步执行。
+   默认策略是两者组合，由实现选择，因此任务可能并未并发运行；所谓“三种”指这两种显式策略及默认组合。</li>
+<li><code class="c">future</code> 只可移动，通常只能调用一次 <code class="c">get()</code>；<code class="c">shared_future</code> 可复制并允许多个观察者反复取得共享结果。
+   对返回引用或非复制类型等情形仍须遵守对应 <code class="c">get</code> 语义和对象寿命。</li>
+<li>producer 可直接抛出到 <code class="c">packaged_task</code>/<code class="c">async</code> 的共享状态，或用 <code class="c">promise.set_exception(current_exception())</code> 保存异常。
+   consumer 在 <code class="c">future::get()</code> 时重新抛出；单纯 <code class="c">wait()</code> 只等待就绪，不传播该异常。</li>
+<li>future 的共享状态可能分配内存，等待可能阻塞，<code class="c">async</code> 的调度策略也不完全可控，且标准 future 缺少完善 continuation 组合。
+   这些都会增加热路径开销和尾延迟；HFT 常用预分配 SPSC、序号或回调式固定流水线。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1362,6 +1422,21 @@ void reader() {
 <li><code class="c">notify_one</code> 和 <code class="c">notify_all</code> 各适合什么场景？</li>
 <li>为什么 HFT 热路径不用 condition_variable？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">wait</code> 必须原子地释放 mutex、阻塞，并在返回前重新加锁；<code class="c">unique_lock</code> 支持这种可控解锁/重锁。
+   <code class="c">lock_guard</code> 只提供作用域 RAII，没有供 condition_variable 操作的 unlock/lock 接口。</li>
+<li>非谓词版返回后需要调用方自己写 <code class="c">while (!condition) wait(lk)</code>。
+   谓词版封装该循环，可正确处理虚假唤醒和通知先于等待，同时使等待条件显式化。</li>
+<li>虚假唤醒是没有对应通知或条件仍不成立时 wait 也可能返回。
+   必须在持有同一 mutex 时重新检查受保护谓词，使用循环或直接调用谓词版 wait。</li>
+<li>一个新任务通常只需唤醒一个可处理它的等待者，用 <code class="c">notify_one</code> 避免惊群。
+   状态变化可能让所有等待者继续、或关闭系统时，用 <code class="c">notify_all</code>；最终正确性仍由谓词保证。</li>
+<li>阻塞和唤醒可能进入内核、触发上下文切换并争抢 mutex，造成不可预测尾延迟。
+   热路径常在专用核上轮询无锁队列；非关键路径仍可用 condition_variable 节省 CPU。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1562,6 +1637,21 @@ for (auto&amp; t : threads) t.join();
 <li>如何用信号量实现"资源池"模式？</li>
 <li>为什么 HFT 热路径不用信号量？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">counting_semaphore&lt;LeastMaxValue&gt;</code> 保存多个 permit，计数可大于一；<code class="c">binary_semaphore</code> 是最大值至少为一的特化别名。
+   二值信号量适合事件/单个 permit，计数信号量适合有 N 个并发配额的资源。</li>
+<li>mutex 表示具有所有权的互斥临界区，通常必须由加锁线程解锁；信号量表示可由不同线程 acquire/release 的计数许可。
+   限流、资源池、生产消费计数或线程间通知更适合信号量，而共享对象不变量通常用 mutex。</li>
+<li><code class="c">release(n)</code> 原子增加 n 个 permit，并可使至多相应数量的等待 acquire 获得许可后继续。
+   它不保证具体唤醒顺序或恰好立即运行 n 个线程，且不能让计数超过实现允许的最大值。</li>
+<li>用初值 N 表示 N 个可用资源；取得资源前 <code class="c">acquire()</code>，归还资源时 <code class="c">release()</code>。
+   应用 RAII guard 确保异常路径也归还 permit，并另行保护具体资源的选取与状态。</li>
+<li>permit 不足时 acquire 可能阻塞并触发调度，竞争计数也会形成共享原子热点。
+   HFT 热路径更偏好固定资源归属、预分配和无等待数据通道，以获得稳定尾延迟。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1778,6 +1868,21 @@ void compute_worker(int id) {
 <li><code class="c">barrier</code> 如何实现"多阶段流水线同步"？</li>
 <li>为什么 HFT 系统启动用 <code class="c">latch</code> 而热路径不用 <code class="c">barrier</code>？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">latch</code> 是一次性的递减门闩，计数到零后永久开放；<code class="c">barrier</code> 按 phase 重复使用，每轮参与者到齐后进入下一轮。
+   barrier 还可在每个 phase 完成时执行 completion function，并允许参与者永久退出后续阶段。</li>
+<li>当当前 phase 的 expected count 降到零时，completion step 在释放该阶段等待者之前执行一次。
+   具体由哪个参与调用的线程执行不应依赖；若无人调用 wait 时是否执行还受标准版本/实现规则影响。</li>
+<li>可让 N 个 worker 初始化后各自调用同一 <code class="c">latch(N)</code> 的 <code class="c">count_down_and_wait()</code>，最后一个到达后所有线程继续。
+   若必须由主线程控制发令，可另设 ready latch 和 start latch：主线程等 ready 后再放开 start。</li>
+<li>所有参与线程完成阶段工作后调用 <code class="c">arrive_and_wait()</code>；最后到达触发 completion 并开始下一 phase。
+   每一轮自动重置 expected count，因此可同步“计算—合并—再计算”等重复阶段。</li>
+<li>启动初始化只发生一次，latch 能确保依赖就绪后统一放行，开销不在持续交易路径上。
+   热路径 barrier 让最快线程等待最慢线程，形成同步尖峰和尾延迟传播，固定异步流水线通常更合适。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -2009,6 +2114,21 @@ a.fetch_add(1, std::memory_order_seq_cst);  // lock xadd [a], 1（相同）
 <li>x86 上 <code class="c">seq_cst</code> 的 store 为什么比 <code class="c">release</code> 慢？多了什么指令？</li>
 <li>HFT 为什么优先用 acquire/release 而非 seq_cst？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">relaxed</code> 仅保证原子性和该对象的 modification order；acquire 约束其后的操作并接收同步发布，release 约束其前的操作并发布。
+   acq_rel 用于 RMW 同时具备两者；consume 只建立依赖序但实现通常提升为 acquire；seq_cst 再要求所有 seq_cst 操作处于单一全序。</li>
+<li>生产者先写普通数据，再对标志做 release store；消费者以 acquire load 读到该发布值后再读数据。
+   该读写形成 synchronizes-with，生产者先前操作 happens-before 消费者后续操作，从而安全发布数据。</li>
+<li>relaxed 不建立跨对象的 synchronizes-with，因此不会把周围普通读写按发布-消费关系传递给另一线程。
+   它适合只要求原子计数、统计、唯一序号，或同步关系已由其他原语建立的场景。</li>
+<li>典型 x86-64 主流编译器下，release store 常可编译为普通 <code class="c">mov</code>；seq_cst store 还须参与全局总序。
+   实现可能使用带锁的 <code class="c">xchg</code>，或 store 配合 <code class="c">mfence</code> 等更强序列化手段；具体指令必须看编译器和目标平台。</li>
+<li>acquire/release 正好表达单向发布边，可能减少屏障与全局排序，并降低跨核协调成本。
+   但正确性优先：只有能证明同步图时才放宽内存序，收益也依架构和具体操作实测，不能机械替换。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>

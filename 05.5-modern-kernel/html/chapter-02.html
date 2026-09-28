@@ -284,6 +284,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-06"><span class="n">06</span>06-cfs-runtime-mechanics</a>
           <a href="#s-07"><span class="n">07</span>07-red-black-tree</a>
           <a href="#s-08"><span class="n">08</span>08-realtime-scheduling</a>
+          <a href="#s-08-1"><span class="n">08.1</span>08.1-sched-class-and-vfs</a>
           <a href="#s-09"><span class="n">09</span>09-sched-class-and-vfs</a>
           <a href="#s-10"><span class="n">2.10</span>调度类 `struct sched_class` 总览</a>
     </nav>
@@ -312,7 +313,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT</div>
           <h1>Ch2 调度器 (CFS → EEVDF)</h1>
           <div class="meta">
-<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 2</b></span><span>sections <b>11</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 2</b></span><span>sections <b>12</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -2332,6 +2333,164 @@ chrt -p &lt;pid&gt;        # 查询某进程的调度策略
 <li><strong>RR：会切。</strong> A 时间片（默认 100ms）耗尽就排到同优先级队尾，B 上——但注意只限同优先级之间；更高优先级任务到来时不管时间片剩多少直接抢</li>
 </ul>
 </details>
+      </section>
+      <section class="section" id="s-08-1">
+        <div class="sec-head"><div class="sec-no">08.1</div><h2>Linux&quot;一切皆文件&quot;，调度类算不算文件？ — 修正版</h2></div>
+<blockquote>
+<p>结论先行：<strong>调度类本身不是文件，是内核内存里的纯虚函数表；但调度器的可调参数（全局变量）通过 sysfs/kernfs 伪文件暴露成文件接口。</strong>
+注意一个关键区分：<code class="c">sched_class</code> 定义<strong>行为</strong>（怎么调度），全局变量定义<strong>参数</strong>（调度多重）。</p>
+</blockquote>
+<hr />
+<h3>一、先分清两个概念</h3>
+<p><strong>1. 调度类（sched_class）</strong></p>
+<p>内核 C 代码里的结构体对象，驻留内核虚拟内存。看它的定义（<code class="c">kernel/sched/sched.h</code>）：</p>
+<pre class="code" data-label="C"><code class="c">struct sched_class {
+    void (*enqueue_task)(...);
+    void (*dequeue_task)(...);
+    struct task_struct *(*pick_next_task)(...);
+    void (*task_tick)(...);
+    void (*switched_to)(...);
+    ...
+};
+</code></pre>
+<p>它是个<strong>纯虚函数表（vtable）</strong>——字段几乎全是函数指针，<strong>不存放任何可调参数</strong>。四个实例：</p>
+<ul>
+<li><code class="c">stop_sched_class</code>（stop 任务，最高优先级，迁移用）</li>
+<li><code class="c">dl_sched_class</code>（Deadline，EDF）</li>
+<li><code class="c">rt_sched_class</code>（实时，FIFO/RR）</li>
+<li><code class="c">fair_sched_class</code>（CFS/EEVDF）</li>
+</ul>
+<blockquote>
+<p>内核运行时数据结构，不是磁盘文件，不是 inode，不能直接 open/read/write。
+→ <strong>它本身不算文件。</strong></p>
+</blockquote>
+<p><strong>2. 可调参数是全局变量，不在 sched_class 里</strong></p>
+<p>CFS 的参数是 <code class="c">kernel/sched/fair.c</code> 里的<strong>静态全局变量</strong>：</p>
+<pre class="code" data-label="C"><code class="c">unsigned int sysctl_sched_latency = 6000000;          /* 6ms */
+unsigned int sysctl_sched_min_granularity;
+static unsigned int sysctl_sched_cfs_bandwidth_slice = 5000;  /* 5ms */
+</code></pre>
+<p>写 <code class="c">/sys/kernel/sched/latency_ns</code> 改的就是这些全局变量——跟 <code class="c">sched_class</code> 结构体没有关系。</p>
+<p><strong>3. sysfs（/sys）伪文件</strong></p>
+<p>"一切皆文件" ≠ 所有内核内部数据结构本身就是磁盘文件。真正含义：<strong>很多内核对象对外包装成文件接口，用 read/write 系统调用交互</strong>。</p>
+<p>调度相关接口：</p>
+<ul>
+<li><code class="c">/sys/kernel/sched/latency_ns</code>、<code class="c">cfs_bandwidth_slice_ns</code> 等 —— CFS 参数（<strong>6.6+ 内核才有</strong>；老内核在 <code class="c">/proc/sys/kernel/sched_*</code>，sysctl 接口）</li>
+<li><code class="c">/sys/kernel/sched/features</code> —— 运行时开关 CFS 特性</li>
+<li><code class="c">/sys/devices/system/cpu/</code> —— CPU 拓扑/热迁移</li>
+<li>cgroup v2 的 <code class="c">cpu.max</code> / <code class="c">cpu.weight</code> —— cgroupfs 伪文件</li>
+</ul>
+<p>这些是伪文件：open 时内核通过 show 回调从内存现场取值；write 走 store 回调直接改内核内存里的运行参数。</p>
+<hr />
+<h3>二、VFS 是怎么把 sysfs 伪文件和调度参数挂钩的</h3>
+<p>以 write <code class="c">/sys/kernel/sched/latency_ns</code> 为例，完整调用链：</p>
+<pre class="code" data-label="code"><code class="c">write(2)
+ → ksys_write → vfs_write → call_write_iter
+   → kernfs_fop_write_iter          /* sysfs 的 file_operations */
+     → sysfs_kf_write
+       → attr-&gt;store()              /* 注册时给的回调 */
+         → 直接给 sysctl_sched_latency 赋值，完事
+</code></pre>
+<p>注册侧，内核用 <code class="c">struct kobj_attribute</code> 把变量和 show/store 回调绑在一起：</p>
+<pre class="code" data-label="C"><code class="c">static ssize_t latency_ns_store(struct kobject *kobj,
+        struct kobj_attribute *attr, const char *buf, size_t count)
+{
+    unsigned long val;
+    /* sscanf → 写 sysctl_sched_latency */
+}
+
+static struct kobj_attribute latency_ns_attr =
+    __ATTR(latency_ns, 0644, latency_ns_show, latency_ns_store);
+</code></pre>
+<p>底层是 <strong>kernfs</strong>（3.14 从 sysfs 拆出来的通用层）：<code class="c">/sys/kernel/sched/</code> 下每个文件对应一个 <code class="c">kernfs_node</code>；open 时才按需分配内存中的 inode/dentry，<code class="c">stat</code> 看到的 inode 号是临时的。read 每次 show 现场从全局变量取值，write 走 store 直接改内存——<strong>断电即失，重启恢复默认</strong>。</p>
+<hr />
+<h3>三、HFT/低延迟真正相关的"调度类文件接口"</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>接口</th>
+<th>作用</th>
+<th>HFT 用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">/sys/kernel/sched/features</code></td>
+<td>运行时开关 CFS 特性（NOHZ_IDLE、TTWU_QUEUE 等）</td>
+<td>排查调度抖动：<code class="c">grep -v NOHZ /sys/kernel/sched/features</code></td>
+</tr>
+<tr>
+<td>cgroup v2 <code class="c">cpu.max</code></td>
+<td>写入直接改 <code class="c">cfs_bandwidth</code> 的 quota/period</td>
+<td>交易进程资源隔离</td>
+</tr>
+<tr>
+<td>cgroup v2 <code class="c">cpu.weight</code></td>
+<td>改 <code class="c">task_group</code> 权重</td>
+<td>关键进程抢占保障</td>
+</tr>
+<tr>
+<td><code class="c">/proc/sys/kernel/sched_rt_runtime_us</code></td>
+<td>RT 带宽，默认 950000/1000000</td>
+<td><strong>SCHED_FIFO 也会被节流 5%</strong>，低延迟场景常写 -1 关掉</td>
+</tr>
+</tbody>
+</table></div>
+<p>注意：<strong>给任务设置调度类本身不是文件接口</strong>，走 <code class="c">sched_setscheduler(2)</code> 系统调用（<code class="c">chrt</code> 命令的底层）。"文件化"只覆盖参数调优，不覆盖策略指定。</p>
+<hr />
+<h3>四、对比表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>对象</th>
+<th>本身是不是文件</th>
+<th>是否提供文件接口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct sched_class</code></td>
+<td>❌ 纯 vtable，内核内存</td>
+<td>⚠️ 类本身没有；<strong>参数</strong>（全局变量）经 sysfs 可改</td>
+</tr>
+<tr>
+<td>调度参数全局变量</td>
+<td>❌ 静态全局变量</td>
+<td>✅ sysfs/sysctl 伪文件</td>
+</tr>
+<tr>
+<td>进程 task_struct</td>
+<td>❌ 内存结构体</td>
+<td>✅ <code class="c">/proc/[pid]/*</code></td>
+</tr>
+<tr>
+<td>磁盘普通文件</td>
+<td>✅ 真正磁盘文件</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>socket</td>
+<td>❌ socket 内核对象</td>
+<td>✅ fd 指向 <code class="c">struct file</code>，<code class="c">f_op</code> 是 <code class="c">socket_file_ops</code>。<strong>无路径无磁盘 inode</strong>（AF_UNIX bind 到路径才有）；连"伪文件"都算不上，只借了 fd 这层接口</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>五、一句话理解"一切皆文件"的真正边界</h3>
+<blockquote>
+<p>凡能挂上 <code class="c">struct file</code> + <code class="c">file_operations</code>、拿到 fd 的东西，对外就表现成文件。
+内核内部的结构体、算法、调度类、进程、socket、信号量：本身不是文件。
+proc、sysfs、cgroupfs 全是内存文件系统，断电消失，只是把内核内存的数据伪装成文件给用户态。</p>
+</blockquote>
+<p><strong>常见误区：</strong>
+- ❌ 内核里每样东西，硬盘上都有对应文件存着。
+- ✅ 很多内核资源<strong>抽象成文件系统接口</strong>统一访问，不一定落磁盘。</p>
+<hr />
+<h3>小 quiz</h3>
+<p><strong>问：修改 <code class="c">/sys/kernel/sched/*</code>，写进去数值，是写到硬盘吗？</strong></p>
+<p>答：不是。write(2) 经 VFS → kernfs → <code class="c">attr-&gt;store()</code> 回调，直接修改 <code class="c">kernel/sched/fair.c</code> 里的全局变量（如 <code class="c">sysctl_sched_latency</code>）；重启全部恢复默认，不会持久化。</p>
+<p><strong>问：<code class="c">/sys/kernel/sched/latency_ns</code> 写的值最终落在 <code class="c">sched_class</code> 结构体的哪个成员里？</strong></p>
+<p>答：哪个都不落。<code class="c">sched_class</code> 是纯函数表，没有参数成员；写的是独立的静态全局变量 <code class="c">sysctl_sched_latency</code>。</p>
       </section>
       <section class="section" id="s-09">
         <div class="sec-head"><div class="sec-no">09</div><h2>Linux&quot;一切皆文件&quot;，调度类算不算文件？ — 修正版</h2></div>

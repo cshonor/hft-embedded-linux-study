@@ -475,6 +475,30 @@ static_assert(!HasValueType&lt;int&gt;::value);                 // false
 <li><code class="c">bool_constant&lt;true&gt;</code> 和 <code class="c">true_type</code> 是什么关系？</li>
 <li><code class="c">void_t</code> 的 SFINAE 原理是什么？检测 <code class="c">T::value_type</code> 存在性的写法？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>按 C++17 定义，<strong>聚合体</strong>（aggregate）要求：无用户声明或继承的构造函数、无 private 或 protected 非静态数据成员、无虚函数、无虚基类或私有/保护基类。<code class="c">is_aggregate&lt;T&gt;</code> 为 <code class="c">true</code> 当且仅当 <code class="c">T</code>（数组则看其元素类型）满足这一组条件。
+所以<strong>有用户定义构造函数的类不是聚合体</strong>，<code class="c">is_aggregate_v&lt;NonPod&gt;</code> 为 <code class="c">false</code>，也就不能用聚合初始化 <code class="c">T{...}</code> 逐成员赋值。</li>
+<li>该 trait 为 <code class="c">true</code> 的前提是：<code class="c">T</code> 是 trivially copyable，且任意两个值相等的对象具有相同的<strong>对象表示</strong>（object representation）；否则为 <code class="c">false</code>。
+典型的 <code class="c">false</code> 情形：结构体里有 padding（<code class="c">char c; int i;</code> 中间 3 字节）、含 <code class="c">bool</code> 或位域等存在多余位表示的类型、浮点类型（NaN、±0 有多种字节表示）。
+padding 导致 <code class="c">memcmp</code> 不可靠，是因为 padding 字节的内容<strong>未指定</strong>（编译器不保证清零），两个逻辑上相等的对象 padding 字节可能不同，<code class="c">memcmp</code> 却会判为不等。</li>
+<li><code class="c">result_of&lt;F(Args...)&gt;</code> 用「函数类型拼接」的语法把可调用物和参数拼成一个类型，写起来别扭；而且在参数是引用/右值引用、<code class="c">F</code> 是成员函数指针等场景下推导规则几经修补，语义不够清晰。
+<code class="c">invoke_result&lt;F, Args...&gt;</code> 参数分开传，直接对应 <code class="c">std::invoke</code> 的 <strong>INVOKE</strong> 语义，语义明确，也能覆盖成员函数指针和数据成员指针。
+<code class="c">result_of</code> 在 C++17 被弃用、C++20 被移除，新代码一律写 <code class="c">std::invoke_result_t&lt;F, Args...&gt;</code>。</li>
+<li>C++17 起 <code class="c">std::bool_constant&lt;B&gt;</code> 就是 <code class="c">std::integral_constant&lt;bool, B&gt;</code> 的别名模板，而 <code class="c">std::true_type</code> 被定义为 <code class="c">std::bool_constant&lt;true&gt;</code>、<code class="c">std::false_type</code> 为 <code class="c">std::bool_constant&lt;false&gt;</code>。
+所以 <code class="c">bool_constant&lt;true&gt;</code> 和 <code class="c">true_type</code> 是<strong>同一个类型</strong>（<code class="c">bool_constant&lt;false&gt;</code> 与 <code class="c">false_type</code> 同理）。写 <code class="c">bool_constant&lt;B&gt;</code> 的好处是能在泛型代码里直接用布尔值参数化，不必再套 <code class="c">integral_constant&lt;bool, B&gt;</code>。</li>
+<li><code class="c">std::void_t&lt;Args...&gt;</code> 是别名模板，展开后恒为 <code class="c">void</code>；关键在于它<strong>在模板实参替换的语境中</strong>展开，所以若实参（如 <code class="c">typename T::value_type</code>）不存在，替换失败属于 SFINAE（软错误），该偏特化被静默丢弃，匹配回主模板。
+检测 <code class="c">T::value_type</code> 存在性的标准写法：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename, typename = std::void_t&lt;&gt;&gt;
+struct HasValueType : std::false_type {};
+
+template &lt;typename T&gt;
+struct HasValueType&lt;T, std::void_t&lt;typename T::value_type&gt;&gt; : std::true_type {};
+</code></pre>
+<p><code class="c">std::vector&lt;int&gt;</code> 有 <code class="c">value_type</code> 于是命中偏特化为 <code class="c">true</code>；<code class="c">int</code> 没有则 SFINAE 落到主模板为 <code class="c">false</code>。</p>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>is_invocable 系列</h2></div>
@@ -538,6 +562,38 @@ void for_each_int(F f, int x) { f(x); }
 <li>为什么 <code class="c">is_invocable</code> 基于 <code class="c">std::invoke</code> 而不是直接 <code class="c">f(args...)</code>？</li>
 <li>C++17 模板约束用 <code class="c">is_invocable</code> + <code class="c">enable_if</code>，C++20 的更好方式是什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">is_invocable_v&lt;F, int&gt;</code> 只判断「<code class="c">F</code> 能否以 <code class="c">int</code> 实参被调用」（按 INVOKE 语义），<strong>不关心返回类型</strong>，能调用就为 <code class="c">true</code>（返回 <code class="c">void</code> 也算）。
+<code class="c">is_invocable_r_v&lt;bool, F, int&gt;</code> 在「能调用」之上<strong>还要求返回类型可隐式转换为 <code class="c">bool</code></strong>；返回 <code class="c">void</code> 会判为 <code class="c">false</code>。
+例：<code class="c">pred</code> 返回 <code class="c">bool</code>，则 <code class="c">is_invocable_r_v&lt;bool, decltype(pred), int&gt;</code> 为 <code class="c">true</code>，而 <code class="c">is_invocable_r_v&lt;std::string, decltype(pred), int&gt;</code> 为 <code class="c">false</code>；<code class="c">calc</code> 返回 <code class="c">double</code> 时 <code class="c">is_invocable_r_v&lt;int, decltype(calc), int&gt;</code> 为 <code class="c">true</code>（<code class="c">double</code> 可隐式转 <code class="c">int</code>）。</li>
+<li>按 INVOKE 语义，成员函数指针的第一个「参数」是<strong>对象</strong>：对象本身、引用、指针或智能指针都可以。</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">struct Foo { bool bar(int) const; };
+static_assert(std::is_invocable_v&lt;decltype(&amp;Foo::bar), Foo, int&gt;);
+static_assert(std::is_invocable_v&lt;decltype(&amp;Foo::bar), Foo&amp;, int&gt;);
+static_assert(std::is_invocable_v&lt;decltype(&amp;Foo::bar), const Foo*, int&gt;);
+static_assert(std::is_invocable_r_v&lt;bool, decltype(&amp;Foo::bar), Foo&amp;, int&gt;);
+</code></pre>
+<p>注意要用 <code class="c">decltype(&amp;Foo::bar)</code> 取成员函数指针类型，参数列表里除成员函数自身的参数外还要补上对象（不写 <code class="c">this</code>）。
+3. 当 <code class="c">F</code> 能以给定参数被调用，且该调用表达式被判定为<strong>不抛异常</strong>（<code class="c">noexcept</code>）时为 <code class="c">true</code>。
+也就是要求可调用物本身的调用运算符/函数带 <code class="c">noexcept</code>，并且涉及的实参转换、返回值的构造与析构等环节都是 <code class="c">noexcept</code>；任一环节可能抛异常就为 <code class="c">false</code>。
+典型用途：<code class="c">static_assert(std::is_nothrow_invocable_v&lt;decltype(cb), Tick&gt;)</code> 保证回调在热路径上不会抛异常。
+4. 因为 <code class="c">is_invocable</code> 采用标准库的 <strong>INVOKE</strong> 语义，而 <code class="c">f(args...)</code> 这种直接调用形式对成员函数指针、数据成员指针根本不成立（<code class="c">pmf(args...)</code> 不合法）。
+<code class="c">std::invoke</code> 统一了普通函数、函数对象/lambda、成员函数指针、数据成员指针这四类可调用物的调用规则，<code class="c">is_invocable</code> 复用同一规则，因此覆盖面更广，语义也与 <code class="c">std::invoke</code> / <code class="c">std::invoke_result</code> 完全一致。
+5. C++20 用 concepts 表达更直观，报错信息也更好：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;std::invocable&lt;int&gt; F&gt;
+void for_each_int(F f, int x) { f(x); }
+
+// 还要约束返回类型可转 bool：
+template &lt;typename F&gt;
+  requires std::invocable&lt;F, int&gt; &amp;&amp;
+           std::convertible_to&lt;std::invoke_result_t&lt;F, int&gt;, bool&gt;
+void register_callback(F cb) { /* ... */ }
+</code></pre>
+<p>相比 C++17 的 <code class="c">enable_if_t&lt;is_invocable_v&lt;...&gt;&gt;</code>（靠 SFINAE，报错难读、重载集易被污染），constraints 直接约束模板参数，语义清晰，而且参与重载消解。</p>
+</details>
       </section>
       <section class="section" id="s-03">
         <div class="sec-head"><div class="sec-no">03</div><h2>conjunction / disjunction / negation</h2></div>
@@ -612,6 +668,35 @@ void process_ptrs(Ts... ts) { /* ... */ }
 <li>用 <code class="c">conjunction</code> 写一个约束"所有参数都是 trivially_copyable"的模板。</li>
 <li><code class="c">conjunction</code> 的底层实现用了什么技巧来实现短路？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">std::conjunction&lt;Bs...&gt;</code> 对应逻辑<strong>与</strong>（<code class="c">&amp;&amp;</code>），全部为 <code class="c">true</code> 才是 <code class="c">true</code>；<code class="c">std::disjunction&lt;Bs...&gt;</code> 对应逻辑<strong>或</strong>（<code class="c">||</code>），至少一个 <code class="c">true</code> 即为 <code class="c">true</code>；配套的 <code class="c">std::negation&lt;B&gt;</code> 对应逻辑<strong>非</strong>（<code class="c">!</code>）。
+它们操作的都是 trait（有 <code class="c">::value</code> 的类型），结果本身也是一个 <code class="c">bool_constant</code>，可以取 <code class="c">::value</code> 或用 <code class="c">_v</code> 变量模板。</li>
+<li>短路的重要性在于<strong>避免实例化后面的 trait</strong>。例如要先确认 <code class="c">T::value_type</code> 存在，再判断它是否整型：手写 <code class="c">is_integral_v&lt;T&gt; &amp;&amp; is_integral_v&lt;typename T::value_type&gt;</code> 时两侧都会被实例化，<code class="c">T</code> 没有 <code class="c">value_type</code> 就是<strong>硬编译错误</strong>。
+普通 <code class="c">&amp;&amp;</code> 是表达式求值，所有操作数都要先实例化/求值，不存在模板层面的短路；<code class="c">conjunction</code> 则保证一旦遇到 <code class="c">false</code> 就不再实例化后续 trait，从而把硬错误变成「返回 false」。</li>
+<li><code class="c">std::negation&lt;std::is_pointer&lt;T&gt;&gt;</code> 等价于 <code class="c">!std::is_pointer_v&lt;T&gt;</code>。
+标准把 <code class="c">negation&lt;B&gt;</code> 定义为派生自 <code class="c">bool_constant&lt;!bool(B::value)&gt;</code>，即把 <code class="c">B</code> 的布尔值取反；C++17 同时提供 <code class="c">negation_v&lt;B&gt;</code>，所以 <code class="c">std::negation_v&lt;std::is_pointer&lt;T&gt;&gt;</code> 就是 <code class="c">!std::is_pointer_v&lt;T&gt;</code>。</li>
+<li>用 <code class="c">conjunction_v</code> 折叠参数包即可：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename... Ts&gt;
+constexpr bool all_trivially_copyable =
+    std::conjunction_v&lt;std::is_trivially_copyable&lt;Ts&gt;...&gt;;
+
+template &lt;typename... Ts,
+          typename = std::enable_if_t&lt;all_trivially_copyable&lt;Ts...&gt;&gt;&gt;
+void bulk_copy(Ts&amp;&amp;... ts) { /* 可走 memcpy 快路径 */ }
+</code></pre>
+<p>注意空包时 <code class="c">conjunction_v&lt;&gt;</code> 为 <code class="c">true</code>（与「所有元素都满足」的空真一致），<code class="c">disjunction_v&lt;&gt;</code> 为 <code class="c">false</code>。
+5. 核心是<strong>递归继承 + <code class="c">conditional_t</code> 的惰性实例化</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename...&gt; struct conjunction : std::true_type {};
+template &lt;typename B&gt; struct conjunction&lt;B&gt; : B {};
+template &lt;typename B, typename... Bs&gt;
+struct conjunction&lt;B, Bs...&gt;
+  : std::conditional_t&lt;bool(B::value), conjunction&lt;Bs...&gt;, B&gt; {};
+</code></pre>
+<p><code class="c">std::conditional</code> 只会「选中」其中一个类型，另一个不会被实例化；所以当 <code class="c">B::value</code> 为 <code class="c">false</code> 时 <code class="c">conjunction&lt;Bs...&gt;</code> 根本不会被实例化，后面的 trait 也就不会被求值，这就是短路（<code class="c">disjunction</code> 是镜像写法，命中 <code class="c">true</code> 时停止）。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

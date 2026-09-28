@@ -471,6 +471,25 @@ std::scoped_lock&lt;std::mutex, std::mutex&gt; lk(m1, m2);
 <li><code class="c">scoped_lock</code> 能延迟锁定吗？能手动解锁吗？</li>
 <li>C++17 CTAD 如何简化 <code class="c">scoped_lock</code> 的写法？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>它把「<strong>一次死锁安全的加锁 + RAII 自动解锁</strong>」合成一步。原来要写 <code class="c">std::lock(m1, m2);</code> 再配两个 <code class="c">std::lock_guard&lt;std::mutex&gt; g1(m1, std::adopt_lock), g2(m2, std::adopt_lock);</code>，既啰嗦又容易漏 <code class="c">adopt_lock</code>（漏了会重复加锁导致未定义行为/死锁）。
+<code class="c">scoped_lock</code> 还接受<strong>任意数量</strong>的 mutex（包括一个，也包括零个），并且是异常安全的：构造成功即全部持有，析构时全部释放。</li>
+<li>它在构造时调用 <code class="c">std::lock(m...)</code>（或其等价的死锁避免算法）。该算法不是「按固定顺序 lock」，而是用 <code class="c">try_lock</code> 逐个尝试：一旦某个 <code class="c">try_lock</code> 失败，就把已拿到的锁全部释放，退避后重新尝试，直到同时拿到全部锁。
+因为它从不「持有一个锁去阻塞等待另一个锁」，所以不可能形成循环等待——标准保证不会死锁（不保证公平、不保证特定获取顺序）。</li>
+<li>是的，语义等价：两者都在构造时 <code class="c">lock()</code>、析构时 <code class="c">unlock()</code>，都是不可拷贝、不可延迟、不可手动解锁的纯 RAII 守护。
+差别只在写法与可读性（以及 C++17 起 <code class="c">scoped_lock</code> 支持 CTAD）。单 mutex 场景用哪个都行，<code class="c">lock_guard</code> 也依然是合法且清晰的选择。</li>
+<li><strong>不能延迟锁定</strong>：<code class="c">scoped_lock</code> 没有 <code class="c">defer_lock</code> 构造，构造即加锁（这点与 <code class="c">unique_lock</code> 不同）。
+<strong>不能手动解锁</strong>：它没有 <code class="c">unlock()</code> 成员，只能等析构时自动释放（同样不同于 <code class="c">unique_lock</code>）。
+唯一的例外是 <code class="c">std::adopt_lock</code> 构造：<code class="c">std::scoped_lock lk(std::adopt_lock, m1, m2);</code> 表示「这几个锁已经由调用方持有了，我只是接管并在析构时释放」——但这仍然不是延迟加锁。</li>
+<li>C++17 的推导指引可以从构造函数实参直接推出模板参数列表，于是不用手写那一长串 <code class="c">std::scoped_lock&lt;std::mutex, std::shared_mutex, ...&gt;</code>：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">std::mutex m1, m2;
+std::scoped_lock lk(m1, m2);   // 自动推导为 scoped_lock&lt;std::mutex, std::mutex&gt;
+</code></pre>
+<p>mutex 类型一多、一改，省下的维护成本很明显；单锁时 <code class="c">std::scoped_lock lk(m1);</code> 也成立。</p>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>std::shared_mutex</h2></div>
@@ -555,6 +574,23 @@ public:
 <li><code class="c">shared_lock</code> 和 <code class="c">unique_lock</code> 分别对应什么锁？</li>
 <li>HFT 极高频场景为什么可能不用 <code class="c">shared_mutex</code>？替代方案？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">std::shared_mutex</code> 是 <strong>C++17</strong> 引入的读写锁，提供 <code class="c">lock</code>/<code class="c">unlock</code>（独占）与 <code class="c">lock_shared</code>/<code class="c">unlock_shared</code>（共享）。
+<code class="c">std::shared_timed_mutex</code> 是 <strong>C++14</strong> 就有的版本，在共享/独占之外还提供<strong>带超时</strong>的接口：<code class="c">try_lock_for</code> / <code class="c">try_lock_until</code> 以及 <code class="c">try_lock_shared_for</code> / <code class="c">try_lock_shared_until</code>。
+需要超时就用 <code class="c">shared_timed_mutex</code>；不需要超时时用 <code class="c">shared_mutex</code> 更轻（少维护一套超时机制）。</li>
+<li><strong>适合</strong>：读远多于写、且读临界区有一定长度的场景（如行情快照：多策略并发读、单线程更新）。多个读者可以真正并行，吞吐提升明显。
+<strong>不适合</strong>：读写频率接近、或临界区极短的场景——共享锁要维护读者计数/状态机，原子操作与 cache 行竞争的开销可能超过并发读的收益，反而比普通 <code class="c">std::mutex</code> 更慢。也不适合写延迟敏感的场景（见写饥饿）。</li>
+<li>写饥饿：读者源源不断地获取共享锁，导致写者始终拿不到独占锁，写操作被无限期推迟。
+标准<strong>不保证</strong>任何写者优先策略（具体实现可能做写者优先，也可能不做）。规避办法：缩短读临界区持有时间、限制读者并发度、改用普通 <code class="c">mutex</code>（写不会饥饿但读不能并行）、改用无锁结构、或用双缓冲/seqlock 让写不必等读者。</li>
+<li><code class="c">std::shared_lock&lt;std::shared_mutex&gt;</code> 对应<strong>共享锁（读锁）</strong>：构造时 <code class="c">lock_shared()</code>，析构时 <code class="c">unlock_shared()</code>，可被多个线程同时持有。
+<code class="c">std::unique_lock&lt;std::shared_mutex&gt;</code> 对应<strong>独占锁（写锁）</strong>：构造时 <code class="c">lock()</code>，析构时 <code class="c">unlock()</code>，同一时刻只能有一个持有者。
+两者都是 RAII，也都支持 <code class="c">defer_lock</code> / <code class="c">try_lock</code> / <code class="c">std::adopt_lock</code>；<code class="c">unique_lock</code> 的可移动性与手动 <code class="c">unlock()</code> 让它还能配合条件变量使用。</li>
+<li>因为共享锁的获取/释放都要对共享计数器做原子 RMW，这个计数器是全局竞争点：读者越多，同一条 cache line 上的乒乓越严重，延迟抖动也随之增大；再加上写饥饿风险，尾延迟不可控。
+替代方案：<strong>无锁双缓冲</strong>（写者写后台缓冲，原子切换指针，读者读不变快照）、<strong>seqlock / 版本号读</strong>（读者无锁读、发现版本变化重试）、<strong>RCU</strong>、或按核分片（每个核一份快照，读者无竞争）。这些都是「读者不写共享状态」的思路，能消除计数器竞争。</li>
+</ol>
+</details>
       </section>
       <section class="section" id="s-03">
         <div class="sec-head"><div class="sec-no">03</div><h2>C++17 原子改进</h2></div>
@@ -639,6 +675,43 @@ static_assert(std::atomic&lt;OrderContext&gt;::is_always_lock_free);
 <li>C++17 对原子默认初始化做了什么改变？</li>
 <li>HFT 热路径如何用 <code class="c">is_always_lock_free</code> 保证无锁？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">is_always_lock_free</code> 是 <strong>C++17 起</strong>的 <code class="c">static constexpr bool</code> 成员常量：<strong>编译期</strong>就确定，含义是「该原子类型<strong>在所有目标平台/所有实例上</strong>都无锁」。
+<code class="c">is_lock_free()</code> 是 <strong>C++11 起</strong>的非静态成员函数：<strong>运行期</strong>求值，含义是「<strong>当前这个对象</strong>的原子操作是否无锁」——它可能依赖运行时探测（如 ARM 上是否支持 LDREXD、是否 8 字节对齐等）。
+也就是说 <code class="c">is_always_lock_free</code> 为 <code class="c">true</code> 蕴含 <code class="c">is_lock_free()</code> 为 <code class="c">true</code>，反之不然。</li>
+<li>因为热路径需要<strong>编译期决策</strong>，而不是运行期分支：
+   - 能在 <code class="c">static_assert</code> 里把「这个类型不该被塞进热路径」变成编译错误，而不是上线后才发现有隐藏 mutex；
+   - 能用 <code class="c">if constexpr</code> 在编译期选择完全不同的实现（无锁路径 vs 加锁/拆分字段的回退路径），避免运行期分支与未使用代码的开销；
+   - 还能参与模板重载/偏特化，让「无锁性」成为类型层面的契约。</li>
+<li>可以：<code class="c">is_always_lock_free</code> 是 <code class="c">static constexpr bool</code>，<code class="c">static_assert(std::atomic&lt;int&gt;::is_always_lock_free, "...")</code> 完全合法，也是它的主要用途。
+<code class="c">is_lock_free()</code> 不行：它是非静态成员函数（不是 <code class="c">constexpr</code>），只能在运行期 <code class="c">if (a.is_lock_free())</code> 判断，无法写进 <code class="c">static_assert</code>。</li>
+<li>严格说，C++17 <strong>并没有</strong>把默认构造的原子初始化为 0：C++17 的默认构造函数仍是 trivial 的，不做任何初始化（只有 static 存储期和 thread_local 对象会被零初始化，这是语言规则而非 atomic 的改动）。真正改成「默认构造即值初始化 <code class="c">T()</code>」是 <strong>C++20</strong>（P0883）。
+所以笔记里「C++17 起 <code class="c">std::atomic&lt;int&gt; a;</code> 就是 0」的说法不准确，正确做法始终是<strong>显式初始化</strong>：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">std::atomic&lt;int&gt; a{0};     // 或 std::atomic&lt;int&gt; a = 0;
+</code></pre>
+<p>另外 C++20 起 <code class="c">std::atomic_init</code> 与 <code class="c">ATOMIC_VAR_INIT</code> 也被移除/弃用，不再需要它们来补初始化。
+5. 在类型定义处直接用 <code class="c">static_assert</code> 把「无锁」钉成编译期契约，必要时用 <code class="c">if constexpr</code> 分流：</p>
+<pre class="code" data-label="cpp"><code class="c">struct OrderSeq {
+    std::atomic&lt;std::uint64_t&gt; seq_num{0};
+    std::atomic&lt;int&gt;           state{0};
+};
+static_assert(decltype(OrderSeq::seq_num)::is_always_lock_free);
+static_assert(decltype(OrderSeq::state)::is_always_lock_free);
+
+template &lt;typename T&gt;
+void hot_path_publish(T&amp; a) {
+    if constexpr (std::atomic&lt;T&gt;::is_always_lock_free) {
+        a.store(/* ... */, std::memory_order_release);   // 无锁快路径
+    } else {
+        /* 回退：拆字段 / 用 mutex / 改数据结构 */
+    }
+}
+</code></pre>
+<p>这样一旦有人把热路径类型换成大结构（如 24 字节以上的 <code class="c">OrderContext</code>，<code class="c">is_always_lock_free</code> 未必为 <code class="c">true</code>），编译期就会暴露出来，而不是悄悄引入隐藏 mutex。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

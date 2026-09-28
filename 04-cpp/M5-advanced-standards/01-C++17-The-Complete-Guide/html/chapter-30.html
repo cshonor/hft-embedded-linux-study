@@ -452,6 +452,35 @@ _aligned_malloc(sizeof(HotData), 64);        // MSVC
 <li>C++14 如何手动对齐分配？有什么缺点？</li>
 <li>超对齐不对齐会导致什么后果？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><strong>超对齐</strong>（over-aligned）指类型的对齐要求<strong>大于</strong> <code class="c">alignof(std::max_align_t)</code>（即大于实现保证的「最大平凡对齐」）。
+<code class="c">std::max_align_t</code> 的对齐值由实现决定，主流 x86-64 平台（GCC/Clang/MSVC）上通常是 <strong>16</strong>（大小也是 16）。因此 <code class="c">alignas(64)</code>、<code class="c">alignas(32)</code> 这类要求都属于超对齐，标准库默认路径并不保证满足。</li>
+<li>C++14 的 <code class="c">new</code> 表达式只有一对 <code class="c">operator new(std::size_t)</code> / <code class="c">operator new(std::size_t, const std::nothrow_t&amp;)</code>，<strong>没有任何对齐参数</strong>，实现只需保证返回地址适合 <code class="c">max_align_t</code>。
+所以 <code class="c">new alignas(64) CacheLine</code> 得到的地址只保证 16 字节对齐，<code class="c">alignas(64)</code> 在分配层面被<strong>忽略</strong>——类型本身仍是 64 对齐的（sizeof/成员布局按 64 对齐），但实际对象的起始地址不能保证是 64 的倍数。</li>
+<li>常见场景：
+   - <strong>cache line 对齐</strong>（64 字节）：让高频写的计数器各自独占一条 cache line，消除 false sharing。
+   - <strong>SIMD</strong>：AVX 需要 32 字节对齐、AVX-512 需要 64 字节，<code class="c">_mm256_load_ps</code> 这类对齐加载指令否则会崩溃。
+   - <strong>DMA / 网卡与 RDMA 缓冲区</strong>：硬件要求按页或按特定边界对齐，否则传输失败或降级。
+   - <strong>大页 / 页对齐</strong>：减少 TLB miss。
+   - <strong>原子操作</strong>：某些平台的 16 字节原子（CMPXCHG16B）要求 16 字节对齐。</li>
+<li>C++14 只能手工处理，典型做法是「多分配 + 指针回退 + 记录原指针」：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">void* raw = ::operator new(sizeof(T) + alignment - 1 + sizeof(void*));
+std::uintptr_t base = reinterpret_cast&lt;std::uintptr_t&gt;(raw) + sizeof(void*);
+std::uintptr_t aligned = (base + alignment - 1) &amp; ~(alignment - 1);
+// 在 aligned - sizeof(void*) 处存回 raw，供释放时用
+</code></pre>
+<p>或者用平台 API：<code class="c">posix_memalign</code> / <code class="c">_aligned_malloc</code> / C11 <code class="c">aligned_alloc</code>，再 placement new 构造、<code class="c">p-&gt;~T()</code> + 专用释放函数析构。
+缺点：<strong>冗长且易错</strong>（偏移、记录原指针、配对释放都要手写）、<strong>不跨平台</strong>（POSIX/Windows/不同编译器 API 不同）、每个类型都要重复一遍、无法与 <code class="c">std::vector</code> 等容器的默认分配路径自动协作，<code class="c">delete</code> 还容易写错成普通 delete。
+5. 后果：<code class="c">alignas(64)</code> 形同虚设 → 实际未对齐。
+   - 相邻对象共享 cache line → <strong>false sharing</strong>，多核写同一条 line 导致性能断崖；
+   - 对齐加载/存储指令（<code class="c">_mm256_load_ps</code>、<code class="c">movaps</code>）触发 <strong>SIGSEGV/崩溃</strong>；
+   - DMA 传输失败或降级为慢路径；
+   - 依赖对齐的原子/无锁结构可能出现撕裂或非原子行为；
+   - 更麻烦的是它可能「碰巧对齐」从而长期不暴露，换编译器或换分配器才爆雷。</p>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>C++17 对齐 new</h2></div>
@@ -529,6 +558,45 @@ assert(reinterpret_cast&lt;uintptr_t&gt;(v.data()) % 64 == 0);  // C++17 保证
 <li><code class="c">std::aligned_alloc</code> 的参数要求是什么？</li>
 <li>C++17 的 STL 容器对超对齐元素保证对齐吗？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>C++17 引入了<strong>带对齐参数的 <code class="c">operator new</code> / <code class="c">operator delete</code> 重载</strong>，并让 <code class="c">new</code> 表达式在类型的对齐要求超过 <code class="c">__STDCPP_DEFAULT_NEW_ALIGNMENT__</code>（默认新对齐，通常等于 <code class="c">alignof(max_align_t)</code>）时<strong>自动选择对齐版本</strong>：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">struct alignas(64) CacheLine { int data[16]; };
+CacheLine* p = new CacheLine;   // 调用 operator new(sizeof, align_val_t{64})
+delete p;                       // 调用 operator delete(p, sizeof, align_val_t{64})
+</code></pre>
+<p>于是 <code class="c">reinterpret_cast&lt;std::uintptr_t&gt;(p) % 64 == 0</code> 成为<strong>标准保证</strong>，不再依赖平台 API 或手写偏移。配套还新增了 <code class="c">std::align_val_t</code>、<code class="c">std::aligned_alloc</code>，以及 <code class="c">std::allocator</code> 等库组件的对齐支持。
+2. 它是 C++17 新增的一个<strong>强枚举标签类型</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">namespace std { enum class align_val_t : std::size_t {}; }
+</code></pre>
+<p>用它而不是裸 <code class="c">std::size_t</code>，是为了<strong>给 <code class="c">operator new</code> 的重载集一个明确、不会误配的参数类型</strong>：<code class="c">operator new</code> 已经是重载重灾区（<code class="c">nothrow</code> 版、placement 版、数组版、用户自定义版），如果再塞一个 <code class="c">operator new(size_t, size_t)</code>，很容易与「大小相近」的其他重载或用户自定义的 placement new 混淆，也可能把对齐值误解释成别的含义。
+标签类型让 <code class="c">operator new(sizeof(T), std::align_val_t{64})</code> 的意图一目了然，且不与任何既有重载冲突。
+3. 必须补齐<strong>对齐版本</strong>的重载，否则超对齐类型的 <code class="c">new</code> 会找不到匹配而退回到不带对齐的重载（导致不对齐）或编译失败：</p>
+<pre class="code" data-label="cpp"><code class="c">void* operator new(std::size_t size, std::align_val_t align);
+void* operator new[](std::size_t size, std::align_val_t align);
+
+void operator delete(void* p, std::size_t size, std::align_val_t align) noexcept;
+void operator delete[](void* p, std::size_t size, std::align_val_t align) noexcept;
+</code></pre>
+<p>实践中通常与不带对齐的四个重载（<code class="c">operator new(size)</code>、<code class="c">operator new[](size)</code>、<code class="c">operator delete(p)</code>、<code class="c">operator delete[](p)</code>）成对提供，并且 <code class="c">delete</code> 的签名要与 <code class="c">new</code> <strong>一一对应</strong>，否则释放走错路径。
+4. <code class="c">void* std::aligned_alloc(std::size_t alignment, std::size_t size)</code>（C++17 提供，源自 C11）：
+   - <code class="c">alignment</code> 必须是<strong>有效的对齐值</strong>（实现支持、且通常是 2 的幂）；否则行为未定义。
+   - <code class="c">size</code> 是请求的总字节数；C11 要求 <code class="c">size</code> 是 <code class="c">alignment</code> 的<strong>整数倍</strong>（各标准版本/实现对此的要求有过调整），实践中按整数倍传入最稳妥。
+   - 返回的指针必须用 <strong><code class="c">std::free</code></strong> 释放，不能用 <code class="c">delete</code>（配套关系不同）。</p>
+<pre class="code" data-label="cpp"><code class="c">void* buf = std::aligned_alloc(64, 64 * 100);   // 100 个 64 字节块
+std::free(buf);
+</code></pre>
+<ol start="5">
+<li>保证。C++17 起 <code class="c">std::allocator&lt;T&gt;::allocate</code> 会走对齐版 <code class="c">::operator new</code>（当 <code class="c">alignof(T)</code> 超过默认新对齐时使用 <code class="c">align_val_t</code>），所以标准容器对超对齐元素也提供对齐保证：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;HotData&gt; v;      // HotData 是 alignas(64)
+v.push_back({});
+assert(reinterpret_cast&lt;std::uintptr_t&gt;(v.data()) % 64 == 0);  // C++17 保证
+</code></pre>
+<p>自定义 allocator 则需要自己调用对齐版分配函数才能保持这个保证；另外 <code class="c">std::pmr::memory_resource</code> 的 <code class="c">do_allocate(bytes, alignment)</code> 本身就带对齐参数。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

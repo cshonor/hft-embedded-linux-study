@@ -586,6 +586,34 @@ target_compile_options(mylib PRIVATE
 <li><code class="c">-fno-exceptions</code> 有什么影响？STL 还能用吗？</li>
 <li><code class="c">-march=native</code> 的风险是什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<ul>
+<li><strong>GCC</strong>：<code class="c">-std=c++17</code>（另有 <code class="c">-std=c++1z</code> 是早期的同义写法）。</li>
+<li><strong>Clang</strong>：<code class="c">-std=c++17</code>。</li>
+<li><strong>MSVC</strong>：<code class="c">/std:c++17</code>（VS2017 15.7 起支持；<code class="c">/std:c++latest</code> 表示跟随最新标准，不固定版本）。
+CMake 里通常写 <code class="c">set(CMAKE_CXX_STANDARD 17)</code> + <code class="c">set(CMAKE_CXX_STANDARD_REQUIRED ON)</code>，由 CMake 生成对应编译器的开关。</li>
+</ul>
+</li>
+<li><code class="c">-std=c++17</code> 严格按 ISO C++17，禁用编译器扩展；<code class="c">-std=gnu++17</code> 在 C++17 基础上<strong>启用 GNU 扩展</strong>（如某些内建函数、匿名结构体、变长数组等），GCC/Clang 的默认通常就是 <code class="c">gnu++*</code>。
+<code class="c">CMAKE_CXX_EXTENSIONS OFF</code> 告诉 CMake <strong>不要</strong>加 <code class="c">-std=gnu++17</code>，而是用 <code class="c">-std=c++17</code>——即关闭编译器扩展。常与 <code class="c">CMAKE_CXX_STANDARD 17</code> 和 <code class="c">CMAKE_CXX_STANDARD_REQUIRED ON</code> 一起用，保证可移植、不被悄悄绑到 GNU 方言上。</li>
+<li><code class="c">-O2</code> 打开绝大多数优化（内联、常量传播、循环优化等），但会避开那些<strong>显著增大代码体积</strong>或收益不确定的变换。
+<code class="c">-O3</code> 在 <code class="c">-O2</code> 之上更激进：更大的内联阈值、更多循环展开、更积极的向量化、可能启用 <code class="c">-ftree-loop-distribute-patterns</code> 等，代价是代码体积变大、编译更慢、icache/分支预测压力增加，偶尔还会因重排/向量化让浮点结果与 <code class="c">-O2</code> 有细微差异。
+HFT 怎么选：没有普适答案，以<strong>实测的延迟分布（尤其是尾延迟）</strong>为准。常见做法是从 <code class="c">-O2</code> 起步，试 <code class="c">-O3</code> + <code class="c">-flto</code>，用 perf/llvm-mca 看热点；并避免 <code class="c">-ffast-math</code> 一类会改变浮点语义的选项，除非能接受结果不可复现。</li>
+<li>影响：去掉异常展开表与 throw 路径，二进制更小、代码路径更少（延迟更可预测），是低延迟/嵌入式常见配置。
+STL 仍可使用：容器、算法、智能指针等都能编译和运行；但<strong>异常语义失效</strong>——抛出时不会展开，而是直接 <code class="c">std::terminate</code>/abort；<code class="c">operator new</code> 失败也不会抛 <code class="c">std::bad_alloc</code>。部分依赖异常的库组件行为会改变或不可用（不同标准库实现程度不同）。
+注意：<code class="c">-fno-exceptions</code> 必须在<strong>所有编译单元和依赖库</strong>上保持一致，混用会造成 ABI/ODR 不一致；同时通常配套 <code class="c">-fno-rtti</code> 以进一步减小体积（代价是不能再用 <code class="c">dynamic_cast</code> / <code class="c">typeid</code>）。</li>
+<li><code class="c">-march=native</code> 让编译器按<strong>当前编译机器</strong>的 CPU 特性生成指令（AVX2、AVX-512、特定 BMI 指令等）。
+风险：
+   - 二进制<strong>不可移植</strong>——部署到缺少对应指令集的机器上会 <strong>SIGILL 崩溃</strong>；
+   - 编译机与生产机 CPU 不一致时，构建产物与预期不符；
+   - 容器/编译农场场景尤其危险（编译节点和跑的节点不同）；
+   - 破坏可复现构建，且不同核之间可能有细微差异。
+建议：要么确保编译环境与运行环境一致，要么<strong>显式指定目标架构</strong>（如 <code class="c">-march=skylake-avx512</code>、<code class="c">-mavx2</code>），把指令集选择写进构建配置而不是交给 <code class="c">native</code> 猜。</li>
+</ol>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>特性特征宏</h2></div>
@@ -689,6 +717,36 @@ std::string to_str_fast(T val) {
 <li><code class="c">__cpp_lib_to_chars</code> 检测的是什么？</li>
 <li>C++20 的 <code class="c">&lt;version&gt;</code> 头有什么用？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>问题是 <strong>MSVC 默认不更新 <code class="c">__cplusplus</code></strong>：即使开了 <code class="c">/std:c++17</code>，它仍可能报告 <code class="c">199711L</code>（C++98），导致 <code class="c">#if __cplusplus &gt;= 201703L</code> 判断失效。
+两种解决：</li>
+<li>编译时加 <strong><code class="c">/Zc:__cplusplus</code></strong>（VS2017 15.7 起），让 <code class="c">__cplusplus</code> 反映真实标准版本；</li>
+<li>用 MSVC 专有宏 <strong><code class="c">_MSVC_LANG</code></strong> 代替（如 <code class="c">#if defined(_MSVC_LANG) &amp;&amp; _MSVC_LANG &gt;= 201703L</code>），跨平台代码常写成 <code class="c">#if __cplusplus &gt;= 201703L || (defined(_MSVC_LANG) &amp;&amp; _MSVC_LANG &gt;= 201703L)</code>。</li>
+<li>两类前缀区分「语言特性」和「库特性」：
+   - <strong>语言特性</strong>：<code class="c">__cpp_</code> + 特性名，如 <code class="c">__cpp_structured_bindings</code>、<code class="c">__cpp_if_constexpr</code>、<code class="c">__cpp_inline_variables</code>、<code class="c">__cpp_fold_expressions</code>、<code class="c">__cpp_deduction_guides</code>。
+   - <strong>标准库特性</strong>：<code class="c">__cpp_lib_</code> + 特性名，如 <code class="c">__cpp_lib_filesystem</code>、<code class="c">__cpp_lib_to_chars</code>、<code class="c">__cpp_lib_parallel_algorithm</code>、<code class="c">__cpp_lib_pmr</code>、<code class="c">__cpp_lib_optional</code>。
+值通常是 <code class="c">YYYYMM</code> 形式的日期（如 <code class="c">201611L</code>），表示该特性被采纳的版本；宏被定义即表示支持。</li>
+<li>用 <code class="c">#ifdef</code> / <code class="c">#if</code> 判断宏是否存在，为支持和不支持两种环境各写一份实现：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt;
+std::string to_str_fast(T val) {
+#ifdef __cpp_lib_to_chars
+    char buf[32];
+    auto [ptr, ec] = std::to_chars(buf, buf + 32, val);
+    return std::string(buf, ptr);      // 快路径：无分配、无 locale
+#else
+    return std::to_string(val);        // 降级路径
+#endif
+}
+</code></pre>
+<p>这样同一份源码在老工具链上仍能编译，在新工具链上自动用上最优实现；也可配合 <code class="c">#if __cpp_lib_to_chars &gt;= 201611L</code> 做更细的版本判断。
+4. 它检测的是 <strong><code class="c">&lt;charconv&gt;</code> 中的 <code class="c">std::to_chars</code> / <code class="c">std::from_chars</code> 是否可用</strong>（即 C++17 的低层数值转换设施是否已实现）。
+宏被定义（C++17 中值为 <code class="c">201611L</code>）就说明可以放心使用这两个函数；未定义则说明标准库尚未提供，需要降级到 <code class="c">std::to_string</code> / <code class="c">strtod</code> 等方案。注意它反映的是<strong>标准库实现</strong>的支持情况，而不是编译器对 C++17 语言特性的支持。
+5. C++20 新增的 <code class="c">&lt;version&gt;</code> 头文件<strong>集中定义所有标准库特性测试宏</strong>（<code class="c">__cpp_lib_*</code> 等），只要 include 它就能拿到全部宏，不必为了查某个宏而去 include 对应的大头文件。
+C++17 时代没有这个头，通常不得不 include <code class="c">&lt;ciso646&gt;</code>（一个几乎为空的头）之类来"顺便"拿到版本宏——既不直观也不可靠。有了 <code class="c">&lt;version&gt;</code>，做能力检测的代码可以写成 <code class="c">#include &lt;version&gt;</code> 加一串 <code class="c">#ifdef</code>，轻量且明确。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

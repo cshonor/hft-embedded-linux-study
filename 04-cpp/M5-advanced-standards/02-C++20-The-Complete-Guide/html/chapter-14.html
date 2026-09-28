@@ -297,8 +297,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-14.html#intro"><span class="n">14</span>协程</a>
           <a href="chapter-15.html#intro"><span class="n">15</span>深入理解协程</a>
           <a href="chapter-16.html#intro"><span class="n">16</span>模块</a>
-          <a href="chapter-17.html#intro"><span class="n">17</span>ch17-lambda</a>
-          <a href="chapter-17.html#intro"><span class="n">17</span>ch17-lambda</a>
+          <a href="chapter-17.html#intro"><span class="n">17</span>Lambda 表达式扩展</a>
+          <a href="chapter-17.html#intro"><span class="n">17</span>Lambda 表达式扩展</a>
           <a href="chapter-18.html#intro"><span class="n">18</span>编译时计算</a>
           <a href="chapter-19.html#intro"><span class="n">19</span>非类型模板参数扩展</a>
           <a href="chapter-20.html#intro"><span class="n">20</span>新的类型特征</a>
@@ -526,6 +526,42 @@ generator&lt;int&gt; fibonacci() {
 <li><code class="c">promise_type</code> 的作用是什么？</li>
 <li>如何用协程实现无限斐波那契序列？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>普通函数一路执行到 <code class="c">return</code> 才把控制权交回调用者，且返回后其局部变量全部消失。
+协程可以在执行中途<strong>挂起（suspend）</strong>，把控制权交回调用者/恢复者，<strong>之后再从挂起点继续</strong>，且局部变量在挂起期间保持有效。
+三个协程关键字：<code class="c">co_await</code>（挂起并等待一个 awaitable，恢复后得到其结果）、<code class="c">co_yield</code>（挂起并产出一个值，之后还能继续）、<code class="c">co_return</code>（结束协程并返回结果）。函数体内出现任意一个，它就成了协程。</li>
+<li><code class="c">co_yield expr</code>：<strong>挂起并产出</strong>一个值给调用者（编译器把它翻译成 <code class="c">co_await promise.yield_value(expr)</code>），协程之后<strong>还能被恢复继续执行</strong>——这是 generator 的写法。
+<code class="c">co_return [expr]</code>：<strong>结束</strong>协程，把值交给 <code class="c">promise.return_value(...)</code>（或 <code class="c">return_void()</code>），随后进入 final suspend，协程生命周期结束，不再继续。
+简言之：<code class="c">co_yield</code> 是"暂时交出"，<code class="c">co_return</code> 是"结束"。</li>
+<li>状态保存在<strong>协程帧（coroutine frame）</strong>里：局部变量、临时对象、挂起点位置（恢复时从哪一行继续）、promise 对象等都在这个帧中。帧通常在<strong>堆上</strong>分配（编译器在能证明生命周期时可以进行省略优化）。
+   - <strong>暂停</strong>：把挂起点的位置与需要跨越挂起点的寄存器/局部状态写入帧，然后通过 awaiter 的 <code class="c">await_suspend()</code> 安排"将来由谁来恢复"，随即返回调用者。
+   - <strong>恢复</strong>：调用 <code class="c">coroutine_handle::resume()</code>，从帧里恢复状态并跳回挂起点继续执行。
+因为状态在帧里而不在调用栈上，协程可以在函数返回后仍然"活着"。</li>
+<li>它是协程的<strong>控制器兼对外接口</strong>，定义了协程的全部行为。编译器通过返回类型里的嵌套类型 <code class="c">promise_type</code> 找到它，并按需调用：
+   - <code class="c">get_return_object()</code>：决定协程返回给调用者的那个对象（如 <code class="c">generator&lt;T&gt;</code>）；
+   - <code class="c">initial_suspend()</code>：是否<strong>一开始就挂起</strong>（<code class="c">suspend_always</code> → 惰性，调用后不执行）；
+   - <code class="c">final_suspend()</code>：结束后是否挂起（便于在销毁前取结果/转移控制权）；
+   - <code class="c">yield_value(v)</code>：处理 <code class="c">co_yield</code>；
+   - <code class="c">return_value(v)</code> / <code class="c">return_void()</code>：处理 <code class="c">co_return</code>；
+   - <code class="c">unhandled_exception()</code>：协程内抛出未捕获异常时的处理；
+   - （可选）<code class="c">await_transform()</code>：定制 <code class="c">co_await</code> 的行为。
+换句话说：协程体写"流程"，<code class="c">promise_type</code> 写"语义"。</li>
+<li>用 <code class="c">co_yield</code> 把每个值"吐"给调用者，配合一个最小的 <code class="c">generator</code>：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">generator&lt;int&gt; fibonacci() {
+    int a = 0, b = 1;
+    while (true) {
+        co_yield a;              // 产出当前值并挂起
+        auto next = a + b;
+        a = b; b = next;
+    }
+}
+for (int v : fibonacci() | std::views::take(10)) { /* 0,1,1,2,3,5,... */ }
+</code></pre>
+<p>要点：<code class="c">promise_type::initial_suspend()</code> 返回 <code class="c">suspend_always{}</code>（调用时不执行，首次迭代才开始），<code class="c">yield_value</code> 保存当前值并挂起；因为是无限序列，消费端要用 <code class="c">take</code> 之类截断。（C++20 标准库<strong>没有</strong>内置 <code class="c">generator</code>，需要自己实现或借助第三方库；C++23 才有了 <code class="c">std::generator</code>。）</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

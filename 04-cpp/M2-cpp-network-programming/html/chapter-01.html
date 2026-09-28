@@ -633,6 +633,26 @@ int main(int argc, char** argv) {
 <li>为什么 <code class="c">write</code> 一个对端已关闭的连接不会返回错误而是收到 SIGPIPE？（提示：错误是 <strong>异步</strong> 到达的）</li>
 <li><code class="c">INADDR_ANY</code> 和绑定具体网卡 IP 的区别？多网卡机器上行情接收该用哪个？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p><code class="c">listenfd</code> 是"前台接待"：只持有四元组的<strong>本地半边</strong>（本机 IP:port），本身不承载任何数据，读它无意义。<code class="c">accept</code> 从已完成握手的队列里取出一条连接，<strong>新建一个 fd（connfd）</strong>，它才拥有完整四元组，代表这条具体连接；listenfd 继续留着收新连接。所以一个监听端口对应 1 个 listenfd + N 个 connfd。<strong>关掉 listenfd 不影响已建立的 connfd</strong>（它们照常收发、照常 FIN），只是不能再 <code class="c">accept</code> 新连接，后续 SYN 会被拒绝/丢弃；反之误关某个 connfd 只断那一条连接。注意 fork 后 <code class="c">close</code> 只是引用计数减一，计数未归零不会发 FIN。</p>
+</li>
+<li>
+<p>不能。Linux 上 accept 队列的实际长度是 <code class="c">min(backlog, net.core.somaxconn)</code>，旧内核 <code class="c">somaxconn</code> 默认 <strong>128</strong>（新内核多为 4096），所以 <code class="c">listen(fd, 512)</code> 会被截到 128。必须同时改内核：<code class="c">sysctl -w net.core.somaxconn=512</code>（写进 <code class="c">/etc/sysctl.conf</code> 持久化）。另外两点：glibc 的 <code class="c">SOMAXCONN</code> 宏是老值 128，用宏也上不去；<strong>半连接队列</strong>是另一条队列，由 <code class="c">net.ipv4.tcp_max_syn_backlog</code> 控制，抗 SYN flood 还要看 SYN cookie 与 <code class="c">tcp_abort_on_overflow</code>。</p>
+</li>
+<li>
+<p>因为<strong>三次握手由内核协议栈完成，不需要应用参与</strong>：客户端发完最后一个 ACK 就进入 ESTABLISHED，服务端内核把这条连接放进 listen socket 的 accept（完成）队列，<code class="c">connect</code> 随即成功返回。<code class="c">accept</code> 只是"从成品队列里取货"，可能几百微秒甚至更久之后才被调用。所以 <code class="c">connect</code> 成功只说明握手完成，<strong>不代表对端已 <code class="c">accept</code>，更不代表应用已处理</strong>——数据会先堆在接收缓冲里。这是理解 SYN flood、<code class="c">TCP_DEFER_ACCEPT</code>、自连接的前提。</p>
+</li>
+<li>
+<p>因为错误是<strong>异步</strong>到达的。第一次 <code class="c">write</code> 只是把数据拷进发送缓冲并发出报文，此时内核还不知道对端已关闭，于是<strong>正常返回</strong>（返回值＝请求长度）。随后对端回一个 RST，本端收到后才把 socket 标记为错误：此后的 <code class="c">write</code> 返回 -1/<code class="c">EPIPE</code>，同时内核向进程发 <strong>SIGPIPE</strong>（默认动作是<strong>杀死进程</strong>）。所以"write 成功"既不代表对端收到，也不代表连接健康。对策：服务端 <code class="c">signal(SIGPIPE, SIG_IGN)</code>（muduo 全局忽略）或 <code class="c">send(..., MSG_NOSIGNAL)</code>，并永远检查 <code class="c">write</code> 返回值。</p>
+</li>
+<li>
+<p><code class="c">INADDR_ANY</code>（0.0.0.0）是<strong>通配地址</strong>：监听本机所有网卡上的该端口，无论报文从哪张卡进来都能被接受；绑定具体 IP 则只收目的地址是该 IP 的连接（其它网卡/地址的流量到达不了这个 socket）。多网卡行情接收的结论：<strong>TCP 服务器场景通常绑具体网卡 IP</strong>，这样每条会话明确对应一张物理卡，便于隔离行情网段、避免路由非对称和"接错网"，也允许每卡起一个实例；只有"不在乎从哪张卡来、要全覆盖"时才用 <code class="c">INADDR_ANY</code>。若是 <strong>UDP 组播</strong>接收，推荐直接 <code class="c">bind</code> 到组播地址 + 端口（绑 <code class="c">INADDR_ANY</code> 也能收，但会顺带收到该端口上的单播流量），并用 <code class="c">imr_interface</code> 指定从哪张卡入组。</p>
+</li>
+</ol>
+</details>
 <p><a id="pnp-01-refs"></a></p>
 <h2>交叉引用</h2>
 <ul>
@@ -828,6 +848,26 @@ void onMessage(Buffer* buf) {
 <li><code class="c">readn</code> 循环里 <code class="c">EINTR</code> 为什么必须 continue 而不能报错？</li>
 <li>关闭 Nagle 后吞吐会一定变差吗？什么场景反而更好？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p>可能是 <strong>1 到 4096 之间的任意值</strong>，只保证"不少于 1 字节、不超过 4096 字节"。它取决于：① 该连接接收缓冲里<strong>此刻已到达且序号连续</strong>的字节数（受对端发送节奏、网络分段影响）；② <code class="c">read</code> 的请求长度 4096；③ 是否还在持续到达（慢启动/cwnd 限制下可能只有 1~2 个 MSS，即 1460 左右）。TCP 是字节流，<strong>一次 <code class="c">read</code> 的边界与 <code class="c">send</code> 次数毫无关系</strong>——一万次 1 字节 <code class="c">send</code> 完全可能在接收端被"粘"成几次大 <code class="c">read</code>。</p>
+</li>
+<li>
+<p>prependable bytes 让"在已有数据<strong>前面</strong>补内容"可以<strong>原地完成</strong>，不用挪动数据、不用重新分配。典型场景：网关收到一帧 payload 后要转发给下游并加上自己的 4 字节长度头（或会话头、纳秒时间戳），可以直接把长度写到 prependable 区，然后把 <code class="c">[prepend 区, 数据区]</code> 这一整段一次性 <code class="c">write</code> 出去——零拷贝、零 <code class="c">memcpy</code>。若没有这段空隙，就得先 <code class="c">memmove</code> 腾位置或拼两个 buffer（<code class="c">writev</code> 也行，但 muduo 的写法更省一次系统调用）。</p>
+</li>
+<li>
+<p>因为长度值来自<strong>对端</strong>，攻击者/出错的客户端发一个 0xFFFFFFFF，<code class="c">resize</code> 一下就要 4GB，进程直接 OOM 被打死；即使不 OOM，也会为一个永远等不齐的"超大帧"长期占住连接和缓冲。这是典型的"输入驱动的分配"攻击面。对策：长度必须按协议上限校验（如 <code class="c">kMaxFrameLen</code> = 64MB），超限即判协议错误并断开连接；同时限制单连接的待处理字节数与解码速率。</p>
+</li>
+<li>
+<p><code class="c">EINTR</code> 表示这次 <code class="c">read</code> 被<strong>信号打断</strong>，一个字节都没读走，连接本身完全正常，属于"重试即可"的瞬态错误。若当错误处理（返回 -1 并断开），会在收到 <code class="c">SIGCHLD</code>、定时器信号、profiling 信号时<strong>误杀正常连接</strong>。所以循环里必须 <code class="c">continue</code> 重新 <code class="c">read</code>。补充：Linux 上阻塞 <code class="c">read</code> 若已经读到了部分数据再被信号打断，会返回已读字节数而<strong>不</strong>报 <code class="c">EINTR</code>——这也是 <code class="c">readn</code> 能正确记账的原因。</p>
+</li>
+<li>
+<p>不一定。Nagle 只在"有小于 MSS 的未确认数据"时才攒包，批量传输时每次 <code class="c">write</code> 都是满 MSS 的大块，Nagle 根本不触发，所以<strong>吞吐基本无差别</strong>——测吞吐本就不该关 Nagle（会人为凑出更多小报文、头部开销变大）。反过来，<strong>小块 + 请求-响应</strong>场景（撮合回报、交互式协议）关掉 Nagle 明显更好：避免 Nagle 与对端延迟 ACK 叠加造成的最多 ~40ms 停顿，延迟大幅下降，而报文数本来就是 1:1，没有额外成本。结论：测吞吐用大块，测延迟（和线上小消息）必开 <code class="c">TCP_NODELAY</code>。</p>
+</li>
+</ol>
+</details>
 <p><a id="pnp-02-refs"></a></p>
 <h2>交叉引用</h2>
 <ul>
@@ -993,6 +1033,30 @@ int main() {
 <li>如何用 <code class="c">ss</code>/<code class="c">netstat</code> 一条命令找出当前系统里的自连接？</li>
 <li><code class="c">ip_local_port_range</code> 用尽时 <code class="c">connect</code> 报什么错？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p>因为 TCP 连接的<strong>唯一身份就是四元组</strong> <code class="c">(本地IP, 本地port, 对端IP, 对端port)</code>，内核在连接哈希表 <strong><code class="c">ehash</code></strong> 里按四元组查找 <code class="c">tcp_sock</code>（监听侧则是 request_sock / accept 队列）。四元组相同即命中同一个 socket，因此被判定为"同一条连接"，重复的四元组无法共存——这是自连接、<code class="c">TIME_WAIT</code> 不能立刻复用、<code class="c">SO_REUSEADDR</code> 语义的全部根源。</p>
+</li>
+<li>
+<p>会<strong>原样收到自己刚写进去的字节</strong>。自连接是一条真实 ESTABLISHED 连接，只是两端是同一个 socket：<code class="c">write</code> 的数据进发送缓冲，经回环 <code class="c">tcp_v4_rcv</code> 又回到自己的接收队列，<code class="c">read</code> 就把这些字节读出来了（像接了一根短路的线）。若只写不读，数据堆满接收缓冲后 <code class="c">write</code> 会阻塞（或返回 <code class="c">EAGAIN</code>），表现为"莫名其妙卡住"。识别方法：<code class="c">connect</code> 成功后比对 <code class="c">getsockname()</code> 与 <code class="c">getpeername()</code>，两者相同即自连接，应立刻 <code class="c">close</code> 重连。</p>
+</li>
+<li>
+<p>因为监听 socket 只持有四元组的<strong>本地半边</strong>（自己 bind 的 IP:port），用它匹配入站 SYN 的<strong>目的地址</strong>；而自连接的两半完全相同，那个 SYN 发出后在 <code class="c">ehash</code> 里<strong>先命中处于 SYN_SENT 的自己</strong>（源=目），握手在这个 socket 内部自洽完成（<code class="c">tcp_rcv_state_process</code>），从未进入 listen 的半连接/accept 队列。换句话说：匹配到的是"自己这一端那个发起方 socket"，不是 LISTEN socket，所以 <code class="c">accept</code> 永远取不到它。</p>
+</li>
+<li>
+<p>一条命令即可（比较"本地地址:端口"列与"对端地址:端口"列是否相同）：
+   <code class="c">bash
+   ss -tn | awk '$4==$5'          # 输出形如 ESTAB 0 0 127.0.0.1:10013 127.0.0.1:10013
+   ss -tan state established | awk '$4==$5'   # 只筛已建连</code>
+   <code class="c">netstat -tn | awk '$4==$5'</code> 同理（列号一致）。也可以用 <code class="c">ss -tnp</code> 带上进程信息定位是谁建的连。</p>
+</li>
+<li>
+<p>报 <strong><code class="c">EADDRNOTAVAIL</code></strong>（Cannot assign requested address）：<code class="c">inet_hash_connect()</code> 在 <code class="c">ip_local_port_range</code> 里找不到空闲的临时端口。注意别混淆：<code class="c">EADDRINUSE</code> 是指定地址/端口已被占用（bind 或四元组冲突），<code class="c">ECONNREFUSED</code> 是对端无监听/回了 RST。排查命令：<code class="c">cat /proc/sys/net/ipv4/ip_local_port_range</code>、<code class="c">ss -s</code>（看 TIME_WAIT/已用端口量）、<code class="c">netstat -s | grep -i fail</code>。缓解：调大端口范围、开启 <code class="c">tcp_tw_reuse</code>、减少短连接（连接池/长连接）、重连做退避而不是无限重试。</p>
+</li>
+</ol>
+</details>
 <p><a id="pnp-03-refs"></a></p>
 <h2>交叉引用</h2>
 <ul>
@@ -1208,6 +1272,29 @@ cargo run -- 127.0.0.1 9000
 <li><code class="c">CLOSE_WAIT</code> 大量出现，是本端 bug 还是对端 bug？</li>
 <li>收到 RST 与收到 FIN，本端 <code class="c">read</code> 的表现分别是什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p><code class="c">shutdown(fd, SHUT_WR)</code> 后：<strong>还能 <code class="c">read</code>，不能 <code class="c">write</code></strong>。它只关本端发送方向（内核立刻在发送队列尾排 FIN，进入 <code class="c">FIN_WAIT_1</code>，对端 ACK 后 <code class="c">FIN_WAIT_2</code>），<strong>接收方向照常工作</strong>，可以继续把对端的剩余数据读完直到 <code class="c">read</code> 返回 0。之后再 <code class="c">write</code> 会失败（<code class="c">EPIPE</code> + <code class="c">SIGPIPE</code>，且对端会回 RST）。这正是"发完请求 → 半关闭 → 继续读响应"的优雅关闭写法；fd 本身没关，最后仍要 <code class="c">close</code>。</p>
+</li>
+<li>
+<p><strong>不会</strong>。socket 的 <code class="c">struct file</code> 有引用计数，fork 后父子各持一份；子进程 <code class="c">close</code> 只是计数减一，父进程的引用还在，计数未归零就不触发 FIN。这是"多进程 close 拖着不发 FIN"的经典陷阱。要立刻发 FIN 用 <code class="c">shutdown(fd, SHUT_WR)</code>（作用于连接而非 fd 计数）；要从源头避免继承，用 <code class="c">socket(..., SOCK_CLOEXEC)</code> 或在 fork 后的子进程里立刻关掉不用的 fd。</p>
+</li>
+<li>
+<p>stdin 到达 EOF 后处于<strong>永久可读</strong>状态（<code class="c">read</code> 立刻返回 0），还留在 <code class="c">select</code> 集合里的话 <code class="c">select</code> 每次都<strong>立即返回</strong>，循环空转成 <strong>busy loop（CPU 100%）</strong>，同时 timeout 语义也失效。正确做法（示例代码里的 <code class="c">stdin_eof</code>）：EOF 后把 stdin 从集合摘除，并 <code class="c">shutdown(sockfd, SHUT_WR)</code> 通知对端"我发完了"，但<strong>保留 socket 继续收</strong>对端的剩余数据，直到 <code class="c">read</code> 返回 0 才退出。</p>
+</li>
+<li>
+<p>是<strong>本端 bug</strong>。<code class="c">CLOSE_WAIT</code> 的含义是：对端已发 FIN（对端主动关闭，属于正常行为），本端内核收到后标记 <code class="c">sk_shutdown |= RCV_SHUTDOWN</code>，<strong>等应用层 <code class="c">close</code></strong> —— 应用不关它就一直停在 <code class="c">CLOSE_WAIT</code>。大量堆积说明本端没正确响应对端关闭：常见于 <code class="c">read</code> 返回 0 时忘了 <code class="c">close</code>、事件循环没处理 <code class="c">EPOLLRDHUP</code>/<code class="c">EPOLLHUP</code>、或连接对象泄漏（泄漏的是代码逻辑不是内核参数）。反之若本端大量 <code class="c">FIN_WAIT_2</code>，才是对端没关。排查：<code class="c">ss -tn state close-wait | head</code> + <code class="c">lsof -p &lt;pid&gt;</code>。</p>
+</li>
+<li>
+<ul>
+<li><strong>收到 FIN（优雅关闭）</strong>：<code class="c">read</code> 先把接收队列里已排队的数据读完，之后返回 <strong>0（EOF）</strong>，这是正常语义，不是错误；可以继续 <code class="c">write</code>（对端收方向还开着，除非它也关了）。</li>
+<li><strong>收到 RST（异常终止）</strong>：<code class="c">read</code> 返回 <strong>-1，<code class="c">errno == ECONNRESET</code></strong>；此后 <code class="c">write</code> 同样报 <code class="c">ECONNRESET</code>，继而 <code class="c">EPIPE</code> + <code class="c">SIGPIPE</code>。RST 是粗暴的：可能<strong>丢弃接收缓冲里未读的数据</strong>，没有"读完剩余"的机会。所以交易链路一律走 <code class="c">shutdown</code> + 读完 + <code class="c">close</code> 的优雅关闭，不用 <code class="c">SO_LINGER{1,0}</code> 硬断。</li>
+</ul>
+</li>
+</ol>
+</details>
 <p><a id="pnp-04-refs"></a></p>
 <h2>交叉引用</h2>
 <ul>
@@ -1396,6 +1483,26 @@ int main(int argc, char** argv) {
 <li>什么情况下设置 <code class="c">SO_RCVBUF</code> 会让吞吐下降？</li>
 <li>TTCP 结束为什么要等 ack 再计时？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p><code class="c">write</code> 成功只表示数据被<strong>拷进内核发送缓冲</strong>（<code class="c">sk_write_queue</code>），什么时候真正上线路由拥塞窗口 <code class="c">cwnd</code>、对端通告窗口 <code class="c">rwnd</code> 和 <code class="c">sk_sndbuf</code> 一起决定，返回时数据可能还躺在缓冲里。接收方"看到"最后一字节要经历：最后一个报文段到达对端网卡 → <code class="c">tcp_v4_rcv</code> 入接收队列且<strong>序号连续</strong>（前面没有缺口，否则要先等重传）→ 应用 <code class="c">read</code> 把它拷出来。所以"发送完成"和"对端收到"之间隔着一整个 RTT 级别的距离，这也是 TTCP 必须等对端回 ack 才能停表的根本原因。</p>
+</li>
+<li>
+<p>传 1 GiB = 1,073,741,824 B：1 KiB 缓冲 → <strong>1,048,576 次</strong> <code class="c">write</code>；64 KiB 缓冲 → <strong>16,384 次</strong>。差 <strong>1,032,192 次</strong>系统调用。按每次 ~1 µs 陷入内核开销计，多花 <strong>约 1.03 秒</strong>（按 1–2 µs 算就是 1–2 秒量级）。这就是"用户态缓冲是第一性能杠杆"：太小 → 系统调用开销主导；但也不是越大越好，超过 64 KiB 后 cache 失效与拷贝成本上升，边际收益递减（8–64 KiB 通常接近最优）。</p>
+</li>
+<li>
+<p>BDP = 带宽 × RTT = 10 Gbps × 30 ms = (10×10⁹/8) B/s × 0.03 s ≈ <strong>37.5 MB</strong>。TCP 窗口必须 ≥ BDP 才能填满管道（实际还要留余量）。Linux 默认 <code class="c">tcp_wmem</code>/<code class="c">tcp_rmem</code> 的 max 常见在 <strong>几 MB 量级</strong>（如 4–6 MB，随内核版本变化），所以默认<strong>通常不够</strong>，需要显式调大 <code class="c">SO_SNDBUF</code>/<code class="c">SO_RCVBUF</code> 或抬高 <code class="c">net.ipv4.tcp_wmem/tcp_rmem</code> 的上限让自动调优跑到这个量级。注意窗口扩大因子（window scaling）现代内核默认开启，早已不受 64 KB 限制；调参前先 <code class="c">ss -ti</code> 看 <code class="c">cwnd</code>、<code class="c">snd_wnd</code>、<code class="c">rtt</code> 实测值。</p>
+</li>
+<li>
+<p>两种典型情况：① <strong>手工 <code class="c">setsockopt(SO_RCVBUF/SO_SNDBUF)</code> 会关掉内核自动调优</strong>，你设的值成为硬上限，若比 BDP 小（或比自动调优给的值小）吞吐立刻下降；② 设得<strong>过大</strong>：每连接占用更多内核内存，接收侧应用读不及时时数据在缓冲里排队，延迟升高（bufferbloat），cache 命中率也会下降。所以纪律是"先 <code class="c">ss -ti</code> 看数据再调参"，不要盲设。</p>
+</li>
+<li>
+<p>因为 <code class="c">write</code> 返回 ≠ 对端收到。如果计时在"最后一个 <code class="c">write</code> 返回"时就停，测的是<strong>把数据灌进本机发送缓冲的速度</strong>——最后几十 MB 可能还没上线路，数字严重虚高，而且结果主要由 <code class="c">sk_sndbuf</code> 大小决定，跟网络几乎无关。必须等对端收到全部数据后回一个确认（TTCP 的 ack），把"最后一字节被对端接收"这一事件纳入计时，才是真正的端到端吞吐。</p>
+</li>
+</ol>
+</details>
 <p><a id="pnp-05-refs"></a></p>
 <h2>交叉引用</h2>
 <ul>
@@ -1595,6 +1702,26 @@ void handleWrite(int fd, Buffer* pending) {
 <li><code class="c">MSG_DONTWAIT</code> 与 <code class="c">O_NONBLOCK</code> 的区别？为什么热路径自旋用前者？</li>
 <li>进程被唤醒到真正跑起来，中间发生了什么？这笔开销大概是多少？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p>LT 的含义是"只要缓冲里<strong>还有</strong>数据就一直报告"，这恰恰意味着<strong>同一件事可能被处理两次</strong>：两个事件循环/两个线程同时持有该 fd、回调里又同步跑了一次事件循环（重入）、或本轮只处理了部分数据。此时再 <code class="c">read</code>，如果 fd 是阻塞的而数据已被前一个处理者读干，就会<strong>阻塞整个事件循环</strong>（所有其它连接一起卡死）。非阻塞 fd 保证"碰了也不会卡住"——读到 <code class="c">EAGAIN</code> 就退出，最坏情况是多一次无效调用。ET 则更严格：必须循环读到 <code class="c">EAGAIN</code>，<strong>强制</strong>非阻塞。</p>
+</li>
+<li>
+<p>剩下 900 字节<strong>根本没进内核</strong>（<code class="c">tcp_sendmsg</code> 发现发送缓冲只剩 100 字节空间，拷完就返回了），也不会自动重发。责任在<strong>应用层</strong>：必须按返回值记账——把已发出的 100 字节从 pending buffer 取走，剩下的继续挂在输出 Buffer 上，然后注册 <code class="c">EPOLLOUT</code>，等可写事件再续写；全部发完<strong>立刻注销 EPOLLOUT</strong>（LT 下不注销会 100% CPU）。muduo 的 <code class="c">TcpConnection::send()</code> 就是这个逻辑。牢记：非阻塞 <code class="c">write</code> 是"有一点空间就部分写"，返回 <code class="c">0 &lt; n &lt; 请求值</code> 是常态，只看 <code class="c">EAGAIN</code> 不处理部分写 = 静默丢数据。</p>
+</li>
+<li>
+<p>用 <code class="c">getsockopt(fd, SOL_SOCKET, SO_ERROR, &amp;err, &amp;len)</code> 取 <strong>pending error</strong>：<code class="c">err == 0</code> 即连接成功；<code class="c">err != 0</code> 就是失败原因（<code class="c">ECONNREFUSED</code>、<code class="c">ETIMEDOUT</code>、<code class="c">EHOSTUNREACH</code> 等），此时应关闭 fd 并按错误处理。原因是：非阻塞 connect <strong>成功和失败都表现为"fd 可写"</strong>——收到 RST 同样让 socket 变为可写——所以"可写 ≠ 成功"。辅助判据：成功后再次 <code class="c">connect</code> 返回 <code class="c">EISCONN</code>，且 <code class="c">getpeername()</code> 有效。</p>
+</li>
+<li>
+<p><code class="c">O_NONBLOCK</code> 是 <strong>fd 上的持久标志</strong>（存在 <code class="c">struct file-&gt;f_flags</code>），影响该 fd 上<strong>所有</strong>读写；<code class="c">MSG_DONTWAIT</code> 是<strong>单次调用</strong>的 flag，只让这一次 <code class="c">recv</code>/<code class="c">send</code> 非阻塞，不改 fd 状态。热路径自旋用 <code class="c">MSG_DONTWAIT</code>：自旋循环本来就是自己反复调用 <code class="c">recv</code>，单次非阻塞已足够；改 fd 标志反而会波及<strong>共享同一 <code class="c">struct file</code> 的其它路径</strong>（dup/fork 后标志是共享的），让别处意外拿到 <code class="c">EAGAIN</code>，也破坏"阻塞/非阻塞"约定。另外 <code class="c">O_NONBLOCK</code> 要用 <code class="c">F_GETFL</code>→改→<code class="c">F_SETFL</code>，直接 <code class="c">F_SETFL</code> 会清掉 <code class="c">O_APPEND</code> 等标志。</p>
+</li>
+<li>
+<p>数据到达 → 网卡硬中断 → 软中断把 skb 放入接收队列 → <code class="c">sk_data_ready</code> 唤醒等在 <code class="c">sk_wq</code> 上的进程（置为 <code class="c">TASK_RUNNING</code> 挂进 runqueue）→ <strong>调度器择机上 CPU</strong>（可能被更高优先级任务抢占，跨核还要等 IPI/迁移）→ 恢复上下文、cache/TLB 冷启动。这笔开销通常是 <strong>微秒级</strong>（几 µs，负载高或跨核时更大）。正是这笔"唤醒 + 调度"延迟，催生了 busy polling（<code class="c">SO_BUSY_POLL</code>，进程自旋问内核"有了吗"）和内核旁路（DPDK，用户态轮询驱动直接收包）。</p>
+</li>
+</ol>
+</details>
 <p><a id="pnp-06-refs"></a></p>
 <h2>交叉引用</h2>
 <ul>
@@ -1880,6 +2007,34 @@ int main() {
 <li><code class="c">EPOLLOUT</code> 应该常驻注册还是按需注册？为什么？</li>
 <li><code class="c">epoll_wait</code> 返回的 fd 已被别的分支 close 了，如何防御？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p>完整路径分"注册"和"通知"两段：
+   - <strong>注册</strong>：<code class="c">epoll_ctl(ADD)</code> → <code class="c">ep_insert()</code> 把 fd 包装成 <strong>epitem 插入红黑树</strong>（只做一次，后续 <code class="c">epoll_wait</code> 不再传 fd 集合），同时在目标 socket 的等待队列 <code class="c">sk_wq</code> 上挂回调 <strong><code class="c">ep_poll_callback</code></strong>。
+   - <strong>通知</strong>：网卡中断 → softirq <code class="c">tcp_v4_rcv</code> → 数据入 <code class="c">sk_receive_queue</code> → <code class="c">sk-&gt;sk_data_ready</code> 触发 <code class="c">ep_poll_callback</code> → 把该 epitem <strong>挂进就绪链表 rdllist</strong> → 唤醒阻塞在 <code class="c">epoll_wait</code> 的进程。回调发生在软中断上下文，等于"事件一到就已经排好队"。
+   - <strong>取事件</strong>：<code class="c">epoll_wait</code> 只把 rdllist 上的事件 <code class="c">copy_to_user</code>，不遍历任何 fd，成本与<strong>就绪数</strong>成正比、与注册总数无关。对比 select：每次调用全量拷贝 fd 集 + O(n) 遍历，这个成本每个循环都付一遍。</p>
+</li>
+<li>
+<p>那 500 字节<strong>再也不会有通知</strong>——ET 只在状态"无→有"的<strong>边沿</strong>上报一次，缓冲里一直有数据不构成新事件。结果：残留字节（以及依赖它才能凑齐的半包）被永久滞留，对端等响应、本端不读，连接<strong>假死</strong>。所以 ET 的硬纪律是：配合非阻塞 fd，<strong>循环 <code class="c">read</code> 直到返回 <code class="c">EAGAIN</code></strong>（或 <code class="c">EPOLLIN</code> 事件里一次读干），绝不能"一次事件只读一次"。</p>
+</li>
+<li>
+<p>因为两者的性价比不对等。LT 的优势在<strong>正确性</strong>：漏读一次事件，下次 <code class="c">epoll_wait</code> 还会报告（缓冲还有数据），最多是慢一点；<code class="c">EPOLLOUT</code> 忘了注销也只是多几次空事件。ET 的优势仅在"<code class="c">epoll_wait</code> 返回次数少一点"（每 fd 少几次系统调用），而真实成本在 <code class="c">read</code>/<code class="c">write</code> 与协议处理上，占比很小；代价却是漏读即死连接、<code class="c">EPOLLOUT</code> 注销逻辑更绕、必须强制非阻塞。陈硕《Linux 多线程服务端编程》6.2 的判断：<strong>性能差距微小，正确性差距巨大</strong>，生产系统选 LT。</p>
+</li>
+<li>
+<p><strong>按需注册</strong>。只在输出 Buffer 有剩余数据时（上次 <code class="c">write</code> 部分写或返回 <code class="c">EAGAIN</code>）才 <code class="c">EPOLL_CTL_MOD</code> 加上 <code class="c">EPOLLOUT</code>，写完立刻 <code class="c">disableWriting()</code> 注销。因为<strong>发送缓冲几乎总是可写</strong>，常驻注册会让每次 <code class="c">epoll_wait</code> 都返回 <code class="c">EPOLLOUT</code> → 无意义事件风暴，LT 模式下 CPU 直接打满（这是 LT 最经典的 bug）。muduo 里对应 <code class="c">Channel::enableWriting()/disableWriting()</code>。ET 同理：ET 只在"不可写→可写"的边沿触发一次，常驻反而可能错过，也应按需注册 + 循环写到 <code class="c">EAGAIN</code>。</p>
+</li>
+<li>
+<p>核心是<strong>不要把裸 fd 号当身份</strong>——fd 号 close 后会被内核复用，旧事件里的 fd 号可能已经指向一条全新连接，按号查表就会串线。防御组合拳：
+   - <code class="c">epoll_event.data</code> 存<strong>指针</strong>（muduo 存 <code class="c">Channel*</code>）而非 fd 号，处理前先校验该 Channel 仍有效、<code class="c">isNoneEvent</code> 就跳过；
+   - 关闭顺序固定为<strong>先 <code class="c">EPOLL_CTL_DEL</code> 再 <code class="c">close</code></strong>；
+   - 用<strong>引用计数/弱引用/世代号（generation）</strong>确认对象在处理期间还活着（<code class="c">shared_ptr&lt;TcpConnection&gt;</code> 延长生命期是 muduo 的做法）；
+   - 残留事件的来源常常是 <code class="c">dup</code>/<code class="c">fork</code> 让 <code class="c">struct file</code> 引用未归零（epitem 不注销、通知照发），用 <code class="c">SOCK_CLOEXEC</code> 并避免无谓 dup；
+   - 对已关闭 fd 的 I/O 返回 <code class="c">EBADF</code>，应当记日志忽略而不是崩溃。</p>
+</li>
+</ol>
+</details>
 <p><a id="pnp-07-refs"></a></p>
 <h2>交叉引用</h2>
 <ul>
@@ -2065,6 +2220,33 @@ int main() {
 <li>组播 TTL 不设会发生什么？<code class="c">IP_MULTICAST_LOOP</code> 什么时候该开？</li>
 <li>为什么 HFT 行情用 UDP 而订单常用 TCP？（从延迟确定性与可靠性职责两个角度）</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p><code class="c">recvfrom</code> 返回 <strong>1000</strong>（它返回的是实际拷给你的字节数），<strong>多出的 500 字节被直接丢弃</strong>——UDP 是数据报语义，一次 <code class="c">recvfrom</code> 消费<strong>整个</strong>数据报，截掉的尾部不会留到"下次再读"，而且<strong>没有任何 errno</strong>，是静默截断。所以接收缓冲必须 ≥ 最大数据报（以太网 MTU 1500 → 通常取 2048；jumbo 环境更大）。要探测对端到底发了多大，可用 <code class="c">recvmsg</code> + <code class="c">MSG_TRUNC</code>（Linux 返回完整长度）或先用 <code class="c">ioctl(FIONREAD)</code> 查队列上下一个数据报的大小。</p>
+</li>
+<li>
+<p>UDP 的 <code class="c">connect()</code> <strong>不发任何报文</strong>，只是给 socket 打上对端标记，之后行为变化有四：① 可以用 <code class="c">send</code>/<code class="c">recv</code> 而不必每次填地址；② 内核<strong>过滤</strong>：来自其它地址的数据报直接丢弃（免费的安全过滤器）；③ 能收到<strong>异步 ICMP 错误</strong>，例如对端端口不可达 → 后续操作返回 <code class="c">ECONNREFUSED</code>（未 connect 的 UDP 收不到这类错误）；④ 省掉每次发送的路由查找，热点路径更快。可再次 <code class="c">connect</code> 改对端，或用 <code class="c">AF_UNSPEC</code> 解除。单对端场景（行情/订单单播）应该 connect：更省、更安全，还白送错误回报。</p>
+</li>
+<li>
+<p>三个丢弃点及观测命令：
+   - <strong>网络路径</strong>（交换机/链路丢包、CRC 错误、IGMP snooping 配置不当）：两端同时抓包 <code class="c">tcpdump -i eth0 -w a.pcap 'udp port 50000'</code> 后对比；交换机侧看端口丢包计数。
+   - <strong>网卡/驱动 ring buffer 溢出</strong>（中断跟不上收包速率）：<code class="c">ethtool -S eth0 | grep -iE 'drop|miss|no_bufs'</code>、<code class="c">netstat -i</code>、<code class="c">cat /proc/net/dev</code> 的 drop 列。
+   - <strong>内核 socket 接收缓冲满</strong>（最常见，"交换机统计正常但应用层缺号"）：<code class="c">cat /proc/net/udp</code> 的 <strong>drops</strong> 列、<code class="c">netstat -su</code> 的 <code class="c">receive buffer errors</code>、<code class="c">ss -unm</code> 看 <code class="c">skmem</code> 与 <code class="c">sk_rcvbuf</code>。
+   另有 IP 分片重组失败：<code class="c">netstat -ip</code>。定位顺序建议：先看 <code class="c">/proc/net/udp</code> drops 与 <code class="c">netstat -su</code> → 再看网卡计数 → 最后两端抓包对比。应用层则用帧里的 sequence number 做 gap 检测，再通过 TCP 重传通道补。</p>
+</li>
+<li>
+<p>组播 <strong>TTL 默认是 1</strong>：报文到第一跳路由器就被丢弃，<strong>出不了本网段</strong>——现象是"同网段能收、跨网段收不到"，常被误判成代码 bug。跨网段/跨机房必须显式设 <code class="c">IP_MULTICAST_TTL</code>（≥ 需要经过的跳数，生产常设 1~几，不要盲目设大，否则报文会在网内乱窜）。<code class="c">IP_MULTICAST_LOOP</code> 决定本主机发出的组播是否<strong>回环给同主机的接收者</strong>（Linux 默认开启 = 1）：<strong>同机自测/同机多进程联调必须开</strong>，否则本机接收者收不到；生产环境若同机还有其它接收者且不希望它们重复收到，可以关（关之前先确认没有本机接收者依赖它）。</p>
+</li>
+<li>
+<p>两个角度：
+   - <strong>延迟确定性</strong>：UDP 无连接、无重传、无拥塞控制、无队头阻塞，一个数据报就是一个数据报，<strong>延迟抖动小、行为可预测</strong>；TCP 丢一个包就要等重传（RTO 或快重传），后面所有数据都被队头阻塞，抖动是毫秒级的。行情要的就是这种确定性。
+   - <strong>可靠性职责</strong>：行情"最新的才有用"，丢一帧可以由<strong>应用层</strong>用序列号检测 gap、走重传通道（通常是 TCP）或 A/B 双馈互补，把可靠性放在应用层按需实现，比让 TCP 强制重传已经过期的行情划算得多；而且组播天然一对多，一份数据全网段共享带宽。
+   订单反过来：<strong>每一笔都必须可靠、有序、不重复</strong>地送达，丢单/重单是资金事故，TCP 的重传、排序、流控、拥塞控制正好把这些职责从应用层拿走；订单是低频点对点，建连握手/RTT 的代价可以用<strong>连接预热</strong>消化。一句话：<strong>行情要确定性 → UDP（组播）+ 应用层可靠性；订单要可靠性 → TCP</strong>。</p>
+</li>
+</ol>
+</details>
 <p><a id="pnp-08-refs"></a></p>
 <h2>交叉引用</h2>
 <ul>
@@ -2301,6 +2483,33 @@ inline uint64_t load_be64(const void* p) {
 <li>varint 编码 <code class="c">-1</code>（int64）占几字节？<code class="c">sint64</code> 呢？</li>
 <li>SBE 的"固定偏移"为什么能零拷贝解码？代价是什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p><code class="c">sizeof(Order)</code> = <strong>24</strong>。x86-64（LP64）下的布局：
+   <code class="c">offset  0-3   id      (int32_t，对齐 4)
+   offset  4-7   padding  ← 为了让 price 满足 8 字节对齐，垫 4 字节
+   offset  8-15  price   (int64_t，对齐 8)
+   offset 16     side    (char，1 字节)
+   offset 17-23  padding  ← 尾部填充 7 字节：结构体整体对齐 = 最宽成员 8，
+                            sizeof 必须是 8 的倍数 → 24</code>
+   真正有用的只有 <strong>13 字节</strong>（4+8+1，即 <code class="c">kOrderWireSize</code>），11 字节是 padding，而且 padding 的字节内容<strong>未初始化</strong>——直接 <code class="c">memcpy</code> 发出去就等于把栈上的随机字节送上线路。这正是"结构体不能 memcpy 上线"的第一个理由（另三个：字节序、类型宽度、对齐访问）。</p>
+</li>
+<li>
+<p>因为 <code class="c">long</code> 的宽度<strong>不是跨平台固定的</strong>：Linux/macOS 的 <strong>LP64</strong> 下是 <strong>8 字节</strong>，Windows 的 <strong>LLP64</strong>（以及 32 位 Linux 的 ILP32）下是 <strong>4 字节</strong>。同一个 <code class="c">struct</code> 在两端布局不同 → 字段错位、长度不符，历史数据也无法再解释。所以 wire format 只用定宽类型 <code class="c">int8_t/int16_t/int32_t/int64_t</code>；同理 <code class="c">int</code>（只保证 ≥16 位）、<code class="c">time_t</code>、指针、<code class="c">bool</code>（宽度与取值实现相关）都禁止上协议。</p>
+</li>
+<li>
+<p>旧客户端解析时遇到不认识的 field number，会把它当作<strong>未知字段（unknown fields）</strong>原样保留在消息对象里（C++ 里可通过 <code class="c">UnknownFieldSet</code>/<code class="c">unknown_fields()</code> 访问）；程序读该字段拿到的是类型默认值（proto3 无字段存在性语义，除非声明 <code class="c">optional</code>）。所以新增字段是<strong>安全</strong>的：老端跳过它，新端用默认值。未知字段的价值在于<strong>透传</strong>：老版本程序做代理/转发/落盘再回传时，重新序列化会把未知字段原样带出去，新版本加的数据不会在中间环节被吃掉。前提：<code class="c">field number</code> 永不复用（删字段要写 <code class="c">reserved</code>）。</p>
+</li>
+<li>
+<p>普通 <code class="c">int64</code> 编码 <code class="c">-1</code>：负数按补码转成 uint64 是 <code class="c">0xFFFFFFFFFFFFFFFF</code>，varint 每字节只装 7 位有效位 → 64/7 向上取整 = <strong>10 字节</strong>（这是 int64 varint 的最大长度）。<code class="c">sint64</code> 用 <strong>ZigZag</strong> 编码（<code class="c">-1 → 1</code>，<code class="c">1 → 2</code>，<code class="c">-2 → 3</code>…），<code class="c">-1</code> 映射成 1，只需 <strong>1 字节</strong>。所以有符号整数（尤其可能为负的价格差、净额）应声明 <code class="c">sint32/sint64</code>，正负混合场景能省掉接近 9 字节/字段。</p>
+</li>
+<li>
+<p>因为 SBE 每条消息的字段<strong>偏移在 schema 里编译期就固定</strong>：解码器（flyweight）只持有一个指向报文缓冲的指针，读字段就是 <code class="c">base + offset</code> 再按需 <code class="c">bswap</code>——不解析、不拷贝、不分配，接近零成本（纳秒级），也天然支持"只读关心的字段"。代价：① <strong>不灵活</strong>，字段长度/顺序/增删都要改 schema 并做版本协商，两端必须同步升级；② <strong>带宽略大</strong>，定长字段 + 固定头，无法像 varint 那样压缩小数字；③ 失去 protobuf 那种"未知字段自动保留"的自由演化能力；④ 变长数据（字符串、数组）要额外用固定长度或偏移表处理。所以结论是：<strong>管理面用 protobuf 的灵活性，热路径用定长二进制的确定性</strong>。</p>
+</li>
+</ol>
+</details>
 <p><a id="pnp-09-refs"></a></p>
 <h2>交叉引用</h2>
 <ul>

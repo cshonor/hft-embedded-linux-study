@@ -641,6 +641,21 @@ void increment() {
 <li>什么是优先级反转？为什么无锁不会发生？</li>
 <li>什么场景适合用无锁？什么场景不适合？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>wait-free 保证每个操作在有限自身步骤内完成；lock-free 只保证系统整体持续有操作完成；obstruction-free 仅保证线程独占运行足够久时完成。
+   保证强弱通常为 wait-free ＞ lock-free ＞ obstruction-free，wait-free 最强也最难实现。</li>
+<li>多线程反复更新同一原子位置会造成 CAS 失败重试和 cache line 在核间迁移，浪费 CPU。
+   高竞争 mutex 可把等待者阻塞或排队，反而减少无效工作，因此无锁不等于总是更快。</li>
+<li>weak CAS 即使比较值相等也允许伪失败，这可适配某些硬件的实现方式。
+   它适合放在本来就要重试的循环中；只尝试一次且伪失败难处理时通常用 strong。</li>
+<li>优先级反转是高优先级线程等待低优先级锁持有者，而中优先级线程又阻止后者运行。
+   无锁避免了“等待锁持有者”这一经典形式，但不能保证高优先级线程不因 CAS 干扰、调度或资源竞争而饥饿。</li>
+<li>操作简单、竞争可控、不能容忍阻塞，且有成熟内存回收方案时适合无锁，例如固定拓扑的 SPSC。
+   复杂不变量、高竞争、需要阻塞等待或团队难以验证内存序/回收时，优先选择锁和成熟容器。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -777,6 +792,21 @@ delete old_head;   // 如果另一个线程的 pop 也在读 old_head-&gt;next�
 <li>pop 中直接 <code class="c">delete old_head</code> 有什么危险？</li>
 <li>为什么 push 前的 <code class="c">new node</code> 在 HFT 中应该改成 mempool 分配？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>push 先令新节点的 <code class="c">next</code> 指向观察到的 head，再用 CAS 把 head 从该旧值改为新节点。
+   其他线程可能先改变 head，CAS 失败后会更新 expected 并重连重试，因此必须循环到成功。</li>
+<li>release 发布保证节点构造和 <code class="c">next</code> 写入先于 head 的发布；读到该值的 acquire pop 与之同步。
+   因此 pop 在成功取得节点后能看到完整初始化；失败路径通常可用更弱的 memory order。</li>
+<li>weak 允许在值相等时伪失败，通常在循环内成本更合适；strong 不允许伪失败，但仍会因真实竞争失败。
+   循环 CAS 常用 weak，单次条件转换或伪失败处理不便时用 strong。</li>
+<li>另一个线程可能已经读取 <code class="c">old_head</code>，甚至正准备解引用它；当前 pop 立即删除会造成 use-after-free。
+   还可能因地址复用触发 ABA，必须采用 hazard pointer、epoch、引用计数等安全回收机制。</li>
+<li>通用 <code class="c">new</code> 可能获取全局分配器锁、触发系统调用或产生不可预测尾延迟。
+   预分配 mempool 可提供有界、局部且稳定的分配路径，并减少碎片；节点复用仍须配合 ABA/安全回收方案。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -924,6 +954,21 @@ bool pop(T&amp; result) {
 <li>Hazard pointer 的基本原理是什么？为什么登记后要"重读确认"？</li>
 <li>为什么 mempool + tag 是 HFT 常用的 ABA 解决方案？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>线程读到值 A 后暂停，其他线程把它改成 B 又改回 A；CAS 只比较当前位模式，因而仍会成功。
+   但 A 背后的对象代次或链表关系可能已改变，所以“值相同”不代表状态没变。</li>
+<li>一个 pop 读出 <code class="c">old_head</code> 后，另一线程可弹出并释放它，甚至让同一地址被复用后重新成为 head。
+   前一线程随后访问 <code class="c">old_head-&gt;next</code> 就可能解引用已释放或已换代对象，并错误地 CAS 链表。</li>
+<li>tagged pointer 把地址与每次更新递增的版本号一起比较，即使地址回到 A，tag 不同也会使 CAS 失败。
+   若要原子比较完整 64 位指针和 64 位计数通常需要 128 位 CAS；若能安全压缩字段，也可能用单个机器字实现。</li>
+<li>线程先把将要访问的节点发布到自己的 hazard slot，回收者只释放未被任何 slot 保护的退役节点。
+   发布与首次读取之间节点可能已被移除，所以必须重读共享指针并确认仍相同，否则撤销保护后重试。</li>
+<li>mempool 避免热路径通用分配并控制节点复用，tag 则区分同一地址的不同代次。
+   组合后路径较固定、局部性好，但 tag 必须有足够位宽并正确处理回绕，mempool 本身并不能消除 ABA。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1078,6 +1123,21 @@ alignas(64) std::atomic&lt;size_t&gt; read_pos;
 <li>容量为什么必须是 2 的幂？用什么代替取模？</li>
 <li>为什么 C 程序员用 <code class="c">volatile</code> 做 SPSC 队列是错的？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>SPSC 中生产者独占写 <code class="c">write_pos</code>，消费者独占写 <code class="c">read_pos</code>，不存在多个线程竞争修改同一索引。
+   双方只需原子地发布和观察对方进度，因此不需要 CAS 这种 read-modify-write 仲裁。</li>
+<li>producer 对 <code class="c">read_pos</code> 的 acquire 读取观察消费者 release 发布的空槽，确保不会过早覆盖仍在使用的元素。
+   producer 写完元素后以 release 更新 <code class="c">write_pos</code>，consumer 的 acquire 读取便能看到该元素的完整初始化。</li>
+<li>两个索引分别被不同核频繁写，若落在同一 cache line，会因一致性协议反复迁移该行。
+   分离到不同 cache line 可降低 false sharing；<code class="c">64</code> 是常见硬件假设，更可移植时可参考硬件干扰大小常量。</li>
+<li>“必须为 2 的幂”是这种快速索引实现的约束，不是所有环形队列的标准要求。
+   容量为 2 的幂时可用 <code class="c">index &amp; (capacity - 1)</code> 替代取模；其他容量可正确使用 <code class="c">%</code>。</li>
+<li>C++ <code class="c">volatile</code> 只约束特定优化和可观察访问，不提供跨线程原子性、同步或 happens-before。
+   用它并发读写索引仍可能 data race；应使用 <code class="c">std::atomic</code> 和正确的 acquire/release 配对。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1244,6 +1304,21 @@ public:
 <li>"多生产者拆成多个 SPSC"策略为什么可能比单个 MPMC 无锁队列更快？</li>
 <li>HFT 系统为什么极少用真正的 MPMC 无锁队列？通常怎么替代？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>SPSC 的每个索引只有一个写者，普通 atomic load/store 即可发布进度；MPMC 有多个线程争夺同一入队或出队位置。
+   后者必须用 CAS、exchange 或每槽序号等原子协议唯一分配位置并保持线性化。</li>
+<li>竞争者都对同一原子 cache line 做 RMW，所有权在 CPU 核之间不断转移，失败者还要重试并制造更多流量。
+   mutex 在高竞争时可让等待者排队或睡眠，减少重试风暴，所以实际吞吐可能更高。</li>
+<li>本文展示的是 Vyukov 风格的 intrusive MPSC 算法，不是通用 MPMC：生产者用一次 <code class="c">exchange</code> 取得前驱，避免 CAS 失败循环。
+   优点是生产者路径短；代价是消费者只有一个，且生产者交换 head 后、链接 <code class="c">next</code> 前存在必须处理的短暂不一致窗口。</li>
+<li>每个生产者独占一个 SPSC 的写索引，不再争夺全局入队原子，数据和索引也更容易保持缓存局部性。
+   消费者轮询或归并多个队列会增加读取工作，但生产者数量固定时通常比热点 MPMC 更可预测。</li>
+<li>MPMC 的 RMW 竞争、复杂内存回收和不可预测重试会扩大尾延迟，验证成本也高。
+   HFT 常用固定拓扑拆成多个 SPSC、按 key 分片到单写者，或在非热路径使用有锁队列与批量提交。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>

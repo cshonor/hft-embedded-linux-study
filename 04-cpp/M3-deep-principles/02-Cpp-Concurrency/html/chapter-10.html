@@ -574,6 +574,21 @@ int s = std::reduce(std::execution::par, v.begin(), v.end(), 0);
 <li><code class="c">reduce</code> 对操作有什么要求？减法可以用 <code class="c">reduce</code> 吗？</li>
 <li>为什么 HFT 热路径不用并行 STL？什么 HFT 场景适合用？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">seq</code> 在调用线程中顺序执行；<code class="c">par</code> 允许多个线程并行，但同一调用内的函数调用不彼此交错执行。
+   <code class="c">par_unseq</code> 还允许同一线程内 unsequenced/vectorized 执行，约束最强，不能依赖调用顺序。</li>
+<li><code class="c">par_unseq</code> 的多个调用可能在同一线程上交错；一个 SIMD lane 持锁后，另一 lane 若等待同一锁，持锁 lane 未必能继续。
+   <code class="c">mutex::lock</code> 属于 vectorization-unsafe 的同步操作，调用会违反该策略对用户函数的要求并可能死锁。</li>
+<li><code class="c">accumulate</code> 严格按迭代顺序做左折叠；<code class="c">reduce</code> 允许分组和重排，再合并局部结果。
+   并行需要这种重排自由才能分块计算，所以执行策略版本使用 <code class="c">reduce</code>。</li>
+<li>要让任意分组和次序都得到等价结果，操作应满足结合律，并通常还需交换律及正确的单位/初值语义。
+   减法可满足接口类型要求却不满足这些代数性质，结果依分组次序而变，不适合作为并行 reduce 操作。</li>
+<li>并行 STL 的分块、worker 调度和同步通常不由调用者精确控制，容易产生不可预测尾延迟。
+   离线回测、盘后风险计算、大批量排序和报表等吞吐优先场景更适合使用。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -740,6 +755,21 @@ for (int i = 1; i &lt; n; ++i)
 <li>为什么 <code class="c">if-else</code> 分支会破坏向量化？如何改写？</li>
 <li>HFT 热路径用 <code class="c">par_unseq</code> 还是手动 SIMD？为什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">par_unseq</code> 允许多个元素调用在同一线程上 unsequenced 交错；某个 SIMD lane 阻塞可阻止持锁 lane 获得执行机会。
+   <code class="c">mutex::lock</code> 是 vectorization-unsafe 的同步操作，不能从这种回调中调用，并可能造成死锁。</li>
+<li>对保证 lock-free 的原子类型使用不建立同步关系的原子操作可满足无阻塞要求，但并非任意 <code class="c">atomic::fetch_add</code> 都可盲目使用。
+   多个 lane/线程更新同一原子会串行化并产生 cache line 争用，通常抵消向量化收益。</li>
+<li>好回调应无阻塞、无跨元素依赖、连续访问数据且控制流简单，例如 <code class="c">out[i] = a[i] * scale + b[i]</code>。
+   坏例子是在每个元素中加锁、分配内存、做 I/O，或更新同一个共享计数器。</li>
+<li>各 lane 走不同分支会产生 divergence，硬件可能分别执行分支并用 mask 合并，降低利用率。
+   可改为条件选择、掩码运算，或先按类别分组数据；是否更快需以编译器向量化报告和基准确认。</li>
+<li>对极低延迟核心循环通常优先经过验证的编译器 intrinsics/<code class="c">std::simd</code> 风格显式 SIMD，以控制指令和数据布局。
+   <code class="c">par_unseq</code> 更简洁但调度、是否向量化和生成代码不完全可控，可用于非关键批处理并通过测量选择。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -905,6 +935,21 @@ void smart_sort(std::vector&lt;int&gt;&amp; v) {
 <li>什么数据量适合用 <code class="c">par</code>？什么适合 <code class="c">par_unseq</code>？</li>
 <li>为什么不能只看 Big-O 复杂度判断并行算法的性能？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>不一定。并行版本通常保持相同数量级的工作复杂度，有些算法还会为分块和合并做更多总工作。
+   它改善的是足够资源下的 wall-clock time 或 span，不会自动改善 Big-O work，并带来调度常数。</li>
+<li>串行 <code class="c">find</code> 在遇到第一个匹配项时立即停止；并行版本的多个分块可能已经同时扫描。
+   实现可发出取消信号，但仍需协调并确定迭代顺序意义上的首个结果，因此提前终止收益较弱。</li>
+<li>分区、提交任务、同步和合并结果的固定成本可能远大于排序 100 个元素的计算。
+   缓存局部性、线程唤醒和并行 runtime 争用也会使并行版本更慢。</li>
+<li>没有通用元素数阈值，应比较每元素成本、数据布局、核心数和后端开销并用基准决定。
+   <code class="c">par</code> 适合足够大的独立工作；<code class="c">par_unseq</code> 还要求回调 vectorization-safe、分支少且数据适合 SIMD。</li>
+<li>Big-O 隐藏常数、内存带宽、缓存 miss、同步、分配、NUMA、负载不均和尾延迟。
+   两个同阶算法在真实硬件上可能相差很大，必须结合 work/span 分析与代表性 workload 测量。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1072,6 +1117,21 @@ std::transform(std::execution::par, v.begin(), v.end(), out.begin(),
 <li><code class="c">transform_reduce</code> 解决了什么问题？举一个使用场景。</li>
 <li>"带状态的循环"如何改写为并行友好？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">transform</code>/<code class="c">fill</code> 的各输出元素通常可独立处理；<code class="c">reduce</code> 可把输入分块求局部值再合并。
+   只要回调无共享副作用且归约满足所需代数性质，就容易安全并行。</li>
+<li><code class="c">accumulate</code> 定义为按顺序左折叠，后一结果依赖前一累积值，因此不能任意重排。
+   可用允许分组重排的 <code class="c">reduce</code>，但操作必须对这种重排语义正确，浮点结果也可能不逐位相同。</li>
+<li>用 parallel scan：各块先求局部前缀和，再扫描块总和，最后把块偏移加回各元素。
+   它增加若干遍操作，却把关键依赖链缩短并让大量操作并行，数据足够大时 wall-clock time 可更短。</li>
+<li><code class="c">transform_reduce</code> 把逐元素映射与归约融合，避免生成中间容器并允许并行分块。
+   例如计算两个向量的点积：先逐对相乘，再把乘积求和。</li>
+<li>先识别循环携带依赖，把可交换状态改成每线程局部状态并在末尾 reduce，或改写为 scan。
+   无法安全分解的顺序状态机应保留串行，不应仅为并行而改变其语义。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1246,6 +1306,21 @@ std::for_each(std::execution::par, data.begin(), data.end(), process);
 <li>"先 STL 后手写"的开发流程有什么好处？</li>
 <li>并行 STL 的实现可能依赖什么库？部署时要注意什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>并行 STL 常只需在算法调用中加入执行策略；手写分块还要处理线程、边界、异常、同步和合并。
+   差距取决于算法，但前者通常是一两行调用，后者是完整调度实现，不能用固定行数衡量质量。</li>
+<li>独立、规则、数据量足够大且标准算法可直接表达时适合并行 STL。
+   需要固定绑核、NUMA 放置、定制调度/背压、跨阶段流水线或严格尾延迟时需要手写或专用 runtime。</li>
+<li>最主要原因是实现可自由选择分块、线程和调度，调用者难以约束最坏执行延迟。
+   runtime 开销、共享线程池干扰、分配和同步也可能造成不可预测尖刺。</li>
+<li>先用 STL 可快速得到语义清晰、易验证的正确基线，并建立性能与结果对照。
+   profiling 确认瓶颈后只替换必要部分，能减少手写并发范围和引入缺陷的机会。</li>
+<li>具体实现可能串行退化，也可能依赖 oneTBB 等后端或标准库自己的线程池。
+   部署前要核对工具链实现、链接依赖、ABI/版本、运行时线程配置，并在目标机器验证性能与结果。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>

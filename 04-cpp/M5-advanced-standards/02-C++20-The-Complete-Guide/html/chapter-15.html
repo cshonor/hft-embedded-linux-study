@@ -297,8 +297,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-14.html#intro"><span class="n">14</span>协程</a>
           <a href="chapter-15.html#intro"><span class="n">15</span>深入理解协程</a>
           <a href="chapter-16.html#intro"><span class="n">16</span>模块</a>
-          <a href="chapter-17.html#intro"><span class="n">17</span>ch17-lambda</a>
-          <a href="chapter-17.html#intro"><span class="n">17</span>ch17-lambda</a>
+          <a href="chapter-17.html#intro"><span class="n">17</span>Lambda 表达式扩展</a>
+          <a href="chapter-17.html#intro"><span class="n">17</span>Lambda 表达式扩展</a>
           <a href="chapter-18.html#intro"><span class="n">18</span>编译时计算</a>
           <a href="chapter-19.html#intro"><span class="n">19</span>非类型模板参数扩展</a>
           <a href="chapter-20.html#intro"><span class="n">20</span>新的类型特征</a>
@@ -509,6 +509,45 @@ task&lt;void&gt; process() {
 <li>协程和线程的区别？协程的优势是什么？</li>
 <li>HFT 中协程适合什么场景？不适合什么场景？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">co_await expr</code> 展开为三步（由 awaiter 的三个方法驱动）：</li>
+<li><strong><code class="c">await_ready()</code></strong>：先问"结果是否已经就绪"。若返回 <code class="c">true</code>，说明不必挂起，<strong>直接跳到第 3 步</strong>（同步完成，零挂起开销）。</li>
+<li><strong>挂起</strong>：若返回 <code class="c">false</code>，把状态写入协程帧并挂起，然后调用 <strong><code class="c">await_suspend(coroutine_handle&lt;&gt; h)</code></strong>——它负责把 <code class="c">h</code> 交给异步操作，等操作完成后由某处调用 <code class="c">h.resume()</code>。</li>
+<li><strong>恢复</strong>：协程被 resume 后调用 <strong><code class="c">await_resume()</code></strong>，其返回值就是整个 <code class="c">co_await</code> 表达式的值（异常也从这里传出）。</li>
+<li>它们是标准库提供的两个最简 awaiter，区别只在 <code class="c">await_ready()</code> 的返回值：
+   - <code class="c">std::suspend_always</code>：<code class="c">await_ready()</code> 恒返回 <strong><code class="c">false</code></strong> —— <strong>总是挂起</strong>（常用于 <code class="c">initial_suspend</code> 让协程惰性启动，或 <code class="c">final_suspend</code> 保留协程以便销毁/取结果）。
+   - <code class="c">std::suspend_never</code>：<code class="c">await_ready()</code> 恒返回 <strong><code class="c">true</code></strong> —— <strong>从不挂起</strong>，立即继续（让协程一调用就跑到第一个真正的挂起点）。
+两者都不保存状态，纯粹是"挂起策略"的标记。</li>
+<li>自定义 awaiter 需要三个方法：
+   - <strong><code class="c">await_ready()</code></strong> → bool：结果是否已就绪；返回 true 则跳过挂起（快路径）。
+   - <strong><code class="c">await_suspend(std::coroutine_handle&lt;&gt; h)</code></strong>：挂起后调用，负责<strong>安排后续的恢复</strong>（如把 <code class="c">h</code> 注册到事件循环/IO 完成回调里）。返回 <code class="c">void</code> 表示把控制权交回调用者；返回 <code class="c">bool</code> 时，<code class="c">false</code> 表示立即恢复协程。
+   - <strong><code class="c">await_resume()</code></strong>：恢复后调用，其<strong>返回值就是 <code class="c">co_await</code> 表达式的值</strong>；若异步操作失败，也在这里抛异常。</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">struct AsyncReadAwaiter {
+    bool await_ready() { return false; }
+    void await_suspend(std::coroutine_handle&lt;&gt; h) { /* 注册回调，完成时 h.resume() */ }
+    ssize_t await_resume() { return result; }
+};
+</code></pre>
+<ol start="4">
+<li>协程<strong>不是</strong>线程：
+   - 协程在<strong>线程之上</strong>运行，切换是<strong>协作式</strong>的（只在 <code class="c">co_await</code>/<code class="c">co_yield</code> 处让出），线程是<strong>抢占式</strong>的（OS 随时可打断）。
+   - 协程切换只需保存/恢复少量状态并跳转，<strong>不进内核</strong>，没有线程切换的调度器/TLB/cache 污染开销；线程切换要陷入内核。
+   - 一个线程上可以跑成千上万个协程；单线程内的协程之间<strong>不存在数据竞争</strong>，不需要锁。
+   - 协程的挂起点是显式的（写在代码里），栈是"可挂起的帧"而不是固定的线程栈。
+优势：切换开销极小、无锁并发、高并发密度、异步代码可以写成同步顺序风格（可读性好）。</li>
+<li><strong>适合</strong>：
+   - <strong>异步 I/O</strong>：等网卡/磁盘/数据库时挂起，不占用线程，一个线程就能扛大量连接；
+   - <strong>状态机</strong>：把协议解析/多阶段流程写成顺序代码，用 <code class="c">co_await</code> 表达"等待下一步"，比手写状态枚举清晰得多；
+   - <strong>旁路/离线逻辑</strong>：批量回放、配置加载、日志落盘等非关键路径。
+<strong>不适合</strong>：
+   - <strong>热路径/撮合主循环</strong>：协程帧的分配与恢复时机由调度器决定，<strong>尾延迟不确定</strong>；挂起/恢复还要访问帧（可能 cache miss），这与低延迟要求的确定性相冲突；
+   - 需要严格绑核、精确控制内存布局的场景。
+一句话：协程用来解决"<strong>等</strong>"的问题，不适合解决"<strong>快</strong>"的问题。</li>
+</ol>
+</details>
       </section>
 
       <section class="section" id="quiz">

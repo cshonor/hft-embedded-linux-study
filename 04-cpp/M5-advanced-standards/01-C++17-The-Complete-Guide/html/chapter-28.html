@@ -493,6 +493,48 @@ public:
 <li><code class="c">std::destroy_n</code> 做什么？</li>
 <li>HFT 如何用 <code class="c">std::align</code> 做 cache 行对齐内存池？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">std::align(alignment, size, ptr, space)</code> 在给定的缓冲区里<strong>找到第一个满足对齐要求的地址</strong>并返回。
+参数含义：<code class="c">alignment</code> —— 要求的对齐值（必须是 2 的幂）；<code class="c">size</code> —— 要放置的对象字节数；<code class="c">ptr</code> —— 输入/输出的 <code class="c">void*&amp;</code>，传入缓冲区当前起始地址，返回对齐后的地址；<code class="c">space</code> —— 输入/输出的 <code class="c">size_t&amp;</code>，传入缓冲区剩余字节数，返回对齐后剩余的字节数。
+返回值：成功返回对齐后的指针（等于调整后的 <code class="c">ptr</code>），空间不够则返回 <code class="c">nullptr</code>（并且此时 <code class="c">ptr</code>/<code class="c">space</code> 不被修改）。</li>
+<li>它解决「<strong>在已有存储里重新创建对象后，如何合法地拿到指向新对象的指针</strong>」的问题。
+典型场景：用 placement new 在旧对象的存储上构造新对象（尤其旧类型是 const 限定的、或含 const 成员/引用成员），或者从 <code class="c">std::optional</code>/小缓冲里取出新构造的对象——直接沿用旧指针是未定义行为，编译器可以假定那个指针仍指向旧对象。</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">alignas(T) std::byte buf[sizeof(T)];
+T* p = new (buf) T{};
+p-&gt;~T();
+T* q = new (buf) T{};      // 复用存储
+q = std::launder(q);       // 告诉编译器：这里现在是新对象
+</code></pre>
+<p>只有在「存储被复用、旧指针仍要继续使用」这类场合才需要；普通的 placement new 直接用 new 返回的指针即可，不必 <code class="c">launder</code>。
+3. 区别在于被构造元素的初始化方式：
+   - <code class="c">uninitialized_default_construct</code> 做<strong>默认初始化</strong>（等价于 <code class="c">::new (p) T;</code>）：对类类型调用默认构造函数，对 <code class="c">int</code>/<code class="c">double</code> 等平凡类型<strong>不初始化</strong>，值是未定的。
+   - <code class="c">uninitialized_value_construct</code> 做<strong>值初始化</strong>（等价于 <code class="c">::new (p) T();</code>）：对类类型调用默认构造函数，对平凡类型<strong>清零</strong>。
+所以想让 <code class="c">int</code> 数组拿到确定的 0，要用 <code class="c">uninitialized_value_construct</code>（或对应的 <code class="c">_n</code> 版本），用 default 版本读到的值是不确定的。
+4. <code class="c">std::destroy_n(first, n)</code> 对 <code class="c">[first, first + n)</code> 范围内的 n 个已构造对象<strong>按序调用析构函数</strong>（<code class="c">std::destroy(first, last)</code> 的计数版本）。
+对平凡类型（trivially destructible）它什么都不做（可被优化掉）；对类类型则逐个析构，但不释放存储——释放仍由 allocator/deallocate 负责。它常与 <code class="c">uninitialized_*</code> 系列配对，用于手写容器的析构。
+5. 思路是：先用 <code class="c">alignas</code> 让整块缓冲区按 cache line 对齐，再用 <code class="c">std::align</code> 在块内逐个切出对齐的对象槽位：</p>
+<pre class="code" data-label="cpp"><code class="c">class AlignedPool {
+    alignas(64) std::byte buf[64 * 1024];   // 64KB，按 cache line 对齐
+    void*  ptr   = buf;
+    std::size_t space = sizeof(buf);
+public:
+    template &lt;typename T&gt;
+    T* alloc() {
+        if (std::align(64, sizeof(T), ptr, space)) {   // 对齐到 64 字节
+            auto p = static_cast&lt;T*&gt;(ptr);
+            ptr   = static_cast&lt;std::byte*&gt;(ptr) + sizeof(T);
+            space -= sizeof(T);
+            return new (p) T();          // placement new，注意自行 destroy
+        }
+        return nullptr;                  // 空间不足
+    }
+};
+</code></pre>
+<p>这样每个对象都独占一条 cache line（或至少不跨界），避免伪共享（false sharing）；配合 <code class="c">uninitialized_*</code> / <code class="c">destroy_n</code> 管理生命周期即可。</p>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>&lt;chrono&gt; 的 floor/round/ceil</h2></div>
@@ -566,6 +608,33 @@ auto ns = floor&lt;nanoseconds&gt;(ts.time_since_epoch());
 <li>HFT 时间戳为什么要用 <code class="c">floor&lt;nanoseconds&gt;</code>？</li>
 <li>找当前分钟起始时刻的写法？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">duration_cast</code> 只有一种取整方向：<strong>向零截断</strong>（truncation toward zero）。
+C++17 新增的 <code class="c">floor</code> / <code class="c">ceil</code> / <code class="c">round</code> 提供了明确的向下取整、向上取整、四舍五入（ties away from zero），并且它们同时有 <code class="c">duration</code> 和 <code class="c">time_point</code> 两个版本，不必再手写 <code class="c">tp - tp % period</code> 之类的对齐表达式。
+对时间跨度/时间戳做「对齐到整秒」「超时向上取整」这类操作时，语义不再需要靠注释解释。</li>
+<li><code class="c">round&lt;milliseconds&gt;(2500us)</code> 得到 <strong>3ms</strong>（2.5 按四舍五入、平局时远离零的方向取到 3）。
+<code class="c">duration_cast&lt;milliseconds&gt;(2500us)</code> 得到 <strong>2ms</strong>（向零截断）。
+两者在正数上就有差别，在负数上差别更明显：<code class="c">duration_cast</code> 向零截断，<code class="c">floor</code> 向负无穷取整，<code class="c">ceil</code> 向正无穷取整——涉及 epoch 之前的 <code class="c">time_point</code> 时尤其要注意别用错。</li>
+<li>它把 <code class="c">time_point</code> 向下取整到目标 duration 粒度：<strong>返回不大于原 <code class="c">time_point</code>、且能用该 duration 表示的最大 <code class="c">time_point</code></strong>。</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">auto tp      = system_clock::now();
+auto floored = floor&lt;seconds&gt;(tp);   // 当前这一秒的开始
+</code></pre>
+<p>这正好是「bar 起始时刻」「分钟起点」需要的语义——结果永远不晚于原时刻，不会因为取整把时间戳推到未来。
+4. 因为延迟测量需要<strong>整数计数</strong>且<strong>语义确定</strong>：<code class="c">floor&lt;nanoseconds&gt;</code> 把时钟原生的 duration 转成纳秒整数，只舍不入，得到的计数可直接相减、排序、打日志，不会因为取整方向不同而产生「测量出的延迟是负数」这类错觉。</p>
+<pre class="code" data-label="cpp"><code class="c">auto ts = steady_clock::now();
+auto ns = floor&lt;nanoseconds&gt;(ts.time_since_epoch());
+</code></pre>
+<p>注意时钟的真实分辨率由实现决定（是否真有纳秒级精度需查 <code class="c">steady_clock::period</code>），<code class="c">floor</code> 只保证取整方向，不提升精度。
+5. 对 <code class="c">time_point</code> 用 <code class="c">floor</code> 向下取整到分钟粒度即可：</p>
+<pre class="code" data-label="cpp"><code class="c">auto now         = system_clock::now();
+auto minute_start = floor&lt;minutes&gt;(now);   // 当前分钟的开始时刻
+auto bar_start    = floor&lt;seconds&gt;(now);   // 1 秒 bar 的起始（同理）
+</code></pre>
+<p>若要先把时间戳对齐到微秒再取分钟，可以写 <code class="c">floor&lt;minutes&gt;(floor&lt;microseconds&gt;(now))</code>。</p>
+</details>
       </section>
       <section class="section" id="s-03">
         <div class="sec-head"><div class="sec-no">03</div><h2>&lt;tuple&gt; 改进与杂项</h2></div>
@@ -649,6 +718,41 @@ double dist = std::hypot(x2-x1, y2-y1, z2-z1);
 <li><code class="c">std::variant</code> 的 <code class="c">hash</code> 支持是 C++17 加的吗？</li>
 <li>多来源策略参数如何用 <code class="c">tuple_cat</code> 合并后构造对象？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">std::tuple_cat</code> 把若干个 tuple <strong>按序拼接成一个新 tuple</strong>，元素类型与值都被拷贝/移动过去，返回的是一个新的 <code class="c">std::tuple&lt;...&gt;</code>。</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">auto t1 = std::make_tuple(1, 2.0);
+auto t2 = std::make_tuple(&quot;hello&quot;, 'c');
+auto merged = std::tuple_cat(t1, t2);
+// std::tuple&lt;int, double, const char*, char&gt;
+</code></pre>
+<p><strong>能合并 <code class="c">pair</code></strong>：<code class="c">std::pair</code> 在 <code class="c">tuple_size</code> / <code class="c">tuple_element</code> 协议下被当作 2 元 tuple 看待，所以 <code class="c">std::tuple_cat(t1, std::make_pair(42, 3.14))</code> 得到 <code class="c">std::tuple&lt;int, double, int, double&gt;</code>（<code class="c">std::array</code> 同理）。
+2. 两者方向不同：
+   - <code class="c">std::apply(f, t)</code> 是「<strong>调用</strong>」——把 tuple 展开成 <code class="c">f</code> 的实参，返回 <code class="c">f</code> 的返回值。
+   - <code class="c">std::make_from_tuple&lt;T&gt;(t)</code> 是「<strong>构造</strong>」——把 tuple 展开成 <code class="c">T</code> 的构造函数实参，返回一个 <code class="c">T</code> 对象，等价于 <code class="c">T(get&lt;0&gt;(t), get&lt;1&gt;(t), ...)</code>。</p>
+<pre class="code" data-label="cpp"><code class="c">std::apply(handle_order, msg);                    // 调函数
+Config cfg = std::make_from_tuple&lt;Config&gt;(params); // 造对象
+</code></pre>
+<p>实现上 <code class="c">make_from_tuple</code> 就是 <code class="c">apply</code> 到「构造函数」上的包装。
+3. 三参数版计算<strong>三维欧氏距离</strong>：<code class="c">std::hypot(x, y, z)</code> 返回 <code class="c">sqrt(x² + y² + z²)</code>。</p>
+<pre class="code" data-label="cpp"><code class="c">std::hypot(3.0, 4.0, 12.0);   // 13.0
+</code></pre>
+<p>相比手写 <code class="c">sqrt(x*x + y*y + z*z)</code>，它在中间结果上做了溢出/下溢的处理（避免中间平方溢出），数值稳定性更好。
+4. 是。<code class="c">std::hash</code> 对 <code class="c">std::variant</code>、<code class="c">std::optional</code> 的特化都是随 <strong>C++17</strong> 一起进入标准的（源自 Library Fundamentals TS），因此 <code class="c">std::variant</code> 与 <code class="c">std::optional</code> 可以直接作为 <code class="c">std::unordered_map</code> / <code class="c">std::unordered_set</code> 的键。</p>
+<pre class="code" data-label="cpp"><code class="c">std::variant&lt;int, std::string&gt; v = &quot;hello&quot;;
+auto h = std::hash&lt;decltype(v)&gt;{}(v);   // C++17 起合法
+</code></pre>
+<p>注意 <code class="c">std::any</code> 没有 <code class="c">std::hash</code> 特化——它无法在不知道类型的情况下定义哈希。
+5. 把各来源的参数 tuple 用 <code class="c">tuple_cat</code> 拼成一个，再交给 <code class="c">make_from_tuple</code> 构造：</p>
+<pre class="code" data-label="cpp"><code class="c">auto default_params = std::make_tuple(0.05, 100, true);
+auto runtime_params = std::make_tuple(get_dynamic_alpha());
+auto all_params = std::tuple_cat(default_params, runtime_params);
+auto strategy   = std::make_from_tuple&lt;Strategy&gt;(all_params);
+</code></pre>
+<p>要求拼接后的元素类型与顺序正好匹配 <code class="c">Strategy</code> 的某个构造函数签名，否则编译报错——这实际上把「参数个数/类型」的检查提前到了编译期。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

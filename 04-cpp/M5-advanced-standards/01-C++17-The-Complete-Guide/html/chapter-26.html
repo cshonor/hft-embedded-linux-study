@@ -507,6 +507,34 @@ cache.try_emplace(key, [&amp;]() { return expensive_factory(); });
 <li><code class="c">try_emplace</code> 的参数是先求值还是延迟构造？如何实现真正延迟？</li>
 <li>配置热更新用哪个方法？合约表初始化用哪个？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">emplace(args...)</code> 会<strong>先把节点构造出来</strong>（用 <code class="c">args...</code> 就地构造 <code class="c">value_type</code>，或者至少先把参数转成 <code class="c">value_type</code>），再去查找 key；如果 key 已存在，这个刚构造出来的节点/临时对象就被白白丢弃。
+当 <code class="c">value_type</code> 构造昂贵（要分配内存、打开文件、跑一次工厂函数）时，这就是纯粹的浪费：<code class="c">emplace</code> 的开销按「每次都插入」付，而不是按「真正插入」付。</li>
+<li><strong>不构造</strong>。<code class="c">try_emplace(key, args...)</code> 的语义是：先查找 <code class="c">key</code>，只有 <code class="c">key</code> 不存在时才用 <code class="c">args...</code> 就地构造 <code class="c">value_type</code>；若 <code class="c">key</code> 已存在，则什么也不做（不构造、不赋值、不改动已有元素），并返回指向已有元素的迭代器加 <code class="c">false</code>。
+这也带来一个额外好处：<code class="c">try_emplace</code> 的 <code class="c">key</code> 参数类型是 <code class="c">const key_type&amp;</code>（不是转发引用），不会因为转发而发生意外的移动。</li>
+<li><code class="c">insert_or_assign(key, obj)</code>：<strong>存在则赋值、不存在则插入</strong>（C++17 新增），不会产生默认构造的中间步骤。
+<code class="c">m[key] = obj</code> 走的是 <code class="c">operator[]</code>：key 不存在时先<strong>默认构造</strong>一个 <code class="c">value_type</code> 再赋值，因此要求 <code class="c">value_type</code> 可默认构造，且付了一次多余的默认构造 + 赋值；key 存在时则等价于赋值。
+所以：<code class="c">value_type</code> 不可默认构造时只能用 <code class="c">insert_or_assign</code>；能默认构造时 <code class="c">insert_or_assign</code> 也少一次构造。</li>
+<li><strong>先求值</strong>。C++ 的实参求值发生在进入函数体之前，<code class="c">try_emplace</code> 只是「key 存在时不再用这些参数去构造 value」，并不意味着参数不求值：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">cache.try_emplace(key, expensive_factory());   // expensive_factory() 一定被调用
+</code></pre>
+<p>真正要延迟，得先自己判断：</p>
+<pre class="code" data-label="cpp"><code class="c">if (auto it = cache.find(key); it == cache.end()) {
+    cache.emplace(key, expensive_factory());   // 只有缺失时才构造
+}
+</code></pre>
+<p>或者用 <code class="c">try_emplace(key)</code> + <code class="c">emplace(std::piecewise_construct, ...)</code> 组合，或让 value 本身持有可调用物按需求值。标准库没有提供「惰性构造」版本的 <code class="c">try_emplace</code>。
+5. <strong>配置热更新</strong>用 <code class="c">insert_or_assign</code>：存在就覆盖成新配置，不存在就插入。</p>
+<pre class="code" data-label="cpp"><code class="c">configs.insert_or_assign(&quot;strategy_1&quot;, new_config);
+</code></pre>
+<p><strong>合约表初始化</strong>用 <code class="c">try_emplace</code>：合约已存在时保持原对象不动（不重复构造、不破坏已有状态），不存在时才构造。</p>
+<pre class="code" data-label="cpp"><code class="c">contracts.try_emplace(&quot;AAPL&quot;, &quot;AAPL&quot;, exchange_id, tick_size);
+</code></pre>
+<p>一句话区分：<code class="c">try_emplace</code> 偏「只在缺失时初始化」，<code class="c">insert_or_assign</code> 偏「缺失则插入、已有则覆盖」。</p>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>extract / merge：节点转移</h2></div>
@@ -587,6 +615,38 @@ a.insert(std::move(node));
 <li><code class="c">node_type</code> 的所有权语义是什么？（可拷贝？可移动？）</li>
 <li>用 <code class="c">extract</code> + 改 key + <code class="c">insert</code> 重命名 map 中的 key，比传统方式省了什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">extract</code> 把节点<strong>整体摘下来</strong>交给你（node handle），元素本身既不析构也不拷贝/移动，节点内存可以复用；<code class="c">erase</code> + <code class="c">insert</code> 则要析构旧元素、再分配新节点、再构造新元素。
+所以 <code class="c">extract</code> 的优势是：零次元素构造/析构、零次节点内存分配，还能把同一个节点搬到另一个（同类型的）容器里，甚至改完 key 再插回去。</li>
+<li><strong>map 可以</strong>：<code class="c">node.key()</code> 返回 <code class="c">key_type</code> 的非 const 引用，可以直接改。
+<strong>set 不可以</strong>：<code class="c">set</code> 的 <code class="c">node_type</code> 只提供 <code class="c">value()</code> 且是 const 的，不给 <code class="c">key()</code>。
+原因很直接：set 的元素就是 key，key 决定节点在树/哈希表中的位置，放开了改就破坏容器的序与不变式；map 的 key 与 value 分离，<code class="c">extract</code> 后节点已脱离容器，改 key 再 insert 回去是安全的（key 是否冲突会在 insert 时重新判定）。</li>
+<li>冲突的节点<strong>留在源容器里不动</strong>，不会被转移到目标容器，也不会覆盖目标容器中已有的元素。
+<code class="c">merge</code> 的语义是「把源容器中那些 key 不与目标容器冲突的节点逐个转移过去」，冲突的保留在源容器，并且仍然指向原来的元素（引用/迭代器不失效）。</li>
+<li><code class="c">node_type</code> 是<strong>只可移动、不可拷贝</strong>的资源句柄（move-only），符合「独占一个节点」的所有权语义。
+   - 可移动：移动后源句柄变空（<code class="c">empty()</code> 为 <code class="c">true</code>），所有权转移。
+   - 不可拷贝：拷贝构造/拷贝赋值被删除，避免两个句柄持有同一节点。
+   - 若句柄在析构时仍非空，会销毁其中的元素并释放节点——不会泄漏。
+   - <code class="c">empty()</code> 可判断句柄是否为空（例如 <code class="c">extract</code> 的 key 不存在时就拿到空句柄）。</li>
+<li>省掉了<strong>一次元素析构 + 一次元素构造 + 一次节点内存分配</strong>（以及对应的移动构造）：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">// 传统：erase + insert
+auto it = a.find(old_key);
+if (it != a.end()) {
+    auto val = std::move(it-&gt;second);
+    a.erase(it);                                   // 析构 + 释放节点
+    a.emplace(new_key, std::move(val));            // 分配节点 + 构造
+}
+
+// C++17：extract + 改 key + insert
+auto node = a.extract(old_key);
+node.key() = new_key;
+a.insert(std::move(node));                         // 节点内存直接复用
+</code></pre>
+<p><code class="c">extract</code> 后元素始终活着，<code class="c">value</code> 的引用/指针不失效，节点内存被复用，只有必要的重新平衡开销。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

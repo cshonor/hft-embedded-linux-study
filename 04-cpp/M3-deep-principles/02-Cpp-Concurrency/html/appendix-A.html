@@ -428,6 +428,21 @@ std::thread t([&amp;p = p]{
 <li><code class="c">std::thread</code> 为什么可以放进 <code class="c">std::vector</code>？靠什么实现？</li>
 <li>在 HFT 中，移动语义如何减少延迟？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>左值通常表示有身份、可取地址的对象；右值通常是临时值或将亡值。
+   非 <code class="c">const int&amp;</code> 绑定可修改左值，<code class="c">int&amp;&amp;</code> 绑定右值；<code class="c">const int&amp;</code> 还可绑定右值并延长临时量生命周期。</li>
+<li><code class="c">std::move</code> 只是把表达式转换为对应的右值引用类型，表示该对象可被移动。
+   真正的资源转移由随后选中的移动构造或移动赋值完成；若没有合适重载，仍可能发生拷贝。</li>
+<li>标为 <code class="c">noexcept</code> 让容器在扩容时可安全选择移动，同时维持强异常保证。
+   若移动可能抛异常且类型可复制，<code class="c">vector</code> 等通常会改用拷贝；不可复制时保证可能受限。</li>
+<li><code class="c">std::thread</code> 不可复制但可移动，移动会转移底层线程句柄和 joinable 状态。
+   <code class="c">vector</code> 只需元素满足相应的 MoveInsertable 等要求，因此可以存放并在扩容时移动 <code class="c">thread</code>。</li>
+<li>移动可转移缓冲区、消息和所有权句柄，避免深拷贝、额外分配及大块内存访问。
+   对已预分配的数据通道尤其有利，但移动本身不保证零成本，具体仍取决于类型实现。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -576,6 +591,21 @@ void start_safe() {
 <li>为什么 <code class="c">[this]</code> 在 detach 的线程中危险？</li>
 <li>lambda 相比 C 的函数指针有什么性能优势？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>值捕获在创建闭包对象时复制当时的值，之后外部变量变化不影响该副本。
+   引用捕获在闭包中关联原对象，调用时访问当前值，因此必须保证对象寿命和并发同步。</li>
+<li><code class="c">[=]</code> 按需值捕获 odr-use 的自动变量，<code class="c">[&amp;]</code> 按需引用捕获；两者对 <code class="c">this</code> 等细节还受语言版本规则影响。
+   并发中显式值捕获通常更易保证寿命，但并非天然线程安全；共享可变对象仍需同步。</li>
+<li>初始化捕获允许闭包成员由任意表达式初始化，并可拥有原作用域中不存在的新名字。
+   它可把 <code class="c">unique_ptr</code> 等 move-only 对象移入闭包，明确地把资源所有权交给异步任务。</li>
+<li><code class="c">[this]</code> 捕获的是指针，不会延长对象寿命；detach 后对象可能先析构。
+   线程随后通过悬空 <code class="c">this</code> 访问成员会产生未定义行为，应改为值快照或受控的共享所有权。</li>
+<li>每个 lambda 都有具体闭包类型，模板接收时编译器通常能内联其 <code class="c">operator()</code> 并传播常量。
+   函数指针是间接调用且不能携带捕获状态；不过无捕获 lambda 转成函数指针后同样可能有间接调用代价。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -722,6 +752,21 @@ w-&gt;start();  // 线程持有 w 的 shared_ptr → 安全
 <li><code class="c">weak_ptr</code> 如何打破循环引用？<code class="c">lock()</code> 做了什么？</li>
 <li><code class="c">enable_shared_from_this</code> 解决了什么问题？为什么不能 <code class="c">shared_ptr&lt;T&gt;(this)</code>？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">unique_ptr</code> 表示独占所有权且可移动不可复制；<code class="c">shared_ptr</code> 通过控制块共享所有权。
+   <code class="c">weak_ptr</code> 是不增加强引用计数的观察者，用于检测对象是否仍存活。</li>
+<li>默认删除器下 <code class="c">unique_ptr</code> 通常只保存一个指针，析构时自动 <code class="c">delete</code>，抽象可被优化到与手写 RAII 相当。
+   与裸指针不同，它表达并执行所有权转移；有状态 deleter 可能增加对象大小，故“零开销”不是无条件的。</li>
+<li>不同 <code class="c">shared_ptr</code> 对象共享同一控制块时，引用计数增减可并发进行，但同一个句柄对象的非 const 读写仍会竞争。
+   被管理对象也不因 <code class="c">shared_ptr</code> 自动同步；需外部锁或使用相应的原子 <code class="c">shared_ptr</code> 操作。</li>
+<li>循环关系中的一边改用 <code class="c">weak_ptr</code> 后不会增加强计数，所有强所有者消失时对象即可销毁。
+   <code class="c">lock()</code> 原子地尝试取得一个 <code class="c">shared_ptr</code>；对象已过期则得到空指针，否则暂时延长其寿命。</li>
+<li><code class="c">enable_shared_from_this</code> 让对象取得复用现有控制块的 <code class="c">shared_ptr</code>，避免创建第二个所有权系统。
+   <code class="c">shared_ptr&lt;T&gt;(this)</code> 会建立独立控制块，多个控制块最终可能对同一地址重复删除，产生未定义行为。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -837,6 +882,21 @@ auto&amp;&amp; ref = get_something();
 <li><code class="c">auto&amp;&amp;</code> 为什么叫"万能引用"？它能绑定什么？</li>
 <li><code class="c">auto</code> 会影响运行时性能吗？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>普通 <code class="c">auto</code> 按模板值参数规则推导，会去掉顶层 <code class="c">const</code> 和引用；可写 <code class="c">const auto</code>、<code class="c">auto&amp;</code> 或 <code class="c">const auto&amp;</code> 明确保留。
+   在需要精确保留表达式值类别和 cv/ref 限定时使用 <code class="c">decltype(auto)</code>。</li>
+<li>对未加括号的变量名 <code class="c">x</code>，<code class="c">decltype(x)</code> 得到它声明时的类型。
+   <code class="c">(x)</code> 是左值表达式，所以 <code class="c">decltype((x))</code> 通常得到 <code class="c">T&amp;</code>；若 <code class="c">x</code> 本身有 cv 限定也会保留。</li>
+<li>C++11 尾置返回类型能直接写出依赖参数的 <code class="c">decltype(expr)</code>，并精确采用该表达式类型。
+   C++14 的返回 <code class="c">auto</code> 由 return 表达式按 <code class="c">auto</code> 规则推导，更简洁但会丢顶层引用；需 <code class="c">decltype(auto)</code> 才精确保留。</li>
+<li>当 <code class="c">auto&amp;&amp;</code> 的类型来自初始化式推导时，它是 forwarding reference，可经引用折叠绑定左值或右值。
+   左值使其推导为左值引用，右值使其成为右值引用；并非所有写成 <code class="c">T&amp;&amp;</code> 的形式都是 forwarding reference。</li>
+<li><code class="c">auto</code> 是纯编译期类型推导，不引入动态类型检查或额外运行时代码。
+   性能只会因最终推导类型及写法改变，例如意外按值复制大对象，而不是 <code class="c">auto</code> 关键字本身。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -956,6 +1016,21 @@ void wrapper(Args&amp;&amp;... args) {
 <li><code class="c">std::thread(func, arg1, arg2)</code> 的参数是如何传递的？默认是值还是引用？</li>
 <li><code class="c">std::forward</code> 在可变参数模板中起什么作用？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>可变参数模板在编译期保留参数的数量和类型，类型安全且可参与重载、推导与优化。
+   C 的 <code class="c">va_list</code> 主要是运行时按约定读取无类型信息的参数，类型或数量不匹配容易产生未定义行为。</li>
+<li>C++11 常用递归模板、逗号展开或 initializer-list 技巧逐项展开参数包。
+   C++17 折叠表达式用指定运算符直接做一元或二元折叠，写法更短，并明确结合方向与空包规则。</li>
+<li><code class="c">sizeof...(args)</code> 返回函数参数包 <code class="c">args</code> 中的元素个数，是类型为 <code class="c">std::size_t</code> 的编译期常量。
+   对模板参数包也可写 <code class="c">sizeof...(Types)</code>，它不计算各参数对象占用的字节数。</li>
+<li><code class="c">std::thread</code> 会把函数和参数 decay-copy 到内部存储，再在新线程中以移动后的存储值调用。
+   默认不是引用传递；需要传左值引用时应使用 <code class="c">std::ref</code>/<code class="c">std::cref</code>，并保证被引用对象活得足够久。</li>
+<li><code class="c">std::forward&lt;T&gt;(x)</code> 按 <code class="c">T</code> 的推导结果恢复调用者传入的左值或右值类别。
+   对参数包逐项 forward 可避免无谓拷贝，并让下游正确选择复制、移动和引用重载。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1076,6 +1151,21 @@ auto get_value(T t) {
 <li><code class="c">if constexpr</code>（C++17）和普通 <code class="c">if</code> 有什么区别？</li>
 <li>HFT 中用 <code class="c">constexpr</code> 编译期查表有什么好处？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">const</code> 只表示对象不能经该名字修改，初始化值可能到运行期才知道；<code class="c">constexpr</code> 变量必须可用于常量表达式。
+   因而保证编译期常量资格的是 <code class="c">constexpr</code>，但具体表达式是否在编译期求值仍取决于使用语境。</li>
+<li>C++11 的非构造 <code class="c">constexpr</code> 函数体基本只能包含单个 <code class="c">return</code>，不能写普通循环、局部变量等。
+   C++14 放宽为可含局部变量、分支、循环和对局部对象的修改，只要常量求值路径仍满足规则。</li>
+<li>能。<code class="c">constexpr</code> 函数既可参与常量求值，也可用运行期参数像普通函数一样执行。
+   只有在要求常量表达式的上下文中，且实参与执行路径均合法时，结果才必须在编译期得到。</li>
+<li><code class="c">if constexpr</code> 的条件在编译期求值，未选择分支会被丢弃，不参与当前实例的实例化要求。
+   普通 <code class="c">if</code> 两个分支都须是可编译代码，只是在运行期决定执行哪一边。</li>
+<li>编译期查表把初始化计算移出运行期，可减少启动或热路径计算，并避免首次使用时的同步。
+   表可放只读存储并便于优化，但仍占代码/只读数据空间，访问时仍受缓存行为影响。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>

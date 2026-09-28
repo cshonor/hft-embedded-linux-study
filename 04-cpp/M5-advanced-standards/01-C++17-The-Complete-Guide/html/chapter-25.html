@@ -490,6 +490,52 @@ std::cout &lt;&lt; std::apply(add, args);  // 7
 <li><code class="c">invoke</code> 能调用成员数据指针吗？怎么用？</li>
 <li>消息分发场景如何用 <code class="c">apply</code> 展开参数？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">std::apply</code> 解决的是「<strong>tuple 展开成函数实参</strong>」的问题：把 <code class="c">std::tuple</code>/<code class="c">std::pair</code>/<code class="c">std::array</code> 里的每个元素按顺序取出，作为位置参数调用一个可调用物。
+<code class="c">std::invoke</code> 解决的是「<strong>统一调用语法</strong>」的问题：用同一个写法调用普通函数、函数对象/lambda、成员函数指针、数据成员指针（即标准里的 INVOKE 语义）。
+两者正交——而且 <code class="c">apply</code> 内部就是靠 <code class="c">invoke</code> 完成调用的，所以 <code class="c">apply</code> 也能直接驱动成员函数指针。</li>
+<li>不用 <code class="c">invoke</code> 就得用内建的「指向成员」运算符，而且对象形式是值/引用还是指针，写法还不一样：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">std::invoke(&amp;Obj::show, o);   // 等价 (o.*&amp;Obj::show)()
+std::invoke(&amp;Obj::show, p);   // 等价 (p-&gt;*&amp;Obj::show)()
+</code></pre>
+<p>复杂点在于：<code class="c">.*</code> 和 <code class="c">-&gt;*</code> 是两个不同的运算符，括号还容易漏（<code class="c">(o.*pmf)()</code> 少了括号会被解析错），泛型代码里必须靠 <code class="c">if constexpr</code> 或重载分别处理对象、指针、<code class="c">reference_wrapper</code>、智能指针等各种情况。<code class="c">invoke</code> 把这些差异全部收进标准库，泛型代码只写一种形式。
+3. 靠 <code class="c">std::index_sequence</code> 在编译期把下标包展开成 <code class="c">std::get&lt;I&gt;(t)...</code>：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename F, typename Tuple, std::size_t... I&gt;
+auto apply_impl(F&amp;&amp; f, Tuple&amp;&amp; t, std::index_sequence&lt;I...&gt;) {
+    return std::invoke(std::forward&lt;F&gt;(f),
+                       std::get&lt;I&gt;(std::forward&lt;Tuple&gt;(t))...);
+}
+
+template &lt;typename F, typename Tuple&gt;
+auto apply(F&amp;&amp; f, Tuple&amp;&amp; t) {
+    return apply_impl(std::forward&lt;F&gt;(f), std::forward&lt;Tuple&gt;(t),
+        std::make_index_sequence&lt;
+            std::tuple_size_v&lt;std::decay_t&lt;Tuple&gt;&gt;&gt;{});
+}
+</code></pre>
+<p><code class="c">tuple_size_v</code> 拿到元素个数，<code class="c">make_index_sequence</code> 生成 <code class="c">0..N-1</code> 的编译期下标包，一次包展开就完成了 tuple 到实参列表的转换。
+4. 可以。数据成员指针同样适用 INVOKE 语义，第一个「参数」是对象（值、引用、指针、<code class="c">reference_wrapper</code>、智能指针均可）：</p>
+<pre class="code" data-label="cpp"><code class="c">Obj o{42};
+Obj* p = &amp;o;
+std::cout &lt;&lt; std::invoke(&amp;Obj::x, o);  // o.x   → 42
+std::cout &lt;&lt; std::invoke(&amp;Obj::x, p);  // p-&gt;x  → 42
+</code></pre>
+<p>这在泛型代码里很有用：同一个模板既能取成员函数的调用结果，也能取成员变量的值，不必为数据成员单独写分支。
+5. 把收到的消息先组织成 tuple，再用 <code class="c">apply</code> 一次性展开成 handler 的实参：</p>
+<pre class="code" data-label="cpp"><code class="c">void handle_order(int sym_id, double price, int qty);
+
+auto msg = std::make_tuple(1, 100.5, 200);
+std::apply(handle_order, msg);        // 等价 handle_order(1, 100.5, 200)
+
+// 配合 lambda / bind 也可以
+auto add = [](int a, int b) { return a + b; };
+std::cout &lt;&lt; std::apply(add, std::make_pair(3, 4));  // 7
+</code></pre>
+<p>这样「解析层产出 tuple」与「业务层签名」解耦，加字段只改 tuple 和 handler 签名，不用改分发代码。</p>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>std::as_const</h2></div>
@@ -558,6 +604,40 @@ void safe_read(T&amp; container) {
 <li>如何用 <code class="c">as_const</code> 强制调用 const 成员函数？</li>
 <li>泛型代码中 <code class="c">as_const</code> 如何保证只读语义？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>它解决「<strong>给一个非 const 的左值显式加上 const</strong>」的问题——从而强制走 const 重载、拿到 <code class="c">const T&amp;</code>、避免误修改。
+典型场景：容器有 const/非 const 两套 <code class="c">operator[]</code>，<code class="c">v[0]</code> 默认拿到 <code class="c">int&amp;</code>；写 <code class="c">std::as_const(v)[0]</code> 才拿到 <code class="c">const int&amp;</code>。在泛型代码里也能用它把 <code class="c">T&amp;</code> 变成 <code class="c">const T&amp;</code>，而不必改函数签名。</li>
+<li><code class="c">const_cast&lt;const T&amp;&gt;(x)</code> 是「去掉/加上 cv」的通用工具，用错了会把真正的 const 去掉（例如手滑写成 <code class="c">const_cast&lt;T&amp;&gt;</code>），一改就变成未定义行为，而且编译器不会报错。
+<code class="c">std::as_const</code> 只能<strong>加</strong> const，不能去掉：它就是一个返回 <code class="c">const T&amp;</code> 的小函数，语义受限、意图明确；此外 C++17 还显式 <code class="c">delete</code> 了 <code class="c">as_const(const T&amp;&amp;)</code> 重载，防止把右值/临时对象绑成长命的 const 引用。</li>
+<li>返回 <code class="c">const T&amp;</code>，即「<code class="c">T</code> 的 const 左值引用」。</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">std::string s;
+const std::string&amp; cs = std::as_const(s);   // 类型是 const std::string&amp;
+</code></pre>
+<p>它等价于 <code class="c">std::add_const_t&lt;T&gt;&amp;</code>，<code class="c">T</code> 本身若是引用类型则不会发生引用折叠成右值引用的情况——<code class="c">as_const</code> 只接受左值。
+4. 给对象套一层 <code class="c">as_const</code> 再调用，重载解析就会选中 const 版本：</p>
+<pre class="code" data-label="cpp"><code class="c">class OrderBook {
+public:
+    const Price&amp; best_bid() const;   // 只读版
+    Price&amp;       best_bid();         // 可写版
+};
+
+OrderBook book;
+const auto&amp; bid = std::as_const(book).best_bid();  // 调用 const 版
+</code></pre>
+<p><code class="c">std::as_const(book)</code> 得到 <code class="c">const OrderBook&amp;</code>，非 const 成员不可调用，于是只能匹配 const 成员函数——风控/只读检查场景用它把「不修改」这件事在编译期表达出来。
+5. 在 <code class="c">for</code> 循环或成员访问前套 <code class="c">as_const</code>，让推导出的元素类型天然带 const：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt;
+void safe_read(T&amp; container) {
+    for (const auto&amp; elem : std::as_const(container)) {
+        // elem 是 const 的，误写会编译失败
+    }
+}
+</code></pre>
+<p>这样即使 <code class="c">T</code> 是非 const 容器，遍历得到的也是 const 引用；同时也能避免 <code class="c">auto&amp;</code> 意外绑定非 const 重载。配合 <code class="c">std::as_const</code> 的只读语义，修改操作会在编译期被拦住。</p>
+</details>
       </section>
       <section class="section" id="s-03">
         <div class="sec-head"><div class="sec-no">03</div><h2>std::sample</h2></div>
@@ -631,6 +711,30 @@ std::sample(v.begin(), v.end(), out.begin(), k, rng);
 <li><code class="c">sample</code> 和 <code class="c">shuffle</code> + 取前 k 个有什么区别？</li>
 <li>HFT 中从历史 tick 抽样做快速回测的写法？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>复杂度与 <code class="c">std::distance(first, last)</code> 成<strong>线性</strong>，即 O(n)，并且不随 k 增长。
+具体算法标准没有规定：实现可以采用 <strong>selection sampling</strong>（选择抽样，如 Floyd/Knuth 的算法，适用于区间长度已知的 ForwardIterator 及以上）或 <strong>reservoir sampling</strong>（蓄水池抽样，适用于只能单趟扫描的 InputIterator）。
+<code class="c">n</code> 大于区间元素个数时，只输出全部可用元素。</li>
+<li>蓄水池抽样（Algorithm R）：先把前 k 个元素放进「蓄水池」，之后对第 i 个元素（i &gt; k，从 1 开始计）以概率 <code class="c">k/i</code> 随机替换掉蓄水池中的某一个（每个位置被替换的概率为 <code class="c">1/k</code>）。
+均匀性由归纳法保证：处理到第 i 个元素时，池中任一元素留下来的概率都是 <code class="c">k/i</code>，于是任一元素最终入选的概率都是 <code class="c">k/n</code>。它只需要<strong>单趟扫描</strong>、不需要预先知道 n，所以能用于流式/输入迭代器。</li>
+<li>总体区间（<code class="c">PopulationIterator</code>）至少需要 <strong>InputIterator</strong>；输出迭代器 <code class="c">out</code> 至少是 <strong>OutputIterator</strong>，且当总体迭代器不满足 ForwardIterator 时，<code class="c">out</code> 还必须是 <strong>RandomAccessIterator</strong>（因为蓄水池抽样需要回写/随机写）。
+<code class="c">out</code> 不能落在 <code class="c">[first, last)</code> 区间内（否则未定义行为）。
+所以<strong>可以用于流式数据</strong>——例如 <code class="c">std::istream_iterator&lt;int&gt;</code> 这种 InputIterator，配一个随机访问输出迭代器（如已分配大小的 <code class="c">vector::begin()</code>）即可单趟抽样。</li>
+<li><code class="c">sample</code> <strong>不修改原序列</strong>，只往输出迭代器写，时间复杂度 O(n)，额外空间 O(k)；<code class="c">shuffle</code> + 取前 k 个会<strong>就地打乱整个序列</strong>（O(n) 时间、O(1) 额外空间，但原顺序丢失），适合本来就允许被打乱的数据。
+另外两者语义不同：<code class="c">sample</code> 只在总体迭代器满足 ForwardIterator 时才<strong>保持选中元素的相对顺序</strong>（stable）；<code class="c">shuffle</code> 后的顺序本来就是随机的。</li>
+<li>```cpp
+std::vector<Tick> all_ticks = load_ticks("2024-01-01");
+std::vector<Tick> sample_ticks(10000);      // 输出需预先分配
+std::mt19937 rng{std::random_device{}()};</li>
+</ol>
+<p>std::sample(all_ticks.begin(), all_ticks.end(),
+            sample_ticks.begin(), 10000, rng);
+<code class="c">``
+若不想预分配，可用</code>std::back_inserter(sample_ticks)`（此时总体是随机访问迭代器，输出只需 OutputIterator 即可）。
+注意这是<strong>无放回</strong>抽样，且只保证「每个大小为 k 的子集等概率」，不保证样本在时间序列上均匀——回测结论要留意抽样偏差。</p>
+</details>
       </section>
       <section class="section" id="s-04">
         <div class="sec-head"><div class="sec-no">04</div><h2>std::data / std::size / std::empty</h2></div>
@@ -721,6 +825,48 @@ sum(a);    // 24
 <li><code class="c">std::size</code> 对数组是 <code class="c">constexpr</code> 吗？</li>
 <li>泛型代码中如何用这些函数统一处理数组和容器？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>两个版本靠重载分开：对容器（以及任何有 <code class="c">size()</code> 成员的类型）转发到成员函数，对内置数组则用模板推导出的数组长度。</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename C&gt;
+constexpr auto size(const C&amp; c) -&gt; decltype(c.size()) { return c.size(); }
+
+template &lt;typename T, std::size_t N&gt;
+constexpr std::size_t size(const T (&amp;/*array*/)[N]) noexcept { return N; }
+</code></pre>
+<p><code class="c">data</code>、<code class="c">empty</code> 同理：<code class="c">empty(c)</code> 转发 <code class="c">c.empty()</code>，<code class="c">empty(array)</code> 恒为 <code class="c">false</code>。
+2. 因为内置数组没有 <code class="c">.size()</code> / <code class="c">.data()</code> / <code class="c">.empty()</code> 成员，泛型代码想同时接受 <code class="c">int[10]</code> 和 <code class="c">std::vector&lt;int&gt;</code> 就必须写两套分支。
+非成员版本把这种差异收进标准库：一份模板代码就能统一处理 C 数组、<code class="c">std::array</code>、<code class="c">std::vector</code>、以及任何提供了这些成员函数的自定义容器，无需 <code class="c">sizeof(arr)/sizeof(arr[0])</code> 这类易错写法，也不必为容器和数组各写一个重载。
+3. <code class="c">std::data(arr)</code> 返回指向首元素的指针（数组退化为 <code class="c">T*</code>）；<code class="c">std::data(v)</code> 返回 <code class="c">v.data()</code>，即 <code class="c">int*</code>。</p>
+<pre class="code" data-label="cpp"><code class="c">int arr[] = {1, 2, 3};
+auto* p1 = std::data(arr);          // int*
+std::vector&lt;int&gt; v{4, 5, 6};
+auto* p2 = std::data(v);            // int*
+const std::vector&lt;int&gt; cv{1};
+auto* p3 = std::data(cv);           // const int*
+</code></pre>
+<p>对 const 容器返回 <code class="c">const T*</code>，因此也能用于只读访问底层缓冲区。
+4. 是。数组版 <code class="c">std::size</code> 是 <code class="c">constexpr</code>（长度在编译期已知），可以直接用在常量表达式里：</p>
+<pre class="code" data-label="cpp"><code class="c">int arr[10];
+constexpr std::size_t n = std::size(arr);   // 10
+static_assert(std::size(arr) == 10);
+</code></pre>
+<p>容器版则转发 <code class="c">c.size()</code>，是否能在编译期求值取决于该容器的 <code class="c">size()</code> 是否 <code class="c">constexpr</code>（如 <code class="c">std::array::size()</code> 是）。
+5. 用非成员 <code class="c">data</code>/<code class="c">size</code>/<code class="c">empty</code> 代替成员调用，同一份代码即可同时覆盖数组与容器：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt;
+auto sum(const T&amp; container) {
+    using Elem = std::remove_reference_t&lt;decltype(*std::data(container))&gt;;
+    Elem s{};
+    if (std::empty(container)) return s;
+    for (std::size_t i = 0; i &lt; std::size(container); ++i)
+        s += std::data(container)[i];
+    return s;
+}
+</code></pre>
+<p><code class="c">sum(arr)</code>、<code class="c">sum(v)</code>、<code class="c">sum(a)</code> 都能通过编译——<code class="c">std::data</code> 拿到首地址、<code class="c">std::size</code> 拿到长度、<code class="c">std::empty</code> 做空判断，无需为数组特化。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

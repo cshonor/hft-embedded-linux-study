@@ -517,6 +517,42 @@ void on_data(MarketData&amp;&amp; data) {
 <li>如何用泛型 lambda + <code class="c">if constexpr</code> 做 variant 访问器？</li>
 <li>HFT 行情类型分派如何用 <code class="c">if constexpr</code> 实现零虚函数开销？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>关键区别是<strong>实例化时机</strong>：<code class="c">if constexpr</code> 的条件必须是编译期常量，且在模板实例化时，<strong>未被选中的分支（discarded statement）不会被实例化</strong>——因此其中对当前 <code class="c">T</code> 不成立的代码根本不会被检查。
+普通 <code class="c">if</code> 的两个分支都要通过类型检查，即使运行期永远不会执行（如 <code class="c">T</code> 是 <code class="c">std::string</code> 时 <code class="c">x.something_only_for_ints()</code> 依然会编译失败）。
+补充：这个"不实例化"的优待只在<strong>模板实体实例化期间</strong>生效；在非模板函数中，被丢弃的分支仍会被完整检查。</li>
+<li>不会。在模板（函数模板、类模板成员、泛型 lambda 等）实例化过程中，一旦 <code class="c">if constexpr</code> 的条件在实例化后确定，被丢弃的子语句就<strong>不参与实例化</strong>。
+这也是它能替代 SFINAE 分派的根本原因：<code class="c">if constexpr (std::is_integral_v&lt;T&gt;)</code> 的 <code class="c">else</code> 分支里写只对浮点成立的代码，在 <code class="c">T</code> 为整型时不会报错。</li>
+<li>C++14 的 SFINAE 分派要为每个分支单独写一个重载/特化（<code class="c">enable_if</code>、tag dispatch、类模板偏特化 + 递归终止特化），问题是：
+   - 代码被<strong>拆散</strong>到多处，读一个函数的逻辑要在多个重载间跳转；
+   - 返回类型要靠 <code class="c">decltype</code> /  trailing return 手动统一，容易写错；
+   - 重载集庞大，报错信息是几十行候选列表，可读性极差；
+   - 函数<strong>内部</strong>的局部逻辑无法用它分派（SFINAE 只能作用于签名级别）。
+<code class="c">if constexpr</code> 让分派写在一个函数体内，顺序直观、被丢弃分支直接不实例化，也不需要为"终止条件"写额外特化。</li>
+<li>用泛型 lambda（<code class="c">auto&amp;&amp;</code> 参数）+ 在 lambda 体内按 <code class="c">std::decay_t&lt;decltype(x)&gt;</code> 做编译期分支：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">std::variant&lt;int, double, std::string&gt; v = 42;
+std::visit([](auto&amp;&amp; x) {
+    using T = std::decay_t&lt;decltype(x)&gt;;
+    if constexpr (std::is_same_v&lt;T, int&gt;)         std::cout &lt;&lt; &quot;int: &quot; &lt;&lt; x;
+    else if constexpr (std::is_same_v&lt;T, double&gt;) std::cout &lt;&lt; &quot;double: &quot; &lt;&lt; x;
+    else if constexpr (std::is_same_v&lt;T, std::string&gt;) std::cout &lt;&lt; &quot;string: &quot; &lt;&lt; x;
+}, v);
+</code></pre>
+<p><code class="c">std::visit</code> 会为每种替代类型实例化一次 lambda，各自只保留匹配的分支——一个 lambda 就覆盖了整个访问器。
+5. 把类型判断放到编译期，直接分派到具体处理函数，不经过虚表和函数指针：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename MarketData&gt;
+void on_data(MarketData&amp;&amp; data) {
+    using T = std::decay_t&lt;MarketData&gt;;
+    if constexpr (std::is_same_v&lt;T, Tick&gt;)       process_tick(data);
+    else if constexpr (std::is_same_v&lt;T, OrderBook&gt;) process_orderbook(data);
+    else if constexpr (std::is_same_v&lt;T, Trade&gt;)  process_trade(data);
+}
+</code></pre>
+<p>每个 <code class="c">T</code> 只实例化出一条具体路径，调用是<strong>静态绑定</strong>、可被内联，没有虚函数调用的间接跳转与 icache 污染，也没有动态多态的对象布局要求——等价于为每种行情类型手写一份专用函数。</p>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>void_t SFINAE 检测</h2></div>
@@ -604,6 +640,49 @@ static_assert(!is_container_v&lt;int&gt;);               // false
 <li><code class="c">void_t</code> 在 C++14 和 C++17 中的地位有什么区别？</li>
 <li><code class="c">void_t</code> + <code class="c">if constexpr</code> 如何实现"有则调用、无则跳过"？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">std::void_t&lt;Args...&gt;</code> 是别名模板，展开结果恒为 <code class="c">void</code>；关键在它<strong>在模板实参替换的语境中</strong>展开。
+把它放在偏特化的模板实参列表里（如 <code class="c">HasFoo&lt;T, std::void_t&lt;decltype(...)&gt;&gt;</code>）：若 <code class="c">decltype(...)</code> 不合法，替换失败属于 <strong>SFINAE</strong>（软错误），该偏特化被静默丢弃，匹配回主模板（<code class="c">false_type</code>）；若合法则偏特化更特化而被选中（<code class="c">true_type</code>）。于是"成员是否存在"就被转成了"选哪个模板"。</li>
+<li>用 <code class="c">decltype</code> 写出一次调用，放进 <code class="c">void_t</code>，配合偏特化：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename, typename = void&gt;
+struct HasFoo : std::false_type {};
+
+template &lt;typename T&gt;
+struct HasFoo&lt;T, std::void_t&lt;decltype(std::declval&lt;T&amp;&gt;().foo())&gt;&gt; : std::true_type {};
+
+template &lt;typename T&gt; constexpr bool has_foo_v = HasFoo&lt;T&gt;::value;
+static_assert(has_foo_v&lt;A&gt;);    // A 有 foo()
+static_assert(!has_foo_v&lt;B&gt;);   // B 没有
+</code></pre>
+<p><code class="c">std::declval&lt;T&amp;&gt;()</code> 在不构造对象的前提下得到一个 <code class="c">T&amp;</code>，<code class="c">decltype(...foo())</code> 合法即表示"能以无参方式调用 <code class="c">foo()</code>"；要检查签名就写成 <code class="c">decltype(std::declval&lt;T&amp;&gt;().foo(0))</code>。
+3. 把两个 <code class="c">decltype</code> 一起放进 <code class="c">void_t</code>，只有两者都合法偏特化才成立：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename, typename = void&gt;
+struct IsContainer : std::false_type {};
+
+template &lt;typename T&gt;
+struct IsContainer&lt;T, std::void_t&lt;
+    decltype(std::declval&lt;T&amp;&gt;().begin()),
+    decltype(std::declval&lt;T&amp;&gt;().end())
+&gt;&gt; : std::true_type {};
+</code></pre>
+<p><code class="c">void_t</code> 接受任意多个类型参数，全部替换成功才得到 <code class="c">void</code>——所以它是"<strong>同时</strong>满足多个条件"的天然写法（逻辑与）。
+4. C++14 里 <code class="c">void_t</code> 只是一个<strong>惯用法</strong>：必须写成 <code class="c">template &lt;class...&gt; using void_t = void;</code> 并包在一个辅助结构体里（因为 CWG 1558 之前，别名模板中未被使用的实参不保证触发替换失败）。
+C++17 把它<strong>标准化</strong>为 <code class="c">std::void_t</code>，同时 CWG 1558 已得到解决，语义有明确保证——可以直接用，不再需要那个 <code class="c">voider</code> 间接层。
+5. 用 <code class="c">void_t</code> 把"是否有某成员"变成编译期布尔值，再用 <code class="c">if constexpr</code> 在函数体里分派：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt;
+void process(T&amp; x) {
+    if constexpr (has_foo_v&lt;T&gt;) {
+        x.foo();                 // 只有该分支会被实例化
+    } else {
+        std::cout &lt;&lt; &quot;no foo&quot;;   // 无 foo() 时走这里
+    }
+}
+</code></pre>
+<p><code class="c">has_foo_v&lt;T&gt;</code> 恒为编译期常量，被丢弃的分支不实例化，因此 <code class="c">T</code> 没有 <code class="c">foo()</code> 时 <code class="c">x.foo()</code> 不会导致编译错误——这正是 C++17 取代「SFINAE 重载 + tag dispatch」的简洁写法（C++20 之后可进一步用 concepts / requires 表达式）。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

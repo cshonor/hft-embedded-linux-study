@@ -297,8 +297,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-14.html#intro"><span class="n">14</span>协程</a>
           <a href="chapter-15.html#intro"><span class="n">15</span>深入理解协程</a>
           <a href="chapter-16.html#intro"><span class="n">16</span>模块</a>
-          <a href="chapter-17.html#intro"><span class="n">17</span>ch17-lambda</a>
-          <a href="chapter-17.html#intro"><span class="n">17</span>ch17-lambda</a>
+          <a href="chapter-17.html#intro"><span class="n">17</span>Lambda 表达式扩展</a>
+          <a href="chapter-17.html#intro"><span class="n">17</span>Lambda 表达式扩展</a>
           <a href="chapter-18.html#intro"><span class="n">18</span>编译时计算</a>
           <a href="chapter-19.html#intro"><span class="n">19</span>非类型模板参数扩展</a>
           <a href="chapter-20.html#intro"><span class="n">20</span>新的类型特征</a>
@@ -561,6 +561,45 @@ public:
 <li><code class="c">stop_callback</code> 做什么？</li>
 <li>HFT 行情处理线程如何用 <code class="c">jthread</code> 实现优雅停止？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>两点核心区别：</li>
+<li><strong>RAII 自动 join</strong>：<code class="c">jthread</code> 析构时若仍 joinable，会先请求停止再 <code class="c">join()</code>，不会像 <code class="c">thread</code> 那样直接终止程序。</li>
+<li><strong>内建协作式取消</strong>：<code class="c">jthread</code> 自带 <code class="c">stop_source</code>/<code class="c">stop_token</code> 机制，提供 <code class="c">request_stop()</code>、<code class="c">get_stop_token()</code>；并且若可调用物的第一个参数类型是 <code class="c">std::stop_token</code>，构造时会自动把自己那个 token 传进去。
+其余 API（<code class="c">join</code>/<code class="c">detach</code>/<code class="c">get_id</code> 等）与 <code class="c">thread</code> 一致。</li>
+<li><code class="c">std::thread</code> 析构时若处于 joinable 状态 → 调用 <strong><code class="c">std::terminate()</code></strong>，整个程序中止（这是 C++ 里最经典的坑之一）。
+<code class="c">std::jthread</code> 析构时若处于 joinable 状态 → 先 <code class="c">request_stop()</code>，再 <code class="c">join()</code>，安全收尾。</li>
+<li><code class="c">std::stop_token</code> 是一个<strong>只读的停止请求句柄</strong>：线程代码用它查询"外部是否已请求我停止"。
+检测方式是<strong>主动轮询</strong>（协作式取消，不是强制杀线程）：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">std::jthread t([](std::stop_token st) {   // token 自动注入
+    while (!st.stop_requested()) {
+        // 干活
+    }
+});
+t.request_stop();   // 外部请求停止
+</code></pre>
+<p>也可以从 <code class="c">jthread::get_stop_token()</code> 拿到它传给别的函数。配套的 <code class="c">std::condition_variable_any</code> 的 <code class="c">wait*</code> 重载接受 <code class="c">stop_token</code>，能在请求停止时<strong>立即唤醒</strong>等待中的线程。
+4. <code class="c">std::stop_callback</code> 注册一个回调：当关联的 <code class="c">stop_token</code> 被 <code class="c">request_stop()</code> 时，该回调<strong>立即在调用 <code class="c">request_stop()</code> 的那个线程上同步执行</strong>。
+典型用途是"打断阻塞等待"——比如线程正阻塞在 <code class="c">condition_variable</code> 上，回调里 <code class="c">cv.notify_all()</code> 把它叫醒，线程再检查 <code class="c">stop_requested()</code> 后退出，从而不必等超时就能快速停止。
+回调在析构时（若尚未触发）自动注销，因此回调对象必须活得比它捕获的引用/句柄所涉及的对象短。
+5. <code class="c">cpp
+class MarketDataHandler {
+    std::jthread worker;
+public:
+    void start() {
+        worker = std::jthread([this](std::stop_token st) {
+            while (!st.stop_requested()) {          // 每圈轮询
+                if (auto tick = recv_tick()) process(*tick);
+            }
+        });
+    }
+    void stop() { worker.request_stop(); }          // 通知停止
+    // jthread 析构时自动 request_stop() + join()
+};</code>
+要点：① 循环条件是 <code class="c">!st.stop_requested()</code>，让停止是<strong>协作</strong>的；② <code class="c">stop()</code> 只发请求，不必（也不该）手动 join；③ 若线程会阻塞在条件变量上，用 <code class="c">std::condition_variable_any</code> + <code class="c">stop_token</code> 的 <code class="c">wait</code> 重载，或配 <code class="c">stop_callback</code> 做 notify，保证停止延迟可控；④ 收尾逻辑（flush、统计）放在循环之后。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

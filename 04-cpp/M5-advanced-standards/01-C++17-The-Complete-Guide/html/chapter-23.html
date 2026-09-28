@@ -473,6 +473,29 @@ double safe_pos = std::clamp(current_pos + delta, -max_pos, max_pos);
 <li>为什么说 clamp 比手写 <code class="c">max(lo, min(val, hi))</code> 好？</li>
 <li>HFT 中限制价格滑点的 clamp 写法？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">std::clamp(v, lo, hi)</code> 返回 <code class="c">v &lt; lo ? lo : (hi &lt; v ? hi : v)</code>，即等价于 <strong><code class="c">std::max(lo, std::min(v, hi))</code></strong>。
+注意它返回的是 <code class="c">const T&amp;</code>（引用）：<code class="c">v</code> 落在区间内时直接返回 <code class="c">v</code> 本身，不做拷贝；三个参数都按 <code class="c">const T&amp;</code> 传入且各只求值一次。</li>
+<li><code class="c">lo &gt; hi</code> 违反了标准规定的前置条件（<code class="c">lo &lt;= hi</code>），按 C++17 属于<strong>未定义行为</strong>，不要指望它返回有意义的值。
+另外若 <code class="c">v</code> 是 NaN，它与 <code class="c">lo</code>、<code class="c">hi</code> 的比较都为假，会原样返回 <code class="c">v</code>——这也不符合「夹在区间内」的语义。调用前应自行保证 <code class="c">lo &lt;= hi</code> 且值非 NaN。</li>
+<li>带比较器的重载是 <code class="c">std::clamp(v, lo, hi, comp)</code>，<code class="c">comp</code> 必须满足<strong>严格弱序</strong>（strict weak ordering：非自反、可传递、等价关系可传递），语义上表示「小于」。
+求值方式为 <code class="c">comp(v, lo) ? lo : comp(hi, v) ? hi : v</code>：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">Price clamped = std::clamp(p, lo, hi,
+    [](const Price&amp; a, const Price&amp; b) { return a.value &lt; b.value; });
+</code></pre>
+<p>自定义类型要么提供 <code class="c">operator&lt;</code>，要么显式传比较器。
+4. <code class="c">std::max(lo, std::min(val, hi))</code> 里 <code class="c">min</code> 和 <code class="c">max</code> 谁在外层很容易写反（写反变成 <code class="c">min(lo, max(val, hi))</code>，结果完全错误），读起来还要在脑子里绕一圈。
+<code class="c">clamp(val, lo, hi)</code> 参数顺序直观（值、下界、上界），语义一目了然；而且它是 <code class="c">constexpr</code>、各参数只求值一次、返回引用避免拷贝，边界语义由标准库保证。
+5. 把成交价夹在买一/卖一之间，防止滑点超出盘口：</p>
+<pre class="code" data-label="cpp"><code class="c">double fill_px = std::clamp(order_px, best_bid, best_ask);
+int    safe_qty = std::clamp(requested_qty, 0, max_qty);
+double safe_pos = std::clamp(current_pos + delta, -max_pos, max_pos);
+</code></pre>
+<p>使用前应确保 <code class="c">best_bid &lt;= best_ask</code>（盘口正常时成立），否则触发未定义行为。</p>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>reduce vs accumulate</h2></div>
@@ -564,6 +587,22 @@ auto t3 = now();
 <li>大数据集上 <code class="c">reduce(par)</code> 比 <code class="c">accumulate</code> 快多少？小数据呢？</li>
 <li>如果操作不满足结合律，用 <code class="c">reduce</code> 会怎样？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">accumulate</code> 的返回类型就是<strong>初值的类型</strong>，中间每一步都先换算到该类型再累加。
+经典陷阱：<code class="c">std::vector&lt;double&gt; v{0.5, 0.5, 0.5}; std::accumulate(v.begin(), v.end(), 0)</code> 的初值是 <code class="c">int</code>，每一步 <code class="c">0 + 0.5</code> 的结果被截断回 <code class="c">int</code>，最终得到 <code class="c">0</code> 而不是 <code class="c">1.5</code>。
+正确写法是 <code class="c">std::accumulate(v.begin(), v.end(), 0.0)</code>（初值用 <code class="c">double</code>），或显式指定初值类型。</li>
+<li><code class="c">reduce</code> 允许把区间切成任意块、以任意顺序合并，只有运算满足<strong>结合律</strong>（<code class="c">(a∘b)∘c == a∘(b∘c)</code>）时结果才与分组方式无关。
+浮点加法<strong>不满足</strong>结合律：每步都按有限精度舍入，<code class="c">(1e20 + 1.0) - 1e20 = 0.0</code>，而 <code class="c">1e20 + (1.0 - 1e20) = 1e20</code>，换一种分组结果就差了 20 个数量级。</li>
+<li><code class="c">accumulate</code> 是<strong>严格左折叠</strong>：<code class="c">init</code>、<code class="c">init+a</code>、<code class="c">(init+a)+b</code>…，固定顺序执行，不要求结合律或交换律，因此逐元素结果可复现。
+<code class="c">reduce</code> 允许<strong>任意分组与顺序</strong>（并行时分块归约再合并），标准只要求二元运算满足结合律（不要求交换律），顺序不确定，所以结果可能与 <code class="c">accumulate</code> 不同。</li>
+<li>数量级上，大数据集（百万级以上、每元素操作很轻）时 <code class="c">reduce(par)</code> 常常能拿到数倍加速，但具体倍数取决于核数、内存带宽与实现（MSVC/PPL、libstdc++ + TBB 等差异很大），<strong>必须实测</strong>，不要写死数字。
+小数据集则相反：任务划分、线程调度与同步的固定开销超过计算本身，<code class="c">reduce(par)</code> 通常比 <code class="c">accumulate</code> 更慢。</li>
+<li>结果会<strong>依赖分块方式和线程数</strong>，变成不确定、不可复现的值（例如「减」这类非结合运算，不同分组会给出不同答案）。
+标准并未把它判为未定义行为，只是不再保证唯一结果——所以把非结合运算塞进 <code class="c">reduce(par)</code> 是逻辑错误而不是编译错误，排查起来更隐蔽。</li>
+</ol>
+</details>
       </section>
       <section class="section" id="s-03">
         <div class="sec-head"><div class="sec-no">03</div><h2>前缀和家族</h2></div>
@@ -639,6 +678,28 @@ std::inclusive_scan(pnls.begin(), pnls.end(), cumulative_pnl.begin());
 <li>所有 scan 算法支持执行策略吗？</li>
 <li>用 <code class="c">inclusive_scan</code> 计算累计成交量的写法？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>对 <code class="c">{1, 2, 3, 4}</code>：
+   - <code class="c">exclusive_scan(v.begin(), v.end(), out.begin(), 0)</code> 得到 <code class="c">out = [0, 1, 3, 6]</code>（<code class="c">out[i]</code> 是 <code class="c">v[0..i-1]</code> 的和，<strong>不含</strong> <code class="c">v[i]</code>）。
+   - <code class="c">inclusive_scan(v.begin(), v.end(), out.begin())</code> 得到 <code class="c">out = [1, 3, 6, 10]</code>（<code class="c">out[i]</code> 是 <code class="c">v[0..i]</code> 的和，<strong>含</strong> <code class="c">v[i]</code>）。
+两者输出长度都等于输入长度，默认运算为 <code class="c">std::plus&lt;&gt;</code>。</li>
+<li><code class="c">exclusive_scan</code> 的 <code class="c">init</code> 是<strong>必需的</strong>：它就是 <code class="c">out[0]</code>，是整个前缀和的起点，<code class="c">out[i] = init ⊕ v[0] ⊕ ... ⊕ v[i-1]</code>。
+<code class="c">inclusive_scan</code> 有<strong>不带</strong> <code class="c">init</code> 的重载（<code class="c">out[0] = v[0]</code>），也有带 <code class="c">init</code> 和 <code class="c">binary_op</code> 的重载（<code class="c">out[i] = init ⊕ v[0] ⊕ ... ⊕ v[i]</code>，此时 <code class="c">init</code> 参与每一个元素）。</li>
+<li><code class="c">transform_inclusive_scan(first, last, out, binary_op, unary_op)</code> 里：<code class="c">unary_op</code> 是 <strong>map</strong>，先作用在每个输入元素上；<code class="c">binary_op</code> 是 <strong>scan</strong>，再做前缀和归约。
+例：输入 <code class="c">{1,2,3,4}</code>、<code class="c">unary_op</code> 为 <code class="c">x*2</code>、<code class="c">binary_op</code> 为 <code class="c">plus</code>，则 map 后是 <code class="c">{2,4,6,8}</code>，scan 后是 <code class="c">{2,6,12,20}</code>。
+注意参数顺序是<strong>先二元（归约）后一元（map）</strong>，容易写反。</li>
+<li>支持。<code class="c">exclusive_scan</code>、<code class="c">inclusive_scan</code>、<code class="c">transform_exclusive_scan</code>、<code class="c">transform_inclusive_scan</code> 都有接受执行策略的重载，可写成 <code class="c">std::inclusive_scan(std::execution::par, v.begin(), v.end(), out.begin())</code> 等。
+但前缀和本质上是<strong>有依赖的递推</strong>，并行实现需要多趟（分块求和 → 块间前缀和 → 回填），加速比不如 <code class="c">reduce</code> 那么理想，是否划算要实测。</li>
+<li><code class="c">cpp
+std::vector&lt;int&gt; trades = {100, 200, 150, 300};
+std::vector&lt;int&gt; cumulative(trades.size());
+std::inclusive_scan(trades.begin(), trades.end(), cumulative.begin());
+// cumulative = [100, 300, 450, 750]</code>
+输出区间要先分配好空间；也可以用 <code class="c">std::back_inserter(cumulative)</code> 代替裸迭代器以避免长度不匹配。</li>
+</ol>
+</details>
       </section>
       <section class="section" id="s-04">
         <div class="sec-head"><div class="sec-no">04</div><h2>std::gcd / std::lcm</h2></div>
@@ -715,6 +776,27 @@ struct Fraction {
 <li><code class="c">gcd(0, n)</code> 等于什么？<code class="c">gcd(-4, 6)</code> 呢？</li>
 <li>多策略信号周期 5 秒和 3 秒，公共采样周期怎么算？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">std::gcd(12, 18)</code> 为 <strong>6</strong>（12 与 18 的最大公约数）；<code class="c">std::lcm(4, 6)</code> 为 <strong>12</strong>（4 与 6 的最小公倍数）。
+二者满足 <code class="c">gcd(m,n) * lcm(m,n) == |m * n|</code>（在结果可表示的前提下），如 <code class="c">gcd(4,6) * lcm(4,6) == 2 * 12 == 24</code>。</li>
+<li>是。C++17 起 <code class="c">std::gcd</code> / <code class="c">std::lcm</code> 都是 <strong><code class="c">constexpr</code></strong>，可以在编译期求值：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">constexpr int g = std::gcd(12, 18);   // 编译期得到 6
+static_assert(std::lcm(4, 6) == 12);
+</code></pre>
+<p>它们定义在 <code class="c">&lt;numeric&gt;</code> 中，常用于编译期计算对齐、分块大小一类的常量。
+3. <strong>不支持浮点</strong>：两个参数都必须是整数类型（有符号或无符号整型），<code class="c">std::gcd(4.0, 6.0)</code> 直接编译不过。
+混合整数类型时返回它们的<strong>公共类型</strong> <code class="c">std::common_type_t&lt;M, N&gt;</code>，例如 <code class="c">std::gcd(4, 6L)</code> 返回 <code class="c">long</code>。
+另外结果恒为<strong>非负</strong>；<code class="c">lcm</code> 的结果若无法用返回类型表示，行为未定义。
+4. <code class="c">std::gcd(0, n)</code> 返回 <code class="c">|n|</code>（<code class="c">n</code> 的绝对值，非负），例如 <code class="c">gcd(0, 5) == 5</code>；<code class="c">std::gcd(0, 0)</code> 返回 <code class="c">0</code>。
+<code class="c">std::gcd(-4, 6)</code> 返回 <strong>2</strong>——<code class="c">gcd</code> 的结果恒为<strong>非负</strong>，符号被丢弃；负参数参与时 <code class="c">lcm</code> 的结果同样取非负。
+5. 要看「公共」指的是哪一种口径：
+   - 若指<strong>能同时命中两个策略信号时刻的采样间隔</strong>（采样粒度），用 <code class="c">gcd(5, 3) == 1</code>，即每 1 秒采样一次，5 秒和 3 秒的信号都不会漏（笔记里 <code class="c">common_period</code> 取的就是这种口径）。
+   - 若指<strong>两个周期再次完全重合的重复周期</strong>，用 <code class="c">lcm(5, 3) == 15</code>，即每 15 秒两个策略的相位才回到初始关系。
+两者都在 <code class="c">&lt;numeric&gt;</code> 中且是 <code class="c">constexpr</code>，可直接写成编译期常量。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

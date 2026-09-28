@@ -446,6 +446,21 @@ void ATM::run() {
 <li>C++ 的 <code class="c">std::variant</code> 相比 C 的 <code class="c">union</code> 有什么优势？</li>
 <li>HFT 的策略引擎如何用状态机+消息传递实现？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>ATM 的合法操作取决于卡、认证和交易阶段，状态机可显式描述“当前状态 + 事件 → 动作 + 新状态”。
+   它限制非法转换，分离各阶段逻辑，并让流程更易测试、回放和审计。</li>
+<li>每个状态可实现为成员函数、状态对象或 <code class="c">variant</code> 中的一种状态；该状态只处理允许的消息。
+   处理事件后更新状态枚举、成员函数指针或状态对象，即表示一次状态转换。</li>
+<li>消息天然对应状态机的事件，接收者可按当前状态串行处理并更新私有状态。
+   这样无需让发送者直接修改内部数据，降低共享同步和跨组件耦合。</li>
+<li><code class="c">std::variant</code> 是带判别信息的类型安全联合体，会正确构造和析构当前备选类型。
+   C <code class="c">union</code> 不自动管理非平凡成员，tag 与内容也可能不一致；<code class="c">variant</code> 可配合 <code class="c">visit</code> 做受控分派。</li>
+<li>策略线程可将行情、成交、定时器和风控回复建模为事件，按 IDLE/READY/PENDING 等状态处理。
+   它通过队列发送订单或风控请求，各组件保持单写者私有状态，从而得到可回放的确定转换流。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -619,6 +634,21 @@ void bank_process(withdraw&amp; w) {
 <li>为什么消息中要携带"回复队列"？有什么好处？</li>
 <li>HFT 的消息定义为什么用值语义而非指针？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">std::variant</code> 把 tag 与当前对象绑定，并按活动类型执行正确的构造、拷贝、移动和析构。
+   手写 <code class="c">struct + tag</code> 依赖程序员维持二者一致，错误 tag、遗漏生命周期处理更容易导致未定义行为。</li>
+<li><code class="c">std::visit</code> 以类型安全的 visitor 分派到当前备选类型，新增类型时编译期更容易暴露未覆盖处理。
+   <code class="c">switch</code> 需要手动读取 tag、转换载荷并维护分支，模板 visitor 还有更多内联优化机会。</li>
+<li>消息应语义明确、尽量不可变、尺寸有界，并携带完成处理所需的数据和关联标识。
+   自包含可避免接收时再访问发送者的共享可变状态，也消除外部对象寿命与同步依赖。</li>
+<li><code class="c">reply_to</code> 告诉处理者把结果发往哪个 mailbox，使请求者无需共享回调状态或等待全局响应队列。
+   它支持多个并发会话和组件解耦；通常还需 correlation ID 匹配具体请求。</li>
+<li>小型值对象可直接复制或移动进队列，所有权和生命周期清晰，并有良好连续布局。
+   裸指针会引入悬空、共享修改和内存回收问题；大消息可传受控句柄，但仍须明确所有权协议。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -795,6 +825,21 @@ Message msg;
 <li>为什么 HFT 热路径不用阻塞队列？管理面可以用吗？</li>
 <li><code class="c">unique_ptr</code> 在 receiver 中的作用是什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">sender</code> 只暴露投递能力，便于把入口复制给多个生产者；<code class="c">receiver</code> 拥有消费端与队列生命周期，通常不可复制。
+   分离接口可防止发送方读取消息，也避免无意产生多个消费者破坏协议。</li>
+<li><code class="c">wait_and_pop</code> 在队列空时阻塞，适合允许睡眠且希望节省 CPU 的线程。
+   <code class="c">try_pop</code> 立即返回成功或失败，适合轮询、事件循环或需要自行处理背压/其他工作的场景。</li>
+<li>在持有 <code class="c">unique_lock</code> 时调用 <code class="c">cv.wait_for(lock, duration, pred)</code>，谓词应检查“队列非空或停止”。
+   返回值表明谓词是否满足；仍应以受锁保护的状态为准，不能把一次通知当成消息。</li>
+<li>阻塞队列可能发生内核睡眠、唤醒和调度抖动，难以满足热路径尾延迟要求。
+   管理面吞吐较低且更重视节省 CPU，可以使用 mutex + condition_variable 的阻塞队列。</li>
+<li><code class="c">unique_ptr</code> 表示 receiver 独占其队列实现，自动释放资源并禁止意外复制所有权。
+   receiver 移动时可转移队列；sender 若需继续发送，应持有受控的非拥有引用或共享内部状态，取决于具体实现。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -980,6 +1025,21 @@ incoming.wait()
 <li>ATM、银行、硬件三个线程如何通过 sender/receiver 通信？</li>
 <li>HFT 策略引擎如何借鉴 ATM 状态机模式？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">state</code> 可声明为指向 ATM 某个无参状态处理成员函数的指针，例如 <code class="c">void (atm::*)()</code>。
+   运行循环通过 <code class="c">(this-&gt;*state)()</code> 调用当前处理函数，类型系统保证只能指向匹配签名的成员。</li>
+<li>当前处理函数收到触发事件并完成动作后，把 <code class="c">state</code> 赋为下一个成员函数的地址。
+   下一轮事件循环便进入新状态；应先完成当前转换所需的不变量维护再更新状态。</li>
+<li><code class="c">.handle&lt;T&gt;(fn)</code> 按消息类型组合处理器，避免集中式 tag 判断和巨大的 <code class="c">switch</code>。
+   每个状态只声明关心的消息，处理代码更局部且类型安全，但仍需明确未匹配消息和生命周期策略。</li>
+<li>每个线程拥有 receiver/mailbox，并把其 sender 交给其他组件；线程只向目标 sender 投递值消息。
+   ATM 发认证请求给银行、银行回复 ATM，ATM 再命令硬件显示或吐钞，彼此不直接修改内部状态。</li>
+<li>策略可把行情、成交、风控结果和定时事件分派给不同状态处理函数。
+   订单请求通过队列发送，策略状态由单线程串行更新，可减少锁并让事件回放与状态迁移可审计。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1139,6 +1199,21 @@ auto msg = incoming.wait_and_pop();
 <li>消息传递如何扩展到分布式？共享内存为什么不行？</li>
 <li>为什么 HFT 选择消息传递而非共享内存？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>若 ATM、银行和硬件直接共享对象，就需多把锁保护余额、会话及设备状态，跨组件操作还可能嵌套持锁。
+   锁序不一致会形成循环等待，且对象所有权和中间状态难以界定。</li>
+<li>每个组件只在自己的线程中修改私有状态，跨组件协作通过队列投递消息。
+   常规业务路径不同时持有多个组件的锁，因而消除了这类锁环；队列实现本身仍须正确同步。</li>
+<li>消息流提供清晰的因果边界，可记录、回放并按会话 ID 追踪每次状态转换。
+   共享内存错误常依赖瞬时读写交错，而消息处理通常在单一接收者中串行，重现更容易。</li>
+<li>把本地队列替换为网络 transport，并加入序列化、寻址、超时和重试后，可保持消息协议与组件边界。
+   普通共享内存只在同一地址空间或特定共享内存机制中成立，无法透明跨主机引用对象。</li>
+<li>HFT 倾向用消息传递划分单写者状态，通过 SPSC 等有界队列获得低争用和明确背压。
+   这减少锁、cache line bouncing 和复杂共享生命周期，使数据流及尾延迟更可预测。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1309,6 +1384,21 @@ T=1.023  ATM 状态: → waiting_for_card
 <li>如果银行余额不足，消息流会怎样变化？</li>
 <li>HFT 的完整流程和 ATM 案例有什么相似之处？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>典型成功流是 <code class="c">硬件线程(插卡/PIN/金额) → ATM线程 → 银行线程(验证/扣款授权) → ATM线程 → 硬件线程(吐钞/显示)</code>。
+   硬件完成后再向 ATM 报告结果，ATM 更新状态并结束或继续会话；具体消息名以实现定义为准。</li>
+<li>ATM 线程拥有会话和当前状态，银行线程拥有账户/授权状态，硬件线程拥有设备状态。
+   不共享可变状态可让每份数据只有一个写者，组件间只交换消息，减少锁和不一致中间态。</li>
+<li>银行需要知道把授权结果发给哪个 ATM 会话或 mailbox，<code class="c">reply_to</code> 提供返回路径。
+   这解除对全局响应队列的依赖；配合请求 ID 还能正确关联多个在途请求。</li>
+<li>银行向 <code class="c">reply_to</code> 发送拒绝/余额不足消息，而不是授权消息。
+   ATM 转入拒绝处理状态，通知硬件显示原因，不发送吐钞命令，并按协议退卡或允许重选金额。</li>
+<li>两者都把输入、决策和执行拆成拥有私有状态的阶段，以有类型消息驱动状态转换。
+   HFT 可对应为行情接收 → 策略 → 风控 → 下单/回报，强调单写者、异步回复和可追踪事件流。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>

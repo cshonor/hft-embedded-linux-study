@@ -525,6 +525,33 @@ v3 = v4;  // ✅ 同类型，可以赋值（但分配器不同，传播语义）
 <li>为什么 <code class="c">pmr::vector&lt;T&gt;</code> 和 <code class="c">std::vector&lt;T, AllocA&lt;T&gt;&gt;</code> 不能互相赋值，但两个 <code class="c">pmr::vector&lt;T&gt;</code> 可以？</li>
 <li>嵌套 pmr 容器如何自动传播内存资源？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>PMR 分三层：</li>
+<li><strong><code class="c">std::pmr::memory_resource</code>（接口层）</strong>：抽象基类，定义内存分配的统一契约，只关心「字节数 + 对齐」。</li>
+<li><strong>具体资源（实现层）</strong>：<code class="c">new_delete_resource</code>、<code class="c">null_memory_resource</code>、<code class="c">monotonic_buffer_resource</code>、<code class="c">synchronized_pool_resource</code>、<code class="c">unsynchronized_pool_resource</code>，以及可自定义的派生类。</li>
+<li><strong><code class="c">std::pmr::polymorphic_allocator&lt;T&gt;</code>（适配层）</strong>：把 <code class="c">memory_resource*</code> 包装成标准 Allocator，供容器使用；它让「用了哪种资源」不进入容器类型。
+一句话：资源负责内存，allocator 负责对接容器，容器类型因此保持统一。</li>
+<li>三个纯虚函数（用户派生时重写这三个，<code class="c">memory_resource</code> 的公有 <code class="c">allocate</code>/<code class="c">deallocate</code>/<code class="c">is_equal</code> 负责转发）：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">virtual void* do_allocate(std::size_t bytes, std::size_t alignment) = 0;
+virtual void  do_deallocate(void* p, std::size_t bytes, std::size_t alignment) = 0;
+virtual bool  do_is_equal(const memory_resource&amp; other) const noexcept = 0;
+</code></pre>
+<p><code class="c">do_is_equal</code> 用来判断两个资源是否等价（等价的资源之间可以互相释放内存），是 allocator 相等性比较与容器 swap/移动语义的基础。
+3. <code class="c">std::allocator&lt;T&gt;</code> 是<strong>静态、无状态</strong>的：它的类型里不含任何资源信息，分配固定走 <code class="c">::operator new</code>，也不需要（不能）持有状态。
+<code class="c">std::pmr::polymorphic_allocator&lt;T&gt;</code> 内部<strong>持有一个 <code class="c">memory_resource*</code></strong>，把分配通过虚函数的<strong>运行期多态</strong>转发给它；并且它符合 Allocator 要求（有 <code class="c">allocate</code>/<code class="c">deallocate</code>/<code class="c">construct</code>/<code class="c">destroy</code>、<code class="c">select_on_container_copy_construction</code> 等）。
+关键差别：前者「资源在类型里」（<code class="c">std::allocator</code> 没有资源），后者「资源在运行期数据里」——所以所有 <code class="c">polymorphic_allocator&lt;T&gt;</code> 都是同一个类型，容器类型也就统一了。
+4. 因为 allocator 是容器<strong>类型的一部分</strong>：<code class="c">std::vector&lt;int, AllocA&lt;int&gt;&gt;</code> 与 <code class="c">std::vector&lt;int, AllocB&lt;int&gt;&gt;</code> 是两个不同的类型，语言层面没有为它们生成赋值运算符，所以不能互相赋值。
+<code class="c">std::pmr::vector&lt;int&gt;</code> 无论绑到哪个资源，类型都是 <code class="c">std::vector&lt;int, std::pmr::polymorphic_allocator&lt;int&gt;&gt;</code>，分配器差异被<strong>类型擦除</strong>到运行期的 <code class="c">memory_resource*</code>，因此两个 <code class="c">pmr::vector&lt;int&gt;</code> 可以赋值。
+赋值时的资源传播要注意：<code class="c">polymorphic_allocator</code> 的 <code class="c">propagate_on_container_copy_assignment</code> 为 <code class="c">false</code>、<code class="c">select_on_container_copy_construction()</code> 返回<strong>默认构造</strong>的分配器，所以<strong>拷贝</strong>不会沿用源容器的资源（目标继续用自己/默认资源），而<strong>移动赋值</strong>会传播资源；两个资源不等价的容器之间 <code class="c">swap</code> 也是未定义行为。
+5. 靠 <strong>uses-allocator construction（分配器感知构造）</strong> 传播：pmr 容器都是 allocator-aware 的，外层容器在构造元素时会把自己持有的 <code class="c">polymorphic_allocator</code> <strong>转换成元素类型对应的 <code class="c">polymorphic_allocator&lt;value_type&gt;</code></strong> 并传给元素的构造函数。</p>
+<pre class="code" data-label="cpp"><code class="c">std::pmr::vector&lt;std::pmr::string&gt; vs(&amp;mbr);
+vs.emplace_back(&quot;hello&quot;);   // string 也从 mbr 分配
+</code></pre>
+<p>所以外层 vector、内层 string、乃至更深的嵌套都自动使用同一个 <code class="c">memory_resource</code>，无需逐层手工指定。标准库内部用 <code class="c">std::uses_allocator</code> 判断元素是否接受分配器参数来完成这件事。</p>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>monotonic_buffer_resource 详解</h2></div>
@@ -615,6 +642,25 @@ v.resize(100);  // 又分配 400 字节——不会复用之前的空间！
 <li>请求作用域模式的优势是什么？</li>
 <li>为什么说 monotonic "不可中途释放"？需要频繁释放该用什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>它是<strong>bump / arena 分配器</strong>：资源持有当前缓冲区和「已用位置」指针，分配时把指针按对齐要求向上调整后返回旧位置，并把指针推到 <code class="c">p + bytes</code>。
+因为只有「指针加法 + 对齐取整」两步，没有空闲链表查找、没有大小分桶、没有合并逻辑，所以是 <strong>O(1)</strong>，且分配出的地址在缓冲内连续递增——cache 局部性也最好。</li>
+<li>标准规定 <code class="c">monotonic_buffer_resource::do_deallocate</code> 的效果为 <strong>none</strong>，即空操作：它不回收单个块，内存只在资源被析构时一次性释放。
+原因正是「单调」：资源只增不减，一旦允许回收就要维护空闲链表或做块合并，也就失去了 O(1) 与零碎片的性质。个别实现可能对「刚分配的最后一块」做特殊处理，但<strong>不可依赖</strong>。</li>
+<li>初始缓冲耗尽后，它会向<strong>构造时指定的上游资源</strong>（<code class="c">upstream_resource</code>）申请一块<strong>更大的新缓冲</strong>继续 bump（典型实现按倍数增长，具体增长策略标准未规定），旧缓冲仍被保留直到资源析构。
+上游默认是 <code class="c">std::pmr::new_delete_resource()</code>（即用 <code class="c">::operator new</code> 分配）；也可以显式指定，例如把 <code class="c">unsynchronized_pool_resource</code> 作为上游，或指定 <code class="c">null_memory_resource()</code> 让超出缓冲时直接抛 <code class="c">std::bad_alloc</code>。</li>
+<li>请求作用域（request-scope arena）模式：在处理函数里于<strong>栈上</strong>放一块缓冲区，构造 <code class="c">monotonic_buffer_resource</code>，让本次请求的所有临时容器都从它分配，函数返回时资源析构、栈空间自动回收。
+优势：<strong>零 malloc</strong>（前 N 字节完全不走系统分配器）、分配 O(1)、<strong>无内存碎片</strong>、容器地址集中在栈上/连续区域（cache 局部性好）、生命周期与请求一致因而不会泄漏，下一笔请求直接复用同一栈空间。</li>
+<li>因为它的 <code class="c">deallocate</code> 是空操作，且内存只随分配单调增长：即使容器 <code class="c">clear()</code> 甚至析构，字节也不会回到资源里，下次分配照样往后推。</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">v.resize(100);  // 分配 400 字节
+v.clear();      // deallocate 是空操作
+v.resize(100);  // 又分配 400 字节，不复用旧空间
+</code></pre>
+<p>所以长生命周期 + 频繁分配释放的场景要用 <strong><code class="c">synchronized_pool_resource</code> / <code class="c">unsynchronized_pool_resource</code></strong>（分桶 + 空闲链表，支持单块回收）；monotonic 适合「一批分配、整体释放」的场景（请求作用域、批处理）。</p>
+</details>
       </section>
       <section class="section" id="s-03">
         <div class="sec-head"><div class="sec-no">03</div><h2>pool_resource 详解</h2></div>
@@ -718,6 +764,33 @@ void on_tick(const Tick&amp; tick) {
 <li>HFT 为什么用 <code class="c">thread_local</code> + <code class="c">unsynchronized_pool</code>？</li>
 <li><code class="c">pool_options</code> 的 <code class="c">largest_required_pool_block</code> 是什么意思？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>两者池结构（分桶 + 空闲链表）完全相同，差别只在<strong>线程安全</strong>：
+   - <code class="c">unsynchronized_pool_resource</code>：<strong>不加锁</strong>，只能被单个线程使用；多个线程同时访问同一个实例是<strong>未定义行为</strong>。因为没有同步开销，速度最快。
+   - <code class="c">synchronized_pool_resource</code>：<strong>内部有锁</strong>，可被多个线程共享，代价是每次分配/释放都有同步开销（竞争时会急剧放大）。
+规则：每个线程一个对象就用 <code class="c">unsynchronized</code>，跨线程共享一个池才用 <code class="c">synchronized</code>。</li>
+<li>分桶（binning）：池内部按<strong>块大小</strong>维护若干「桶」，每个桶对应一种固定块大小，桶内是一条<strong>空闲链表（free list）</strong>；内存按 chunk 向上游批量申请后切分进桶。
+分配时找「不小于请求大小的最小桶」，从 free list 取一块（没有就向上游申请新 chunk）；释放时按块大小放回对应桶的 free list。
+这样设计是为了：让分配/释放都是 O(1)（无需搜索空闲区）、把碎片限制在块大小粒度内（同类大小的分配反复复用同一批块）、并让同尺寸的分配落在相邻地址上（局部性好）。</li>
+<li><strong>pool 支持单块回收</strong>（<code class="c">deallocate</code> 把块放回 free list 供后续复用），因此内存可以在长期运行中保持在一个稳态水位；<strong>monotonic 只增不减</strong>（deallocate 是空操作），只适合「一批分配、整体释放」。
+代价是 pool 有分桶/链表的管理开销，比 monotonic 略慢。
+选用：请求作用域、批处理、一次性构建后用完就丢 → monotonic；长生命周期、频繁分配释放、内存水位要可控 → pool。</li>
+<li>两点：<strong>无锁 + 无跨线程竞争</strong>。HFT 通常是「绑核 + 每线程独占数据」的模型，资源本来就不需要跨线程共享；用 <code class="c">thread_local</code> 的 <code class="c">unsynchronized_pool</code> 就没有 mutex、也不会出现多线程争抢同一条空闲链表导致的 cache line 乒乓。</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">thread_local std::pmr::unsynchronized_pool_resource tls_pool;
+void on_tick(const Tick&amp; tick) {
+    std::pmr::vector&lt;Opportunity&gt; opps(&amp;tls_pool);
+    // opps 析构 → 块归还到本线程的池 → 下一笔 tick 直接复用
+}
+</code></pre>
+<p>结果是稳态后几乎零 malloc、延迟分布稳定。注意：从该池分配的对象不应跨线程传递或由另一线程释放（资源属于本线程）。
+5. 它是 <code class="c">std::pmr::pool_options</code> 的一个字段，含义是「<strong>由池直接管理（分桶复用）的最大块大小</strong>」：
+   - 请求大小 <strong>不超过</strong> 该值时，由池的某个桶分配，释放后进入 free list 复用；
+   - 请求大小 <strong>超过</strong> 该值时，直接转交给上游资源（upstream），不进池。
+另一个字段 <code class="c">max_blocks_per_chunk</code> 表示向上游一次申请多少个块（即 chunk 粒度）。两者都填 0 表示「由实现自选默认值」。把它设成热路径上最常见的分配尺寸，可以最大化复用率。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

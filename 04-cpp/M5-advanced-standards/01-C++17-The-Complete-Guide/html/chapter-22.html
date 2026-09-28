@@ -532,6 +532,29 @@ std::sort(ex::par, small.begin(), small.end());  // 可能比 seq 更慢
 <li>执行策略是类型还是对象？能不能作为函数参数传递？</li>
 <li>小数据为什么用 <code class="c">par</code> 反而更慢？决定并行收益的关键因素是什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">sequenced_policy</code>（<code class="c">std::execution::seq</code>）：<strong>不并行、不向量化</strong>，在调用线程上顺序执行，语义与普通算法完全一致。
+<code class="c">parallel_policy</code>（<code class="c">par</code>）：<strong>多线程并行</strong>，每个元素的访问由一个线程完成，但同一线程内元素访问不会交错。
+<code class="c">parallel_unsequenced_policy</code>（<code class="c">par_unseq</code>）：<strong>并行 + 向量化/无顺序</strong>，同一线程内多个元素的执行可以交错（可 SIMD 化），不保证顺序。</li>
+<li><code class="c">par_unseq</code> 允许同一线程内多个元素的执行<strong>交错</strong>（unsequenced）：若某个元素拿到 mutex 后要等待另一个元素释放，而后者因为交错无法推进，就会<strong>死锁</strong>；锁在向量化语境里也无法正确表达。
+标准要求：<code class="c">par_unseq</code> 下的元素访问函数不得获取任何锁，不得执行依赖其他元素访问的操作，必须无跨元素数据依赖、无副作用，也不能调用向量化不安全的库函数。</li>
+<li>按 C++17 标准，带 <code class="c">par</code> / <code class="c">par_unseq</code> 策略的算法，若其元素访问函数以<strong>未捕获的异常</strong>退出，属于<strong>未定义行为</strong>（实践中主流实现直接调用 <code class="c">std::terminate</code>）。
+所以不能假定异常会传播到调用方；正确做法是在 lambda 内部自己 <code class="c">try/catch</code> 收集错误，或者改用 <code class="c">seq</code>（<code class="c">seq</code> 下异常按普通算法规则传播）。</li>
+<li>执行策略是<strong>类型</strong>（<code class="c">std::execution::sequenced_policy</code>、<code class="c">parallel_policy</code>、<code class="c">parallel_unsequenced_policy</code>；C++20 另加 <code class="c">unsequenced_policy</code>），而 <code class="c">std::execution::seq</code> / <code class="c">par</code> / <code class="c">par_unseq</code> 是这些类型的<strong>对象</strong>（标准规定以内联常量或实现定义方式提供）。
+可以作为函数参数传递——按值传参，或作为模板参数推导：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename Policy&gt;
+void process(std::vector&lt;int&gt;&amp; v, Policy pol) {
+    std::sort(pol, v.begin(), v.end());
+}
+process(v, std::execution::par);
+</code></pre>
+<p>用户不应自定义执行策略类型（该名字空间为标准保留）。
+5. 小数据上并行要先做区间划分、任务调度、线程唤醒与同步，这些固定开销远大于几个元素的实际计算量，所以 <code class="c">par</code> 反而更慢。
+决定并行收益的关键因素是：<strong>数据规模 n</strong>、<strong>每元素操作的计算强度</strong>、<strong>内存带宽与 cache 局部性</strong>、<strong>可用核数</strong>，以及<strong>实现质量</strong>（线程池实现、是否真的开了并行，例如 libstdc++ 需要链接 TBB）。判断依据只有一条：实测，别凭直觉。</p>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>并行算法清单与语义约束</h2></div>
@@ -648,6 +671,21 @@ double s2 = std::reduce(ex::par, v.begin(), v.end(), 0.0);
 <li><code class="c">sort(par)</code> 的复杂度变了吗？比较次数呢？</li>
 <li><code class="c">partition(par)</code> 和 <code class="c">stable_partition(par)</code> 的区别？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>C++17 给 <code class="c">&lt;algorithm&gt;</code> 与 <code class="c">&lt;numeric&gt;</code> 中的<strong>绝大多数</strong>算法增加了接受执行策略的重载，数量在 60～70 个量级（确切清单与数目请以 cppreference 的并行算法列表为准）。
+三类典型例子：<strong>遍历与变换类</strong>（<code class="c">for_each</code>、<code class="c">for_each_n</code>、<code class="c">transform</code>、<code class="c">copy</code>、<code class="c">fill</code>、<code class="c">generate</code>）、<strong>查找与计数类</strong>（<code class="c">find</code>、<code class="c">find_if</code>、<code class="c">count</code>、<code class="c">any_of</code>/<code class="c">all_of</code>/<code class="c">none_of</code>、<code class="c">min_element</code>/<code class="c">max_element</code>）、<strong>数值与重排类</strong>（<code class="c">reduce</code>、<code class="c">transform_reduce</code>、<code class="c">exclusive_scan</code>/<code class="c">inclusive_scan</code>、<code class="c">sort</code>、<code class="c">partition</code>）。</li>
+<li><strong>不保证立即停止</strong>：并行实现把区间切成多块并发处理，某块命中时其他线程可能已经在算后面的块，算法不会也无法立刻取消它们。
+因此并行 <code class="c">find</code> 不能当作串行的「第一个」来依赖——实现只保证「找到一个」，返回哪一个可以不同。若业务上必须取最靠前的那个，用 <code class="c">seq</code>，或自己分块后取最小下标。</li>
+<li>并行 <code class="c">reduce</code> 会把序列切成若干块、块内先归约再合并，加法的<strong>分组顺序与串行左折叠不同</strong>。而浮点加法<strong>不满足结合律</strong>：每步运算都要按有限精度舍入，<code class="c">(a+b)+c</code> 与 <code class="c">a+(b+c)</code> 的舍入点不同结果就不同；极端情况（如 <code class="c">1e20 + 1.0</code>）还会出现大数吞小数。
+所以结果与串行不同，而且分组方式可能随线程数变化，<strong>不可复现</strong>——回测这类要求可复现的场景要固定用 <code class="c">seq</code> 或固定分块策略。</li>
+<li><strong>复杂度量级不变</strong>：带执行策略的 <code class="c">sort</code> 仍要求 O(N log N) 次比较，标准对并行 <code class="c">sort</code> 的比较复杂度要求与串行一致。
+但<strong>实际比较次数可能更多</strong>：并行分区/归并会引入额外的比较与数据搬运。另外 <code class="c">sort</code> 的比较器必须线程安全，且并行 <code class="c">sort</code> 不保证稳定性（需要稳定用 <code class="c">stable_sort</code>）。</li>
+<li><code class="c">partition(par, ...)</code> <strong>不保证</strong>保持被划分元素的原有相对顺序，只保证谓词为真的元素都排在前半部分。
+<code class="c">stable_partition</code> 保持相对顺序，代价是可能更慢并且需要额外内存；C++17 中 <code class="c">stable_partition</code> 也接受执行策略，但需要保序时就得接受这部分开销。</li>
+</ol>
+</details>
       </section>
       <section class="section" id="s-03">
         <div class="sec-head"><div class="sec-no">03</div><h2>transform_reduce 详解</h2></div>
@@ -738,6 +776,28 @@ std::transform_reduce(ex::par, v.begin(), v.end(), 0.0,
 <li>用 <code class="c">transform_reduce</code> 计算向量内积的写法？</li>
 <li>初值为什么必须是幺元？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><strong>一次遍历完成 map + reduce</strong>，省掉了 <code class="c">transform</code> 写中间结果的那一次完整遍历和中间存储，对 cache 与内存带宽更友好，代码也更短。
+此外 <code class="c">transform_reduce</code> 支持执行策略，map 阶段天然可并行；而 <code class="c">transform</code> + <code class="c">reduce</code> 两段各自处理，多一次数据落地。</li>
+<li>两种重载语义不同：</li>
+<li><strong>内积形式</strong>（两个区间）：<code class="c">transform_reduce(first1, last1, first2, init)</code>，等价于 <code class="c">init + (a0*b0) + (a1*b1) + ...</code>，二元运算固定为加法与乘法。</li>
+<li><strong>map + reduce 形式</strong>（单区间）：<code class="c">transform_reduce(first, last, init, binary_op, unary_op)</code>，先对每个元素做 <code class="c">unary_op</code>（map），再用 <code class="c">binary_op</code> 归约，初值为 <code class="c">init</code>。
+第二种更通用：把 <code class="c">unary_op</code> 设为恒等、<code class="c">binary_op</code> 设为 <code class="c">std::plus&lt;&gt;</code> 就退化成 <code class="c">reduce</code>。</li>
+<li><strong>结合律</strong>：并行把区间分块后任意合并，只有 <code class="c">(a∘b)∘c == a∘(b∘c)</code> 时结果才与分组方式无关；否则结果依赖线程数和分块方式，变成不确定、不可复现的值。
+<strong>map 不能有副作用</strong>：<code class="c">unary_op</code> 会被并发调用，调用次数与顺序标准未作规定，实现还可能复制函数对象；一旦有写共享状态之类的副作用就会产生数据竞争（未定义行为）或不确定结果。同理两个 op 都不应使迭代器失效、不应修改区间元素。</li>
+<li>用内积形式的重载最直接：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">double dot = std::transform_reduce(
+    std::execution::par,
+    a.begin(), a.end(), b.begin(),
+    0.0);          // init 必须是对 + 的幺元
+</code></pre>
+<p>它等价于 <code class="c">0.0 + a[0]*b[0] + a[1]*b[1] + ...</code>。若要显式指定运算，可用七参数版本 <code class="c">transform_reduce(par, a.begin(), a.end(), b.begin(), 0.0, std::plus&lt;&gt;{}, std::multiplies&lt;&gt;{})</code>。
+5. 并行 <code class="c">reduce</code> 把区间切成 k 块，每块都以 <code class="c">init</code> 为起点归约，最后再把 k 个结果合并——<code class="c">init</code> 实际参与了 <strong>k 次</strong>运算，而串行只参与 1 次。
+只有当 <code class="c">init</code> 是 <code class="c">binary_op</code> 的<strong>幺元</strong>（identity：<code class="c">std::plus</code> 为 <code class="c">0</code>，<code class="c">std::multiplies</code> 为 <code class="c">1</code>，<code class="c">std::min</code> 为极大值）时，多出来的那些 <code class="c">init</code> 才不改变结果，并行与串行的答案才一致。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

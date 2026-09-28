@@ -526,6 +526,35 @@ p += std::to_chars(p, msg+256, qty).ptr - p;
 <li><code class="c">to_chars</code> 支持哪些整数进制？</li>
 <li>HFT FIX 消息序列化如何用 <code class="c">to_chars</code> 实现零分配？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>返回 <code class="c">std::to_chars_result { char* ptr; std::errc ec; }</code>。
+成功时 <code class="c">ec == std::errc{}</code>（等价于 0），<code class="c">ptr</code> 指向<strong>最后写入字符的下一个位置</strong>（one-past-the-end，即"写到这里停"）。
+缓冲区不足时 <code class="c">ec == std::errc::value_too_large</code>，并且 <code class="c">ptr == last</code>——此时缓冲区内容未指定，不应使用。</li>
+<li>因为它写的是<strong>区间 <code class="c">[first, last)</code> 而不是 C 字符串</strong>：末尾追加 <code class="c">'\0'</code> 会额外消耗一个字节、破坏"连续拼接"的用法，而且调用方常常只是要把字节塞进协议缓冲。
+不终止反而更方便：<code class="c">ptr</code> 可以直接作为下一次 <code class="c">to_chars</code> 的 <code class="c">first</code> 继续写（FIX/JSON 序列化正是这么用）。需要 C 字符串时自己补一个 <code class="c">'\0'</code> 即可。</li>
+<li>指 <code class="c">to_chars</code> 的浮点无精度参数重载会输出<strong>最短的</strong>十进制表示，且保证用 <code class="c">from_chars</code> 解析回来能得到<strong>完全相同</strong>的浮点值（round-trip 保证）。
+例如 <code class="c">0.1</code> 会被写成 <code class="c">"0.1"</code> 而不是 <code class="c">"0.1000000000000000055511151231257827"</code>——既短又不丢精度。注意这份保证仅在 <code class="c">to_chars</code> 与 <code class="c">from_chars</code> 来自同一实现时成立。</li>
+<li>整数重载带 <code class="c">int base</code> 参数，取值 <strong>2 到 36（含）</strong>，默认 10：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">std::to_chars(first, last, 255, 16);   // &quot;ff&quot;
+</code></pre>
+<p>大于 10 的进制用<strong>小写字母</strong> <code class="c">a</code>–<code class="c">z</code> 表示 10–35（不会输出大写）。浮点重载<strong>没有</strong> base 参数，改为用 <code class="c">std::chars_format</code>（<code class="c">scientific</code> / <code class="c">fixed</code> / <code class="c">hex</code> / <code class="c">general</code>）控制格式。
+5. 把 <code class="c">to_chars</code> 返回的 <code class="c">ptr</code> 当作"写指针"一路推进，直接往消息缓冲里写，不产生任何 <code class="c">std::string</code> 临时对象：</p>
+<pre class="code" data-label="cpp"><code class="c">char msg[256];
+char* p = msg;
+auto write = [&amp;](auto v) {
+    auto r = std::to_chars(p, msg + 256, v);
+    p = r.ptr;                     // 推进写指针
+};
+write(msg_type); *p++ = '|';
+write(price);    *p++ = '|';
+write(qty);
+// 需要时自己补 ' '
+</code></pre>
+<p>这样全程零堆分配、无 locale、无异常，是低延迟序列化（FIX/自定义二进制协议文本段）的标准做法。</p>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>from_chars 详解</h2></div>
@@ -626,6 +655,45 @@ std::from_chars(p, sep, price);  // 解析 AAPL 失败（非数字）
 <li>如何用 <code class="c">from_chars</code> 链式解析 FIX 消息？</li>
 <li><code class="c">from_chars</code> 支持 16 进制浮点吗？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><strong>不跳前导空白</strong>——必须一开始就遇到数字（或 <code class="c">-</code>），否则解析失败。
+与 <code class="c">strtol</code> 的主要区别：
+   - <code class="c">strtol</code> 会跳前导空白、<code class="c">+</code>/<code class="c">-</code> 都接受、受 locale 影响、<code class="c">base == 0/16</code> 时识别 <code class="c">0x</code> 前缀、失败靠 <code class="c">errno</code>/返回值判断；
+   - <code class="c">from_chars</code> <strong>不跳空白</strong>、只接受 <code class="c">-</code>（不接受 <code class="c">+</code>，且只对有符号类型）、<strong>无 locale</strong>、不分配、不抛异常、base 为 16 时也<strong>不识别 <code class="c">0x</code>/<code class="c">0X</code> 前缀</strong>、错误通过 <code class="c">std::errc</code> 返回。
+所以 <code class="c">"  123"</code>、<code class="c">"+123"</code>、<code class="c">"0x1f"</code>（base 16）对 <code class="c">from_chars</code> 都是解析失败或只解析出部分。</li>
+<li>成功时 <code class="c">ptr</code> 指向<strong>第一个不匹配模式的字符</strong>（即"未解析部分的起点"），若全部匹配则 <code class="c">ptr == last</code>，<code class="c">ec</code> 为值初始化。
+失败时：<code class="c">ec == errc::invalid_argument</code> → <code class="c">ptr == first</code>（一个字符都没匹配上）；<code class="c">ec == errc::result_out_of_range</code> → <code class="c">ptr</code> 指向第一个不匹配模式的字符（模式匹配上了但值超出范围）。
+两种情况 <code class="c">value</code> 都<strong>不被修改</strong>，这是它作为"快速解析器"的重要保证之一。</li>
+<li><code class="c">invalid_argument</code>：字符串<strong>根本不匹配数字模式</strong>（如 <code class="c">"AAPL"</code>、空串、只有符号没有数字）→ 解析失败，<code class="c">ptr == first</code>，<code class="c">value</code> 不变。
+<code class="c">result_out_of_range</code>：模式匹配上了，但解析出的数值<strong>超出目标类型可表示的范围</strong>（溢出/下溢）→ <code class="c">ec == result_out_of_range</code>，<code class="c">value</code> 不变。
+排查意义：前者通常是"字段类型判断错了"（比如拿字符串字段当数字解析），后者是"数值太大要换更宽的类型"。</li>
+<li>用返回的 <code class="c">ptr</code> 作为下一次解析的起点，逐字段推进：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">std::string_view msg = &quot;55=AAPL|44=150.25|38=100&quot;;
+const char* p = msg.data();
+const char* end = msg.data() + msg.size();
+
+int tag;
+auto r = std::from_chars(p, end, tag);   // tag = 55，r.ptr 指向 '='
+if (r.ec != std::errc{}) { /* 处理错误 */ }
+p = r.ptr + 1;                            // 跳过 '='
+
+const char* sep = std::find(p, end, '|');
+double price;
+auto r2 = std::from_chars(p, sep, price); // 只在本字段范围内解析
+if (r2.ec != std::errc{}) { /* 该字段不是数字，按字符串处理 */ }
+</code></pre>
+<p>要点：每次用 <code class="c">ptr</code> 推进；用 <code class="c">|</code> 分隔符先切出字段区间再传给 <code class="c">from_chars</code>；对每个返回的 <code class="c">ec</code> 都做检查（<code class="c">from_chars</code> 不抛异常）。
+5. 支持 <code class="c">std::chars_format::hex</code> 这种格式，但有两条限制：
+   - <strong>不接受 <code class="c">0x</code> / <code class="c">0X</code> 前缀</strong>——<code class="c">"0x123"</code> 会被解析成数值 <code class="c">0</code>，剩下 <code class="c">"x123"</code> 未解析。
+   - hex 格式下<strong>不允许指数部分</strong>（而 <code class="c">scientific</code> 要求必须有指数、<code class="c">fixed</code> 下指数不允许）。</p>
+<pre class="code" data-label="cpp"><code class="c">double d;
+auto r = std::from_chars(first, last, d, std::chars_format::hex);
+</code></pre>
+<p>也就是说它能解析十六进制浮点<strong>数字</strong>，但不能解析带 <code class="c">0x</code> 前缀的 C 风格字面量——前缀要自己先跳过。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

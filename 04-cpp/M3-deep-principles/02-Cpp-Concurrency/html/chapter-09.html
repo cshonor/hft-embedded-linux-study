@@ -589,6 +589,21 @@ auto wrap(std::packaged_task&lt;R()&gt;&amp; task) {
 <li>线程池有哪些局限？为什么 HFT 通常不用通用线程池？</li>
 <li><code class="c">std::function</code> 在 HFT 热路径中有什么代价？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>核心组件是固定 worker 集合、任务队列、同步原语、停止状态以及提交/取任务接口。
+   <code class="c">std::function&lt;void()&gt;</code> 用类型擦除统一保存不同 callable，但要求目标可复制，并可能带来间接调用与动态分配。</li>
+<li><code class="c">packaged_task&lt;R()&gt;</code> 包装调用并把返回值或异常写入共享状态，调用方先取得与之关联的 <code class="c">future&lt;R&gt;</code>。
+   <code class="c">packaged_task</code> 只可移动，而常见任务队列存 <code class="c">std::function</code>；用 <code class="c">shared_ptr</code> 捕获后 lambda 可复制并延长任务寿命。</li>
+<li>谓词版本等价于在循环中检查条件，可正确处理虚假唤醒以及通知发生在等待前的情况。
+   被唤醒后线程持锁重查“有任务或正在停止”，不满足就继续等待。</li>
+<li>通用线程池会有共享队列争用、调度与唤醒开销、任务分配，以及任务阻塞导致的吞吐和关闭问题。
+   HFT 热路径更看重尾延迟和可预测性，通常采用预创建、绑核的固定流水线与预分配队列。</li>
+<li><code class="c">std::function</code> 的类型擦除通常造成一次间接调用，较大的捕获对象还可能触发堆分配。
+   这些开销会妨碍内联并扩大尾延迟，因此热路径常用模板 callable、固定任务类型或预分配存储。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -770,6 +785,21 @@ void parallel_sort(work_stealing_pool&amp; pool, std::vector&lt;T&gt;&amp; v) {
 <li>为什么 HFT 热路径不用 work-stealing？</li>
 <li>什么 HFT 场景适合用 work-stealing？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>owner 从一端操作可获得较好的 LIFO 局部性，并让大多数操作只触碰自己的队列。
+   thief 从另一端取较老任务，既减少与 owner 的冲突，也更可能偷到能产生较多并行工作的粗粒度任务。</li>
+<li>fork/join 会动态产生数量和耗时不可预知的子任务，本地队列保留缓存局部性，空闲 worker 又能窃取工作。
+   单共享队列则让所有 worker 在同一同步点争用，递归任务越多越容易形成瓶颈。</li>
+<li>worker 的本地队列为空时才尝试从其他 worker 窃取。
+   受 victim 选择、竞争、任务时长和运行时调度影响，执行顺序及完成延迟通常不确定。</li>
+<li>窃取需要探测其他队列并进行同步，会带来额外缓存一致性流量和不可预测的调度抖动。
+   HFT 热路径通常要求固定数据流、CPU affinity 和可控的最坏延迟，因此不采用这种动态调度。</li>
+<li>离线回测、批量风险计算、报表生成等任务量不均且重吞吐的场景适合使用。
+   这些工作不在纳秒级关键路径上，能用动态负载均衡换取更高的整体 CPU 利用率。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -926,6 +956,21 @@ t.request_stop();  // st.stop_requested() 变 true
 <li>为什么 C++ 不提供类似 <code class="c">pthread_cancel</code> 的强制取消？</li>
 <li>HFT 系统关机时如何用 <code class="c">stop_token</code> 实现优雅退出？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">jthread</code> 可自动把 <code class="c">stop_token</code> 传给兼容的线程函数，并提供停止源；<code class="c">thread</code> 本身没有协作取消机制。
+   joinable 的 <code class="c">jthread</code> 析构时先 <code class="c">request_stop()</code> 再 <code class="c">join()</code>，而 joinable 的 <code class="c">thread</code> 析构会调用 <code class="c">std::terminate()</code>。</li>
+<li>协作式中断是 worker 在安全点查询 token，自行清理状态并返回。
+   强制终止可能发生在持锁、更新一半或拥有资源时，破坏不变量并泄漏资源，协作退出可避免这些问题。</li>
+<li><code class="c">stop_source</code> 持有并触发共享停止状态，<code class="c">stop_token</code> 用于观察停止请求。
+   <code class="c">stop_callback</code> 在请求发生时执行已注册动作，常用于唤醒阻塞等待或转发取消信号。</li>
+<li>C++ 对象的析构、锁释放和异常安全依赖正常控制流，异步杀线程无法保证停在安全点。
+   类似强制取消还会使库函数和用户不变量难以推理，因此标准采用可组合的协作取消。</li>
+<li>控制线程先请求停止并唤醒可能阻塞的 worker；worker 在循环或批次边界检查 token。
+   各线程停止接收新任务、处理或回滚在途工作、刷新必要状态后返回，再由 <code class="c">jthread</code> 完成 join。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1078,6 +1123,21 @@ public:
 <li>如何用 <code class="c">stop_callback</code> 唤醒在 <code class="c">condition_variable</code> 上阻塞的工作线程？</li>
 <li>HFT 系统关机时，<code class="c">stop_callback</code> 中应该做什么？不应该做什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>若请求发生在注册之后，回调通常在首次成功调用 <code class="c">request_stop()</code> 的线程中同步执行。
+   它不是固定在被停止线程或独立调度线程上，注册者必须按并发回调来设计。</li>
+<li>构造 <code class="c">stop_callback</code> 时若关联状态已被请求停止，回调会在构造它的线程中同步执行。
+   因而构造过程本身可能调用用户代码，不能假设回调只在未来发生。</li>
+<li>若尚未开始，析构会注销回调，使其不再因该停止状态而执行。
+   若另一线程正在执行该回调，析构通常要等待其完成，以保证析构返回后不再访问回调对象。</li>
+<li>注册一个生命周期覆盖等待过程的回调，在停止时调用 <code class="c">cv.notify_all()</code>；等待谓词同时检查工作条件和 <code class="c">stop_requested()</code>。
+   通知不保存状态，所以必须依赖该谓词在持锁后重查，避免丢失唤醒和虚假唤醒问题。</li>
+<li>回调只应快速设置状态、通知条件变量或触发轻量的非阻塞唤醒。
+   不应执行耗时 I/O、等待 worker、争抢复杂锁或抛出异常，否则会阻塞请求停止的线程并可能死锁。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1234,6 +1294,21 @@ task&lt;void&gt; fetch_and_process_coro() {
 <li>C++20 协程有什么局限？为什么实际使用通常依赖第三方库？</li>
 <li>HFT 系统的哪些部分适合用协程？热路径适合吗？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>线程是 OS 调度的执行单元，通常有独立栈并可在多核上并行；协程是可挂起的函数状态机，本身不等于线程。
+   协程在显式挂起点让出执行权，恢复位置由 executor/事件循环等库层调度机制决定。</li>
+<li><code class="c">co_await</code> 等待 awaitable，并可挂起后恢复；<code class="c">co_yield</code> 产出一个值并挂起，常用于 generator。
+   <code class="c">co_return</code> 完成协程并把结果交给 promise，而不是执行普通函数的 <code class="c">return</code> 路径。</li>
+<li>编译器把顺序写法转换成保存局部状态和 continuation 的状态机，异步完成时再恢复它。
+   它消除了手写回调链的嵌套和状态传递，但异步 I/O、调度和生命周期管理仍由底层框架完成。</li>
+<li>C++20 主要标准化语言变换与底层接口，没有统一 executor、事件循环、网络 I/O 或通用 task 类型。
+   实际项目因此依赖库来定义返回类型、调度策略、取消、异常传播和协程帧管理。</li>
+<li>管理面、异步网络控制、日志或非关键 I/O 流程适合协程，因为它能简化大量等待型逻辑。
+   纳秒级热路径通常不适合：挂起恢复、帧存储和调度可能引入难预测开销，固定同步流水线更可控。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>

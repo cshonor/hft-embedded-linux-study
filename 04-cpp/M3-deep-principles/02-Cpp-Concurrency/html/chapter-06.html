@@ -523,6 +523,21 @@ public:
 <li><code class="c">empty()</code> 方法为什么也要加锁？它是 <code class="c">const</code> 方法，<code class="c">mutex</code> 成员需要什么修饰？</li>
 <li>在什么场景下粗粒度锁的线程安全栈在 HFT 中是可以接受的？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><code class="c">top()</code> 返回到 <code class="c">pop()</code> 之间锁已释放，另一线程可能弹走或替换栈顶。
+   当前线程随后可能取得错误元素、重复处理，甚至对空栈调用 <code class="c">top()</code>；必须把“取值并删除”做成一个锁内操作。</li>
+<li>先在锁内 <code class="c">make_shared&lt;T&gt;(data.top())</code>，成功后才 <code class="c">pop</code>；若构造 <code class="c">T</code> 或分配控制块抛异常，栈保持不变。
+   返回 <code class="c">shared_ptr</code> 本身复制/移动不抛出这类 <code class="c">T</code> 拷贝异常，避免元素已删除后向调用者传值失败。</li>
+<li>仍在。实现先执行 <code class="c">value = data.top()</code>，只有赋值成功后才调用 <code class="c">data.pop()</code>。
+   若赋值抛异常，栈结构未修改；但调用方的 <code class="c">value</code> 是否保持原值取决于 <code class="c">T</code> 的赋值异常保证。</li>
+<li><code class="c">empty()</code> 与 push/pop 并发访问同一容器，未同步读同样会构成 data race。
+   const 成员函数要锁 mutex，应把 mutex 声明为 <code class="c">mutable</code>，因为加锁改变的是同步状态而非抽象值。</li>
+<li>低频配置更新、管理面操作、启动/停机流程或低竞争对象池空闲链表可接受粗粒度锁。
+   这些场景不在延迟关键路径，简单正确性通常比追求无锁更重要，仍应以竞争和尾延迟测量为准。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -668,6 +683,21 @@ public:
 <li><code class="c">tail</code> 为什么用裸指针而不是 <code class="c">unique_ptr</code>？它的所有权由谁管理？</li>
 <li>空队列时 <code class="c">head.get() == tail</code>，此时 pop 需要锁 tail_mutex 吗？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>单 mutex 同时保护头和尾，任何 push 与 pop 都必须依次进入同一临界区。
+   即使操作不同端也无法重叠，热点锁的争用和 cache line 迁移就是瓶颈。</li>
+<li>自有链表可让头尾位于不同节点，并分别定义所有权和锁保护范围；<code class="c">std::queue</code> 的内部结构不暴露这种并发协议。
+   环形缓冲当然可以，尤其适合有界 SPSC；MPMC 环形队列则需要每槽状态/CAS 等不同设计。</li>
+<li>dummy 始终占据空尾位置，使空判断和首/末元素转换无需专门处理 null/唯一真实节点。
+   没有它时，空队列首次 push 与最后一次 pop 都会同时修改头尾，双锁协调和所有权转移更复杂。</li>
+<li><code class="c">head</code> 及其 <code class="c">unique_ptr</code> 链拥有全部节点，<code class="c">tail</code> 只是指向链中最后 dummy 的非 owning observer。
+   若 tail 也用 <code class="c">unique_ptr</code> 会形成重复所有权；其访问必须遵循锁协议以避免悬空和 data race。</li>
+<li>需要。producer 在 <code class="c">tail_mutex</code> 下写 <code class="c">tail</code>，pop 若直接读取它会与该写形成 data race。
+   通常在持有 <code class="c">head_mutex</code> 时短暂获取 <code class="c">tail_mutex</code> 读取尾快照，并统一锁序；所示简化代码缺少这一步同步。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -814,6 +844,21 @@ public:
 <li><code class="c">clear()</code> 需要锁住所有分片，加锁顺序重要吗？为什么？</li>
 <li>读多写少的场景，分片的锁应该换成什么类型？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>key 被映射到不同 shard，每个 shard 只保护自己的桶或数据，落在不同 shard 的操作可并行。
+   单锁表把全部访问串行化，而分段把竞争限制在发生碰撞的那一部分。</li>
+<li>应结合并发线程数、热点分布、桶数、锁内工作量和内存开销通过基准选择。
+   分段远多于桶数会产生大量无数据可保护的锁，增加空间和初始化/全表操作成本，却不增加并行度。</li>
+<li>先计算两个 shard；相同 shard 只锁一次，不同 shard 按稳定全局顺序加锁，或使用 <code class="c">std::scoped_lock</code> 同时获取。
+   整个 swap 必须在两把锁都持有时完成，才能保持跨分片操作的原子性。</li>
+<li>重要。<code class="c">clear()</code> 与其他多分片操作若采用不同顺序，可能形成循环等待。
+   应始终按 shard index 等统一顺序获取全部锁，并以逆序或 RAII 释放。</li>
+<li>可将每个分片的 <code class="c">mutex</code> 换成 <code class="c">std::shared_mutex</code>，读操作持 <code class="c">shared_lock</code>，写操作持 <code class="c">unique_lock</code>。
+   但读写锁维护读者状态更重且公平性未保证，低竞争或写较多时普通 mutex 可能更快，应实测。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -961,6 +1006,21 @@ void for_each_safe(F&amp;&amp; f) {
 <li>什么是"可线性化"？它和"线程安全"有什么区别？</li>
 <li>快照模式（锁内拷贝、锁外处理）解决了什么问题？有什么代价？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>不变式是在公开操作边界必须成立的数据关系，例如 size 与节点链长度一致、头尾指针合法。
+   锁释放后其他线程即可观察状态，所以必须先恢复完整不变式；锁内暂时不一致只允许不逃逸给外部代码。</li>
+<li>不是。细锁可提高独立操作并行度，但会增加锁数量、锁序、死锁机会和跨锁不变量的证明难度。
+   临界区很短或竞争很低时，额外同步和 cache 流量还可能使细粒度方案更慢。</li>
+<li>外部回调的耗时、加锁行为和重入不可控，可能反向获取其他锁、再次进入当前对象或抛异常。
+   这会扩大临界区、形成死锁和破坏不变量；应在锁内复制所需数据，解锁后再调用。</li>
+<li>可线性化要求每个并发操作看起来在调用与返回之间某个瞬间原子发生，并符合顺序规格。
+   “线程安全”常是较宽泛说法，可能只保证无 data race；可线性化还规定跨操作可观察语义。</li>
+<li>它把未知耗时的遍历、回调或 I/O 移到锁外，只在锁内取得一致副本，从而缩短持锁时间并避免重入死锁。
+   代价是复制时间和内存，处理期间原数据可能更新，所以结果只对应取得快照的那个时刻。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1089,6 +1149,21 @@ V get_or_default_safe(const K&amp; k, const V&amp; def) {
 <li>读写锁在什么情况下比普通 <code class="c">mutex</code> 更慢？</li>
 <li><code class="c">get_or_default</code> 的 double-checked 模式中，第二次检查为什么必要？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>读锁使用 <code class="c">std::shared_lock&lt;std::shared_mutex&gt;</code>，多个读者可并发进入。
+   写锁使用 <code class="c">std::unique_lock&lt;std::shared_mutex&gt;</code> 或 <code class="c">lock_guard</code>，与所有其他读写互斥。</li>
+<li>写者饥饿是写线程长期无法取得独占锁，因为新的读者持续进入、读者集合一直不归零。
+   <code class="c">shared_mutex</code> 的公平策略不由标准保证，读流量持续且实现偏向读者时尤其可能发生。</li>
+<li>标准 <code class="c">shared_mutex</code> 不提供原子的 shared-to-exclusive 升级；持读锁再请求写锁可能等待自己及其他升级者而死锁。
+   应释放读锁后获取写锁，并在写锁下重新验证条件，或使用明确支持升级语义的专用锁。</li>
+<li>读临界区很短、竞争低、写比例高，或实现维护读者计数的共享原子成为热点时，读写锁可能更慢。
+   它的状态管理、唤醒和公平策略都比普通 mutex 复杂，必须针对 workload 基准测试。</li>
+<li>从释放读锁到取得写锁之间，另一线程可能已经插入了该 key 或改变相关状态。
+   写锁下第二次检查可避免覆盖现值、重复构造或违反“仅初始化一次”的语义。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>

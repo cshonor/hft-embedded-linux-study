@@ -491,6 +491,25 @@ v.resize(10);  // vector 内部用 launder，用户不用管
 <li>什么场景不需要 launder？</li>
 <li>launder 的运行时开销是什么？本质是什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>placement new 在旧对象存储上重建对象后，旧指针/旧变量名在编译器眼里<strong>仍指代原来的那个对象</strong>。若原类型含 const 成员（或引用成员），编译器被允许假定这些成员的值在整个生命周期内不变，于是它可能<strong>常量折叠/缓存旧值</strong>，读到的不是新写入的值——这属于未定义行为，而且往往只在开优化时才暴露。
+正确做法是使用 placement new 返回的指针，或用 <code class="c">std::launder</code> 把旧指针"刷新"为指向新对象的指针。</li>
+<li>因为标准规定：const 对象（以及类类型中的 const 非静态数据成员、引用成员）在其生命周期内<strong>值不可改变</strong>。这条规则本身就是给优化器的许可证——既然值不会变，就可以把它当常量处理（寄存器缓存、常量传播、去重）。
+所以"用 placement new 改掉一个含 const 成员的对象"在对象模型层面不是「修改」，而是「结束旧对象生命期、创建新对象」；旧的名字/指针指向的仍是旧对象，编译器按旧对象的不变性做优化也就顺理成章。</li>
+<li>因为 <code class="c">reinterpret_cast</code> 只是<strong>重新解释地址类型</strong>，并不创建或"指向"一个对象：编译器看到的是一个 <code class="c">unsigned char[]</code> 的存储，通过该指针访问 <code class="c">Widget</code> 违反了对象模型/类型规则，属于未定义行为。
+正确做法是：要么使用 placement new <strong>返回的</strong> <code class="c">Widget*</code>（它确实指向新创建的对象）；要么在只有 <code class="c">buf</code> 的情况下用 <code class="c">std::launder(reinterpret_cast&lt;Widget*&gt;(buf))</code> 明确告诉编译器"这个地址上现在存在一个 <code class="c">Widget</code> 对象"。</li>
+<li>不需要 launder 的典型情况：
+   - 普通 <code class="c">new</code> / placement new <strong>返回的指针</strong>——它天然指向新对象；
+   - 访问<strong>非 const、非引用</strong>的普通成员：符合标准 [basic.life] 的"透明可替换"规则，旧名字可直接指代新对象；
+   - STL 容器内部（<code class="c">vector</code>/<code class="c">optional</code> 等已由实现处理好），用户无需操心；
+   - 在正确类型的存储上 placement new 后直接使用返回值。
+一句话：只要你手上的指针确实"指向当前那个对象"，就不需要 launder。</li>
+<li><strong>运行期零开销</strong>：<code class="c">std::launder</code> 是 <code class="c">constexpr noexcept</code>，实现就是 <code class="c">return p;</code>，通常被完全优化掉，不产生任何指令。
+它的本质是<strong>编译期的优化屏障 / provenance 提示</strong>：告诉优化器"这个地址上的对象可能已经不是你以为的那个了"，从而禁止它基于旧对象的 const 值、旧类型、旧成员布局做常量折叠与值缓存。换言之，它改的是编译器的推理，而不是运行时的地址。</li>
+</ol>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>launder 实践</h2></div>
@@ -584,6 +603,36 @@ auto* p = std::launder(reinterpret_cast&lt;T*&gt;(buf));
 <li>访问非 const 普通成员需要 launder 吗？为什么通常不需要？</li>
 <li>列出需要和不需要 launder 的场景。</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>内存池提供的是<strong>裸存储</strong>（<code class="c">alignas(T) std::byte[]</code> 或 <code class="c">void*</code>），对象由 placement new 创建。池返回给用户的指针通常只能通过对存储做 <code class="c">reinterpret_cast</code> 得到——这个转换本身不"指向"新对象，编译器仍认为那里是裸字节，通过该指针访问 <code class="c">T</code> 是未定义行为。
+<code class="c">std::launder</code> 把这个指针变成"指向该地址上当前存在的 <code class="c">T</code> 对象"的合法指针，从而让后续访问有定义。若池直接返回并保存 placement new 的返回值，则不必 launder；但只要是从存储重新计算/转换出的指针，就需要。</li>
+<li>因为 <code class="c">MyOptional</code> 的存储（如 <code class="c">alignas(T) std::byte buf[sizeof(T)]</code>）可以被<strong>反复 emplace</strong>：每次都在同一地址上创建<strong>一个新的 <code class="c">T</code> 对象</strong>。
+<code class="c">value()</code> 每次都用 <code class="c">reinterpret_cast&lt;T*&gt;(buf)</code> 取指针，编译器完全有理由认为「这个指针指向的还是上一次那个对象」，从而缓存先前读过的值、或复用基于旧对象不变性的优化。<code class="c">std::launder</code> 断开这种假设，保证每次 <code class="c">emplace</code> 后读到的是<strong>当前</strong>对象。</li>
+<li>C++17 之前没有标准手段，常见替代：
+   - 用 <strong>union</strong> 存储（<code class="c">union { T val; char dummy; }</code>），靠 union 的成员规则规避——合法但写起来冗长、对非平凡类型要手写构造/析构；
+   - 用<strong>编译器扩展</strong>：GCC/Clang 的 <code class="c">__builtin_launder</code>、MSVC 的相应内置；
+   - 或者依赖宽松的别名规则编译（如 <code class="c">-fno-strict-aliasing</code>）——不可移植，且会牺牲优化。
+C++17 把这件事标准化为 <code class="c">std::launder</code>，从此有了可移植写法。</li>
+<li>通常不需要。原因在标准 [basic.life] 的"透明可替换"规则：如果原对象<strong>不是 const 限定</strong>、且（若是类类型）<strong>不含 const 限定或引用类型的非_static 数据成员</strong>，那么在原形存储上创建的新对象可以被旧的指针/引用/名字直接指代，编译器不会基于"值不可变"做假设。</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">struct Z { int n; };
+Z z{1};
+new (&amp;z) Z{2};   // z.n 不是 const，读 z.n 得到 2
+</code></pre>
+<p>所以访问普通非 const 成员是安全的。但只要涉及 const/引用成员、或指针是从 <code class="c">unsigned char</code> 缓冲 <code class="c">reinterpret_cast</code> 得来的，就必须 launder——判据始终是"我手上的指针是否真的指向当前这个对象"。
+5. <strong>需要 launder</strong>：
+   - placement new 在 <code class="c">unsigned char</code> / <code class="c">std::byte</code> 缓冲上构造对象后，从缓冲转换出指针；
+   - placement new 重建对象后要访问 <strong>const 成员</strong>或<strong>引用成员</strong>；
+   - 自己实现内存池 / 对象池（从裸存储返回对象指针）；
+   - 自己实现 <code class="c">optional</code> / <code class="c">variant</code> 这类"原地重建"的工具。
+<strong>不需要 launder</strong>：
+   - 普通 <code class="c">new</code> 返回的指针；
+   - placement new <strong>本身返回</strong>的指针（直接用它即可）；
+   - 在正确类型的存储上 placement new 后访问<strong>非 const 普通成员</strong>（透明可替换）；
+   - STL 容器内部（实现已处理，用户不用管）。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

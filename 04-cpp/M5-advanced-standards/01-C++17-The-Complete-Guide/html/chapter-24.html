@@ -508,6 +508,22 @@ for (auto&amp; doc : documents) {
 <li>搜索器为什么要"构造一次，搜索多次"？</li>
 <li><code class="c">boyer_moore_searcher</code> 和 <code class="c">boyer_moore_horspool_searcher</code> 怎么选？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>C++17 在 <code class="c">&lt;functional&gt;</code> 中提供三种搜索器：<code class="c">std::default_searcher</code>（朴素/实现默认，无预处理）、<code class="c">std::boyer_moore_searcher</code>（坏字符表 + 好后缀表）、<code class="c">std::boyer_moore_horspool_searcher</code>（只保留坏字符表）。
+需要强调：<strong>C++17 标准并未规定它们的复杂度与具体算法</strong>，只要求搜索结果与 <code class="c">std::search</code> 一致（返回最靠前的匹配）。教科书给出的典型量级是：预处理 O(m + σ)（σ 为字符集大小，用稀疏表可降到 O(m)），Boyer-Moore 系列平均约 O(n/m)、最坏 O(n·m)，<code class="c">default_searcher</code> 为 O(n·m)。</li>
+<li>因为 Boyer-Moore 从<strong>模式右端</strong>开始比对：一次不匹配就能拿到「文本中这个字符」这条信息，配合坏字符表可以一次跳过最多约 m 个位置，于是平均只需约 n/m 次比对就滑过整个文本。
+这是教科书在随机文本假设下给出的<strong>平均</strong>结论，最坏情况（如文本与模式都是 <code class="c">aaaa...</code>）仍退化为 O(n·m)，标准也不作保证。</li>
+<li>模式很短（1～3 个字符）时用 <code class="c">default_searcher</code>：预处理要建表（O(m + σ)），而短模式的最大跳跃距离不超过 m，跳跃收益极小，抵不过建表开销。
+另外「只搜一次、文本也很短」的场景同样不值得预处理。只有在文本长、模式长或要搜多次时 Boyer-Moore 才划算。</li>
+<li>搜索器对象在<strong>构造时</strong>完成预处理（坏字符表、好后缀表），这部分成本是 O(m + σ) 且只与模式有关。
+构造一次、对多份文本反复调用 <code class="c">std::search(doc.begin(), doc.end(), searcher)</code>，预处理成本被摊薄，整体才划算；反过来每次搜索都现场构造搜索器，等于把预处理成本乘以搜索次数，反而更慢。</li>
+<li><code class="c">boyer_moore_horspool_searcher</code> 只维护坏字符表，表更小、每步常数开销更低，<strong>实践中通常更快，是默认首选</strong>。
+<code class="c">boyer_moore_searcher</code> 额外维护好后缀表，在<strong>长模式</strong>、模式中重复结构多、或文本使坏字符规则频繁失效的场景下跳跃更大，收益更明显。
+经验法则：短模式（1～3）→ <code class="c">default_searcher</code>；中长模式 → <code class="c">boyer_moore_horspool_searcher</code>；长模式且追求极致 → 两种都实测，选快的那个。</li>
+</ol>
+</details>
       </section>
       <section class="section" id="s-02">
         <div class="sec-head"><div class="sec-no">02</div><h2>Boyer-Moore 算法原理</h2></div>
@@ -574,6 +590,23 @@ while (i + m &lt;= n) {
 <li>坏字符表怎么构建？空间复杂度？</li>
 <li>为什么从右向左比从左向右能跳更多？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>Boyer-Moore <strong>从右向左</strong>（从模式最后一个字符向第一个字符）比对模式与文本窗口。
+这样选是因为：一旦右端字符不匹配，就能确定整个对齐位置失败，并依据该字符（坏字符）把模式大幅右移；而从左向右时，第一个字符不匹配只能说明当前位置失败，最多只能右移 1 位。</li>
+<li>坏字符规则：比对在模式的第 j 位失败时，取文本中与之对齐的那个字符 c（即「坏字符」）。
+   - 若 c 在模式中出现过，把模式右移，使模式中<strong>最靠右</strong>的那个 c 与文本中的 c 对齐（取最靠右是为了不漏解且不倒退）。
+   - 若 c 根本没出现在模式中，模式可以整个滑过 c，一次右移 m 位。
+跳跃距离至少为 1，保证匹配位置单调前进。</li>
+<li>Horspool 变体<strong>去掉了好后缀表</strong>，只保留坏字符规则，并且坏字符取的是窗口<strong>最后一个字符</strong>（而不是失配位置那个），表由模式的前 m-1 个字符构建。
+代价是最坏跳跃略小，收益是表更小、每步计算更简单、cache 更友好，<strong>常数因子更小</strong>——所以在中等长度模式和普通文本上实践中往往比完整版更快。</li>
+<li>构建方式：遍历模式的前 m-1 个字符，为每个字符记录它在模式中<strong>最靠右</strong>出现位置到模式末尾的距离（未出现的字符记为 m）。
+用定长数组按字符值直接索引时空间是 <strong>O(σ)</strong>（σ 为字符集大小，如 <code class="c">char</code> 是 256，<code class="c">wchar_t</code> 会大得多）；若用哈希表/稀疏结构只存出现过的字符，则是 <strong>O(m)</strong>。</li>
+<li>因为<strong>每次比对暴露的信息量不同</strong>：从左向右，第一次不匹配只知道「这个位置的字符不匹配」，能排除的只有当前这一种对齐，只能右移 1 位。
+从右向左，末尾字符不匹配意味着整个窗口失败，同时还已知文本中该位置的字符值，可据此把模式跳过一大段（坏字符规则最好能跳过 m 位，配合好后缀规则更大）——信息越多，能排除的对齐位置越多，跳跃就越远。</li>
+</ol>
+</details>
       </section>
 
       <section class="section" id="quiz">

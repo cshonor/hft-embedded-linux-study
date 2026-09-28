@@ -564,6 +564,21 @@ t1.join(); t2.join();
 <li>调试并发 bug 应该用什么工具，而不是 print？</li>
 <li>HFT 系统为什么对并发正确性"零容忍"？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>常见特征是非确定性、难复现、时序敏感和平台/负载相关。
+   同一缺陷可能只在罕见线程交错、特定硬件内存模型或高压力下暴露。</li>
+<li>Heisenbug 是观察行为本身会改变或隐藏的缺陷；并发 bug 是其典型来源。
+   <code class="c">print</code> 引入 I/O、锁、系统调用和调度变化，可能使原本触发竞争的时间窗口消失。</li>
+<li>线程交错、编译优化、CPU 数量、缓存与内存模型都会改变复现概率。
+   本机未观察到只说明测试未覆盖触发条件，不代表程序不存在 data race 或其他未定义行为。</li>
+<li>应使用 ThreadSanitizer 检测竞争，配合长时间压力测试、可控调度、事件追踪和 core dump。
+   性能问题可用 perf 等低扰动采样工具，死锁还可分析锁序与所有线程栈。</li>
+<li>一个低概率竞争就可能造成错误报价、重复下单、风险状态损坏或进程停顿，业务损失会被高速放大。
+   同时 HFT 对尾延迟和可恢复性要求极高，不能把“偶尔出错”当成可接受概率。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -710,6 +725,21 @@ TEST(StackTest, ConcurrentPushPop) {
 <li>为什么单元测试要多线程压测才能被 TSan 检测到竞争？</li>
 <li>为什么说"数据竞争是 UB"而不仅仅是"读到旧值"？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>两个或更多线程并发访问同一 memory location、其中至少一个是写，并且这些冲突访问不是原子操作且不存在 happens-before 顺序。
+   三项同时成立才构成 C++ 定义的数据竞争，并直接导致未定义行为。</li>
+<li>被 join 线程中的所有操作 synchronize-with <code class="c">join()</code> 的成功返回，因此 happens-before 返回后的读取。
+   前提是读确实发生在 join 返回后；若还有其他未同步写线程，仍可能存在竞争。</li>
+<li>TSan 会插桩内存访问并维护同步与 happens-before 元数据，常见代价是数倍到十余倍时间及显著额外内存，具体依程序而异。
+   这不适合生产 HFT 的延迟与容量要求，但 CI 可接受开销以持续发现真实执行路径上的竞争。</li>
+<li>TSan 是动态检测器，只能报告运行中实际观察到的冲突访问。
+   多线程压力、改变调度和重复执行可扩大危险交错的覆盖面，单线程或短测试可能根本不触发冲突。</li>
+<li>编译器可基于“程序无数据竞争”的前提重排、合并或删除访问，CPU 也可能呈现非直觉可见顺序。
+   因此结果不受限于旧值或丢失更新，标准不对整个程序行为作保证。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -858,6 +888,21 @@ void t2() {
 <li>TSan 如何检测"潜在死锁"？需要实际死锁发生吗？</li>
 <li>活锁和死锁有什么区别？为什么活锁更难发现？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>四个必要条件是互斥、持有并等待、不可抢占和循环等待。
+   工程上通常最容易通过统一锁序打破循环等待，或通过一次性获取多个锁消除持有并等待。</li>
+<li><code class="c">std::scoped_lock</code> 对多个 mutex 使用与 <code class="c">std::lock</code> 等价的死锁避免算法，再以 RAII 统一释放。
+   标准只保证避免死锁，不规定具体算法；实现通常组合 <code class="c">lock</code>、<code class="c">try_lock</code>、失败回退和重试。</li>
+<li>给所有锁建立全局偏序并始终按同一方向获取，就不可能形成等待环。
+   缺点是维护和审查成本高，动态锁集合难排序，还可能迫使扩大临界区或降低并发度。</li>
+<li>部分 TSan 配置可记录实际观察到的锁获取顺序并建立 lock-order graph，发现反向边形成的环。
+   不必真的卡死，但相关相反锁序必须在运行中被观察到；该能力依平台和运行参数，不能替代设计审查。</li>
+<li>死锁中的线程阻塞等待且不再执行；活锁中的线程持续重试或互相礼让，却没有业务进展。
+   活锁看起来仍占用 CPU、日志也在变化，普通“线程是否卡住”监控不易识别，需要检测进度指标。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1055,6 +1100,21 @@ void combination_test() {
 <li>压力测试应该跑多长时间？为什么 1 秒不够？</li>
 <li>HFT 系统的测试投入为什么占开发周期 50% 以上？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>串行测试主要验证输入到输出；并发测试还必须覆盖大量调度交错、同步顺序和活性属性。
+   一次通过不能证明正确，需要结合压力、随机调度、sanitizer 和不变量检查。</li>
+<li>随机 <code class="c">yield</code> 或短暂等待会改变线程到达同步点的相对次序，扩大竞争窗口。
+   它只能提高覆盖概率，不能证明无 bug，而且过度 sleep 也可能掩盖真实生产时序。</li>
+<li>很多缺陷只在 push/pop、读/写、关闭/提交等不同操作交叉时出现。
+   单一操作测试无法覆盖跨操作的不变量、线性化顺序和资源生命周期竞争。</li>
+<li>没有通用的固定时长；应按风险、操作量、线程配置和覆盖指标制定，并在 CI 中重复运行。
+   一秒只产生有限交错，罕见竞争、计数溢出、长尾停顿和关闭竞态往往不会出现。</li>
+<li>HFT 同时要求结果正确、进程稳定和极低尾延迟，而并发错误低概率但后果高。
+   因此要投入单元/压力/故障注入/回放、TSan、性能回归及长稳测试；“50%”是经验目标而非标准常数。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1197,6 +1257,21 @@ void lock_free_log(const char* msg, size_t len) {
 <li>core dump 分析能做什么？如何查看所有线程的栈？</li>
 <li>如何用二分法定位并发竞争？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>断点和单步会暂停部分或全部线程，改变锁竞争、超时、CPU affinity 和访问交错。
+   原先很窄的错误窗口可能因此消失或变形，这正是 Heisenbug 的典型表现。</li>
+<li>perf 基于硬件计数器和采样，可低扰动观察 CPU、cache miss、上下文切换和调用栈。
+   它不在每次事件上做同步 I/O，更接近生产时序，适合定位 HFT 的热点与延迟来源。</li>
+<li>每个线程只写自己的预分配缓冲，热路径无需争用全局锁，也可避免逐条系统调用。
+   由非关键线程批量收集或落盘，并接受有界丢弃策略，能显著减少日志对调度的扰动。</li>
+<li>core dump 保存崩溃时的地址空间、寄存器和线程状态，可事后检查锁、对象和调用链。
+   在 gdb 中可用 <code class="c">info threads</code> 枚举线程、<code class="c">thread apply all bt</code> 查看所有线程栈。</li>
+<li>先以模块、阶段或操作类型为边界，逐半禁用或替换为同步实现，并保持同一压力回放条件。
+   观察问题落在哪一半后继续缩小，同时用 TSan/不变量断言验证，避免只靠时序变化误判。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
@@ -1438,6 +1513,21 @@ Logger&amp; get_logger() {
 <li>为什么跨线程读写同一个 <code class="c">shared_ptr</code> 是数据竞争？引用计数不是原子的吗？</li>
 <li><code class="c">detach</code> 的线程捕获 <code class="c">this</code> 有什么风险？如何用 <code class="c">shared_from_this</code> 解决？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>未正确同步的普通指针 DCLP 本身有 data race；初始化还可概念化为分配内存、构造对象、发布指针。
+   编译器或 CPU 可能让发布先于其他线程可见到完整构造，读线程据此访问未初始化对象；应用原子 acquire/release 或避免手写。</li>
+<li>C++11 保证块作用域静态变量的首次初始化只由一个线程完成，其他并发线程等待其完成。
+   初始化抛异常时视为未完成，后续调用可重试，因此 <code class="c">static T instance;</code> 通常优于手写 DCLP。</li>
+<li>谓词形式会在持锁状态反复检查条件，自动处理虚假唤醒和通知先于等待发生的情况。
+   正确性来自受同一 mutex 保护的状态谓词，而不是把 <code class="c">notify</code> 本身当作可累积事件。</li>
+<li>原子引用计数只保护共享控制块的寿命；同一个 <code class="c">shared_ptr</code> 句柄对象仍是普通可变对象。
+   对该句柄并发赋值/读取需要锁或原子 <code class="c">shared_ptr</code> 接口，被管理对象的数据也要单独同步。</li>
+<li>detach 后线程可能比宿主对象活得更久，捕获的裸 <code class="c">this</code> 变成悬空指针并导致未定义行为。
+   对象由 <code class="c">shared_ptr</code> 管理且继承 <code class="c">enable_shared_from_this</code> 时，可在线程创建前捕获 <code class="c">self = shared_from_this()</code> 延长寿命。</li>
+</ol>
+</details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
