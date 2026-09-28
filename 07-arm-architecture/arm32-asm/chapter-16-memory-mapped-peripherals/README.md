@@ -21,11 +21,11 @@
 
 | 小节 | 标题 | 笔记 |
 |------|------|------|
-| **§16.1** | 简介 | [notes/section-16-1-intro.md](./notes/section-16-1-intro.md) |
-| **§16.2** | LPC2104 — UART 通信 | [notes/section-16-2-lpc2104-uart.md](./notes/section-16-2-lpc2104-uart.md) |
-| **§16.3** | LPC2132 — D/A 转换器生成正弦波 | [notes/section-16-3-lpc2132-dac.md](./notes/section-16-3-lpc2132-dac.md) |
-| **§16.4** | Tiva Launchpad — GPIO 操作 | [notes/section-16-4-tiva-gpio.md](./notes/section-16-4-tiva-gpio.md) |
-| **§16.5** | 练习题 | [notes/section-16-5-exercises.md](./notes/section-16-5-exercises.md) |
+| **§16.1** | 简介 | [notes/section-16.1-intro.md](./notes/section-16.1-intro.md) |
+| **§16.2** | LPC2104 — UART 通信 | [notes/section-16.2-lpc2104-uart.md](./notes/section-16.2-lpc2104-uart.md) |
+| **§16.3** | LPC2132 — D/A 转换器生成正弦波 | [notes/section-16.3-lpc2132-dac.md](./notes/section-16.3-lpc2132-dac.md) |
+| **§16.4** | Tiva Launchpad — GPIO 操作 | [notes/section-16.4-tiva-gpio.md](./notes/section-16.4-tiva-gpio.md) |
+| **§16.5** | 练习题 | [notes/section-16.5-exercises.md](./notes/section-16.5-exercises.md) |
 
 ---
 
@@ -35,7 +35,7 @@
 - [ ] **LPC2104 UART**：PINSEL → LCR/波特率 → **轮询 LSR(THRE)** → **STRB THR**
 - [ ] **LPC2132 DAC**：**DACR @ 0xE006C000** · **[15:6]** · **Ch12 sin + `512·sin+512`**
 - [ ] **Tiva GPIO**：**RCGCGPIO** 开时钟 · **PF1/2/3 RGB** · **地址掩码写 DATA**
-- [ ] 对照 [Ch5 位带](../chapter-05-loads-stores-addressing/notes/section-5-6-bit-banded.md) 理解 **单 pin 安全写**
+- [ ] 对照 [Ch5 位带](../chapter-05-loads-stores-addressing/notes/section-5.6-bit-banded.md) 理解 **单 pin 安全写**
 - [ ] 联想 [21 驱动](../../../09-device-drivers-dt/) **`readl/writel`** 与 [20 U-Boot](../../../08-embedded-boot-build/) early UART
 
 ---

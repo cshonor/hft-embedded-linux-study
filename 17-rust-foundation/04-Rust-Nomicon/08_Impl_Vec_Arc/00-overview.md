@@ -46,7 +46,7 @@ Arc  简化 MyArc（无 Weak）
 | 节 | 主题 | 阅读 |
 |:--:|------|------|
 | — | 本章定位 | 本页 |
-| 1 | 数据布局 | [01-layout.md](./01-layout.md) |
+| 1 | 数据布局 | [01.1-layout.md](./01.1-layout.md) |
 | 2 | 内存分配 | [02-allocating.md](./02-allocating.md) |
 | 3 | Push 与 Pop | [03-push-pop.md](./03-push-pop.md) |
 | 4 | 内存释放 | [04-dealloc.md](./04-dealloc.md) |
@@ -63,4 +63,4 @@ Arc  简化 MyArc（无 Weak）
 
 **Vec + Arc 实战** — stable 徒手 `MyVec` 与简化 `MyArc`：NonNull/PhantomData、原子 refcount、Release/Acquire fence。
 
-→ 从 [01-layout.md](./01-layout.md) 起读；Arc 见 [01-arc-overview.md](./01-arc-overview.md)。
+→ 从 [01.1-layout.md](./01.1-layout.md) 起读；Arc 见 [01-arc-overview.md](./01-arc-overview.md)。

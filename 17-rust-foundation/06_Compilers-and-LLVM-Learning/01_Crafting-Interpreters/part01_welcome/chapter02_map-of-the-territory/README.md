@@ -66,7 +66,7 @@ LLVM≠Runtime = 编译期翻译 vs 运行期调度（见 05-compile-time-llvm-v
 - [ ] 画一条从「Rust 源码」到「CPU 执行」的简化 pipeline（可含 `rustc` → LLVM IR → 机器码）。
 - [ ] 说明 **jlox** 在 §2.1 的哪几站停下、**clox** 多走了哪几站。
 - [ ] 各举 1 个 **transpiler** 与 **VM 语言** 的例子。
-- [ ] 对照 RFR [03-2 OS/LLVM 内存布局](../../../../02-RFR/Chapter-01-Foundations/03-2-os-memory-layout.md)：`alloca`（栈）vs heap 分别更像 pipeline 哪一段的产物？
+- [ ] 对照 RFR [03-2 OS/LLVM 内存布局](../../../../02-RFR/Chapter-01-Foundations/03.2-os-memory-layout.md)：`alloca`（栈）vs heap 分别更像 pipeline 哪一段的产物？
 - [ ] 一句话区分 **LLVM**（编译期）与 **Runtime**（运行期）；Tokio 属于哪一类 runtime？
 
 ---

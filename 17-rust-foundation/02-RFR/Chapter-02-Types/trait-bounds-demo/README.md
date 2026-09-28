@@ -1,6 +1,6 @@
 # trait-bounds-demo
 
-RFR 第 2 章 · [08 Trait 限定](../08-trait-bounds.md)（[08.1](../08-1-syntax-static-dynamic.md)～[08.3](../08-3-examples-pitfalls.md)）配套示例。
+RFR 第 2 章 · [08 Trait 限定](../08-trait-bounds.md)（[08.1](../08.1-syntax-static-dynamic.md)～[08.3](../08.3-examples-pitfalls.md)）配套示例。
 
 ```bash
 cargo run

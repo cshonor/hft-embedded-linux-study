@@ -23,14 +23,14 @@
 
 | # | 主题 | 关键指令/概念 | 笔记 |
 |---|------|---------------|------|
-| **1** | 数据移位 | `AREA`/`ENTRY`/`END` · `MOV` · `LSL` | [§3.3](./section-3-3-example-shift.md) |
-| **2** | 阶乘 | `CMP` · 条件后缀 · **IT** · 循环 | [§3.4](./section-3-4-example-factorial.md) |
-| **3** | 寄存器交换 | `EOR` · `LDR =` | [§3.5](./section-3-5-example-register-swap.md) |
-| **4** | 浮点运算 | **CPACR** · `VMOV.F` · `VADD.F` | [§3.6](./section-3-6-example-float.md) |
-| **5** | 整浮传数 | `VMOV` R↔S · `VLDR.F` | [§3.7](./section-3-7-example-int-float-xfer.md) |
+| **1** | 数据移位 | `AREA`/`ENTRY`/`END` · `MOV` · `LSL` | [§3.3](./section-3.3-example-shift.md) |
+| **2** | 阶乘 | `CMP` · 条件后缀 · **IT** · 循环 | [§3.4](./section-3.4-example-factorial.md) |
+| **3** | 寄存器交换 | `EOR` · `LDR =` | [§3.5](./section-3.5-example-register-swap.md) |
+| **4** | 浮点运算 | **CPACR** · `VMOV.F` · `VADD.F` | [§3.6](./section-3.6-example-float.md) |
+| **5** | 整浮传数 | `VMOV` R↔S · `VLDR.F` | [§3.7](./section-3.7-example-int-float-xfer.md) |
 
-**指令集对比：** [§3.2 ARM/Thumb/Thumb-2](./section-3-2-arm-thumb-compare.md)  
-**习惯：** [§3.8 编程指南](./section-3-8-programming-guide.md)
+**指令集对比：** [§3.2 ARM/Thumb/Thumb-2](./section-3.2-arm-thumb-compare.md)  
+**习惯：** [§3.8 编程指南](./section-3.8-programming-guide.md)
 
 ---
 

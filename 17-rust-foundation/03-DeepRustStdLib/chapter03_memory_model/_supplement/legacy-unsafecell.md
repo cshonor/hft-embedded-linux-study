@@ -34,7 +34,7 @@ let p = r1.get(); // *mut i32 — 之后 unsafe 或封装内使用
 - **不是 `Sync`**（默认）— 跨线程共享 raw 可变需 `Mutex` 等。
 - 几乎不直接在业务代码出现 — **读 `RefCell` / `Mutex` 源码时认它**。
 
-→ [RFR 07-2 UnsafeCell](../../../02-RFR/Chapter-01-Foundations/07-2-unsafecell-and-containers.md) · [Nomicon 01 five powers](../../../04-Rust-Nomicon/01_Safe_Unsafe/03-five-powers.md)
+→ [RFR 07-2 UnsafeCell](../../../02-RFR/Chapter-01-Foundations/07.2-unsafecell-and-containers.md) · [Nomicon 01 five powers](../../../04-Rust-Nomicon/01_Safe_Unsafe/03-five-powers.md)
 
 ---
 

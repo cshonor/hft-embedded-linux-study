@@ -6,7 +6,7 @@
 
 ## 一句话
 
-**借用检查器**在编译期保证引用不悬垂；标准库 API 里 **`'a`、`'static`、方法上的生命周期省略** 都是这套规则在 `libstd` 上的投影 — 与 [第 2 章 §2.3](../../chapter02_rust_features_summary/2.3-lifetimes-in-stdlib.md) 呼应，本章从**内存模型**角度再收紧一层。
+**借用检查器**在编译期保证引用不悬垂；标准库 API 里 **`'a`、`'static`、方法上的生命周期省略** 都是这套规则在 `libstd` 上的投影 — 与 [第 2 章 §2.3](../../chapter02_rust_features_summary/2.3.1-lifetimes-in-stdlib.md) 呼应，本章从**内存模型**角度再收紧一层。
 
 ---
 

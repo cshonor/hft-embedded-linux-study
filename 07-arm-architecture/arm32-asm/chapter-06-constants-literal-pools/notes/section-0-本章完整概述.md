@@ -14,7 +14,7 @@
 | **伪指令本质** | **`LDR =`** / **`ADR`** 由汇编器展开 — 读 listing 必备 |
 | **实战** | MMIO 基址、掩码、表地址 — 与 **Ch5 Load/Store** 衔接 |
 
-**前置：** [Ch5 Load/Store](../../chapter-05-loads-stores-addressing/notes/section-0-本章完整概述.md) · [Ch4 LTORG](../../chapter-04-assembler-rules-directives/notes/section-4-4-directives.md)
+**前置：** [Ch5 Load/Store](../../chapter-05-loads-stores-addressing/notes/section-0-本章完整概述.md) · [Ch4 LTORG](../../chapter-04-assembler-rules-directives/notes/section-4.4-directives.md)
 
 ---
 
@@ -22,10 +22,10 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **循环移位立即数** | §6.2 | [section-6-2-rotate-constants.md](./section-6-2-rotate-constants.md) |
-| **`LDR =` 伪指令** | §6.3 | [section-6-3-load-constants.md](./section-6-3-load-constants.md) |
-| **文字池 · LTORG · MOVW/MOVT** | §6.4 | [section-6-4-literal-pools.md](./section-6-4-literal-pools.md) |
-| **加载地址 ADR/ADRL** | §6.5 | [section-6-5-load-addresses.md](./section-6-5-load-addresses.md) |
+| **循环移位立即数** | §6.2 | [section-6.2-rotate-constants.md](./section-6.2-rotate-constants.md) |
+| **`LDR =` 伪指令** | §6.3 | [section-6.3-load-constants.md](./section-6.3-load-constants.md) |
+| **文字池 · LTORG · MOVW/MOVT** | §6.4 | [section-6.4-literal-pools.md](./section-6.4-literal-pools.md) |
+| **加载地址 ADR/ADRL** | §6.5 | [section-6.5-load-addresses.md](./section-6.5-load-addresses.md) |
 
 ---
 

@@ -23,11 +23,11 @@
 
 | § | 主题 | 阅读 |
 |---|------|------|
-| **07.1** | 外部可变性 vs 内部可变性 | [07-1-external-vs-interior.md](./07-1-external-vs-interior.md) |
-| **07.2** | `UnsafeCell` 与容器速查 | [07-2-unsafecell-and-containers.md](./07-2-unsafecell-and-containers.md) |
-| **07.3** | `Cell` 与 `RefCell` 详解 | [07-3-cell-vs-refcell.md](./07-3-cell-vs-refcell.md) |
-| **07.4** | 应用场景 | [07-4-use-cases.md](./07-4-use-cases.md) |
-| **07.5** | 对比 · 误区 · 总纲 | [07-5-comparison-pitfalls.md](./07-5-comparison-pitfalls.md) |
+| **07.1** | 外部可变性 vs 内部可变性 | [07.1-external-vs-interior.md](./07.1-external-vs-interior.md) |
+| **07.2** | `UnsafeCell` 与容器速查 | [07.2-unsafecell-and-containers.md](./07.2-unsafecell-and-containers.md) |
+| **07.3** | `Cell` 与 `RefCell` 详解 | [07.3-cell-vs-refcell.md](./07.3-cell-vs-refcell.md) |
+| **07.4** | 应用场景 | [07.4-use-cases.md](./07.4-use-cases.md) |
+| **07.5** | 对比 · 误区 · 总纲 | [07.5-comparison-pitfalls.md](./07.5-comparison-pitfalls.md) |
 | — | 速记 · 自测 |
 
 **建议阅读顺序**：`07.1` → `07.2` → `07.3` → `07.4` → `07.5`

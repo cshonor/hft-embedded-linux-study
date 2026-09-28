@@ -23,13 +23,13 @@
 
 | 小节 | 标题 | 笔记 |
 |------|------|------|
-| **§4.1** | 简介 | [notes/section-4-1-intro.md](./notes/section-4-1-intro.md) |
-| **§4.2** | 汇编语言模块结构 | [notes/section-4-2-module-structure.md](./notes/section-4-2-module-structure.md) |
-| **§4.3** | 预定义的寄存器名称 | [notes/section-4-3-register-names.md](./notes/section-4-3-register-names.md) |
-| **§4.4** | 常用伪指令 — Keil / CCS · 代码块 · 对齐 · 文字池 | [notes/section-4-4-directives.md](./notes/section-4-4-directives.md) |
-| **§4.5** | 宏 (Macros) | [notes/section-4-5-macros.md](./notes/section-4-5-macros.md) |
-| **§4.6** | 汇编器杂项特性 — 操作符 · CCS 数学函数 | [notes/section-4-6-assembler-misc.md](./notes/section-4-6-assembler-misc.md) |
-| **§4.7** | 练习题 | [notes/section-4-7-exercises.md](./notes/section-4-7-exercises.md) |
+| **§4.1** | 简介 | [notes/section-4.1-intro.md](./notes/section-4.1-intro.md) |
+| **§4.2** | 汇编语言模块结构 | [notes/section-4.2-module-structure.md](./notes/section-4.2-module-structure.md) |
+| **§4.3** | 预定义的寄存器名称 | [notes/section-4.3-register-names.md](./notes/section-4.3-register-names.md) |
+| **§4.4** | 常用伪指令 — Keil / CCS · 代码块 · 对齐 · 文字池 | [notes/section-4.4-directives.md](./notes/section-4.4-directives.md) |
+| **§4.5** | 宏 (Macros) | [notes/section-4.5-macros.md](./notes/section-4.5-macros.md) |
+| **§4.6** | 汇编器杂项特性 — 操作符 · CCS 数学函数 | [notes/section-4.6-assembler-misc.md](./notes/section-4.6-assembler-misc.md) |
+| **§4.7** | 练习题 | [notes/section-4.7-exercises.md](./notes/section-4.7-exercises.md) |
 
 ---
 

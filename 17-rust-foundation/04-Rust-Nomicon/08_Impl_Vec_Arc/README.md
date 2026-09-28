@@ -21,7 +21,7 @@
 | 节 | 主题 | 阅读 |
 |:--:|------|------|
 | — | 本章定位 | [00-overview.md](./00-overview.md) |
-| 1 | 数据布局 | [01-layout.md](./01-layout.md) |
+| 1 | 数据布局 | [01.1-layout.md](./01.1-layout.md) |
 | 2 | 内存分配 | [02-allocating.md](./02-allocating.md) |
 | 3 | Push 与 Pop | [03-push-pop.md](./03-push-pop.md) |
 | 4 | 内存释放 | [04-dealloc.md](./04-dealloc.md) |

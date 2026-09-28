@@ -33,6 +33,6 @@ RFR 强调的决策顺序 — **不要默认上宏**。总览 → [00 宏核心�
 | 自定义 DSL | `sqlx::query!`、路由属性 |
 | 按字段元编程 | 泛型 + trait 无法覆盖的生成逻辑 |
 
-→ 完整对比：[00-3 宏 vs 函数](./00-3-macro-vs-function.md)
+→ 完整对比：[00-3 宏 vs 函数](./00.3-macro-vs-function.md)
 
 → 声明宏何时用 [01](./01-when-to-use-declarative-macros.md)

@@ -36,7 +36,7 @@
 | ch9 活跃变量 | [ch9 §1](../chapter09_dataflow/01-iterative-dataflow.md) — LIVE 是存活范围基础 |
 | ch12 调度矛盾 | [ch12 §3](../chapter12_instr-sched/03-scheduling-vs-regalloc.md) |
 | ch11 虚拟寄存器 | [ch11](../chapter11_instr-select/README.md) — 选择后仍用 vreg |
-| RFR 栈/内存 | [03-2 OS 内存布局](../../../02-RFR/Chapter-01-Foundations/03-2-os-memory-layout.md) |
+| RFR 栈/内存 | [03-2 OS 内存布局](../../../02-RFR/Chapter-01-Foundations/03.2-os-memory-layout.md) |
 | LLVM | `RegAllocGreedy` · 图着色族 |
 
 ---

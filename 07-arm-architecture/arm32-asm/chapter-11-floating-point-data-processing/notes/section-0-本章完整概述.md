@@ -23,13 +23,13 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **语法** | §11.2 | [§11.2](./section-11-2-syntax.md) |
-| **指令表** | §11.3 | [§11.3](./section-11-3-summary.md) |
-| **VCMP/VMRS** | §11.4 | [§11.4](./section-11-4-flags.md) |
-| **FZ/DN** | §11.5 | [§11.5](./section-11-5-special-modes.md) |
-| **VABS/VNEG** | §11.6 | [§11.6](./section-11-6-non-arithmetic.md) |
-| **算术/MAC** | §11.7 | [§11.7](./section-11-7-arithmetic.md) |
-| **二分/泰勒** | §11.8 | [§11.8](./section-11-8-examples.md) |
+| **语法** | §11.2 | [§11.2](./section-11.2-syntax.md) |
+| **指令表** | §11.3 | [§11.3](./section-11.3-summary.md) |
+| **VCMP/VMRS** | §11.4 | [§11.4](./section-11.4-flags.md) |
+| **FZ/DN** | §11.5 | [§11.5](./section-11.5-special-modes.md) |
+| **VABS/VNEG** | §11.6 | [§11.6](./section-11.6-non-arithmetic.md) |
+| **算术/MAC** | §11.7 | [§11.7](./section-11.7-arithmetic.md) |
+| **二分/泰勒** | §11.8 | [§11.8](./section-11.8-examples.md) |
 
 ---
 

@@ -35,7 +35,7 @@ let read = r.borrow(); // 多个 Ref 可并存
 
 - **`Rc<RefCell<T>>`** — 单线程共享可变图；
 - **`RefCell` 非 `Sync`** — 不能 `Arc<RefCell<_>>` 跨线程（用 **`Mutex`**）；
-- `into_inner` 拆包装 → [RFR into_inner](../../../02-RFR/Chapter-03-Designing-Interfaces/01-2-1-into-inner.md)
+- `into_inner` 拆包装 → [RFR into_inner](../../../02-RFR/Chapter-03-Designing-Interfaces/01.2.1-into-inner.md)
 
 ---
 

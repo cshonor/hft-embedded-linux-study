@@ -10,7 +10,7 @@
 |------|------|
 | RFR 所有权 / 生命周期 | [04-ownership](../../02-RFR/Chapter-01-Foundations/04-ownership.md) · [08-lifetimes](../../02-RFR/Chapter-01-Foundations/08-lifetimes.md) |
 | 可变引用与别名 | [06-mutable-references](../../02-RFR/Chapter-01-Foundations/06-mutable-references.md) |
-| HRTB | [08-2-hrtb](../../02-RFR/Chapter-02-Types/08-2-hrtb.md) |
+| HRTB | [08-2-hrtb](../../02-RFR/Chapter-02-Types/08.2-hrtb.md) |
 | split_at_mut | [19.1 unsafe demo](../../00-Book/19-advanced-features/19.1-unsafe-rust-demo/) |
 
 **读完应能回答**：引用两大法则、型变三分类、何时需要 `PhantomData`、如何安全拆分借用。

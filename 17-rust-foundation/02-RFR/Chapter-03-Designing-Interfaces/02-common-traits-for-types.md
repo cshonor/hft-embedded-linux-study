@@ -41,7 +41,7 @@
 
 **派生宏的默认行为**与风险等级一致：`Debug` / `PartialEq` 可放心 `derive`；`Copy` **不会**自动派生、须显式加；`Hash` 作 map 键时须与 `Eq` **成对**。
 
-→ 详表 + 量化场景 + 模板：[02-1 完整解读](./02-1-common-traits-full-guide.md)
+→ 详表 + 量化场景 + 模板：[02-1 完整解读](./02.1-common-traits-full-guide.md)
 
 ---
 
@@ -80,4 +80,4 @@
 | Ⅱ | `Send` · `Sync` | 多数自动；例外文档 |
 | Ⅲ | `Copy` · `Hash` | 按需 · 成对 · 小值才 Copy |
 
-→ 完整解读：[02-1](./02-1-common-traits-full-guide.md) · ER [Item 10](../../01-ER/Chapter-02-Traits/Item-10-standard-traits/README.md)
+→ 完整解读：[02-1](./02.1-common-traits-full-guide.md) · ER [Item 10](../../01-ER/Chapter-02-Traits/Item-10-standard-traits/README.md)

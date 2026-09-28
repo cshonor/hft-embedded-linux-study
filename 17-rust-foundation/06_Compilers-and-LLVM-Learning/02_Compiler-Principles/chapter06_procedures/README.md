@@ -36,7 +36,7 @@
 | CallFrame / 栈 | [CI clox ch24 Call Frames](../../01_Crafting-Interpreters/part03_clox/chapter24_calling-and-closures/03-call-frames.md) |
 | 闭包 / upvalue | [CI clox ch25](../../01_Crafting-Interpreters/part03_clox/chapter25_objects/README.md) |
 | GC | [CI clox ch26 GC](../../01_Crafting-Interpreters/part03_clox/chapter26_garbage-collection/README.md) |
-| 栈 / 堆 | RFR [第 1 章内存](../../../02-RFR/Chapter-01-Foundations/) · [03-2 OS layout](../../../02-RFR/Chapter-01-Foundations/03-2-os-memory-layout.md) |
+| 栈 / 堆 | RFR [第 1 章内存](../../../02-RFR/Chapter-01-Foundations/) · [03-2 OS layout](../../../02-RFR/Chapter-01-Foundations/03.2-os-memory-layout.md) |
 | 符号表 / 作用域 | [ch5 §7 符号表](../chapter05_ir/07-symbol-tables.md) · [ch4](../chapter04_context/README.md) |
 
 ---

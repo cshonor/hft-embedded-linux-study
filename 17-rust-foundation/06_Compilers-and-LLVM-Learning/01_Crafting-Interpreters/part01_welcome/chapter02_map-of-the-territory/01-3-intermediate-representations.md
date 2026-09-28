@@ -206,7 +206,7 @@ jlox 树遍历 = §2.2 捷径之一
 
 **本书对应**：jlox 以 **AST** 为终点 IR · clox **ch14～17**（Chunk 字节码）· **04 Learn LLVM 17**（LLVM IR / Pass）
 
-**本仓库**：RFR [05 编译与分发](../../../../02-RFR/Chapter-02-Types/05-compilation-dispatch.md) · [03-2 OS/LLVM 内存布局](../../../../02-RFR/Chapter-01-Foundations/03-2-os-memory-layout.md)（`alloca`/heap 常出现在 LLVM IR 层）
+**本仓库**：RFR [05 编译与分发](../../../../02-RFR/Chapter-02-Types/05-compilation-dispatch.md) · [03-2 OS/LLVM 内存布局](../../../../02-RFR/Chapter-01-Foundations/03.2-os-memory-layout.md)（`alloca`/heap 常出现在 LLVM IR 层）
 
 → 下一节：[§2.1.4](./01-4-static-analysis.md)
 

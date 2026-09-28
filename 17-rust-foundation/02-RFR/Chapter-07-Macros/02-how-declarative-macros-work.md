@@ -4,7 +4,7 @@
 
 直觉：受约束的「**模式匹配 + 转录**」，发生在 **TokenTree** 层面 — **不是** C 预处理器的纯文本拼接。
 
-前置 → [00-1 Token 与宏展开](./00-1-token-and-macro-pipeline.md)（词法 · 匹配谁 · 无字符串中转）
+前置 → [00-1 Token 与宏展开](./00.1-token-and-macro-pipeline.md)（词法 · 匹配谁 · 无字符串中转）
 
 ## 展开管线
 

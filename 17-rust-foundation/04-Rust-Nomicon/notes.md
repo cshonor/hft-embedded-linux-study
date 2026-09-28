@@ -16,7 +16,7 @@
 | **03** | Ownership and Lifetimes | [00-overview.md](./03_Lifetime_Variance/00-overview.md) | [03_Lifetime_Variance/](./03_Lifetime_Variance/) |
 | **04** | Type Conversions | [00-overview.md](./04_Type_Cast/00-overview.md) | [04_Type_Cast/](./04_Type_Cast/) |
 | **06** | Uninitialized Memory | [00-overview.md](./05_Uninit_Mem/00-overview.md) | [05_Uninit_Mem/](./05_Uninit_Mem/) |
-| **06** | The Perils Of OBRM | [00-overview.md](./06_OBRM_RAII/00-overview.md) · [00.1 RAII/OBRM](./06_OBRM_RAII/00-1-RAII与OBRM辨析.md) | [06_OBRM_RAII/](./06_OBRM_RAII/) |
+| **06** | The Perils Of OBRM | [00-overview.md](./06_OBRM_RAII/00-overview.md) · [00.1 RAII/OBRM](./06_OBRM_RAII/00.1-RAII与OBRM辨析.md) | [06_OBRM_RAII/](./06_OBRM_RAII/) |
 | **07** | Concurrency and Parallelism | [00-overview.md](./07_Concurrency_Atomic/00-overview.md) | [07_Concurrency_Atomic/](./07_Concurrency_Atomic/) |
 | **08** | Implementing Vec / Arc | [00-overview.md](./08_Impl_Vec_Arc/00-overview.md) | [08_Impl_Vec_Arc/](./08_Impl_Vec_Arc/) |
 | **09** | FFI | [00-overview.md](./09_FFI/00-overview.md) | [09_FFI/](./09_FFI/) |

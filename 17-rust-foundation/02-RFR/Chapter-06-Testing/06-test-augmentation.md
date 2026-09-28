@@ -17,7 +17,7 @@
 
 并发 bug 依赖**线程交错**。**Loom** 接管 `Mutex`、原子等语义，**系统化探索**调度顺序，暴露极端交错下的竞争与死锁。
 
-与 [RFR 第 10 章](../Chapter-10-Concurrency-and-Parallelism/10-并发与并行-Concurrency-and-Parallelism-深度解析.md) 衔接。
+与 [RFR 第 10 章](../Chapter-10-Concurrency-and-Parallelism/10.0-并发与并行-Concurrency-and-Parallelism-深度解析.md) 衔接。
 
 ## 06_Compilers-and-LLVM-Learning/04_Learn-LLVM-17
 

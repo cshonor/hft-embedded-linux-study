@@ -33,7 +33,7 @@ c.set(c.get() + 1);
 - `std::cell::Cell` — 单线程；
 - 常与 **`Rc<Cell<_>>`** 组合（仍非 `Sync`，不能跨线程）。
 
-→ [RFR 07-3 Cell vs RefCell](../../../02-RFR/Chapter-01-Foundations/07-3-cell-vs-refcell.md)
+→ [RFR 07-3 Cell vs RefCell](../../../02-RFR/Chapter-01-Foundations/07.3-cell-vs-refcell.md)
 
 ---
 

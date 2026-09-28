@@ -121,7 +121,7 @@ Option<T> 的联合体大小 = size_of::<T>()
 | `Option<String>` | `T = String` | **String 结构体大小**（x86_64 通常 24 B） |
 
 每种不同的 `T` → **单态化**出一份 layout 不同的枚举 → **运行时大小不变**（已在编译期定死）。  
-跨文件、相同 `T` 全 crate **复用**同一份 layout。→ [05.2 单态化与内存](./05-2-monomorphization-memory.md)
+跨文件、相同 `T` 全 crate **复用**同一份 layout。→ [05.2 单态化与内存](./05.2-monomorphization-memory.md)
 
 **一句话**：充当载荷的联合体，其内存大小 = 编译器在编译阶段根据你实际使用的**具体 `T`** 算出来的结果。
 
@@ -544,7 +544,7 @@ byte[1]  E 的载荷（1..=255）；A..D 时多为 padding / 未用
 |------|----------|
 | **元组 `(T1, T2, …)`** | 类似**匿名 struct**；按元素顺序布局（默认也可能被优化，以 `size_of` 为准）；有 padding |
 | **`[T; N]`** | **连续** N 个 `T`；`size = N × size_of::<T>()`（含末尾对齐）；元素地址连续 |
-| **`Vec<T>`** | **栈**上 `{ ptr, len, cap }`；**元素在堆** — 见 [第 1 章 03.1](../Chapter-01-Foundations/03-1-rust-memory-model.md) |
+| **`Vec<T>`** | **栈**上 `{ ptr, len, cap }`；**元素在堆** — 见 [第 1 章 03.1](../Chapter-01-Foundations/03.1-rust-memory-model.md) |
 
 ```rust
 assert_eq!(size_of::<[u32; 4]>(), 4 * size_of::<u32>());

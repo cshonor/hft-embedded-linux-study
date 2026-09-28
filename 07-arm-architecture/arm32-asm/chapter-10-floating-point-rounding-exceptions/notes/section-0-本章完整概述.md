@@ -22,10 +22,10 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **舍入模式** | §10.2 | [section-10-2-rounding.md](./section-10-2-rounding.md) |
-| **五类异常** | §10.3 | [section-10-3-exceptions.md](./section-10-3-exceptions.md) |
-| **代数定律** | §10.4 | [section-10-4-algebra.md](./section-10-4-algebra.md) |
-| **规格化/抵消** | §10.5 | [section-10-5-normalization.md](./section-10-5-normalization.md) |
+| **舍入模式** | §10.2 | [section-10.2-rounding.md](./section-10.2-rounding.md) |
+| **五类异常** | §10.3 | [section-10.3-exceptions.md](./section-10.3-exceptions.md) |
+| **代数定律** | §10.4 | [section-10.4-algebra.md](./section-10.4-algebra.md) |
+| **规格化/抵消** | §10.5 | [section-10.5-normalization.md](./section-10.5-normalization.md) |
 
 ---
 

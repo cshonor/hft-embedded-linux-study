@@ -1,6 +1,6 @@
 # 1 · 构造与析构 (Constructors and Destructors)
 
-← [本章目录](./README.md) · [00.1 RAII/OBRM](./00-1-RAII与OBRM辨析.md) · [00-overview.md](./00-overview.md) · 下一节：[02-forget-leak.md](./02-forget-leak.md)
+← [本章目录](./README.md) · [00.1 RAII/OBRM](./00.1-RAII与OBRM辨析.md) · [00-overview.md](./00-overview.md) · 下一节：[02-forget-leak.md](./02-forget-leak.md)
 
 ---
 

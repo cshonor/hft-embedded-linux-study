@@ -18,11 +18,11 @@ Book → [7.2 引用项命名](../../00-Book/07-packages-modules/7.1.2-main调�
 
 | 编号 | 系列 | 核心 | 详例 |
 |------|------|------|------|
-| **01-1** | **`as_`** | 只读借用，不消耗 | [01-1-as-series](./01-1-as-series.md) |
-| **01-2** | **`into_`** | 所有权转移 | [01-2-into-series](./01-2-into-series.md) |
-| **01-3** | **`get_`** | 安全访问，`Option` | [01-3-get-series](./01-3-get-series.md) |
-| **01-4** | **`try_`** | 错误处理，`Result` | [01-4-try-series](./01-4-try-series.md) |
-| **01-5** | **`with_`** | 建造者 / 构造配置 | [01-5-with-series](./01-5-with-series.md) |
+| **01-1** | **`as_`** | 只读借用，不消耗 | [01-1-as-series](./01.1-as-series.md) |
+| **01-2** | **`into_`** | 所有权转移 | [01-2-into-series](./01.2-into-series.md) |
+| **01-3** | **`get_`** | 安全访问，`Option` | [01-3-get-series](./01.3-get-series.md) |
+| **01-4** | **`try_`** | 错误处理，`Result` | [01-4-try-series](./01.4-try-series.md) |
+| **01-5** | **`with_`** | 建造者 / 构造配置 | [01-5-with-series](./01.5-with-series.md) |
 
 Demo → [`naming-series-demo/`](./naming-series-demo/) · `cargo run --manifest-path naming-series-demo/Cargo.toml [as|into|get|try|with]`
 
@@ -36,7 +36,7 @@ Demo → [`naming-series-demo/`](./naming-series-demo/) · `cargo run --manifest
 | **`as_mut()`** | 可变版 |
 | **`as_ptr()`** | 转裸指针 — unsafe |
 
-→ [01-1 详例 + demo](./01-1-as-series.md) · **口诀**：`as` 只借、不消耗本体。
+→ [01-1 详例 + demo](./01.1-as-series.md) · **口诀**：`as` 只借、不消耗本体。
 
 ---
 
@@ -48,7 +48,7 @@ Demo → [`naming-series-demo/`](./naming-series-demo/) · `cargo run --manifest
 | **`into_iter()`** | 消耗容器 → owned 迭代器 |
 | **`into_string()` / `into_vec()`** | 类型转换 |
 
-→ [01-2 详例 + demo](./01-2-into-series.md) · [04 包装类型](./04-wrapper-types.md) · **口诀**：`into` = 交出自己。
+→ [01-2 详例 + demo](./01.2-into-series.md) · [04 包装类型](./04-wrapper-types.md) · **口诀**：`into` = 交出自己。
 
 ---
 
@@ -59,7 +59,7 @@ Demo → [`naming-series-demo/`](./naming-series-demo/) · `cargo run --manifest
 | **`get(index)`** | 越界 → `None` |
 | **`get_mut(index)`** | 可变引用版 |
 
-→ [01-3 详例 + demo](./01-3-get-series.md)
+→ [01-3 详例 + demo](./01.3-get-series.md)
 
 ---
 
@@ -70,7 +70,7 @@ Demo → [`naming-series-demo/`](./naming-series-demo/) · `cargo run --manifest
 | **`try_into()`** | 带错误的转换 |
 | **`try_lock()`** | 锁拿不到 → `Err`，不阻塞 |
 
-→ [01-4 详例 + demo](./01-4-try-series.md)
+→ [01-4 详例 + demo](./01.4-try-series.md)
 
 ---
 
@@ -81,7 +81,7 @@ Demo → [`naming-series-demo/`](./naming-series-demo/) · `cargo run --manifest
 | **`Vec::with_capacity(n)`** | 预分配容量 |
 | **`Builder::with_xxx()`** | 链式配置 |
 
-→ [01-5 详例 + demo](./01-5-with-series.md)
+→ [01-5 详例 + demo](./01.5-with-series.md)
 
 ---
 

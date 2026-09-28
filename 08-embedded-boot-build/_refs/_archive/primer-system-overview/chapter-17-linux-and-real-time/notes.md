@@ -2,7 +2,7 @@
 
 > 对应目录：`chapter-17-linux-and-real-time/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  
-> 大纲：[../OUTLINE.md](../OUTLINE.md)
+> 大纲：OUTLINE（归档书无目录页）
 
 **优先级**：见 OUTLINE 标签（软/硬实时、PREEMPT_RT、测量 **精读**）  
 **前置选型语境：** [Ch1 · Linux vs RTOS](../chapter-01-introduction/1.1-linux-vs-rtos.md)（何时 Linux / RTOS / 异构混合）  

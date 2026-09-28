@@ -14,7 +14,7 @@
 | **寻址** | Pre/Post 变址 · 寄存器移位偏移 — 数组/MMIO 基础 |
 | **系统观** | Memory Map · Endian · 链接脚本放置 |
 
-**前置：** [Ch4 伪指令](../../chapter-04-assembler-rules-directives/notes/section-0-本章完整概述.md) · [Ch2 对齐](../../chapter-02-programmers-model/notes/section-2-2-data-types.md)
+**前置：** [Ch4 伪指令](../../chapter-04-assembler-rules-directives/notes/section-0-本章完整概述.md) · [Ch2 对齐](../../chapter-02-programmers-model/notes/section-2.2-data-types.md)
 
 ---
 
@@ -22,12 +22,12 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **内存映射** | §5.2 | [section-5-2-memory.md](./section-5-2-memory.md) |
-| **LDR/STR 族** | §5.3 | [section-5-3-load-store.md](./section-5-3-load-store.md) |
-| **前/后变址** | §5.4 | [section-5-4-addressing.md](./section-5-4-addressing.md) |
-| **字节序** | §5.5 | [section-5-5-endianness.md](./section-5-5-endianness.md) |
-| **位带** | §5.6 | [section-5-6-bit-banded.md](./section-5-6-bit-banded.md) |
-| **链接与段** | §5.7 | [section-5-7-memory-notes.md](./section-5-7-memory-notes.md) |
+| **内存映射** | §5.2 | [section-5.2-memory.md](./section-5.2-memory.md) |
+| **LDR/STR 族** | §5.3 | [section-5.3-load-store.md](./section-5.3-load-store.md) |
+| **前/后变址** | §5.4 | [section-5.4-addressing.md](./section-5.4-addressing.md) |
+| **字节序** | §5.5 | [section-5.5-endianness.md](./section-5.5-endianness.md) |
+| **位带** | §5.6 | [section-5.6-bit-banded.md](./section-5.6-bit-banded.md) |
+| **链接与段** | §5.7 | [section-5.7-memory-notes.md](./section-5.7-memory-notes.md) |
 
 ---
 

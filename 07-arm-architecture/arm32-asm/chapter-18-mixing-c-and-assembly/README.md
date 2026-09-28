@@ -11,7 +11,7 @@
 |---|---|
 | **角色** | **精读** — Smith **正文混编收官**（inline · embedded · AAPCS 互调） |
 | **核心模式** | **`__asm` 短插片** · **embedded 全函数 + `BX lr`** · **extern/BL** |
-| **前置** | [Ch13 AAPCS](../chapter-13-subroutines-stacks/notes/section-13-5-apcs.md) · [Ch17](../chapter-17-arm-thumb-thumb2-instructions/) |
+| **前置** | [Ch13 AAPCS](../chapter-13-subroutines-stacks/notes/section-13.5-apcs.md) · [Ch17](../chapter-17-arm-thumb-thumb2-instructions/) |
 
 📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
@@ -21,11 +21,11 @@
 
 | 小节 | 标题 | 笔记 |
 |------|------|------|
-| **§18.1** | 简介 | [notes/section-18-1-intro.md](./notes/section-18-1-intro.md) |
-| **§18.2** | 内联汇编 (Inline Assembler) | [notes/section-18-2-inline-asm.md](./notes/section-18-2-inline-asm.md) |
-| **§18.3** | 内嵌汇编 (Embedded Assembler) | [notes/section-18-3-embedded-asm.md](./notes/section-18-3-embedded-asm.md) |
-| **§18.4** | C 与汇编相互调用 — APCS | [notes/section-18-4-c-asm-calls.md](./notes/section-18-4-c-asm-calls.md) |
-| **§18.5** | 练习题 | [notes/section-18-5-exercises.md](./notes/section-18-5-exercises.md) |
+| **§18.1** | 简介 | [notes/section-18.1-intro.md](./notes/section-18.1-intro.md) |
+| **§18.2** | 内联汇编 (Inline Assembler) | [notes/section-18.2-inline-asm.md](./notes/section-18.2-inline-asm.md) |
+| **§18.3** | 内嵌汇编 (Embedded Assembler) | [notes/section-18.3-embedded-asm.md](./notes/section-18.3-embedded-asm.md) |
+| **§18.4** | C 与汇编相互调用 — APCS | [notes/section-18.4-c-asm-calls.md](./notes/section-18.4-c-asm-calls.md) |
+| **§18.5** | 练习题 | [notes/section-18.5-exercises.md](./notes/section-18.5-exercises.md) |
 
 ---
 

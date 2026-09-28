@@ -54,7 +54,7 @@ cargo run
 | 主题 | 对照 |
 |------|------|
 | 生命周期基础 | [RFR 08-lifetimes](../../02-RFR/Chapter-01-Foundations/08-lifetimes.md) |
-| HRTB | [RFR 08.2 HRTB](../../02-RFR/Chapter-02-Types/08-2-hrtb.md) |
+| HRTB | [RFR 08.2 HRTB](../../02-RFR/Chapter-02-Types/08.2-hrtb.md) |
 | split_at_mut | [Book 19.1 demo](../../00-Book/19-advanced-features/19.1-unsafe-rust-demo/) |
 | 上一章 | [02_Data_Layout](../02_Data_Layout/README.md) |
 | 下一章 | [04_Type_Cast](../04_Type_Cast/README.md) · 类型转换 |

@@ -20,5 +20,5 @@
 ## 工具
 
 - **`thiserror`** — 派生 + 变体 + `source` 映射 → [ER Item 04](../../01-ER/Chapter-01-Types/Item-04-idiomatic-error-types/README.md)
-- **错误链精读** — `Error::source()`、`anyhow::chain()`、与 panic/join 对照 → [01 错误链](./01-error-source-chain.md)
+- **错误链精读** — `Error::source()`、`anyhow::chain()`、与 panic/join 对照 → [01 错误链](./01.1-error-source-chain.md)
 - **线程 panic 容器层** — `Box<dyn Any>` / downcast（挂到通用链下，不重复正文）→ [1.1.2.3](../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.3-panic-box-dyn-any.md)

@@ -19,10 +19,10 @@ trait object &dyn Trait      第二字 = vtable
 
 | § | 主题 | 阅读 |
 |---|------|------|
-| **04.1** | DST 基础 · Sized vs DST | [04-1-dst-basics.md](./04-1-dst-basics.md) |
-| **04.2** | 宽指针布局 · 实测 | [04-2-wide-pointers.md](./04-2-wide-pointers.md) |
-| **04.3** | `dyn Trait` · vtable · 调用流程 | [04-3-dyn-vtable.md](./04-3-dyn-vtable.md) |
-| **04.4** | Vec 句柄 · FFI · HFT | [04-4-containers-ffi-hft.md](./04-4-containers-ffi-hft.md) |
+| **04.1** | DST 基础 · Sized vs DST | [04.1-dst-basics.md](./04.1-dst-basics.md) |
+| **04.2** | 宽指针布局 · 实测 | [04.2-wide-pointers.md](./04.2-wide-pointers.md) |
+| **04.3** | `dyn Trait` · vtable · 调用流程 | [04.3-dyn-vtable.md](./04.3-dyn-vtable.md) |
+| **04.4** | Vec 句柄 · FFI · HFT | [04.4-containers-ffi-hft.md](./04.4-containers-ffi-hft.md) |
 | — | 速记 · 自测 |
 
 **建议阅读顺序**：`04.1` → `04.2` → `04.3` → `04.4`
@@ -37,6 +37,6 @@ trait object &dyn Trait      第二字 = vtable
 
 ## 延伸阅读
 
-- 对象安全 → [05.3](./05-3-object-safety.md)
+- 对象安全 → [05.3](./05.3-object-safety.md)
 - 关联类型与 `dyn Iterator<Item = T>` → [06](./06-generic-traits.md)
 - 实测 → [`layout-demo`](./layout-demo/)

@@ -4,7 +4,7 @@
 
 ← [03 调用 unsafe 函数](./03-calling-unsafe-functions.md) · 下一节 [05 什么会出错](./05-what-can-go-wrong.md)
 
-前置 → [01 unsafe 五类超能力](./01-unsafe-keyword.md) · 标记 trait 速览 [Ch02 §09.3 Send/Sync](../Chapter-02-Types/09-3-send-sync-unpin.md)
+前置 → [01 unsafe 五类超能力](./01-unsafe-keyword.md) · 标记 trait 速览 [Ch02 §09.3 Send/Sync](../Chapter-02-Types/09.3-send-sync-unpin.md)
 
 > 对标：Book [19.1](../../00-Book/19-advanced-features/19.1-不安全Rust.md) · Nomicon [07 Send/Sync](../../04-Rust-Nomicon/07_Concurrency_Atomic/02-send-sync.md) · ER [Item 16](../../01-ER/Chapter-03-Concepts/Item-16-avoid-unsafe/README.md) · Async [Pin](../Chapter-08-Asynchronous-Programming/06-pin-unpin.md)
 
@@ -76,7 +76,7 @@ pub unsafe auto trait Sync {}
 | **`Send`** | 类型的**所有权**可安全**转移**到另一线程 |
 | **`Sync`** | **`&T`** 可安全在多线程间**共享**（等价 `T: Sync` ⟺ `&T: Send`） |
 
-→ Ch02 详解：[09.3 Send/Sync/Unpin](../Chapter-02-Types/09-3-send-sync-unpin.md)
+→ Ch02 详解：[09.3 Send/Sync/Unpin](../Chapter-02-Types/09.3-send-sync-unpin.md)
 
 ### 2. 为什么是 `unsafe trait`？
 
@@ -116,7 +116,7 @@ unsafe impl Sync for RawBuffer {}
 
 | 要点 | 说明 |
 |------|------|
-| 孤儿规则 | 仍适用 → [Ch02 §07.1](../Chapter-02-Types/07-1-orphan-rule.md) |
+| 孤儿规则 | 仍适用 → [Ch02 §07.1](../Chapter-02-Types/07.1-orphan-rule.md) |
 | 文档 | `unsafe impl` 前写清线程安全论证 → [11 文档](./11-documentation.md) |
 
 ---
@@ -166,7 +166,7 @@ pub auto trait Unpin {} // 无 unsafe 修饰
 
 ## 对照阅读
 
-- Ch02 → [09.4 自动推导与 unsafe impl](../Chapter-02-Types/09-4-unsafe-impl.md)
+- Ch02 → [09.4 自动推导与 unsafe impl](../Chapter-02-Types/09.4-unsafe-impl.md)
 - Book → [16.4 Send/Sync](../../00-Book/16-fearless-concurrency/16.4-Send与Sync.md) · [19.1 unsafe](../../00-Book/19-advanced-features/19.1-不安全Rust.md)
 - Nomicon → [07 Send & Sync](../../04-Rust-Nomicon/07_Concurrency_Atomic/02-send-sync.md)
 - ER → [Item 16 避免 unsafe](../../01-ER/Chapter-03-Concepts/Item-16-avoid-unsafe/README.md)

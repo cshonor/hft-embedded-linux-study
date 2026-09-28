@@ -4,7 +4,7 @@
 
 ← [08 转换](./08-casting.md) · 下一节 [10 管理边界](./10-manage-boundaries.md)
 
-前置 → [07 Panic 与不变式](./07-panics.md) · [06 Validity](./06-validity.md) · [Ch01 §04.4 Drop 顺序](../Chapter-01-Foundations/04-4-drop-order.md)
+前置 → [07 Panic 与不变式](./07-panics.md) · [06 Validity](./06-validity.md) · [Ch01 §04.4 Drop 顺序](../Chapter-01-Foundations/04.4-drop-order.md)
 
 > Nomicon [05 Drop Check](../../04-Rust-Nomicon/03_Lifetime_Variance/05-drop-check.md) · Book [15.3 Drop](../../00-Book/15-smart-pointers/15.3-使用Drop运行清理代码.md) · Pin [Ch08](../Chapter-08-Asynchronous-Programming/06-pin-unpin.md)
 
@@ -147,7 +147,7 @@ fn bad() {
 | 自定义 `Drop` | 先运行 **`drop()`**，再按规则析构字段（细节见 Reference） |
 | `Pin` | 内存须固定至 drop 完成 |
 
-→ [04.4 Drop 顺序](../Chapter-01-Foundations/04-4-drop-order.md)
+→ [04.4 Drop 顺序](../Chapter-01-Foundations/04.4-drop-order.md)
 
 ---
 
@@ -190,7 +190,7 @@ fn bad() {
 
 ## 顺序
 
-struct 字段：**逆声明** · Vec 元素：**正序** → [Ch01 04.4](../Chapter-01-Foundations/04-4-drop-order.md)
+struct 字段：**逆声明** · Vec 元素：**正序** → [Ch01 04.4](../Chapter-01-Foundations/04.4-drop-order.md)
 
 ## 自测
 

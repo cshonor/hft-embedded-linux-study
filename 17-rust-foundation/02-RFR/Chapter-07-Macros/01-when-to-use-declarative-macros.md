@@ -2,9 +2,9 @@
 
 > 所属：**Declarative Macros** · [← 章索引](./README.md)
 
-← [00-3 宏 vs 函数](./00-3-macro-vs-function.md) · 下一节 [02 如何工作](./02-how-declarative-macros-work.md)
+← [00-3 宏 vs 函数](./00.3-macro-vs-function.md) · 下一节 [02 如何工作](./02-how-declarative-macros-work.md)
 
-前置 → [00-2 宏分类](./00-2-macro-taxonomy.md) · [00-3 宏 vs 函数](./00-3-macro-vs-function.md)
+前置 → [00-2 宏分类](./00.2-macro-taxonomy.md) · [00-3 宏 vs 函数](./00.3-macro-vs-function.md)
 
 > ER → [Item 28 · 审慎使用宏](../../01-ER/Chapter-05-Tooling/Item-28-macros-judiciously/README.md)
 

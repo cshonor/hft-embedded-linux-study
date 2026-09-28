@@ -1,6 +1,6 @@
 # 第 11 章 · 并发 —— 动手 Lab
 
-> 上：[chapter11_concurrency](../README.md) · 笔记：[11.1 Futex](../11.1-futex.md) · [11.2 Mutex](../11.2-mutex-overview.md) · [11.6 Once](../11.6-once.md) · [11.10 MPSC](../11.10-mpsc-overview.md)
+> 上：[chapter11_concurrency](../../README.md) · 笔记：[11.1 Futex](../../11.1-futex.md) · [11.2 Mutex](../../11.2-mutex-overview.md) · [11.6 Once](../../11.6-once.md) · [11.10 MPSC](../../11.10-mpsc-overview.md)
 
 ## 跑起来
 

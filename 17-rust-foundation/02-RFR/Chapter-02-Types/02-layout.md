@@ -2,7 +2,7 @@
 
 > 所属：**Types in Memory** · [← 章索引](./README.md)
 
-前置 → [01 对齐](./01-alignment.md)（单字段为何要对齐）· 内存分区 → [03.2 OS 布局](../Chapter-01-Foundations/03-2-os-memory-layout.md)
+前置 → [01 对齐](./01-alignment.md)（单字段为何要对齐）· 内存分区 → [03.2 OS 布局](../Chapter-01-Foundations/03.2-os-memory-layout.md)
 
 ---
 

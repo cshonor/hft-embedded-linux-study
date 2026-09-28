@@ -9,9 +9,9 @@
 
 | 主节 | 英文 | 子节 / 笔记 |
 |------|------|-------------|
-| **1** | Talking About Memory | [01 内存术语](./01-memory-terminology.md) · [02 变量深入](./02-variables-in-depth.md) · [03 内存区域](./03-memory-regions.md)（[03.1 Rust 模型](./03-1-rust-memory-model.md) · [03.2 OS/LLVM 布局](./03-2-os-memory-layout.md)） |
-| **2** | Ownership | [04 所有权](./04-ownership.md)（[04.1](./04-1-three-rules.md) · [04.2](./04-2-move-copy-clone.md) · [04.3](./04-3-drop.md) · [04.4](./04-4-drop-order.md) · [04.5](./04-5-refs-and-panic.md) · [04.6](./04-6-pitfalls.md)） |
-| **3** | Borrowing and Lifetimes | [05](./05-shared-references.md) · [06](./06-mutable-references.md) · [06.1 方法接收者](./06-1-method-self-receivers.md) · [07](./07-interior-mutability.md)（[07.1](./07-1-external-vs-interior.md)～[07.5](./07-5-comparison-pitfalls.md)）· [08](./08-lifetimes.md) |
+| **1** | Talking About Memory | [01 内存术语](./01-memory-terminology.md) · [02 变量深入](./02-variables-in-depth.md) · [03 内存区域](./03-memory-regions.md)（[03.1 Rust 模型](./03.1-rust-memory-model.md) · [03.2 OS/LLVM 布局](./03.2-os-memory-layout.md)） |
+| **2** | Ownership | [04 所有权](./04-ownership.md)（[04.1](./04.1-three-rules.md) · [04.2](./04.2-move-copy-clone.md) · [04.3](./04.3-drop.md) · [04.4](./04.4-drop-order.md) · [04.5](./04.5-refs-and-panic.md) · [04.6](./04.6-pitfalls.md)） |
+| **3** | Borrowing and Lifetimes | [05](./05-shared-references.md) · [06](./06-mutable-references.md) · [06.1 方法接收者](./06.1-method-self-receivers.md) · [07](./07-interior-mutability.md)（[07.1](./07.1-external-vs-interior.md)～[07.5](./07.5-comparison-pitfalls.md)）· [08](./08-lifetimes.md) |
 | **4** | Summary | [09 小结](./09-summary.md) |
 
 ## 阅读顺序
@@ -77,14 +77,14 @@
 | `&self` | 只读借用，可多份共存 |
 | `&mut self` | 独占可变借用，调用方须 `let mut` |
 
-→ 详述 [06.1](./06-1-method-self-receivers.md)
+→ 详述 [06.1](./06.1-method-self-receivers.md)
 
 ## 选型：改数据用谁？
 
 | 场景 | 选用 |
 |------|------|
 | 单线程、独占修改清晰 | `&mut T` / `let mut` |
-| 签名被钉死 `&self` 却要改字段 | `Cell` / `RefCell` 包字段（见 [06.1](./06-1-method-self-receivers.md)） |
+| 签名被钉死 `&self` 却要改字段 | `Cell` / `RefCell` 包字段（见 [06.1](./06.1-method-self-receivers.md)） |
 | 多 `&` 句柄、单线程改内部 | `RefCell<T>`（复杂 T）或 `Cell<T>`（Copy 小值） |
 | `Copy` 小值、不要内部引用 | `Cell<T>` |
 | 多线程共享改 | `Mutex<T>` / `RwLock<T>` |
@@ -118,6 +118,6 @@
 
 - [ ] 能写 NLL 示例：`&s` 用后立刻 `&mut s`
 - [ ] 能解释 `&mut T` 对 `T` 为何必须不变
-- [ ] 说明 `Cell` 无计数器、`RefCell` 有计数器，互斥铁律是否相同（[07.3](./07-3-cell-vs-refcell.md)）
+- [ ] 说明 `Cell` 无计数器、`RefCell` 有计数器，互斥铁律是否相同（[07.3](./07.3-cell-vs-refcell.md)）
 - [ ] 能说出 `&T` 与 `&mut` 的 LLVM 假设差异
 

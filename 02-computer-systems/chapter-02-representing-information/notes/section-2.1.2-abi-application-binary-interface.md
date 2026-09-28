@@ -1,7 +1,7 @@
 # ABI · Application Binary Interface（应用二进制接口）
 
 > **01 CSAPP · Ch2 §2.1.2 延伸阅读** · 解释 `sizeof` 为何随平台变、结构体布局、函数怎么调  
-> **关联：** [§2.1.2 数据大小与 sizeof](./section-2.1.2-数据大小与sizeof.md) · [§2.1.3 字节序](./section-2.1.3-寻址与字节序.md) · [§3.7 调用约定](../../chapter-03-machine-level-programs/notes/section-3.7-过程与栈帧.md) · [§3.8 指针步长](../../chapter-03-machine-level-programs/notes/section-3.8-指针步长详解.md)
+> **关联：** [§2.1.2 数据大小与 sizeof](./section-2.1.2.1-数据大小与sizeof.md) · [§2.1.3 字节序](./section-2.1.3-寻址与字节序.md) · [§3.7 调用约定](../../chapter-03-machine-level-programs/notes/section-3.7-过程与栈帧.md) · [§3.8 指针步长](../../chapter-03-machine-level-programs/notes/section-3.8-指针步长详解.md)
 
 ---
 
@@ -65,7 +65,7 @@ API 看起来一样，**ABI 不同 → 协议不兼容 → 二进制不能互换
 
 ### 两个熟悉的 ABI 例子
 
-**① ARM AAPCS**（ARM 架构过程调用标准 · → [Smith Ch13](../../../07-arm-architecture/arm32-asm/chapter-13-subroutines-stacks/notes/section-13-5-apcs.md)）
+**① ARM AAPCS**（ARM 架构过程调用标准 · → [Smith Ch13](../../../07-arm-architecture/arm32-asm/chapter-13-subroutines-stacks/notes/section-13.5-apcs.md)）
 
 | 条款（直觉） | |
 |--------------|--|
@@ -238,7 +238,7 @@ struct Test {
 | 栈对齐 | **16B**（call 前） | 常 **8B** |
 | 结构体 / 段 / syscall | 都有明确条款 | 同样有，寄存器名不同 |
 
-→ [Smith §13.5](../../../07-arm-architecture/arm32-asm/chapter-13-subroutines-stacks/notes/section-13-5-apcs.md) · 下文实战例 1–6
+→ [Smith §13.5](../../../07-arm-architecture/arm32-asm/chapter-13-subroutines-stacks/notes/section-13.5-apcs.md) · 下文实战例 1–6
 
 **一句话：** ABI = 全链路二进制协议；**不只是 `sizeof`。**
 
@@ -247,7 +247,7 @@ struct Test {
 ## 7. 遵守 ABI 的实战例子（ARM32 / AArch64 · C/汇编）
 
 > 嵌入式 + HFT：汇编与 C/Rust 互调、跨 .so、进内核，**全靠同一套二进制协议**。  
-> ARM32 详规 → [Smith Ch13 AAPCS](../../../07-arm-architecture/arm32-asm/chapter-13-subroutines-stacks/notes/section-13-5-apcs.md)（旧文献也称 **ATPCS**）。
+> ARM32 详规 → [Smith Ch13 AAPCS](../../../07-arm-architecture/arm32-asm/chapter-13-subroutines-stacks/notes/section-13.5-apcs.md)（旧文献也称 **ATPCS**）。
 
 ### 例 1 · ARM32 传参（AAPCS / ATPCS）
 
@@ -421,4 +421,4 @@ ARM32 汇编若 **私自用 `r4` 传第一个参数**、又不保存恢复 `r4`�
 
 ---
 
-← [Ch2 导读](../README.md) · [§2.1.2 数据大小](./section-2.1.2-数据大小与sizeof.md) · [01 code](../../code/)
+← [Ch2 导读](../README.md) · [§2.1.2 数据大小](./section-2.1.2.1-数据大小与sizeof.md) · [01 code](../../code/)

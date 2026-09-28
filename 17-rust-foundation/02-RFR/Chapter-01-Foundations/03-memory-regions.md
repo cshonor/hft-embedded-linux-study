@@ -4,7 +4,7 @@
 
 Rust 学内存时有 **两种互补分法** — 对应 [02 变量深入](./02-variables-in-depth.md) 里的**高层 / 底层**双模型，也对应 **Safe Rust 规则 vs OS/LLVM 物理布局**：
 
-| | [03.1 Rust 模型](./03-1-rust-memory-model.md) | [03.2 OS / LLVM 布局](./03-2-os-memory-layout.md) |
+| | [03.1 Rust 模型](./03.1-rust-memory-model.md) | [03.2 OS / LLVM 布局](./03.2-os-memory-layout.md) |
 |---|------------------------------------------------|-----------------------------------------------------|
 | **视角** | Safe Rust、所有权、借用 | 操作系统、链接器、虚拟地址、IR |
 | **分几类** | **栈 / 堆 / 静态**（三分类） | **Text / Data / BSS / Heap / Stack**（+ mmap 等） |
@@ -23,7 +23,7 @@ Rust 学内存时有 **两种互补分法** — 对应 [02 变量深入](./02-va
 | 堆 | **Heap**（`brk` / `mmap`） |
 | 静态 | **Data + BSS**（+ 只读 **`.rodata`**） |
 
-代码段 **Text** 不在 Rust 三分类里，但每个可执行程序都有 — 见 [03.2](./03-2-os-memory-layout.md)。
+代码段 **Text** 不在 Rust 三分类里，但每个可执行程序都有 — 见 [03.2](./03.2-os-memory-layout.md)。
 
 Rust **不改变** OS 布局；语言层只规定**如何安全地使用**栈、堆和静态存储。
 
@@ -31,13 +31,13 @@ Rust **不改变** OS 布局；语言层只规定**如何安全地使用**栈、
 
 ## 子节导航
 
-### [03.1 · Rust 内存模型（Safe Rust 三分类）](./03-1-rust-memory-model.md)
+### [03.1 · Rust 内存模型（Safe Rust 三分类）](./03.1-rust-memory-model.md)
 
 - 栈 / 堆 / 静态各存什么
 - `Box` / `String`：句柄在栈、payload 在堆
 - 与所有权、借用、`'static` 的关系
 
-### [03.2 · OS / LLVM 内存布局](./03-2-os-memory-layout.md)
+### [03.2 · OS / LLVM 内存布局](./03.2-os-memory-layout.md)
 
 - 五分区逐段（Text / Data / BSS / Heap / Stack）
 - 经典简化图 vs **现代 Linux/Windows**（栈堆独立、不对撞）

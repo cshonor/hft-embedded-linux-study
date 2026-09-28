@@ -10,9 +10,9 @@
 | | 笔记 |
 |---|------|
 | **总览（复习）** | [00 宏核心总览](./00-macros-overview.md) — hub · **§0 直觉** |
-| **00.1 Token** | [00-1 Token 与宏展开](./00-1-token-and-macro-pipeline.md) |
-| **00.2 分类** | [00-2 宏分类总览](./00-2-macro-taxonomy.md) |
-| **00.3 宏 vs 函数** | [00-3 完整对比](./00-3-macro-vs-function.md) |
+| **00.1 Token** | [00-1 Token 与宏展开](./00.1-token-and-macro-pipeline.md) |
+| **00.2 分类** | [00-2 宏分类总览](./00.2-macro-taxonomy.md) |
+| **00.3 宏 vs 函数** | [00-3 完整对比](./00.3-macro-vs-function.md) |
 
 | 主节 | 英文 | 子节 / 笔记 |
 |------|------|-------------|

@@ -23,12 +23,12 @@
 
 | 小节 | 标题 | 笔记 |
 |------|------|------|
-| **§6.1** | 简介 | [notes/section-6-1-intro.md](./notes/section-6-1-intro.md) |
-| **§6.2** | ARM 循环移位方案 — 8 bit + 偶数 ROR · MVN | [notes/section-6-2-rotate-constants.md](./notes/section-6-2-rotate-constants.md) |
-| **§6.3** | **`LDR =` 伪指令** — 汇编器选 MOV 或文字池 | [notes/section-6-3-load-constants.md](./notes/section-6-3-load-constants.md) |
-| **§6.4** | 文字池 · **LTORG** · **MOVW/MOVT** | [notes/section-6-4-literal-pools.md](./notes/section-6-4-literal-pools.md) |
-| **§6.5** | 加载地址 — **ADR** / **ADRL** / `LDR=label` | [notes/section-6-5-load-addresses.md](./notes/section-6-5-load-addresses.md) |
-| **§6.6** | 练习题 | [notes/section-6-6-exercises.md](./notes/section-6-6-exercises.md) |
+| **§6.1** | 简介 | [notes/section-6.1-intro.md](./notes/section-6.1-intro.md) |
+| **§6.2** | ARM 循环移位方案 — 8 bit + 偶数 ROR · MVN | [notes/section-6.2-rotate-constants.md](./notes/section-6.2-rotate-constants.md) |
+| **§6.3** | **`LDR =` 伪指令** — 汇编器选 MOV 或文字池 | [notes/section-6.3-load-constants.md](./notes/section-6.3-load-constants.md) |
+| **§6.4** | 文字池 · **LTORG** · **MOVW/MOVT** | [notes/section-6.4-literal-pools.md](./notes/section-6.4-literal-pools.md) |
+| **§6.5** | 加载地址 — **ADR** / **ADRL** / `LDR=label` | [notes/section-6.5-load-addresses.md](./notes/section-6.5-load-addresses.md) |
+| **§6.6** | 练习题 | [notes/section-6.6-exercises.md](./notes/section-6.6-exercises.md) |
 
 ---
 

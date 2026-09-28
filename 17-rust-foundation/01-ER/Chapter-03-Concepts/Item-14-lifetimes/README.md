@@ -22,7 +22,7 @@
 | `longest` 等 | [10.3.4](../../../00-Book/10-generics-traits-lifetimes/10.3.4-longest与get_first.md) |
 | 结构体、`'static` | [10.3.6](../../../00-Book/10-generics-traits-lifetimes/10.3.6-结构体-static与泛型.md) |
 | 借用检查器 | [Item 15](../Item-15-borrow-checker/README.md)（ER） |
-| `const` / `'static` | [4.1 const 与 static](../../../00-Book/04-ownership/4.1-const与static.md) |
+| `const` / `'static` | [4.1 const 与 static](../../../00-Book/04-ownership/4.1.1-const与static.md) |
 
 ---
 

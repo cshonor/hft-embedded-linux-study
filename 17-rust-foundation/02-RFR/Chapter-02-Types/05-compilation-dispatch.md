@@ -21,10 +21,10 @@ Trait 定义类型间的**可替换行为契约**；编译器如何把方法调�
 
 | § | 主题 | 阅读 |
 |---|------|------|
-| **05.1** | 静态 vs 动态分发 · 单态化深度 | [05-1-static-vs-dynamic.md](./05-1-static-vs-dynamic.md) |
-| **05.2** | 单态化与内存布局 | [05-2-monomorphization-memory.md](./05-2-monomorphization-memory.md) |
-| **05.3** | 对象安全 (Object Safety) | [05-3-object-safety.md](./05-3-object-safety.md) |
-| **05.4** | 选型 · HFT · 汇编直觉 | [05-4-selection-hft.md](./05-4-selection-hft.md) |
+| **05.1** | 静态 vs 动态分发 · 单态化深度 | [05.1-static-vs-dynamic.md](./05.1-static-vs-dynamic.md) |
+| **05.2** | 单态化与内存布局 | [05.2-monomorphization-memory.md](./05.2-monomorphization-memory.md) |
+| **05.3** | 对象安全 (Object Safety) | [05.3-object-safety.md](./05.3-object-safety.md) |
+| **05.4** | 选型 · HFT · 汇编直觉 | [05.4-selection-hft.md](./05.4-selection-hft.md) |
 | — | 速记 · 自测 |
 
 **建议阅读顺序**：`05.1` → `05.2` → `05.3` → `05.4`

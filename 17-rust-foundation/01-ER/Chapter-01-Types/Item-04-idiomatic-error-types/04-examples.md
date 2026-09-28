@@ -75,7 +75,7 @@ enum HftError {
 
 - `#[derive(Error)]` → 自动 `impl std::error::Error`
 - `#[error("...")]` → 自动生成 `impl Display`（`{}` 打印的内容）
-- `#[from]` → 自动生成 **`From`** + **`source()` 指向该字段**（单父指针）；`?` 可直接向上传播 → [RFR §thiserror #[from]](../../../02-RFR/Chapter-04-Error-Handling/01-error-source-chain.md#thiserrorsourcefrom-自动挂父指针)
+- `#[from]` → 自动生成 **`From`** + **`source()` 指向该字段**（单父指针）；`?` 可直接向上传播 → [RFR §thiserror #[from]](../../../02-RFR/Chapter-04-Error-Handling/01.1-error-source-chain.md#thiserrorsourcefrom-自动挂父指针)
 
 对比手写：功能等价，代码量通常少一大半。注意库对外 API 尽量暴露**具体 enum 类型**，不要把 `thiserror` 的宏细节 leak 给下游（见 Item 4 重点结论）。
 

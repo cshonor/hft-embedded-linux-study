@@ -2,7 +2,7 @@
 
 > 对应目录：`chapter-13-usb-drivers/`  
 > 书：*Linux Device Drivers*, 3rd ed（内核约 **2.6.10**）  
-> 大纲：[../OUTLINE.md](../OUTLINE.md) · 评测：[../../LDD3-EVAL.md](../../LDD3-EVAL.md)
+> 大纲：OUTLINE（归档书无目录页） · 评测：[../../../LDD3-EVAL.md](../../../LDD3-EVAL.md)
 
 **优先级**：见 OUTLINE 标签  
 **警告**：无设备树；API 极老 — **思想精读，代码勿照搬到 5.x**

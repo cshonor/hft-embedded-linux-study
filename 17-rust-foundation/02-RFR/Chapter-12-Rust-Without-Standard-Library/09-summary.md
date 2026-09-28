@@ -14,7 +14,7 @@ no_std → alloc? → runtime(panic/init/OOM) → volatile → typestate HAL →
 
 ## 下一章
 
-→ [第 13 章 Ecosystem](../Chapter-13-Rust-Ecosystem/13-生态系统-Ecosystem-深度解析.md)
+→ [第 13 章 Ecosystem](../Chapter-13-Rust-Ecosystem/13.0-生态系统-Ecosystem-深度解析.md)
 
 ## 索引
 

@@ -22,11 +22,11 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **行格式 · 常量** | §4.2 | [section-4-2-module-structure.md](./section-4-2-module-structure.md) |
-| **寄存器别名** | §4.3 | [section-4-3-register-names.md](./section-4-3-register-names.md) |
-| **伪指令大全** | §4.4 | [section-4-4-directives.md](./section-4-4-directives.md) |
-| **宏** | §4.5 | [section-4-5-macros.md](./section-4-5-macros.md) |
-| **汇编期运算** | §4.6 | [section-4-6-assembler-misc.md](./section-4-6-assembler-misc.md) |
+| **行格式 · 常量** | §4.2 | [section-4.2-module-structure.md](./section-4.2-module-structure.md) |
+| **寄存器别名** | §4.3 | [section-4.3-register-names.md](./section-4.3-register-names.md) |
+| **伪指令大全** | §4.4 | [section-4.4-directives.md](./section-4.4-directives.md) |
+| **宏** | §4.5 | [section-4.5-macros.md](./section-4.5-macros.md) |
+| **汇编期运算** | §4.6 | [section-4.6-assembler-misc.md](./section-4.6-assembler-misc.md) |
 
 ---
 

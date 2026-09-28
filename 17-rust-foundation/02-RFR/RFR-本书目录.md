@@ -24,7 +24,7 @@
 
 | 主节 | 子节 / 笔记 |
 |------|-------------|
-| **Talking About Memory** | [01 内存术语](Chapter-01-Foundations/01-memory-terminology.md) · [02 变量深入](Chapter-01-Foundations/02-variables-in-depth.md) · [03 内存区域](Chapter-01-Foundations/03-memory-regions.md)（[03.1 Rust](Chapter-01-Foundations/03-1-rust-memory-model.md) · [03.2 OS/LLVM](Chapter-01-Foundations/03-2-os-memory-layout.md)） |
+| **Talking About Memory** | [01 内存术语](Chapter-01-Foundations/01-memory-terminology.md) · [02 变量深入](Chapter-01-Foundations/02-variables-in-depth.md) · [03 内存区域](Chapter-01-Foundations/03-memory-regions.md)（[03.1 Rust](Chapter-01-Foundations/03.1-rust-memory-model.md) · [03.2 OS/LLVM](Chapter-01-Foundations/03.2-os-memory-layout.md)） |
 | **Ownership** | [04 所有权](Chapter-01-Foundations/04-ownership.md) |
 | **Borrowing and Lifetimes** | [05 共享引用](Chapter-01-Foundations/05-shared-references.md) · [06 可变引用](Chapter-01-Foundations/06-mutable-references.md) · [07 内部可变性](Chapter-01-Foundations/07-interior-mutability.md) · [08 生命周期](Chapter-01-Foundations/08-lifetimes.md) |
 | **Summary** | [09 小结](Chapter-01-Foundations/09-summary.md) |
@@ -37,9 +37,9 @@
 
 | 主节 | 子节 / 笔记 |
 |------|-------------|
-| **Types in Memory** | [01 对齐](Chapter-02-Types/01-alignment.md) · [02 布局](Chapter-02-Types/02-layout.md) · [03 复合类型](Chapter-02-Types/03-complex-types.md) · [04 DST 与宽指针](Chapter-02-Types/04-dst-wide-pointers.md)（[04.1](Chapter-02-Types/04-1-dst-basics.md)～[04.4](Chapter-02-Types/04-4-containers-ffi-hft.md)） |
-| **Traits and Trait Bounds** | [05 编译与分发](Chapter-02-Types/05-compilation-dispatch.md)（[05.1](Chapter-02-Types/05-1-static-vs-dynamic.md)～[05.4](Chapter-02-Types/05-4-selection-hft.md)）· [06 泛型 Trait](Chapter-02-Types/06-generic-traits.md)（[06.1](Chapter-02-Types/06-1-associated-vs-generic.md)～[06.2](Chapter-02-Types/06-2-existential-hft.md)）· [07 相干性与孤儿规则](Chapter-02-Types/07-coherence-orphan-rule.md)（[07.1](Chapter-02-Types/07-1-orphan-rule.md)～[07.3](Chapter-02-Types/07-3-newtype-practice.md)）· [08 Trait 限定](Chapter-02-Types/08-trait-bounds.md)（[08.1](Chapter-02-Types/08-1-syntax-static-dynamic.md)～[08.3](Chapter-02-Types/08-3-examples-pitfalls.md)）· [09 标记 Trait](Chapter-02-Types/09-marker-traits.md)（[09.1](Chapter-02-Types/09-1-marker-basics.md)～[09.4](Chapter-02-Types/09-4-unsafe-impl.md)） |
-| **Existential Types** | [10 存在类型](Chapter-02-Types/10-existential-types.md)（[10.1](Chapter-02-Types/10-1-logic-positions.md)～[10.3](Chapter-02-Types/10-3-limits-selection.md)） |
+| **Types in Memory** | [01 对齐](Chapter-02-Types/01-alignment.md) · [02 布局](Chapter-02-Types/02-layout.md) · [03 复合类型](Chapter-02-Types/03-complex-types.md) · [04 DST 与宽指针](Chapter-02-Types/04-dst-wide-pointers.md)（[04.1](Chapter-02-Types/04.1-dst-basics.md)～[04.4](Chapter-02-Types/04.4-containers-ffi-hft.md)） |
+| **Traits and Trait Bounds** | [05 编译与分发](Chapter-02-Types/05-compilation-dispatch.md)（[05.1](Chapter-02-Types/05.1-static-vs-dynamic.md)～[05.4](Chapter-02-Types/05.4-selection-hft.md)）· [06 泛型 Trait](Chapter-02-Types/06-generic-traits.md)（[06.1](Chapter-02-Types/06.1-associated-vs-generic.md)～[06.2](Chapter-02-Types/06.2-existential-hft.md)）· [07 相干性与孤儿规则](Chapter-02-Types/07-coherence-orphan-rule.md)（[07.1](Chapter-02-Types/07.1-orphan-rule.md)～[07.3](Chapter-02-Types/07.3-newtype-practice.md)）· [08 Trait 限定](Chapter-02-Types/08-trait-bounds.md)（[08.1](Chapter-02-Types/08.1-syntax-static-dynamic.md)～[08.3](Chapter-02-Types/08.3-examples-pitfalls.md)）· [09 标记 Trait](Chapter-02-Types/09-marker-traits.md)（[09.1](Chapter-02-Types/09.1-marker-basics.md)～[09.4](Chapter-02-Types/09.4-unsafe-impl.md)） |
+| **Existential Types** | [10 存在类型](Chapter-02-Types/10-existential-types.md)（[10.1](Chapter-02-Types/10.1-logic-positions.md)～[10.3](Chapter-02-Types/10.3-limits-selection.md)） |
 | **Summary** | [11 小结](Chapter-02-Types/11-summary.md) |
 
 章索引：[Chapter-02-Types/README.md](Chapter-02-Types/README.md)

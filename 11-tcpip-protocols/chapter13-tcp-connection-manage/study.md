@@ -1,6 +1,6 @@
 ﻿# 第 13 章：TCP 连接管理
 
-> 按书节速记：[13.1](13.1-introduction.md) · [13.2](13.2-tcp-connection-setup.md) · [13.3](13.3-tcp-options.md) · [13.4](13.4-tcp-pmtud.md) · [13.5](13.5-tcp-state-time-wait.md) · [13.6](13.6-tcp-rst.md) · [13.7](13.8-listen-queue-backlog.md) · [13.8](13.8-tcp-connection-attacks.md) · [13.9](13.9-summary.md) · [QUICKREF §13](../QUICKREF.md)
+> 按书节速记：[13.1](13.1-introduction.md) · [13.2](13.2-tcp-connection-setup.md) · [13.3](13.3-tcp-options.md) · [13.4](13.4-tcp-pmtud.md) · [13.5](13.5-tcp-state-time-wait.md) · [13.6](13.6-tcp-rst.md) · [13.7](13.8-listen-queue-backlog.md) · [13.8](13.8.1-tcp-connection-attacks.md) · [13.9](13.9-summary.md) · [QUICKREF §13](../QUICKREF.md)
 
 > 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记
 > 前置：[ch12 TCP 初步](../chapter12-tcp-basic/study.md) · PMTUD：[ch08](../chapter08-icmpv4-icmpv6/study.md#ch08-3) · 自顶向下：§3.1 连接/状态机

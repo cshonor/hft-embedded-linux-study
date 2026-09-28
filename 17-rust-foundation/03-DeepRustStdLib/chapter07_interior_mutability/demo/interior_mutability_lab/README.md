@@ -1,6 +1,6 @@
 # 第 7 章 · 内部可变性 —— 动手 Lab
 
-> 上：[chapter07_interior_mutability](../README.md) · 笔记：[7.2.1 UnsafeCell](../7.2.1-unsafecell.md) · [7.2.2 Cell](../7.2.2-cell.md) · [7.3 RefCell](../7.3-refcell-overview.md)
+> 上：[chapter07_interior_mutability](../../README.md) · 笔记：[7.2.1 UnsafeCell](../../7.2.1-unsafecell.md) · [7.2.2 Cell](../../7.2.2-cell.md) · [7.3 RefCell](../../7.3-refcell-overview.md)
 
 ## 跑起来
 
@@ -62,4 +62,4 @@ pub fn set(&self, value: T) {
 ## 下一步
 
 第 11 章的每个锁，内部数据字段都是 `UnsafeCell` —— 见
-[chapter11 的 concurrency_lab](../../chapter11_concurrency/demo/concurrency_lab/README.md)。
+[chapter11 的 concurrency_lab](../../../chapter11_concurrency/demo/concurrency_lab/README.md)。

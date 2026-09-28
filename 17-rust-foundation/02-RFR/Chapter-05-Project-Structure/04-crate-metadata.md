@@ -2,7 +2,7 @@
 
 > 所属：**Project Configuration** · [← 章索引](./README.md)
 
-← [03.1 Cargo.lock](./03-1-cargo-lock.md) · [03 工作区](./03-workspaces.md) · 下一节 [05 构建配置](./05-build-configuration.md)
+← [03.1 Cargo.lock](./03.1-cargo-lock.md) · [03 工作区](./03-workspaces.md) · 下一节 [05 构建配置](./05-build-configuration.md)
 
 Book → [14.1 发布到 crates.io](../../00-Book/14-cargo-crates/14.2-crates-io-publish-demo) · ER → [Item 27 公开 API 文档](../../01-ER/Chapter-05-Tooling/Item-27-document-public-api/README.md)
 

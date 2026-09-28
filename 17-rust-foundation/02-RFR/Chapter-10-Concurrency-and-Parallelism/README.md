@@ -27,4 +27,4 @@
 
 ## 旧版单文件
 
-见 git 中的 `10-并发与并行-Concurrency-and-Parallelism-深度解析.md`。
+见 git 中的 `10.0-并发与并行-Concurrency-and-Parallelism-深度解析.md`。

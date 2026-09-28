@@ -23,14 +23,14 @@
 
 | 小节 | 标题 | 笔记 |
 |------|------|------|
-| **§7.1** | 简介 | [notes/section-7-1-intro.md](./notes/section-7-1-intro.md) |
-| **§7.2** | 标志位 — N · V · Z · C | [notes/section-7-2-flags.md](./notes/section-7-2-flags.md) |
-| **§7.3** | 比较指令 | [notes/section-7-3-compare.md](./notes/section-7-3-compare.md) |
-| **§7.4** | 数据处理 — 布尔 · 移位 · 加减 · 饱和 · 乘除 | [notes/section-7-4-data-processing.md](./notes/section-7-4-data-processing.md) |
-| **§7.5** | DSP 扩展 | [notes/section-7-5-dsp.md](./notes/section-7-5-dsp.md) |
-| **§7.6** | 位操作指令 | [notes/section-7-6-bit-ops.md](./notes/section-7-6-bit-ops.md) |
-| **§7.7** | 分数表示法 (Fractional Notation) | [notes/section-7-7-fractional.md](./notes/section-7-7-fractional.md) |
-| **§7.8** | 练习题 | [notes/section-7-8-exercises.md](./notes/section-7-8-exercises.md) |
+| **§7.1** | 简介 | [notes/section-7.1-intro.md](./notes/section-7.1-intro.md) |
+| **§7.2** | 标志位 — N · V · Z · C | [notes/section-7.2-flags.md](./notes/section-7.2-flags.md) |
+| **§7.3** | 比较指令 | [notes/section-7.3-compare.md](./notes/section-7.3-compare.md) |
+| **§7.4** | 数据处理 — 布尔 · 移位 · 加减 · 饱和 · 乘除 | [notes/section-7.4-data-processing.md](./notes/section-7.4-data-processing.md) |
+| **§7.5** | DSP 扩展 | [notes/section-7.5-dsp.md](./notes/section-7.5-dsp.md) |
+| **§7.6** | 位操作指令 | [notes/section-7.6-bit-ops.md](./notes/section-7.6-bit-ops.md) |
+| **§7.7** | 分数表示法 (Fractional Notation) | [notes/section-7.7-fractional.md](./notes/section-7.7-fractional.md) |
+| **§7.8** | 练习题 | [notes/section-7.8-exercises.md](./notes/section-7.8-exercises.md) |
 
 ---
 

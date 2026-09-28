@@ -13,7 +13,7 @@
 
 - 默认返回 `None`；可重写以暴露**底层原因**（**「父错误指针」** → `Some(&底层)`）：
   - `fn source(&self) -> Option<&(dyn Error + 'static)>`
-- 量化 **`StrategyError` + CSV `io::Error`** 示例与 **`thiserror` 自动挂指针** → [RFR Ch04 错误链](../../../02-RFR/Chapter-04-Error-Handling/01-error-source-chain.md#心智模型source--父错误指针)
+- 量化 **`StrategyError` + CSV `io::Error`** 示例与 **`thiserror` 自动挂指针** → [RFR Ch04 错误链](../../../02-RFR/Chapter-04-Error-Handling/01.1-error-source-chain.md#心智模型source--父错误指针)
 
 ### 孤儿规则（Orphan Rule）
 

@@ -44,4 +44,4 @@ impl<T: MyTrait + ?Sized> MyTrait for &T {
 **核心**：blanket → `&T` / `&mut T` / Box/Arc · 仅**自定义 trait**  
 **禁**：全域 `impl<T: Debug> …` · 外部 trait 的 blanket
 
-→ 详例：[03-1](./03-1-ergonomic-blanket-full-guide.md) · [`?Sized`](./03-2-question-sized.md) · [demo](./blanket-trait-demo/) · ER [Item 13](../../01-ER/Chapter-02-Traits/Item-13-default-implementations/README.md)
+→ 详例：[03-1](./03.1-ergonomic-blanket-full-guide.md) · [`?Sized`](./03.2-question-sized.md) · [demo](./blanket-trait-demo/) · ER [Item 13](../../01-ER/Chapter-02-Traits/Item-13-default-implementations/README.md)

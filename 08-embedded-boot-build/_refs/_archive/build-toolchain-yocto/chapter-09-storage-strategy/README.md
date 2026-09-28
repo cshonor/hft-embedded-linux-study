@@ -11,7 +11,7 @@
 
 | | |
 |---|---|
-| **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
+| **阅读标签** | **精读**（见 OUTLINE（归档书无目录页）） |
 | **部分** | 系统架构和设计决策 |
 
 ---
@@ -28,8 +28,8 @@
 
 - [ ] 读完原书对应章
 - [ ] 在 `notes/` 写下可复述的要点
-- [ ] 对照 [04 LKD](../../../05-linux-kernel/) / [07 TLPI](../../../03-linux-userspace-api/) 可复用概念
+- [ ] 对照 [04 LKD](../../../../../05-linux-kernel/) / [07 TLPI](../../../../../03-linux-userspace-api/) 可复用概念
 
 ---
 
-← [Ch 8](../chapter-08-yocto-under-the-hood/) · 下一章 [Ch 10](../chapter-10-field-software-updates/) · [OUTLINE](../OUTLINE.md) · [20 README](../../README.md)
+← [Ch 8](../chapter-08-yocto-under-the-hood/) · 下一章 [Ch 10](../chapter-10-field-software-updates/) · OUTLINE（归档书无目录页） · [20 README](../../README.md)

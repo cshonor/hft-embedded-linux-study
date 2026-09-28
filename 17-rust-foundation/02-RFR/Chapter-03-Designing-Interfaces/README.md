@@ -9,7 +9,7 @@
 
 | 主节 | 英文 | 子节 / 笔记 |
 |------|------|-------------|
-| **1** | Unsurprising | [01 命名](./01-naming-practices.md)（[01-1~5 五系列](./01-1-as-series.md) · [demo](./naming-series-demo/)）· [02 通用 Trait](./02-common-traits-for-types.md)（[02-1 完整解读](./02-1-common-traits-full-guide.md)）· [03 人体工程学 impl](./03-ergonomic-trait-implementations.md)（[03-1 Blanket](./03-1-ergonomic-blanket-full-guide.md) · [03-2 ?Sized](./03-2-question-sized.md) · [demo](./blanket-trait-demo/)）· [04 包装类型](./04-wrapper-types.md) |
+| **1** | Unsurprising | [01 命名](./01-naming-practices.md)（[01-1~5 五系列](./01.1-as-series.md) · [demo](./naming-series-demo/)）· [02 通用 Trait](./02-common-traits-for-types.md)（[02-1 完整解读](./02.1-common-traits-full-guide.md)）· [03 人体工程学 impl](./03-ergonomic-trait-implementations.md)（[03-1 Blanket](./03.1-ergonomic-blanket-full-guide.md) · [03-2 ?Sized](./03.2-question-sized.md) · [demo](./blanket-trait-demo/)）· [04 包装类型](./04-wrapper-types.md) |
 | **2** | Flexible | [05 泛型参数](./05-generic-arguments.md) · [06 对象安全](./06-object-safety.md) · [07 借用 vs 拥有](./07-borrowed-vs-owned.md) · [08 可失败与阻塞析构](./08-fallible-blocking-destructors.md) |
 | **3** | Obvious | [09 文档](./09-documentation.md) · [10 类型系统引导](./10-type-system-guidance.md) |
 | **4** | Constrained | [11 类型演进](./11-type-modifications.md) · [12 Trait 实现控制](./12-trait-implementations.md) · [13 隐藏契约](./13-hidden-contracts.md) |

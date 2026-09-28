@@ -1,7 +1,7 @@
 ## ARMv4T vs ARMv7-M 完整对比
 
 > **Ch 2 · 程序员模型** · [章导读](../README.md) · [本章概述](./section-0-本章完整概述.md)  
-> 展开：[§2.3 ARM7](./section-2-3-arm7tdmi.md) · [§2.4 M4](./section-2-4-cortex-m4.md) · [§2.5 练习](./section-2-5-exercises.md)
+> 展开：[§2.3 ARM7](./section-2.3-arm7tdmi.md) · [§2.4 M4](./section-2.4-cortex-m4.md) · [§2.5 练习](./section-2.5-exercises.md)
 
 ---
 

@@ -11,7 +11,7 @@
 
 | | |
 |---|---|
-| **阅读标签** | **跳过**（见 [OUTLINE](../OUTLINE.md)） |
+| **阅读标签** | **跳过**（见 OUTLINE（归档书无目录页）） |
 | **部分** | 编写嵌入式应用程序 |
 
 ---
@@ -28,8 +28,8 @@
 
 - [ ] 读完原书对应章
 - [ ] 在 `notes/` 写下可复述的要点
-- [ ] 对照 [04 LKD](../../../05-linux-kernel/) / [07 TLPI](../../../03-linux-userspace-api/) 可复用概念
+- [ ] 对照 [04 LKD](../../../../../05-linux-kernel/) / [07 TLPI](../../../../../03-linux-userspace-api/) 可复用概念
 
 ---
 
-← [Ch 15](../chapter-15-power-management/) · 下一章 [Ch 17](../chapter-17-processes-threads/) · [OUTLINE](../OUTLINE.md) · [20 README](../../README.md)
+← [Ch 15](../chapter-15-power-management/) · 下一章 [Ch 17](../chapter-17-processes-threads/) · OUTLINE（归档书无目录页） · [20 README](../../README.md)

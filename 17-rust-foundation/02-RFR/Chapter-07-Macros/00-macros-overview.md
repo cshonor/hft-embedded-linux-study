@@ -7,9 +7,9 @@
 
 | # | 专题 | 正文 | 速记 |
 |:-:|------|------|------|
-| **00.1** | Token 与宏展开 | [00-1 Token 链路](./00-1-token-and-macro-pipeline.md) |
-| **00.2** | 宏整体分类（4 类） | [00-2 分类总览](./00-2-macro-taxonomy.md) |
-| **00.3** | 宏 vs 函数 | [00-3 完整对比](./00-3-macro-vs-function.md) |
+| **00.1** | Token 与宏展开 | [00-1 Token 链路](./00.1-token-and-macro-pipeline.md) |
+| **00.2** | 宏整体分类（4 类） | [00-2 分类总览](./00.2-macro-taxonomy.md) |
+| **00.3** | 宏 vs 函数 | [00-3 完整对比](./00.3-macro-vs-function.md) |
 
 ---
 
@@ -36,7 +36,7 @@
 调用宏时：  括号内 token 片段 → 匹配规则 → 替换成模板里的 token（非回写源码再 lex）
 ```
 
-> 只有 `!` **后面括号内**的 Token 参与匹配；`名字!` 是调用标记。全程 Token 流操作 → [00-1 Token 链路](./00-1-token-and-macro-pipeline.md)
+> 只有 `!` **后面括号内**的 Token 参与匹配；`名字!` 是调用标记。全程 Token 流操作 → [00-1 Token 链路](./00.1-token-and-macro-pipeline.md)
 
 声明宏 `macro_rules!` 就是结构化 `match` → [02 声明宏如何工作](./02-how-declarative-macros-work.md)  
 过程宏则是 Rust 函数处理 **`TokenStream`**，逻辑更自由 → [07 过程宏如何工作](./07-how-procedural-macros-work.md)
@@ -190,7 +190,7 @@ struct Person { name: String, age: u8 }
 | **类型检查** | 展开**之后**才检查 | 定义处即检查 |
 | **典型用途** | 样板、可变参数语法、derive、DSL | 逻辑复用、类型安全、日常业务 |
 
-**取舍**：**能用函数（或泛型 + trait）就不用宏** → [00-3 宏 vs 函数](./00-3-macro-vs-function.md) · [06 你真的需要宏吗](./06-so-you-think-you-want-a-macro.md)
+**取舍**：**能用函数（或泛型 + trait）就不用宏** → [00-3 宏 vs 函数](./00.3-macro-vs-function.md) · [06 你真的需要宏吗](./06-so-you-think-you-want-a-macro.md)
 
 ---
 

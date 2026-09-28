@@ -14,7 +14,7 @@
 | **标志位** | **N Z C V**（+ **Q**）— **Ch8 条件执行** 的直接输入 |
 | **M4 增值** | **UDIV/SDIV** · 位域指令 · DSP — 按路线选读 |
 
-**前置：** [Ch5–6](../../chapter-05-loads-stores-addressing/notes/section-0-本章完整概述.md) · [Ch1 补码](../../chapter-01-overview-computing-systems/notes/section-1-5-representation.md)
+**前置：** [Ch5–6](../../chapter-05-loads-stores-addressing/notes/section-0-本章完整概述.md) · [Ch1 补码](../../chapter-01-overview-computing-systems/notes/section-1.5-representation.md)
 
 ---
 
@@ -22,12 +22,12 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **标志位 · S 后缀** | §7.2 | [section-7-2-flags.md](./section-7-2-flags.md) |
-| **CMP/CMN/TST/TEQ** | §7.3 | [section-7-3-compare.md](./section-7-3-compare.md) |
-| **数据处理 · 饱和** | §7.4 | [section-7-4-data-processing.md](./section-7-4-data-processing.md) |
-| **DSP 扩展** | §7.5 | [section-7-5-dsp.md](./section-7-5-dsp.md) |
-| **BFI/UBFX/RBIT** | §7.6 | [section-7-6-bit-ops.md](./section-7-6-bit-ops.md) |
-| **Q 定点** | §7.7 | [section-7-7-fractional.md](./section-7-7-fractional.md) |
+| **标志位 · S 后缀** | §7.2 | [section-7.2-flags.md](./section-7.2-flags.md) |
+| **CMP/CMN/TST/TEQ** | §7.3 | [section-7.3-compare.md](./section-7.3-compare.md) |
+| **数据处理 · 饱和** | §7.4 | [section-7.4-data-processing.md](./section-7.4-data-processing.md) |
+| **DSP 扩展** | §7.5 | [section-7.5-dsp.md](./section-7.5-dsp.md) |
+| **BFI/UBFX/RBIT** | §7.6 | [section-7.6-bit-ops.md](./section-7.6-bit-ops.md) |
+| **Q 定点** | §7.7 | [section-7.7-fractional.md](./section-7.7-fractional.md) |
 
 ---
 

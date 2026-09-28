@@ -10,7 +10,7 @@
 |------|------|
 | 五种能力总览 | [03-five-powers.md](./03-five-powers.md) |
 | FFI 传指针 | [09_FFI](../09_FFI/01-call-c.md) |
-| 实现 Vec/Arc | [08_Impl_Vec_Arc](../08_Impl_Vec_Arc/01-layout.md) |
+| 实现 Vec/Arc | [08_Impl_Vec_Arc](../08_Impl_Vec_Arc/01.1-layout.md) |
 
 ---
 

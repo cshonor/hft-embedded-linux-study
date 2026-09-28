@@ -9,9 +9,9 @@
 
 | 主节 | 英文 | 子节 / 笔记 |
 |------|------|-------------|
-| **1** | Types in Memory | [01 对齐](./01-alignment.md) · [02 布局](./02-layout.md) · [layout-demo](./layout-demo/) · [03 复合类型](./03-complex-types.md) · [04 DST 与宽指针](./04-dst-wide-pointers.md)（[04.1](./04-1-dst-basics.md)～[04.4](./04-4-containers-ffi-hft.md)） |
-| **2** | Traits and Trait Bounds | [05 编译与分发](./05-compilation-dispatch.md)（[05.1](./05-1-static-vs-dynamic.md)～[05.4](./05-4-selection-hft.md)）· [06 泛型 Trait](./06-generic-traits.md)（[06.1](./06-1-associated-vs-generic.md)～[06.2](./06-2-existential-hft.md)）· [07 相干性与孤儿规则](./07-coherence-orphan-rule.md)（[07.1](./07-1-orphan-rule.md)～[07.3 Newtype](./07-3-newtype-practice.md) · [orphan-rule-demo](./orphan-rule-demo/)）· [08 Trait 限定](./08-trait-bounds.md)（[08.1](./08-1-syntax-static-dynamic.md)～[08.3](./08-3-examples-pitfalls.md) · [trait-bounds-demo](./trait-bounds-demo/)）· [09 标记 Trait](./09-marker-traits.md)（[09.1](./09-1-marker-basics.md)～[09.4](./09-4-unsafe-impl.md)） |
-| **3** | Existential Types | [10 存在类型](./10-existential-types.md)（[10.1](./10-1-logic-positions.md)～[10.3](./10-3-limits-selection.md)） |
+| **1** | Types in Memory | [01 对齐](./01-alignment.md) · [02 布局](./02-layout.md) · [layout-demo](./layout-demo/) · [03 复合类型](./03-complex-types.md) · [04 DST 与宽指针](./04-dst-wide-pointers.md)（[04.1](./04.1-dst-basics.md)～[04.4](./04.4-containers-ffi-hft.md)） |
+| **2** | Traits and Trait Bounds | [05 编译与分发](./05-compilation-dispatch.md)（[05.1](./05.1-static-vs-dynamic.md)～[05.4](./05.4-selection-hft.md)）· [06 泛型 Trait](./06-generic-traits.md)（[06.1](./06.1-associated-vs-generic.md)～[06.2](./06.2-existential-hft.md)）· [07 相干性与孤儿规则](./07-coherence-orphan-rule.md)（[07.1](./07.1-orphan-rule.md)～[07.3 Newtype](./07.3-newtype-practice.md) · [orphan-rule-demo](./orphan-rule-demo/)）· [08 Trait 限定](./08-trait-bounds.md)（[08.1](./08.1-syntax-static-dynamic.md)～[08.3](./08.3-examples-pitfalls.md) · [trait-bounds-demo](./trait-bounds-demo/)）· [09 标记 Trait](./09-marker-traits.md)（[09.1](./09.1-marker-basics.md)～[09.4](./09.4-unsafe-impl.md)） |
+| **3** | Existential Types | [10 存在类型](./10-existential-types.md)（[10.1](./10.1-logic-positions.md)～[10.3](./10.3-limits-selection.md)） |
 | **4** | Summary | [11 小结](./11-summary.md) |
 
 ## 阅读顺序

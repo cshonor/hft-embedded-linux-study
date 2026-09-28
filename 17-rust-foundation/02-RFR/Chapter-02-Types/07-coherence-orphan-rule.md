@@ -21,9 +21,9 @@
 
 | § | 主题 | 阅读 |
 |---|------|------|
-| **07.1** | 孤儿规则 · 合法/非法 | [07-1-orphan-rule.md](./07-1-orphan-rule.md) |
-| **07.2** | Coverage · Blanket impl | [07-2-coverage-blanket.md](./07-2-coverage-blanket.md) |
-| **07.3** | Newtype 模式完整详解 | [07-3-newtype-practice.md](./07-3-newtype-practice.md) |
+| **07.1** | 孤儿规则 · 合法/非法 | [07.1-orphan-rule.md](./07.1-orphan-rule.md) |
+| **07.2** | Coverage · Blanket impl | [07.2-coverage-blanket.md](./07.2-coverage-blanket.md) |
+| **07.3** | Newtype 模式完整详解 | [07.3-newtype-practice.md](./07.3-newtype-practice.md) |
 | — | 速记 · 自测 |
 | — | demo | [orphan-rule-demo](./orphan-rule-demo/) |
 
@@ -49,7 +49,7 @@
 
 类型安全 · 绕孤儿 · 校验构造 · 专属方法
 
-→ 详 [07.3](./07-3-newtype-practice.md)
+→ 详 [07.3](./07.3-newtype-practice.md)
 
 ## 自测
 

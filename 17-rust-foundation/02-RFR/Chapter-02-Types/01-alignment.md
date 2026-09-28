@@ -4,7 +4,7 @@
 
 类型的主要作用之一：告诉编译器如何**合法、高效**地解释某段内存里的比特。对齐是第一步。
 
-内存分区背景 → [第 1 章 · 03.1 栈/堆/静态](../Chapter-01-Foundations/03-1-rust-memory-model.md) · [03.2 OS 布局](../Chapter-01-Foundations/03-2-os-memory-layout.md)
+内存分区背景 → [第 1 章 · 03.1 栈/堆/静态](../Chapter-01-Foundations/03.1-rust-memory-model.md) · [03.2 OS 布局](../Chapter-01-Foundations/03.2-os-memory-layout.md)
 
 ---
 
@@ -64,7 +64,7 @@ assert_eq!(align_of::<i8>(), 1);
 | **静态 / Data / BSS** | 链接器 + 编译器 |
 | **只读 `.rodata`** | 同上 |
 
-→ 分区详见 [03.2 OS 布局](../Chapter-01-Foundations/03-2-os-memory-layout.md)
+→ 分区详见 [03.2 OS 布局](../Chapter-01-Foundations/03.2-os-memory-layout.md)
 
 ---
 

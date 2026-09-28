@@ -17,7 +17,7 @@
 | **EXC_RETURN** | **LR** 中的 magic 值 — **`BX lr`** 触发硬件出栈 |
 | **NVIC** | 片上 **中断使能/优先级/嵌套** — 替代板级 VIC |
 
-**前置：** [Ch2 Cortex-M4](../../chapter-02-programmers-model/notes/section-2-4-cortex-m4.md) · [Ch13 堆栈/AAPCS](../../chapter-13-subroutines-stacks/)  
+**前置：** [Ch2 Cortex-M4](../../chapter-02-programmers-model/notes/section-2.4-cortex-m4.md) · [Ch13 堆栈/AAPCS](../../chapter-13-subroutines-stacks/)  
 **对照：** [Ch14 ARM7](../../chapter-14-exception-handling-arm7tdmi/notes/section-0-本章完整概述.md)
 
 ---
@@ -26,14 +26,14 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **动机 · vs ARM7** | §15.1 | [section-15-1-intro.md](./section-15-1-intro.md) |
-| **Thread/Handler · 特权** | §15.2 | [section-15-2-modes-privilege.md](./section-15-2-modes-privilege.md) |
-| **向量表** | §15.3 | [section-15-3-vector-table.md](./section-15-3-vector-table.md) |
-| **MSP/PSP** | §15.4 | [section-15-4-stack-pointers.md](./section-15-4-stack-pointers.md) |
-| **硬件出入栈 · EXC_RETURN** | §15.5 | [section-15-5-stack-frames.md](./section-15-5-stack-frames.md) |
-| **Fault · SVCall · SysTick** | §15.6 | [section-15-6-fault-types.md](./section-15-6-fault-types.md) |
-| **NVIC · Timer 实例** | §15.7 | [section-15-7-nvic.md](./section-15-7-nvic.md) |
-| **练习** | §15.8 | [section-15-8-exercises.md](./section-15-8-exercises.md) |
+| **动机 · vs ARM7** | §15.1 | [section-15.1-intro.md](./section-15.1-intro.md) |
+| **Thread/Handler · 特权** | §15.2 | [section-15.2-modes-privilege.md](./section-15.2-modes-privilege.md) |
+| **向量表** | §15.3 | [section-15.3-vector-table.md](./section-15.3-vector-table.md) |
+| **MSP/PSP** | §15.4 | [section-15.4-stack-pointers.md](./section-15.4-stack-pointers.md) |
+| **硬件出入栈 · EXC_RETURN** | §15.5 | [section-15.5-stack-frames.md](./section-15.5-stack-frames.md) |
+| **Fault · SVCall · SysTick** | §15.6 | [section-15.6-fault-types.md](./section-15.6-fault-types.md) |
+| **NVIC · Timer 实例** | §15.7 | [section-15.7-nvic.md](./section-15.7-nvic.md) |
+| **练习** | §15.8 | [section-15.8-exercises.md](./section-15.8-exercises.md) |
 
 ---
 

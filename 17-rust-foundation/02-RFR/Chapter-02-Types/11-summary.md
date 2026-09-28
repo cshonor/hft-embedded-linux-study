@@ -27,7 +27,7 @@ Existential Types（impl Trait）
 
 | # | 文件 |
 |---|------|
-| 01–04 | Types in Memory → [01](./01-alignment.md) … [03](./03-complex-types.md) · [04 hub](./04-dst-wide-pointers.md)（[04.1](./04-1-dst-basics.md)～[04.4](./04-4-containers-ffi-hft.md)） |
-| 05–09 | Traits and Trait Bounds → [05 hub](./05-compilation-dispatch.md)（[05.1](./05-1-static-vs-dynamic.md)～[05.4](./05-4-selection-hft.md)）· [06 hub](./06-generic-traits.md)（[06.1](./06-1-associated-vs-generic.md)～[06.2](./06-2-existential-hft.md)）· [07 hub](./07-coherence-orphan-rule.md)（[07.1](./07-1-orphan-rule.md)～[07.3](./07-3-newtype-practice.md)）· [08 hub](./08-trait-bounds.md)（[08.1](./08-1-syntax-static-dynamic.md)～[08.3](./08-3-examples-pitfalls.md)）· [09 hub](./09-marker-traits.md)（[09.1](./09-1-marker-basics.md)～[09.4](./09-4-unsafe-impl.md)） |
-| 10 | [10 hub](./10-existential-types.md)（[10.1](./10-1-logic-positions.md)～[10.3](./10-3-limits-selection.md)） |
+| 01–04 | Types in Memory → [01](./01-alignment.md) … [03](./03-complex-types.md) · [04 hub](./04-dst-wide-pointers.md)（[04.1](./04.1-dst-basics.md)～[04.4](./04.4-containers-ffi-hft.md)） |
+| 05–09 | Traits and Trait Bounds → [05 hub](./05-compilation-dispatch.md)（[05.1](./05.1-static-vs-dynamic.md)～[05.4](./05.4-selection-hft.md)）· [06 hub](./06-generic-traits.md)（[06.1](./06.1-associated-vs-generic.md)～[06.2](./06.2-existential-hft.md)）· [07 hub](./07-coherence-orphan-rule.md)（[07.1](./07.1-orphan-rule.md)～[07.3](./07.3-newtype-practice.md)）· [08 hub](./08-trait-bounds.md)（[08.1](./08.1-syntax-static-dynamic.md)～[08.3](./08.3-examples-pitfalls.md)）· [09 hub](./09-marker-traits.md)（[09.1](./09.1-marker-basics.md)～[09.4](./09.4-unsafe-impl.md)） |
+| 10 | [10 hub](./10-existential-types.md)（[10.1](./10.1-logic-positions.md)～[10.3](./10.3-limits-selection.md)） |
 | 11 | 本文件 |

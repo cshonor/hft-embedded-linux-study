@@ -14,7 +14,7 @@
 | **少分支** | **条件后缀 / IT** · **向下计数** · **展开** |
 | **流水线意识** | 分支 = flush — 与性能优化同源 |
 
-**前置：** [Ch7 标志与 CMP](../../chapter-07-integer-logic-arithmetic/notes/section-0-本章完整概述.md) · [Ch3 阶乘 IT](../../chapter-03-instruction-sets-v4t-v7m/notes/section-3-4-example-factorial.md)
+**前置：** [Ch7 标志与 CMP](../../chapter-07-integer-logic-arithmetic/notes/section-0-本章完整概述.md) · [Ch3 阶乘 IT](../../chapter-03-instruction-sets-v4t-v7m/notes/section-3.4-example-factorial.md)
 
 ---
 
@@ -22,10 +22,10 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **分支指令** | §8.2 | [section-8-2-branches.md](./section-8-2-branches.md) |
-| **三种循环** | §8.3 | [section-8-3-loops.md](./section-8-3-loops.md) |
-| **条件执行/IT** | §8.4 | [section-8-4-conditional.md](./section-8-4-conditional.md) |
-| **循环展开** | §8.5 | [section-8-5-straight-line.md](./section-8-5-straight-line.md) |
+| **分支指令** | §8.2 | [section-8.2-branches.md](./section-8.2-branches.md) |
+| **三种循环** | §8.3 | [section-8.3-loops.md](./section-8.3-loops.md) |
+| **条件执行/IT** | §8.4 | [section-8.4-conditional.md](./section-8.4-conditional.md) |
+| **循环展开** | §8.5 | [section-8.5-straight-line.md](./section-8.5-straight-line.md) |
 
 ---
 

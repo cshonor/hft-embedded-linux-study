@@ -13,7 +13,7 @@
 └ 栈 (stack) ── AR、局部 ─────────┘
 ```
 
-→ RFR 第 1 章 · [03-2 layout](../../../02-RFR/Chapter-01-Foundations/03-2-os-memory-layout.md)
+→ RFR 第 1 章 · [03-2 layout](../../../02-RFR/Chapter-01-Foundations/03.2-os-memory-layout.md)
 
 ---
 

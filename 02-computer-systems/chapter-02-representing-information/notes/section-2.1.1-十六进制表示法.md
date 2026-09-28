@@ -1,6 +1,6 @@
 ## 2.1.1 十六进制表示法
 
-> **Ch2 §2.1 一条线：** [§2.1.1 本节](./section-2.1.1-十六进制表示法.md) → [§2.1.2 数据大小](./section-2.1.2-数据大小与sizeof.md) → [§2.1.3 寻址与字节序](./section-2.1.3-寻址与字节序.md)
+> **Ch2 §2.1 一条线：** [§2.1.1 本节](./section-2.1.1-十六进制表示法.md) → [§2.1.2 数据大小](./section-2.1.2.1-数据大小与sizeof.md) → [§2.1.3 寻址与字节序](./section-2.1.3-寻址与字节序.md)
 > ↔ [Harris §1.4 数字系统](../../../00-digital-logic-cpu/ch01_binary/1.4_数字系统.md)
 
 ---
@@ -131,4 +131,4 @@ unsigned long addr = 0x7ffd0000;
 
 ---
 
-下一节：[§2.1.2 数据大小与 sizeof](./section-2.1.2-数据大小与sizeof.md) · ← [Ch2 导读](../README.md)
+下一节：[§2.1.2 数据大小与 sizeof](./section-2.1.2.1-数据大小与sizeof.md) · ← [Ch2 导读](../README.md)

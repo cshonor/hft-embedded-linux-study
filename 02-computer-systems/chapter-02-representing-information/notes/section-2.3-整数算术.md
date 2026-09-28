@@ -235,7 +235,7 @@ long p = a * b;
 
 这样能 **减轻** 溢出（乘完有更宽的坑来装），但 **不保证** 永不溢出：两个很大的 `long` 相乘，结果仍可能装不进 `long`。
 
-**ABI 坑：** 在 Linux **LP64** 上 `long` 常 8 字节，`int×long` 提升有帮助；在 Windows **LLP64** 上 `long` 常仍是 **4 字节**（和 `int` 一样宽），`int×long` **几乎不扩宽** — 要避溢出用 `long long` / `int64_t`。→ [§2.1.2](./section-2.1.2-数据大小与sizeof.md)
+**ABI 坑：** 在 Linux **LP64** 上 `long` 常 8 字节，`int×long` 提升有帮助；在 Windows **LLP64** 上 `long` 常仍是 **4 字节**（和 `int` 一样宽），`int×long` **几乎不扩宽** — 要避溢出用 `long long` / `int64_t`。→ [§2.1.2](./section-2.1.2.1-数据大小与sizeof.md)
 
 #### 「累加器」多宽？别和 `int` 字节数绑死
 

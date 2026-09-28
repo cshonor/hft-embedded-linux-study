@@ -152,4 +152,4 @@ let x = 10;   // 遮蔽
 
 这对性能是利好：遮蔽几乎零分配成本；也配合借用检查，避免「名字已换绑、旧引用仍指向旧槽」的悬垂访问（能编译过的代码里这类情况会被拦住）。
 
-→ 内存分区见 [03 内存区域](./03-memory-regions.md)（[03.1 Rust 三分类](./03-1-rust-memory-model.md) · [03.2 OS 五分区](./03-2-os-memory-layout.md)）；术语见 [01 内存术语](./01-memory-terminology.md)。
+→ 内存分区见 [03 内存区域](./03-memory-regions.md)（[03.1 Rust 三分类](./03.1-rust-memory-model.md) · [03.2 OS 五分区](./03.2-os-memory-layout.md)）；术语见 [01 内存术语](./01-memory-terminology.md)。

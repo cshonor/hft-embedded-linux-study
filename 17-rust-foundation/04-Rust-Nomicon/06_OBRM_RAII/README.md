@@ -19,7 +19,7 @@
 
 | 节 | 主题 | 阅读 |
 |:--:|------|------|
-| **0.1** | **RAII / OBRM** | [00-1-RAII与OBRM辨析.md](./00-1-RAII与OBRM辨析.md) · [Book 15.3.0](../../00-Book/15-smart-pointers/15.3.0-RAII与OBRM辨析.md) |
+| **0.1** | **RAII / OBRM** | [00.1-RAII与OBRM辨析.md](./00.1-RAII与OBRM辨析.md) · [Book 15.3.0](../../00-Book/15-smart-pointers/15.3.0-RAII与OBRM辨析.md) |
 | — | 本章定位 | [00-overview.md](./00-overview.md) |
 | 1 | 构造与析构 | [01-construct-drop.md](./01-construct-drop.md) |
 | 2 | 泄漏与 forget | [02-forget-leak.md](./02-forget-leak.md) |
@@ -70,7 +70,7 @@ RAII/OBRM 概念（00.1 · Book 15.3.0）→ 构造析构模型 → forget 与�
 
 ## 三句背诵
 
-0. **RAII = 构造拿资源；OBRM = RAII + 唯一所有权 + Drop**（详见 [00.1](./00-1-RAII与OBRM辨析.md)）
+0. **RAII = 构造拿资源；OBRM = RAII + 唯一所有权 + Drop**（详见 [00.1](./00.1-RAII与OBRM辨析.md)）
 1. **Rust 移动 = memcpy，无地址感知构造；Drop 递归清理字段。**
 2. **`forget` 泄漏资源但不算内存 UB；代理类型 forget 可能 UAF。**
 3. **panic 栈展开须 minimal exception safety；无法恢复则 poison 阻断。**

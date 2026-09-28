@@ -16,7 +16,7 @@
 | **软件 handler** | 压栈 r0–r12 · 处理 · **`SUBS pc, lr, #n`** 原子返回 |
 | **VIC** | 多外设中断 **硬件向量** — 替代轮询 |
 
-**前置：** [Ch2 七种模式/CPSR](../../chapter-02-programmers-model/notes/section-2-3-arm7tdmi.md) · [Ch13 堆栈](../../chapter-13-subroutines-stacks/notes/section-0-本章完整概述.md)  
+**前置：** [Ch2 七种模式/CPSR](../../chapter-02-programmers-model/notes/section-2.3-arm7tdmi.md) · [Ch13 堆栈](../../chapter-13-subroutines-stacks/notes/section-0-本章完整概述.md)  
 **对照：** **Cortex-M** → [Ch15](../../chapter-15-exception-handling-v7m/) · **AArch64** → [奔跑吧 Ch11–13](../../../aarch64-practice/)
 
 ---
@@ -25,15 +25,15 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **动机 · ARM7 vs M** | §14.1 | [section-14-1-intro.md](./section-14-1-intro.md) |
-| **IRQ/FIQ/SVC** | §14.2 | [section-14-2-interrupts.md](./section-14-2-interrupts.md) |
-| **未定义/中止** | §14.3 | [section-14-3-error-conditions.md](./section-14-3-error-conditions.md) |
-| **硬件异常序列** | §14.4 | [section-14-4-exception-sequence.md](./section-14-4-exception-sequence.md) |
-| **向量表** | §14.5 | [section-14-5-vector-table.md](./section-14-5-vector-table.md) |
-| **Handler · 优先级** | §14.6 | [section-14-6-handlers-priority.md](./section-14-6-handlers-priority.md) |
-| **机制小结** | §14.7 | [section-14-7-mechanism.md](./section-14-7-mechanism.md) |
-| **代码实例** | §14.8 | [section-14-8-handler-code.md](./section-14-8-handler-code.md) |
-| **练习** | §14.9 | [section-14-9-exercises.md](./section-14-9-exercises.md) |
+| **动机 · ARM7 vs M** | §14.1 | [section-14.1-intro.md](./section-14.1-intro.md) |
+| **IRQ/FIQ/SVC** | §14.2 | [section-14.2-interrupts.md](./section-14.2-interrupts.md) |
+| **未定义/中止** | §14.3 | [section-14.3-error-conditions.md](./section-14.3-error-conditions.md) |
+| **硬件异常序列** | §14.4 | [section-14.4-exception-sequence.md](./section-14.4-exception-sequence.md) |
+| **向量表** | §14.5 | [section-14.5-vector-table.md](./section-14.5-vector-table.md) |
+| **Handler · 优先级** | §14.6 | [section-14.6-handlers-priority.md](./section-14.6-handlers-priority.md) |
+| **机制小结** | §14.7 | [section-14.7-mechanism.md](./section-14.7-mechanism.md) |
+| **代码实例** | §14.8 | [section-14.8-handler-code.md](./section-14.8-handler-code.md) |
+| **练习** | §14.9 | [section-14.9-exercises.md](./section-14.9-exercises.md) |
 
 ---
 

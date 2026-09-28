@@ -1,6 +1,6 @@
 # 指针运算 · 地址 vs 类型步长
 
-> **01 CSAPP · Ch3 §3.8 延伸阅读** · 与 [§3.8 数组与指针运算](./section-3.8-数组与指针运算.md) 对照  
+> **01 CSAPP · Ch3 §3.8 延伸阅读** · 与 [§3.8 数组与指针运算](./section-3.8.1-数组与指针运算.md) 对照  
 > **动手：** [pointer-stride-demo.c](../../code/pointer-stride-demo.c)
 
 ---
@@ -55,7 +55,7 @@ q + 1;                      /* 地址 +4 — 指针运算 */
 
 ### 5. 与 Ch2 §2.1.2 sizeof / ABI 串联
 
-- 步长 = **`sizeof(目标类型)`**，随 **ABI** 变 → [§2.1.2 数据大小](../../chapter-02-representing-information/notes/section-2.1.2-数据大小与sizeof.md) · [ABI 笔记](../../chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md)
+- 步长 = **`sizeof(目标类型)`**，随 **ABI** 变 → [§2.1.2 数据大小](../../chapter-02-representing-information/notes/section-2.1.2.1-数据大小与sizeof.md) · [ABI 笔记](../../chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md)
 - 不要硬编码「+4」「+8」扫内存
 
 ---

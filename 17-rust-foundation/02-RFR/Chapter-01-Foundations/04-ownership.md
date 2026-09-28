@@ -4,7 +4,7 @@
 
 所有权保证：每个值在某一责任域内被**唯一**地负责释放（**RAII** / **`Drop`**）。
 
-物理背景 → [03.1 Rust 内存模型 · 栈/堆/静态](./03-1-rust-memory-model.md) · 术语 → [01 内存术语](./01-memory-terminology.md)
+物理背景 → [03.1 Rust 内存模型 · 栈/堆/静态](./03.1-rust-memory-model.md) · 术语 → [01 内存术语](./01-memory-terminology.md)
 
 ---
 
@@ -16,7 +16,7 @@
 | 2 | **所有者离开作用域时，值被 drop** | RAII：自动调 `Drop` |
 | 3 | **所有权可转移（move）；非 `Copy` 类型不能隐式复制** | `let s2 = s1;` 后 `s1` 失效（`String`）；`i32` 等 `Copy` 除外 |
 
-→ 展开：[04-1 三条规则](./04-1-three-rules.md)
+→ 展开：[04-1 三条规则](./04.1-three-rules.md)
 
 ---
 
@@ -24,12 +24,12 @@
 
 | 节 | 主题 | 阅读 |
 |:--:|------|------|
-| 04.1 | 三条核心规则 | [04-1-three-rules.md](./04-1-three-rules.md) |
-| 04.2 | Move / Copy / Clone | [04-2-move-copy-clone.md](./04-2-move-copy-clone.md) |
-| 04.3 | Drop 基础 · `Box` · 自定义 Drop | [04-3-drop.md](./04-3-drop.md) |
-| 04.4 | Drop 顺序（局部 vs 字段） | [04-4-drop-order.md](./04-4-drop-order.md) |
-| 04.5 | 引用与 move · panic / unwind | [04-5-refs-and-panic.md](./04-5-refs-and-panic.md) |
-| 04.6 | 易错点 · 延伸 | [04-6-pitfalls.md](./04-6-pitfalls.md) |
+| 04.1 | 三条核心规则 | [04.1-three-rules.md](./04.1-three-rules.md) |
+| 04.2 | Move / Copy / Clone | [04.2-move-copy-clone.md](./04.2-move-copy-clone.md) |
+| 04.3 | Drop 基础 · `Box` · 自定义 Drop | [04.3-drop.md](./04.3-drop.md) |
+| 04.4 | Drop 顺序（局部 vs 字段） | [04.4-drop-order.md](./04.4-drop-order.md) |
+| 04.5 | 引用与 move · panic / unwind | [04.5-refs-and-panic.md](./04.5-refs-and-panic.md) |
+| 04.6 | 易错点 · 延伸 | [04.6-pitfalls.md](./04.6-pitfalls.md) |
 | — | 速记 · 自测 |
 
 ---
@@ -61,5 +61,5 @@
 ## 对照阅读
 
 - Book → [4.1 什么是所有权](../../00-Book/04-ownership/4.1-什么是所有权.md)
-- 内存三分类 → [03.1 Rust 模型](./03-1-rust-memory-model.md)
+- 内存三分类 → [03.1 Rust 模型](./03.1-rust-memory-model.md)
 - 下一节 → [05 共享引用](./05-shared-references.md)（借用不抢所有权）

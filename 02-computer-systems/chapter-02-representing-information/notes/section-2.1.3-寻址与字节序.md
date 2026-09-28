@@ -1,6 +1,6 @@
 ## 2.1.3 寻址和字节顺序 (Byte Ordering)
 
-> **Ch2 §2.1 一条线：** [§2.1.1 十六进制](./section-2.1.1-十六进制表示法.md) → [§2.1.2 数据大小](./section-2.1.2-数据大小与sizeof.md) → **§2.1.3 本节**
+> **Ch2 §2.1 一条线：** [§2.1.1 十六进制](./section-2.1.1-十六进制表示法.md) → [§2.1.2 数据大小](./section-2.1.2.1-数据大小与sizeof.md) → **§2.1.3 本节**
 
 > **一句话先分清：** 大端/小端只规定 **「多字节数字在内存（或字节流）里的存放顺序」**；  
 > 和「数据进来的顺序」**不能直接划等号** — 要分两层：**① 内存怎么排** · **② 网络怎么发/收**。
@@ -27,7 +27,7 @@
 | **32 位 CPU** | 常 **32 位** | **4GB**（\(2^{32}\) 字节） | **4** 字节 |
 | **64 位 CPU** | 常 **64 位** | 理论 \(2^{64}\) 字节 | **8** 字节 |
 
-这正好对应你之前看的 [§2.1.2](./section-2.1.2-数据大小与sizeof.md) / [ABI](./section-2.1.2-abi-application-binary-interface.md)：ILP32 下指针 4、LP64/LLP64 下指针 8；`sizeof(long)` 是否跟指针一起变，则看 **ABI**（LP64 vs LLP64），不是单靠「CPU 位数」 alone。
+这正好对应你之前看的 [§2.1.2](./section-2.1.2.1-数据大小与sizeof.md) / [ABI](./section-2.1.2-abi-application-binary-interface.md)：ILP32 下指针 4、LP64/LLP64 下指针 8；`sizeof(long)` 是否跟指针一起变，则看 **ABI**（LP64 vs LLP64），不是单靠「CPU 位数」 alone。
 
 ### 字节顺序 (byte order / endianness)
 
@@ -247,4 +247,4 @@ wire 传 struct：**endian + padding + 类型宽度** 须一起约定 → [§3.9
 
 ---
 
-← [本章导读](../README.md) · [§2.1.2 ←](./section-2.1.2-数据大小与sizeof.md) · [§2.1.4 字符串 →](./section-2.1.4-字符串表示.md)
+← [本章导读](../README.md) · [§2.1.2 ←](./section-2.1.2.1-数据大小与sizeof.md) · [§2.1.4 字符串 →](./section-2.1.4-字符串表示.md)

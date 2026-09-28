@@ -14,7 +14,7 @@
 
 | 节 | 主题 | 笔记 |
 |:---:|------|------|
-| **2.1** | 泛型小议 | [2.1-generics-overview.md](./2.1-generics-overview.md) |
+| **2.1** | 泛型小议 | [2.1.1-generics-overview.md](./2.1.1-generics-overview.md) |
 | **2.1.1** | 基于泛型的函数及 Trait | [2.1.1-generic-functions-and-traits.md](./2.1.1-generic-functions-and-traits.md) |
 | **2.1.2** | 泛型约束的层次 | [2.1.2-generic-constraint-layers.md](./2.1.2-generic-constraint-layers.md) |
 | **2.2** | Rust 内存安全杂述 | [2.2-memory-safety-overview.md](./2.2-memory-safety-overview.md) |
@@ -24,7 +24,7 @@
 | **2.3.3** | 采用闭包 | [2.3.3-closures-for-inner-access.md](./2.3.3-closures-for-inner-access.md) |
 | **2.3.4** | 获取引用 | [2.3.4-getting-references.md](./2.3.4-getting-references.md) |
 | **2.3.5** | 获取所有权 | [2.3.5-getting-ownership.md](./2.3.5-getting-ownership.md) |
-| **2.4** | 回顾 | [2.4-recap.md](./2.4-recap.md) |
+| **2.4** | 回顾 | [2.4.1-recap.md](./2.4.1-recap.md) |
 
 <!-- /AUTO:SECTION-INDEX -->
 
@@ -37,8 +37,8 @@
 | 笔记 | 主题 |
 |------|------|
 | [2.1-core-features-and-std.md](./2.1-core-features-and-std.md) | 所有权与 `std` |
-| [2.2-traits-in-stdlib.md](./2.2-traits-in-stdlib.md) | Trait 与 `std` |
-| [2.3-lifetimes-in-stdlib.md](./2.3-lifetimes-in-stdlib.md) | 生命周期与 `std` |
+| [2.2.1-traits-in-stdlib.md](./2.2.1-traits-in-stdlib.md) | Trait 与 `std` |
+| [2.3.1-lifetimes-in-stdlib.md](./2.3.1-lifetimes-in-stdlib.md) | 生命周期与 `std` |
 | [2.4-closures-iterator-in-stdlib.md](./2.4-closures-iterator-in-stdlib.md) | 闭包 / Iterator |
 | [2.5-pattern-matching-in-stdlib.md](./2.5-pattern-matching-in-stdlib.md) | 模式匹配 |
 | [2.6-error-handling-in-stdlib.md](./2.6-error-handling-in-stdlib.md) | 错误处理 |

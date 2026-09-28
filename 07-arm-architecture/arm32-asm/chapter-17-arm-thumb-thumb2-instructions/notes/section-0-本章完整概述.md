@@ -16,7 +16,7 @@
 | **Interworking** | **`BL` 不能切状态** → 链接器 **Veneer** |
 | **M4 现实** | **仅 Thumb-2** — 无 ARM 状态、无 Veneer |
 
-**前置：** [Ch3 指令集概览](../../chapter-03-instruction-sets-v4t-v7m/) · [Ch8 分支/BX](../../chapter-08-branches-loops/notes/section-8-2-branches.md) · [Ch8 §8.4 IT](../../chapter-08-branches-loops/notes/section-8-4-conditional.md)
+**前置：** [Ch3 指令集概览](../../chapter-03-instruction-sets-v4t-v7m/) · [Ch8 分支/BX](../../chapter-08-branches-loops/notes/section-8.2-branches.md) · [Ch8 §8.4 IT](../../chapter-08-branches-loops/notes/section-8.4-conditional.md)
 
 ---
 
@@ -24,12 +24,12 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **动机** | §17.1 | [section-17-1-intro.md](./section-17-1-intro.md) |
-| **ARM vs 16-bit Thumb** | §17.2 | [section-17-2-arm-vs-thumb16.md](./section-17-2-arm-vs-thumb16.md) |
-| **Thumb-2 · UAL** | §17.3 | [section-17-3-thumb2.md](./section-17-3-thumb2.md) |
-| **BX 状态切换** | §17.4 | [section-17-4-state-switch.md](./section-17-4-state-switch.md) |
-| **Veneer / Interworking** | §17.5 | [section-17-5-interworking.md](./section-17-5-interworking.md) |
-| **练习** | §17.6 | [section-17-6-exercises.md](./section-17-6-exercises.md) |
+| **动机** | §17.1 | [section-17.1-intro.md](./section-17.1-intro.md) |
+| **ARM vs 16-bit Thumb** | §17.2 | [section-17.2-arm-vs-thumb16.md](./section-17.2-arm-vs-thumb16.md) |
+| **Thumb-2 · UAL** | §17.3 | [section-17.3-thumb2.md](./section-17.3-thumb2.md) |
+| **BX 状态切换** | §17.4 | [section-17.4-state-switch.md](./section-17.4-state-switch.md) |
+| **Veneer / Interworking** | §17.5 | [section-17.5-interworking.md](./section-17.5-interworking.md) |
+| **练习** | §17.6 | [section-17.6-exercises.md](./section-17.6-exercises.md) |
 
 ---
 

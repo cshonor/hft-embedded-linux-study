@@ -11,7 +11,7 @@
 |---|---|
 | **角色** | **精读** — **`BL` + 堆栈** 是可复用汇编与 **C 互调** 的基石 |
 | **核心模式** | **STMDB/LDMIA** ≡ PUSH/POP · **FD 栈** · 序言/尾声 · **AAPCS** |
-| **前置** | [Ch8 BL](../chapter-08-branches-loops/notes/section-8-2-branches.md) · [Ch5 寻址](../chapter-05-loads-stores-addressing/) |
+| **前置** | [Ch8 BL](../chapter-08-branches-loops/notes/section-8.2-branches.md) · [Ch5 寻址](../chapter-05-loads-stores-addressing/) |
 
 📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
@@ -21,12 +21,12 @@
 
 | 小节 | 标题 | 笔记 |
 |------|------|------|
-| **§13.1** | 简介 | [notes/section-13-1-intro.md](./notes/section-13-1-intro.md) |
-| **§13.2** | 堆栈 — LDM/STM · PUSH/POP · 满/空 · 递增/递减 | [notes/section-13-2-stacks.md](./notes/section-13-2-stacks.md) |
-| **§13.3** | 子程序 | [notes/section-13-3-subroutines.md](./notes/section-13-3-subroutines.md) |
-| **§13.4** | 向子程序传递参数 — 寄存器 · 指针 · 堆栈 | [notes/section-13-4-parameters.md](./notes/section-13-4-parameters.md) |
-| **§13.5** | ARM APCS — 应用过程调用标准 | [notes/section-13-5-apcs.md](./notes/section-13-5-apcs.md) |
-| **§13.6** | 练习题 | [notes/section-13-6-exercises.md](./notes/section-13-6-exercises.md) |
+| **§13.1** | 简介 | [notes/section-13.1-intro.md](./notes/section-13.1-intro.md) |
+| **§13.2** | 堆栈 — LDM/STM · PUSH/POP · 满/空 · 递增/递减 | [notes/section-13.2-stacks.md](./notes/section-13.2-stacks.md) |
+| **§13.3** | 子程序 | [notes/section-13.3-subroutines.md](./notes/section-13.3-subroutines.md) |
+| **§13.4** | 向子程序传递参数 — 寄存器 · 指针 · 堆栈 | [notes/section-13.4-parameters.md](./notes/section-13.4-parameters.md) |
+| **§13.5** | ARM APCS — 应用过程调用标准 | [notes/section-13.5-apcs.md](./notes/section-13.5-apcs.md) |
+| **§13.6** | 练习题 | [notes/section-13.6-exercises.md](./notes/section-13.6-exercises.md) |
 
 ---
 

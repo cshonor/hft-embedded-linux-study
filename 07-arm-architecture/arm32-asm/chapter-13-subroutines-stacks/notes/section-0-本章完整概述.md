@@ -15,7 +15,7 @@
 | **可重入** | 入口压栈 **LR + 将改写的寄存器**；出口 **`LDM … pc`** 一次返回 |
 | **传参** | 寄存器 · 指针 · 堆栈 — 与 **AAPCS** 对齐才能混 C |
 
-**前置：** [Ch8 BL/分支](../../chapter-08-branches-loops/notes/section-8-2-branches.md) · [Ch5 Load/Store](../../chapter-05-loads-stores-addressing/) · （可选）[Ch12 查表](../../chapter-12-tables/notes/section-0-本章完整概述.md)
+**前置：** [Ch8 BL/分支](../../chapter-08-branches-loops/notes/section-8.2-branches.md) · [Ch5 Load/Store](../../chapter-05-loads-stores-addressing/) · （可选）[Ch12 查表](../../chapter-12-tables/notes/section-0-本章完整概述.md)
 
 ---
 
@@ -23,12 +23,12 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **动机** | §13.1 | [section-13-1-intro.md](./section-13-1-intro.md) |
-| **LDM/STM · 堆栈类型 · PUSH/POP** | §13.2 | [section-13-2-stacks.md](./section-13-2-stacks.md) |
-| **BL · 可重入 · 返回** | §13.3 | [section-13-3-subroutines.md](./section-13-3-subroutines.md) |
-| **三种传参** | §13.4 | [section-13-4-parameters.md](./section-13-4-parameters.md) |
-| **AAPCS / APCS** | §13.5 | [section-13-5-apcs.md](./section-13-5-apcs.md) |
-| **练习** | §13.6 | [section-13-6-exercises.md](./section-13-6-exercises.md) |
+| **动机** | §13.1 | [section-13.1-intro.md](./section-13.1-intro.md) |
+| **LDM/STM · 堆栈类型 · PUSH/POP** | §13.2 | [section-13.2-stacks.md](./section-13.2-stacks.md) |
+| **BL · 可重入 · 返回** | §13.3 | [section-13.3-subroutines.md](./section-13.3-subroutines.md) |
+| **三种传参** | §13.4 | [section-13.4-parameters.md](./section-13.4-parameters.md) |
+| **AAPCS / APCS** | §13.5 | [section-13.5-apcs.md](./section-13.5-apcs.md) |
+| **练习** | §13.6 | [section-13.6-exercises.md](./section-13.6-exercises.md) |
 
 ---
 
@@ -81,7 +81,7 @@ Ch14 异常也改 SP/LR · Ch18 C↔Asm · 内核/UBoot .S
 |------|------|
 | [02 C](../../../../01-c-language/) | 函数调用 = AAPCS |
 | [07 TLPI](../../../../03-linux-userspace-api/) | x86/ARM 调用约定对照 |
-| [Ch11 泰勒 sin](../../chapter-11-floating-point-data-processing/notes/section-11-8-examples.md) | `BL` 浮点子程序 |
+| [Ch11 泰勒 sin](../../chapter-11-floating-point-data-processing/notes/section-11.8-examples.md) | `BL` 浮点子程序 |
 | [Ch14 异常](../../chapter-14-exception-handling-arm7tdmi/) | 异常帧 = 硬件压栈 |
 | [Ch18 混合编程](../../chapter-18-mixing-c-and-assembly/) | `extern "C"` + AAPCS |
 | [20 U-Boot](../../../../08-embedded-boot-build/) | 启动/板级 `.S` 大量 **SP 设置 + BL** |

@@ -91,4 +91,4 @@ start:
 - 本层的真正价值：**知道 `cargo build --target wasm32` 之后到底发生了什么**，
   而不是把 Wasm 当黑盒
 
-→ 下一层：[Layer 2 · 订单簿查询 Wasm](../../layer02_orderbook-query-wasm/README.md)
+→ 下一层：[Layer 2 · 订单簿查询 Wasm](../../../layer02_orderbook-query-wasm/README.md)

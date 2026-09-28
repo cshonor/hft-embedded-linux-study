@@ -14,7 +14,7 @@
 | **M4 FPU 硬件** | **s0–s31** · **CPACR** · **FPSCR** |
 | **搬运与转换** | **VLDR/VSTR** · **VMOV** · **VCVT** · half |
 
-**前置：** [Ch3 FPU 预览](../../chapter-03-instruction-sets-v4t-v7m/notes/section-3-6-example-float.md) · [Ch1 浮点直觉](../../chapter-01-overview-computing-systems/notes/section-1-5-representation.md)
+**前置：** [Ch3 FPU 预览](../../chapter-03-instruction-sets-v4t-v7m/notes/section-3.6-example-float.md) · [Ch1 浮点直觉](../../chapter-01-overview-computing-systems/notes/section-1.5-representation.md)
 
 ---
 
@@ -22,12 +22,12 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **为何浮点** | §9.2–9.3 | [§9.2](./section-9-2-history.md) · [§9.3](./section-9-3-overview.md) |
-| **IEEE 格式** | §9.4 | [§9.4](./section-9-4-data-types.md) |
-| **五类值** | §9.5–9.6 | [§9.5](./section-9-5-representable.md) · [§9.6](./section-9-6-special-values.md) · **[合并精读：五类+定点](./9.x-ieee754-special-and-fixed-point.md)** |
+| **为何浮点** | §9.2–9.3 | [§9.2](./section-9.2-history.md) · [§9.3](./section-9.3-overview.md) |
+| **IEEE 格式** | §9.4 | [§9.4](./section-9.4-data-types.md) |
+| **五类值** | §9.5–9.6 | [§9.5](./section-9.5-representable.md) · [§9.6](./section-9.6-special-values.md) · **[合并精读：五类+定点](./9.x-ieee754-special-and-fixed-point.md)** |
 
-| **寄存器/控制** | §9.7–9.8 | [§9.7](./section-9-7-fp-registers.md) · [§9.8](./section-9-8-fpu-control.md) |
-| **搬运/转换** | §9.9–9.11 | [§9.9](./section-9-9-fp-transfer.md) … [§9.11](./section-9-11-int-float-convert.md) |
+| **寄存器/控制** | §9.7–9.8 | [§9.7](./section-9.7-fp-registers.md) · [§9.8](./section-9.8-fpu-control.md) |
+| **搬运/转换** | §9.9–9.11 | [§9.9](./section-9.9-fp-transfer.md) … [§9.11](./section-9.11-int-float-convert.md) |
 
 ---
 

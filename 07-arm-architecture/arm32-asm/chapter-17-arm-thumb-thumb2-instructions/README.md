@@ -22,12 +22,12 @@
 
 | 小节 | 标题 | 笔记 |
 |------|------|------|
-| **§17.1** | 简介 | [notes/section-17-1-intro.md](./notes/section-17-1-intro.md) |
-| **§17.2** | ARM 与 16 位 Thumb 指令 | [notes/section-17-2-arm-vs-thumb16.md](./notes/section-17-2-arm-vs-thumb16.md) |
-| **§17.3** | 32 位 Thumb 指令 (Thumb-2) | [notes/section-17-3-thumb2.md](./notes/section-17-3-thumb2.md) |
-| **§17.4** | ARM 与 Thumb 状态切换 — BX 等 | [notes/section-17-4-state-switch.md](./notes/section-17-4-state-switch.md) |
-| **§17.5** | 如何为 Thumb 编译代码 — Interworking | [notes/section-17-5-interworking.md](./notes/section-17-5-interworking.md) |
-| **§17.6** | 练习题 | [notes/section-17-6-exercises.md](./notes/section-17-6-exercises.md) |
+| **§17.1** | 简介 | [notes/section-17.1-intro.md](./notes/section-17.1-intro.md) |
+| **§17.2** | ARM 与 16 位 Thumb 指令 | [notes/section-17.2-arm-vs-thumb16.md](./notes/section-17.2-arm-vs-thumb16.md) |
+| **§17.3** | 32 位 Thumb 指令 (Thumb-2) | [notes/section-17.3-thumb2.md](./notes/section-17.3-thumb2.md) |
+| **§17.4** | ARM 与 Thumb 状态切换 — BX 等 | [notes/section-17.4-state-switch.md](./notes/section-17.4-state-switch.md) |
+| **§17.5** | 如何为 Thumb 编译代码 — Interworking | [notes/section-17.5-interworking.md](./notes/section-17.5-interworking.md) |
+| **§17.6** | 练习题 | [notes/section-17.6-exercises.md](./notes/section-17.6-exercises.md) |
 
 ---
 

@@ -20,7 +20,7 @@ local_y  @  [FP + 16]
 - 偏移在编译期由符号表 + 布局 pass 确定。
 - **LLVM**：常 lowering 为 `%rbp` 相对或 **SSA + alloca** 再 mem2reg。
 
-→ RFR [03-2 alloca vs heap](../../../02-RFR/Chapter-01-Foundations/03-2-os-memory-layout.md)
+→ RFR [03-2 alloca vs heap](../../../02-RFR/Chapter-01-Foundations/03.2-os-memory-layout.md)
 
 ---
 

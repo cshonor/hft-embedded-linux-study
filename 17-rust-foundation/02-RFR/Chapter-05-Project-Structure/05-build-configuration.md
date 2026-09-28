@@ -96,7 +96,7 @@ strip = "symbols"
 
 > `panic = "abort"` 时 **`cargo test` 等仍常用 unwind** — 团队须统一约定。
 
-→ HFT / 性能向：[Ch02 §05.4](../Chapter-02-Types/05-4-selection-hft.md)
+→ HFT / 性能向：[Ch02 §05.4](../Chapter-02-Types/05.4-selection-hft.md)
 
 ---
 
@@ -138,7 +138,7 @@ opt-level = 2   # 仅 my-lib；其他 member 仍用 3
 ```
 
 > ❌ 误区：在 `crates/my-lib/Cargo.toml` 写 `[profile.release] inherits = "release"` — **无效**。  
-> → 完整汇总：[05.1 Workspace+Patch+Profile](./05-1-workspace-patch-profile-汇总.md)
+> → 完整汇总：[05.1 Workspace+Patch+Profile](./05.1-workspace-patch-profile-汇总.md)
 
 ---
 

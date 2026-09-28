@@ -13,7 +13,7 @@
 | 节 | 笔记 |
 |----|------|
 | 2.1.1 十六进制表示法 | [notes/section-2.1.1-十六进制表示法.md](./notes/section-2.1.1-十六进制表示法.md) |
-| 2.1.2 数据大小 · `sizeof` | [notes/section-2.1.2-数据大小与sizeof.md](./notes/section-2.1.2-数据大小与sizeof.md) · [ABI 延伸](./notes/section-2.1.2-abi-application-binary-interface.md) · [code](../code/) |
+| 2.1.2 数据大小 · `sizeof` | [notes/section-2.1.2.1-数据大小与sizeof.md](./notes/section-2.1.2.1-数据大小与sizeof.md) · [ABI 延伸](./notes/section-2.1.2-abi-application-binary-interface.md) · [code](../code/) |
 | 2.1.3 寻址与字节序 | [notes/section-2.1.3-寻址与字节序.md](./notes/section-2.1.3-寻址与字节序.md) |
 | 2.1.4 字符串表示 | [notes/section-2.1.4-字符串表示.md](./notes/section-2.1.4-字符串表示.md) |
 | 2.1.5 代码表示 | [notes/section-2.1.5-代码表示.md](./notes/section-2.1.5-代码表示.md) |

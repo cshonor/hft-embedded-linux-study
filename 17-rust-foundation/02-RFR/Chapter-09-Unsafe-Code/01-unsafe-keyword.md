@@ -89,7 +89,7 @@ unsafe {
 
 ## 三、与内部可变性：`RefCell` / `UnsafeCell` 怎么用 unsafe
 
-标准库把 `unsafe` **封在库内部**，对外暴露 Safe API — 这是你学过 [Ch01 §07 UnsafeCell](../Chapter-01-Foundations/07-2-unsafecell-and-containers.md) 的 unsafe 侧：
+标准库把 `unsafe` **封在库内部**，对外暴露 Safe API — 这是你学过 [Ch01 §07 UnsafeCell](../Chapter-01-Foundations/07.2-unsafecell-and-containers.md) 的 unsafe 侧：
 
 ```text
 你调用 RefCell::borrow_mut()     →  Safe 接口

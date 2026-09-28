@@ -17,7 +17,7 @@
 
 **Rust / LLVM** 默认模型 — 与 HFT「热路径少内存访问」一致。
 
-→ RFR [03-2 OS/LLVM 内存布局](../../../02-RFR/Chapter-01-Foundations/03-2-os-memory-layout.md)（`alloca` vs 寄存器）
+→ RFR [03-2 OS/LLVM 内存布局](../../../02-RFR/Chapter-01-Foundations/03.2-os-memory-layout.md)（`alloca` vs 寄存器）
 
 ---
 

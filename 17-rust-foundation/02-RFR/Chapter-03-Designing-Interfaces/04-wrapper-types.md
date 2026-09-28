@@ -6,7 +6,7 @@
 
 用 **newtype** 或薄包装表达**单位、权限、阶段**，而不改变运行时表示（或仅多一层 indirection）。
 
-→ **Newtype 完整详解**（四大用途 · 孤儿规则 · vs `type` 别名）→ [Ch02 §07.3](../Chapter-02-Types/07-3-newtype-practice.md) · [ER Item 06](../../01-ER/Chapter-01-Types/Item-06-newtype-pattern/README.md)
+→ **Newtype 完整详解**（四大用途 · 孤儿规则 · vs `type` 别名）→ [Ch02 §07.3](../Chapter-02-Types/07.3-newtype-practice.md) · [ER Item 06](../../01-ER/Chapter-01-Types/Item-06-newtype-pattern/README.md)
 
 ## Newtype（速览）
 

@@ -11,7 +11,7 @@
 |---|---|
 | **角色** | **选读**（**M4 裸机/RTOS 实操权重高**）— **Cortex-M 标准异常模型** |
 | **核心模式** | **0x0=MSP · 向量=地址** · **硬件 8-word 栈帧** · **EXC_RETURN** · **NVIC** |
-| **前置** | [Ch2 Cortex-M4](../chapter-02-programmers-model/notes/section-2-4-cortex-m4.md) · [Ch14 ARM7 对照](../chapter-14-exception-handling-arm7tdmi/) |
+| **前置** | [Ch2 Cortex-M4](../chapter-02-programmers-model/notes/section-2.4-cortex-m4.md) · [Ch14 ARM7 对照](../chapter-14-exception-handling-arm7tdmi/) |
 | **后续** | [Ch16 MMIO](../chapter-16-memory-mapped-peripherals/) — 外设 + 中断联调 |
 
 📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
@@ -22,14 +22,14 @@
 
 | 小节 | 标题 | 笔记 |
 |------|------|------|
-| **§15.1** | 简介 | [notes/section-15-1-intro.md](./notes/section-15-1-intro.md) |
-| **§15.2** | 操作模式与特权级别 | [notes/section-15-2-modes-privilege.md](./notes/section-15-2-modes-privilege.md) |
-| **§15.3** | 向量表 | [notes/section-15-3-vector-table.md](./notes/section-15-3-vector-table.md) |
-| **§15.4** | 堆栈指针 — MSP/PSP | [notes/section-15-4-stack-pointers.md](./notes/section-15-4-stack-pointers.md) |
-| **§15.5** | 处理器出入栈序列 | [notes/section-15-5-stack-frames.md](./notes/section-15-5-stack-frames.md) |
-| **§15.6** | 异常类型 — 硬故障 · 内存管理故障等 | [notes/section-15-6-fault-types.md](./notes/section-15-6-fault-types.md) |
-| **§15.7** | 中断 — 基于 NVIC 的外部中断 | [notes/section-15-7-nvic.md](./notes/section-15-7-nvic.md) |
-| **§15.8** | 练习题 | [notes/section-15-8-exercises.md](./notes/section-15-8-exercises.md) |
+| **§15.1** | 简介 | [notes/section-15.1-intro.md](./notes/section-15.1-intro.md) |
+| **§15.2** | 操作模式与特权级别 | [notes/section-15.2-modes-privilege.md](./notes/section-15.2-modes-privilege.md) |
+| **§15.3** | 向量表 | [notes/section-15.3-vector-table.md](./notes/section-15.3-vector-table.md) |
+| **§15.4** | 堆栈指针 — MSP/PSP | [notes/section-15.4-stack-pointers.md](./notes/section-15.4-stack-pointers.md) |
+| **§15.5** | 处理器出入栈序列 | [notes/section-15.5-stack-frames.md](./notes/section-15.5-stack-frames.md) |
+| **§15.6** | 异常类型 — 硬故障 · 内存管理故障等 | [notes/section-15.6-fault-types.md](./notes/section-15.6-fault-types.md) |
+| **§15.7** | 中断 — 基于 NVIC 的外部中断 | [notes/section-15.7-nvic.md](./notes/section-15.7-nvic.md) |
+| **§15.8** | 练习题 | [notes/section-15.8-exercises.md](./notes/section-15.8-exercises.md) |
 
 ---
 

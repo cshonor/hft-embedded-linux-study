@@ -10,7 +10,7 @@
 |------|------|
 | RFR 布局详解 | [02-layout.md](../../02-RFR/Chapter-02-Types/02-layout.md) |
 | RFR 实测 demo | [layout-demo](../../02-RFR/Chapter-02-Types/layout-demo/) |
-| OS 内存分区 | [03-2-os-memory-layout](../../02-RFR/Chapter-01-Foundations/03-2-os-memory-layout.md) |
+| OS 内存分区 | [03-2-os-memory-layout](../../02-RFR/Chapter-01-Foundations/03.2-os-memory-layout.md) |
 
 **读完应能回答**：`repr(Rust)` 与 `repr(C)` 有何不同、DST/ZST/空类型是什么、何时用哪种 `repr`。
 

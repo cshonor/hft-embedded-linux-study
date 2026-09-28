@@ -4,7 +4,7 @@
 
 ← [02 如何工作](./02-how-declarative-macros-work.md) · 下一节 [04 过程宏类型](./04-types-of-procedural-macros.md)
 
-前置 → [00-2 宏分类](./00-2-macro-taxonomy.md) · [02 Token 匹配与转录](./02-how-declarative-macros-work.md)
+前置 → [00-2 宏分类](./00.2-macro-taxonomy.md) · [02 Token 匹配与转录](./02-how-declarative-macros-work.md)
 
 ---
 
@@ -171,7 +171,7 @@ macro_rules! 宏名 {
 | 1 | `expr` 只是其一；名字 → `ident`，类型 → `ty` |
 | 2 | **匹配顺序**：从上到下；**具体模式在前，通用 / catch-all 在后** |
 | 3 | 本质：编译期 Token 模式匹配 + 转录，**无运行时** |
-| 4 | 只有 `macro_rules!` 是声明宏；`!()` 无此关键字且在 proc-macro crate → **类函数过程宏** → [00-2](./00-2-macro-taxonomy.md) |
+| 4 | 只有 `macro_rules!` 是声明宏；`!()` 无此关键字且在 proc-macro crate → **类函数过程宏** → [00-2](./00.2-macro-taxonomy.md) |
 | 5 | 调试：**`cargo expand`** 看展开结果 → [第 13 章工具](../Chapter-13-Rust-Ecosystem/01-tools.md) |
 
 ---

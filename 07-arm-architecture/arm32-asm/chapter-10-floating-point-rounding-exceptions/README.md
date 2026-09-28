@@ -21,12 +21,12 @@
 
 | 小节 | 标题 | 笔记 |
 |------|------|------|
-| **§10.1** | 简介 | [notes/section-10-1-intro.md](./notes/section-10-1-intro.md) |
-| **§10.2** | 舍入 — IEEE 754-2008 舍入模式 | [notes/section-10-2-rounding.md](./notes/section-10-2-rounding.md) |
-| **§10.3** | 异常 — 除零 · 无效 · 溢出 · 下溢 · 不精确 | [notes/section-10-3-exceptions.md](./notes/section-10-3-exceptions.md) |
-| **§10.4** | 代数定律与浮点运算 | [notes/section-10-4-algebra.md](./notes/section-10-4-algebra.md) |
-| **§10.5** | 规格化与抵消 | [notes/section-10-5-normalization.md](./notes/section-10-5-normalization.md) |
-| **§10.6** | 练习题 | [notes/section-10-6-exercises.md](./notes/section-10-6-exercises.md) |
+| **§10.1** | 简介 | [notes/section-10.1-intro.md](./notes/section-10.1-intro.md) |
+| **§10.2** | 舍入 — IEEE 754-2008 舍入模式 | [notes/section-10.2-rounding.md](./notes/section-10.2-rounding.md) |
+| **§10.3** | 异常 — 除零 · 无效 · 溢出 · 下溢 · 不精确 | [notes/section-10.3-exceptions.md](./notes/section-10.3-exceptions.md) |
+| **§10.4** | 代数定律与浮点运算 | [notes/section-10.4-algebra.md](./notes/section-10.4-algebra.md) |
+| **§10.5** | 规格化与抵消 | [notes/section-10.5-normalization.md](./notes/section-10.5-normalization.md) |
+| **§10.6** | 练习题 | [notes/section-10.6-exercises.md](./notes/section-10.6-exercises.md) |
 
 ---
 

@@ -23,7 +23,7 @@ Box<dyn std::error::Error + Send + Sync + 'static>
 
 ## `anyhow::chain()` 与 `source()` 链
 
-`anyhow::Error` 包装多层 **`context`** / 底层 **`Error`** 后，可用 **`chain()`** 遍历整条因果链（等同反复 `source()`，打印 `{err:?}` 也常带多层）。详见 [01 错误链](./01-error-source-chain.md) · [Item 04 demo](../../01-ER/Chapter-01-Types/Item-04-idiomatic-error-types/demo/src/main.rs)。
+`anyhow::Error` 包装多层 **`context`** / 底层 **`Error`** 后，可用 **`chain()`** 遍历整条因果链（等同反复 `source()`，打印 `{err:?}` 也常带多层）。详见 [01 错误链](./01.1-error-source-chain.md) · [Item 04 demo](../../01-ER/Chapter-01-Types/Item-04-idiomatic-error-types/demo/src/main.rs)。
 
 ## 与枚举的取舍
 

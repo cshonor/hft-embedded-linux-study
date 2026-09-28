@@ -23,11 +23,11 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **MMIO 总论** | §16.1 | [section-16-1-intro.md](./section-16-1-intro.md) |
-| **LPC2104 UART** | §16.2 | [section-16-2-lpc2104-uart.md](./section-16-2-lpc2104-uart.md) |
-| **LPC2132 DAC 正弦波** | §16.3 | [section-16-3-lpc2132-dac.md](./section-16-3-lpc2132-dac.md) |
-| **Tiva GPIO / 地址掩码** | §16.4 | [section-16-4-tiva-gpio.md](./section-16-4-tiva-gpio.md) |
-| **练习** | §16.5 | [section-16-5-exercises.md](./section-16-5-exercises.md) |
+| **MMIO 总论** | §16.1 | [section-16.1-intro.md](./section-16.1-intro.md) |
+| **LPC2104 UART** | §16.2 | [section-16.2-lpc2104-uart.md](./section-16.2-lpc2104-uart.md) |
+| **LPC2132 DAC 正弦波** | §16.3 | [section-16.3-lpc2132-dac.md](./section-16.3-lpc2132-dac.md) |
+| **Tiva GPIO / 地址掩码** | §16.4 | [section-16.4-tiva-gpio.md](./section-16.4-tiva-gpio.md) |
+| **练习** | §16.5 | [section-16.5-exercises.md](./section-16.5-exercises.md) |
 
 ---
 
@@ -61,7 +61,7 @@ Linux：同 MMIO → ioremap · 驱动 readl/writel
 
 | 模块 | 关联 |
 |------|------|
-| [Ch5 §5.6 位带](../../chapter-05-loads-stores-addressing/notes/section-5-6-bit-banded.md) | Tiva **地址掩码** 同类「单 bit 安全写」 |
+| [Ch5 §5.6 位带](../../chapter-05-loads-stores-addressing/notes/section-5.6-bit-banded.md) | Tiva **地址掩码** 同类「单 bit 安全写」 |
 | [Ch12 查表](../../chapter-12-tables/) | DAC 正弦 **LUT + 缩放** |
 | [21 驱动](../../../../09-device-drivers-dt/) | **`readl`/`writel`** · **`platform_device`** |
 | [21 驱动/DT](../../../../09-device-drivers-dt/) | 寄存器基址进 **设备树** |

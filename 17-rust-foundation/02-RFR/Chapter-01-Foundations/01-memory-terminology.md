@@ -25,7 +25,7 @@
 | `static N: i32 = 0` | **Data / BSS**（进程生命周期） | 与变量同一静态区 |
 | `&"hello"` 里的 `"hello"` | 无 `let` 变量名 | 字面量在 **只读段**（Text 旁 rodata） |
 
-→ 分区细节见 [03 内存区域](./03-memory-regions.md)（Safe Rust → [03.1](./03-1-rust-memory-model.md)；OS/LLVM → [03.2](./03-2-os-memory-layout.md)）。
+→ 分区细节见 [03 内存区域](./03-memory-regions.md)（Safe Rust → [03.1](./03.1-rust-memory-model.md)；OS/LLVM → [03.2](./03.2-os-memory-layout.md)）。
 
 **注意**：说「变量在栈上」有时指**这个 `let` 绑定的槽**在栈上；若类型内含指针，**它指向的数据**可能在堆上（`Box`、`String` 都是这种「栈上控制块 + 堆上 payload」）。
 

@@ -138,7 +138,7 @@ Rust 把「这段期间无其它别名」写进类型系统，不必像 C 那样
 | 触发 Drop | ✅ | ❌（只结束借用） |
 | 修改数据 | 通过绑定本身 | 通过解引用 `*r` |
 
-→ 全章速记：方法接收者 [06.1](./06-1-method-self-receivers.md) · 下一节 [07 内部可变性](./07-interior-mutability.md)
+→ 全章速记：方法接收者 [06.1](./06.1-method-self-receivers.md) · 下一节 [07 内部可变性](./07-interior-mutability.md)
 
 ---
 

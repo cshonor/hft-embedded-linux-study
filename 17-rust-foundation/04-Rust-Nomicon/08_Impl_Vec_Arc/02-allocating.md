@@ -1,6 +1,6 @@
 # 2 · 内存分配 (Allocating)
 
-← [本章目录](./README.md) · 上一节：[01-layout.md](./01-layout.md) · 下一节：[03-push-pop.md](./03-push-pop.md)
+← [本章目录](./README.md) · 上一节：[01.1-layout.md](./01.1-layout.md) · 下一节：[03-push-pop.md](./03-push-pop.md)
 
 ---
 

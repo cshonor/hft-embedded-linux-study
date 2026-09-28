@@ -30,7 +30,7 @@
   → 晶体管
 ```
 
-→ 细节：[§1.1](./section-1-1-intro.md) · [§1.3](./section-1-3-computing-devices.md)
+→ 细节：[§1.1](./section-1.1-intro.md) · [§1.3](./section-1.3-computing-devices.md)
 
 ---
 
@@ -63,7 +63,7 @@ Acorn → ARM1（Furber / Wilson，1985）→ 1990 ARM Ltd（**卖 IP 授权，�
 
 **讲 A、不练 A：** [CORTEX-A-SCOPE.md](../../CORTEX-A-SCOPE.md)。本目录主练 **v4T / v7-M**；Pi5 Linux → [奔跑吧 AArch64](../../../aarch64-practice/)。
 
-→ [§1.2](./section-1-2-risc-history.md)
+→ [§1.2](./section-1.2-risc-history.md)
 
 ---
 
@@ -77,7 +77,7 @@ Acorn → ARM1（Furber / Wilson，1985）→ 1990 ARM Ltd（**卖 IP 授权，�
 
 例：`110101₂` = 53₁₀；`0xA5E9` 按 16 的幂展开。
 
-→ [§1.4](./section-1-4-number-systems.md)
+→ [§1.4](./section-1.4-number-systems.md)
 
 ---
 
@@ -102,7 +102,7 @@ Acorn → ARM1（Furber / Wilson，1985）→ 1990 ARM Ltd（**卖 IP 授权，�
 
 1 字节字符/控制符；汇编可用 `#'A'`（→ `0x41`）。
 
-→ [§1.5](./section-1-5-representation.md)
+→ [§1.5](./section-1.5-representation.md)
 
 ---
 
@@ -111,7 +111,7 @@ Acorn → ARM1（Furber / Wilson，1985）→ 1990 ARM Ltd（**卖 IP 授权，�
 机器码 = 比特串；**MOV/ADD/LDR** = 助记符，汇编器翻译。  
 **ARM / x86 / DSP 编码互不兼容** — 换架构必须重编。
 
-→ [§1.6](./section-1-6-bits-to-commands.md)
+→ [§1.6](./section-1.6-bits-to-commands.md)
 
 ---
 
@@ -130,7 +130,7 @@ Acorn → ARM1（Furber / Wilson，1985）→ 1990 ARM Ltd（**卖 IP 授权，�
 
 反汇编、内存窗、断点 = 日常调试三件套。
 
-→ [§1.7](./section-1-7-tools.md)
+→ [§1.7](./section-1.7-tools.md)
 
 ---
 
@@ -143,7 +143,7 @@ Acorn → ARM1（Furber / Wilson，1985）→ 1990 ARM Ltd（**卖 IP 授权，�
 - [ ] 存储程序三大件  
 - [ ] 简单二进制乘法（若书中布置）  
 
-→ [§1.8](./section-1-8-exercises.md)
+→ [§1.8](./section-1.8-exercises.md)
 
 ---
 
@@ -165,7 +165,7 @@ Acorn → ARM1（Furber / Wilson，1985）→ 1990 ARM Ltd（**卖 IP 授权，�
 |------|------|
 | [CSAPP](../../../../02-computer-systems/) | 另一 ISA，同一「表示」层 |
 | [01 C](../../../../01-c-language/) | 补码、类型宽度 |
-| [Primer SoC](../../../../08-embedded-boot-build/chapter-03-processor-basics/) | Cortex-A SoC 跑 Linux |
+| [Primer SoC](../../../../08-embedded-boot-build/01-orientation/1.3-focus-on-soc.md) | Cortex-A SoC 跑 Linux |
 | [aarch64-practice](../../../aarch64-practice/) | Pi5 主战场 |
 
 ---

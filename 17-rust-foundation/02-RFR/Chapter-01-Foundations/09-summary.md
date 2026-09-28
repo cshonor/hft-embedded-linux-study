@@ -29,9 +29,9 @@ Borrowing and Lifetimes（& / &mut / 内部可变 / 生命周期与方差）
 |---|------|
 | 01 | [内存术语](./01-memory-terminology.md) |
 | 02 | [变量深入](./02-variables-in-depth.md) |
-| 03 | [内存区域](./03-memory-regions.md) · [03.1 Rust 模型](./03-1-rust-memory-model.md) · [03.2 OS/LLVM](./03-2-os-memory-layout.md) |
-| 04 | [所有权](./04-ownership.md)（[04.1](./04-1-three-rules.md)～[04.6](./04-6-pitfalls.md)） |
+| 03 | [内存区域](./03-memory-regions.md) · [03.1 Rust 模型](./03.1-rust-memory-model.md) · [03.2 OS/LLVM](./03.2-os-memory-layout.md) |
+| 04 | [所有权](./04-ownership.md)（[04.1](./04.1-three-rules.md)～[04.6](./04.6-pitfalls.md)） |
 | 05 | [共享引用](./05-shared-references.md) |
 | 06 | [可变引用](./06-mutable-references.md) |
-| 07 | [内部可变性](./07-interior-mutability.md) · [07.1](./07-1-external-vs-interior.md) · [07.3 Cell/RefCell](./07-3-cell-vs-refcell.md) |
+| 07 | [内部可变性](./07-interior-mutability.md) · [07.1](./07.1-external-vs-interior.md) · [07.3 Cell/RefCell](./07.3-cell-vs-refcell.md) |
 | 08 | [生命周期](./08-lifetimes.md) |

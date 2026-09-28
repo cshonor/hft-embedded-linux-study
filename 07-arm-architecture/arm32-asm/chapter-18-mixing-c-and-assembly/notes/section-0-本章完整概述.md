@@ -15,7 +15,7 @@
 | **内嵌汇编** | C 模块内 **完整 asm 函数** — 全指令集、**须自写返回** |
 | **互调** | **AAPCS** — **r0–r3** 参返 · callee-save · **C↔asm `BL`** |
 
-**前置：** [Ch13 AAPCS](../../chapter-13-subroutines-stacks/notes/section-13-5-apcs.md) · [Ch17 Interwork](../../chapter-17-arm-thumb-thumb2-instructions/notes/section-17-5-interworking.md)
+**前置：** [Ch13 AAPCS](../../chapter-13-subroutines-stacks/notes/section-13.5-apcs.md) · [Ch17 Interwork](../../chapter-17-arm-thumb-thumb2-instructions/notes/section-17.5-interworking.md)
 
 ---
 
@@ -23,11 +23,11 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **动机 · 两路径** | §18.1 | [section-18-1-intro.md](./section-18-1-intro.md) |
-| **Inline Assembler** | §18.2 | [section-18-2-inline-asm.md](./section-18-2-inline-asm.md) |
-| **Embedded Assembler** | §18.3 | [section-18-3-embedded-asm.md](./section-18-3-embedded-asm.md) |
-| **C ↔ Asm 调用** | §18.4 | [section-18-4-c-asm-calls.md](./section-18-4-c-asm-calls.md) |
-| **练习** | §18.5 | [section-18-5-exercises.md](./section-18-5-exercises.md) |
+| **动机 · 两路径** | §18.1 | [section-18.1-intro.md](./section-18.1-intro.md) |
+| **Inline Assembler** | §18.2 | [section-18.2-inline-asm.md](./section-18.2-inline-asm.md) |
+| **Embedded Assembler** | §18.3 | [section-18.3-embedded-asm.md](./section-18.3-embedded-asm.md) |
+| **C ↔ Asm 调用** | §18.4 | [section-18.4-c-asm-calls.md](./section-18.4-c-asm-calls.md) |
+| **练习** | §18.5 | [section-18.5-exercises.md](./section-18.5-exercises.md) |
 
 ---
 

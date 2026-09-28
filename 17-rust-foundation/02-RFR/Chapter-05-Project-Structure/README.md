@@ -14,8 +14,8 @@
 | 主节 | 英文 | 子节 / 笔记 |
 |------|------|-------------|
 | **1** | Features | [01 定义与包含](./01-defining-including-features.md)（Additive · optional）· [02 crate 内使用](./02-using-features-in-crate.md)（cfg · CI · 反模式） |
-| **2** | Workspaces | [03 工作区](./03-workspaces.md)（lock/target 共享 · resolver 2）· [03.1 Cargo.lock](./03-1-cargo-lock.md)（字段 · 提交规范 · [demo](./cargo-lock-demo/)） |
-| **3** | Project Configuration | [04 Crate 元数据](./04-crate-metadata.md)（）· [05 构建配置](./05-build-configuration.md)（）· [05.1 Patch+Profile 汇总](./05-1-workspace-patch-profile-汇总.md)（） |
+| **2** | Workspaces | [03 工作区](./03-workspaces.md)（lock/target 共享 · resolver 2）· [03.1 Cargo.lock](./03.1-cargo-lock.md)（字段 · 提交规范 · [demo](./cargo-lock-demo/)） |
+| **3** | Project Configuration | [04 Crate 元数据](./04-crate-metadata.md)（）· [05 构建配置](./05-build-configuration.md)（）· [05.1 Patch+Profile 汇总](./05.1-workspace-patch-profile-汇总.md)（） |
 | **4** | Conditional Compilation | [06 条件编译](./06-conditional-compilation.md)（cfg · target deps） |
 | **5** | Versioning | [07 MSRV](./07-msrv.md)（）· [08 依赖下界](./08-minimal-dependency-versions.md)（）· [09 Changelog](./09-changelogs.md)（）· [10 未发布版本](./10-unreleased-versions.md)（Unreleased · 预发布） |
 | **6** | Summary | [11 小结](./11-summary.md) |
