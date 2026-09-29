@@ -139,6 +139,6 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19
 | [Computer-Networking](https://github.com/cshonor/Computer-Networking) | Socket / UNP / TCP/IP 实战代码（`03.5` · `04/M2`） |
 | [READING-LIST.md](./READING-LIST.md) | **某本书具体读哪几章**（精读 / 选读 / 跳过标签） |
 | [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md) | 分书小节指引 · HFT 不漏项检查清单 · 嵌入式支线 |
-| [CTA-READING-LIST.md](./CTA-READING-LIST.md) | **CTA 支线书单**：趋势跟踪（海龟 / Clenow）+ 回测过拟合（Ernest Chan）读序与回测纪律 |
+| [CTA 支线书单](https://github.com/cshonor/Quant-AI-Foundations/blob/main/MidLow_Freq/1_CTA_Futures/CTA-READING-LIST.md) | **已迁移** → Quant-AI-Foundations `MidLow_Freq/1_CTA_Futures/`（趋势跟踪海龟/Clenow 读序 + 回测纪律，与理论轨同仓对照） |
 | [14-hft-engineering/HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md) | L0–L5 每级交付项目与硬验收指标 |
 | [RASPBERRY-PI5-LABS.md](./projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md) | 树莓派板卡动手清单（A→G 执行序） |
