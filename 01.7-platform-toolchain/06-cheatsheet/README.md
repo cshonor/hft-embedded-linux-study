@@ -17,3 +17,4 @@
 | Linux 侧工具太多搞不清 | [CH4 Linux/GNU](../04-linux-gnu/README.md) |
 | 这段代码为什么在 VS 里编译不过 | [CH5 平台边界](../05-boundary/README.md) |
 | 报错编号看不懂（`C2065` / `LNK2019` / `LNK2005`） | [2.6 错误编号速查](../02-windows-msvc/2.6-错误编号速查.md) |
+| 新 Ubuntu 机器从零装 HFT / eBPF / 嵌入式环境 | [4.6 Ubuntu 搭建 HFT 开发环境](../04-linux-gnu/4.6-Ubuntu搭建HFT开发环境.md) + [6.1 ⑪](./6.1-速查表.md) |

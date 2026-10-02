@@ -15,6 +15,7 @@
 | [4.3](./4.3-实测gdb.md) | **一次完整的 gdb 会话** | 断点、条件断点、`info locals`、`x/10w` 裸内存、`bt` 调用栈；与 lldb 命令并列对照 | ✅ Pi 实测 |
 | [4.4](./4.4-ELF与DWARF.md) | **调试信息就住在 ELF 里** | `-g` 之后文件真的变大；`.debug_info` / `.debug_line` 各管什么；ELF、动态链接器、glibc 三个角色 | ✅ Pi 实测 |
 | [4.5](./4.5-Linux上写C用什么.md) | **没有 VS 的日子** | VS Code / CLion / Neovim+clangd / 纯命令行四选一；为什么现阶段建议先用命令行 | 建议型 |
+| [4.6](./4.6-Ubuntu搭建HFT开发环境.md) | **从零配一台 HFT 开发机** | 一键 apt 清单（C/C++ + 低延迟 + eBPF + 交叉编译）；noble 无独立 bpftool 包的坑与软链解法；BTF 验证 | ✅ Lenovo noble 实测 |
 
 ## 为什么要单独给 Linux 一整章
 
@@ -33,7 +34,8 @@
 
 | 环境 | 具体规格 | 用途 |
 |---|---|---|
-| **Raspberry Pi 5**（`wzp@192.168.31.109`） | Debian 13 trixie，kernel 6.18.39 aarch64，gcc 14.2.0 / clang 19.1.7 / gdb 16.3 / cmake 3.31.6 / glibc 2.41 | **主战场**。本章所有实测输出都出自这里 |
+| **Raspberry Pi 5**（`wzp@192.168.31.109`） | Debian 13 trixie，kernel 6.18.39 aarch64，gcc 14.2.0 / clang 19.1.7 / gdb 16.3 / cmake 3.31.6 / glibc 2.41 | **主战场（arm64）**。4.1–4.4 的实测输出出自这里；内核模块实验条件完备 |
+| **Lenovo V15 G5 IRL** | Ubuntu 24.04 noble，kernel 6.8.0-146 x86_64，gcc 13.3.0 / clang 18.1.3 / gdb 15.1 / perf 7.0.14 / bpftool 7.7.0 / **BTF ✅** | **x86 HFT 机 + eBPF CO-RE**（Pi 缺 BTF 跑不了的那部分在这里做）。装机过程见 [4.6](./4.6-Ubuntu搭建HFT开发环境.md) |
 | WSL（可选） | Windows 上的 Linux 子系统 | 若你日后回到 Windows 机器，这是最接近原生 Linux 的路径 |
 
 > Pi 上有 **gcc 和 clang 两个编译器并存**，这一点比 Mac 还方便：
