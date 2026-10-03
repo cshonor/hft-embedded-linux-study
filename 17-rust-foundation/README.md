@@ -55,7 +55,7 @@ Rust 学习笔记仓库：**以看书、整理笔记为主**；The Book 作语�
 | [`01-ER/`](01-ER/ER-本书目录.md) | Effective Rust；每 Item 一个目录（`README.md` + 同级 `*.md` 笔记 + 可选 `demo/`），见 [`01-ER/目录结构.md`](01-ER/目录结构.md) |
 | [`02-RFR/`](02-RFR/RFR-本书目录.md) | Rust for Rustaceans 深度笔记（`Chapter-01-*`～`13-*`） |
 | [`03-DeepRustStdLib/`](03-DeepRustStdLib/README.md) | **标准库进阶**（ER 之后、Nomicon 之前） |
-| [`04-Rust-Nomicon/`](04-Rust-Nomicon/README.md) | Nomicon 笔记；`Stable/` 与 `Nightly/` 对照 |
+| [`04-Rust-Nomicon/`](04-Rust-Nomicon/README.md) | Nomicon 笔记（unsafe 全书 10 章：`01_Safe_Unsafe`～`10_NoStd`） |
 | [`05-Async-Concurrency-Network/`](05-Async-Concurrency-Network/README.md) | **01-atomic** · **02-async_tokio** · **03-rust_network_programming**（按序读） |
 | [`06_Compilers-and-LLVM-Learning/`](06_Compilers-and-LLVM-Learning/README.md) | 编译器四书 · 01～04（含 [Learn LLVM 17](./06_Compilers-and-LLVM-Learning/04_Learn-LLVM-17/README.md) + `llvm_insight_lab`） |
 | [`07-Programming-WebAssembly-with-Rust/`](07-Programming-WebAssembly-with-Rust/README.md) | **Kevin Hoffman** — Rust → **Wasm**（`07_WebAssembly`）；[三层练手](07-Programming-WebAssembly-with-Rust/三层学习架构.md) · 衔接 **06** IR · **HFT** |
