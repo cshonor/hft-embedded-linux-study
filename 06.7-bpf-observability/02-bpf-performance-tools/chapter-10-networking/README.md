@@ -44,6 +44,6 @@
 - 下一章：[chapter-11-安全.md](../chapter-11-security/)
 - XDP 延伸：[note-XDP与tc-BPF.md](../note-XDP与tc-BPF.md)
 - 检查清单：[chapter-03-性能分析.md](../chapter-03-performance-analysis/)
-- SysPerf 网络：[chapter-10-network](../../../06.6-systems-performance/chapter-10-network/)
+- SysPerf 网络：[chapter-10-network](../../../06.6.5-systems-performance/chapter-10-network/)
 - DPDK：[13-dpdk](../../../13-dpdk/)
 - CSAPP 网络：[chapter-11-network-programming](../../../02-computer-systems/chapter-11-network-programming/)

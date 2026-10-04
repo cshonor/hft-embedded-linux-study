@@ -87,7 +87,7 @@ CPU 看 VA → MMU(+页表/TLB) → PA → L1/L2/LLC → DRAM（或再经 OS 从
 - 行情/订单：**socket 也是文件描述符** — `epoll` 等多路复用（→ [Ch 10–11](../../chapter-10-system-io/)、[12-UNP](../../../03.5-unix-network-api/)）
 - 配置文件：启动时读一次，不在热路径 `open`
 
-→ OS 专章：[06.6-Systems-Performance Ch 3](../../../06.6-systems-performance/chapter-03-operating-systems/)
+→ OS 专章：[06.6-Systems-Performance Ch 3](../../../06.6.5-systems-performance/chapter-03-operating-systems/)
 
 ### 自测题
 

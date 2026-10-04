@@ -6,14 +6,14 @@
 > **内核：** 5.15（Ubuntu 22.04 测试基准）  
 > **代码：** [github.com/lizrice/learning-ebpf](https://github.com/lizrice/learning-ebpf)（含 libbpf 子模块 + Lima VM 配置）  
 > **本地电子书：** LEARNING-EBPF-BILINGUAL.pdf（GPT 中英双语版，551 页）— 版权原因不入库，存 `~/Desktop/hft-local-books/`  
-> **定位：** [06.7-bpf-observability/](../) 模块的**现代原理书** — 补 [BPF Performance Tools](../02-bpf-performance-tools/BPF-PERFORMANCE-TOOLS-EVAL.md) 缺的 libbpf/CO-RE/验证器/程序类型  
-> **姊妹对比：** [EBPF-BOOKS-COMPARISON.md](../EBPF-BOOKS-COMPARISON.md)
+> **定位：** [06.7-bpf-observability/](../06.7-bpf-observability/) 模块的**现代原理书** — 补 [BPF Performance Tools](../06.7-bpf-observability/02-bpf-performance-tools/BPF-PERFORMANCE-TOOLS-EVAL.md) 缺的 libbpf/CO-RE/验证器/程序类型  
+> **姊妹对比：** [EBPF-BOOKS-COMPARISON.md](../06.7-bpf-observability/EBPF-BOOKS-COMPARISON.md)
 
 ---
 
 ## 章节笔记（已全部完成，基于 GPT 双语 PDF 逐章精读）
 
-全部 11 章笔记位于本目录，与 [BPF Performance Tools](../02-bpf-performance-tools/) 同一套目录约定：
+全部 11 章笔记位于本目录，与 [BPF Performance Tools](../06.7-bpf-observability/02-bpf-performance-tools/) 同一套目录约定：
 
 ```
 chapter-XX-english-slug/
@@ -56,7 +56,7 @@ chapter-XX-english-slug/
 ## 一句话结论
 
 **现代 eBPF 入门首选** — 从零理解 eBPF 全貌，覆盖 libbpf + CO-RE 现代开发栈。  
-读法：**先本书建原理框架 → 再 [BPF Performance Tools](../02-bpf-performance-tools/BPF-PERFORMANCE-TOOLS-EVAL.md) 练工具**。
+读法：**先本书建原理框架 → 再 [BPF Performance Tools](../06.7-bpf-observability/02-bpf-performance-tools/BPF-PERFORMANCE-TOOLS-EVAL.md) 练工具**。
 
 ---
 
@@ -73,7 +73,7 @@ chapter-XX-english-slug/
 
 ## 为什么需要这本书（补 BPF 之巅的洞）
 
-[BPF Performance Tools](../02-bpf-performance-tools/BPF-PERFORMANCE-TOOLS-EVAL.md)（2019）停在 BCC Python 脚本范式，缺：
+[BPF Performance Tools](../06.7-bpf-observability/02-bpf-performance-tools/BPF-PERFORMANCE-TOOLS-EVAL.md)（2019）停在 BCC Python 脚本范式，缺：
 - **CO-RE**（Compile Once, Run Everywhere）— 跨内核版本可移植
 - **libbpf** — C 原生开发框架，替代 BCC 重编译开销
 - **BTF** — BPF Type Format，CO-RE 的基础
@@ -148,4 +148,4 @@ BPF Performance Tools   练工具谱系（BCC/bpftrace 看什么指标、火焰�
 | 英文版 *Learning eBPF* | ✅ 可选 — O'Reilly 平台在线版更新及时 |
 | 代码 | 免费 — GitHub 仓库，跟随章节目录 |
 
-**优先级：** 在 [BPF Performance Tools](../02-bpf-performance-tools/BPF-PERFORMANCE-TOOLS-EVAL.md) 之后入；如果只想买一本 eBPF 书且要从零学，**先买这本**。
+**优先级：** 在 [BPF Performance Tools](../06.7-bpf-observability/02-bpf-performance-tools/BPF-PERFORMANCE-TOOLS-EVAL.md) 之后入；如果只想买一本 eBPF 书且要从零学，**先买这本**。

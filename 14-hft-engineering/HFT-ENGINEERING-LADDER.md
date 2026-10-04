@@ -45,10 +45,10 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 |----|---------|---------|---------|---------------------|-----------|
 | **L0** | [`01` C 语言](../01-c-language/) · [`02` CSAPP](../02-computer-systems/) · [`03.6` 调试](../03.6-userspace-debugging/) | 指针算术、struct 布局、堆分配、ABI | 自实现 `malloc` + 对齐/合并 benchmark | gdb 看 struct 布局 · ASan/UBSan · valgrind · core dump —— `03.6` | 能解释 chunk header / bins / `M_MMAP_THRESHOLD` |
 | **L1** | [`03` TLPI](../03-linux-userspace-api/) · [`03.5` UNP](../03.5-unix-network-api/) · [`04` C++](../04-cpp/) · [`03.6` 调试](../03.6-userspace-debugging/) | TLPI：fd、线程、mmap、信号、epoll | 多线程 TCP echo server（epoll ET + 线程池） | `strace -T -tt` · gdb 多线程 · `lsof` · TSan —— `03.6` | p99 < 200μs；能画出请求完整路径 |
-| **L2** | [`05` LKD](../05-linux-kernel/) · [`05.5`](../05.5-modern-kernel/) · [`06` MM](../06-linux-mm/) · [`06.5`](../06.5-modern-mm/) · [`05.6` 内核调试](../05.6-kernel-debugging/) · [`06.6` SysPerf](../06.6-systems-performance/) | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | ftrace · KASAN/KCSAN · `crash`/KGDB · `perf stat` · smaps/numastat —— `05.6` + `06.6` | 能用火焰图 + `perf stat` 说清瓶颈归属 |
+| **L2** | [`05` LKD](../05-linux-kernel/) · [`05.5`](../05.5-modern-kernel/) · [`06` MM](../06-linux-mm/) · [`06.5`](../06.5-modern-mm/) · [`05.6` 内核调试](../05.6-kernel-debugging/) · [`06.6` SysPerf](../06.6.5-systems-performance/) | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | ftrace · KASAN/KCSAN · `crash`/KGDB · `perf stat` · smaps/numastat —— `05.6` + `06.6` | 能用火焰图 + `perf stat` 说清瓶颈归属 |
 | **L3** | [`11` TCP/IP](../11-tcpip-protocols/) · [`12` 内核网](../12-kernel-networking/) · [`12.5` 现代网络](../12.5-modern-networking/) · [`11.5` 抓包](../11.5-wireshark-packet-analysis/) | 组播、UDP、socket 选项、NAPI | UDP 组播行情接收器（含丢包统计） | tcpdump/Wireshark · `ss -tin` · `ethtool -S` · dropwatch · `nstat` —— `11.5` + `06.7` | 10 万 pps 下 **零丢包**，能说出丢包在哪一层 |
-| **L4** | [`15` 体系结构](../15-computer-architecture/) · [`07` ARM64](../07-arm-architecture/) · [`02` CSAPP](../02-computer-systems/) · [`06.6` SysPerf](../06.6-systems-performance/) · [`06.7` BPF](../06.7-bpf-observability/) · [ch07 无锁](./chapter-07-lockless-data-structures-memory-layout/README.md) | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | **`perf c2c`** · TSan · bpftrace · `taskset`/`numactl` 验证 —— `06.6` + `06.7` | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
-| **L5** | [`13` DPDK](../13-dpdk/) · [本模块 ch06/ch09/ch13](./README.md) · [`19` 微观结构](../19-markets-microstructure/) · [`06.6` SysPerf](../06.6-systems-performance/) · [`06.7` BPF](../06.7-bpf-observability/) | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 全链路埋点 histogram · bpftrace 分段计时 · PTP 比对 · `testpmd` —— `06.6` + `06.7` + `13` | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
+| **L4** | [`15` 体系结构](../15-computer-architecture/) · [`07` ARM64](../07-arm-architecture/) · [`02` CSAPP](../02-computer-systems/) · [`06.6` SysPerf](../06.6.5-systems-performance/) · [`06.7` BPF](../06.7-bpf-observability/) · [ch07 无锁](./chapter-07-lockless-data-structures-memory-layout/README.md) | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | **`perf c2c`** · TSan · bpftrace · `taskset`/`numactl` 验证 —— `06.6` + `06.7` | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
+| **L5** | [`13` DPDK](../13-dpdk/) · [本模块 ch06/ch09/ch13](./README.md) · [`19` 微观结构](../19-markets-microstructure/) · [`06.6` SysPerf](../06.6.5-systems-performance/) · [`06.7` BPF](../06.7-bpf-observability/) | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 全链路埋点 histogram · bpftrace 分段计时 · PTP 比对 · `testpmd` —— `06.6` + `06.7` + `13` | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
 
 > **调试不是开发完之后的收尾，是与开发并列的必修项。**
 > 「调试技术」列的工具就是「硬验收指标」列的测量手段——**没有前者，后者的数据一个都拿不出来**。
@@ -157,7 +157,7 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 
 ## 五、L2 · 内核机制与内存
 
-> **对应模块：** [`05` LKD](../05-linux-kernel/) · [`05.5` 现代内核](../05.5-modern-kernel/) · [`05.6` 内核调试](../05.6-kernel-debugging/) · [`06` Gorman MM](../06-linux-mm/) · [`06.5` 现代 MM](../06.5-modern-mm/) · [`06.6` SysPerf](../06.6-systems-performance/)（perf 方法论）
+> **对应模块：** [`05` LKD](../05-linux-kernel/) · [`05.5` 现代内核](../05.5-modern-kernel/) · [`05.6` 内核调试](../05.6-kernel-debugging/) · [`06` Gorman MM](../06-linux-mm/) · [`06.5` 现代 MM](../06.5-modern-mm/) · [`06.6` SysPerf](../06.6.5-systems-performance/)（perf 方法论）
 
 ### 调试技术（与开发同权重）
 
@@ -170,7 +170,7 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 | `perf stat` | cache miss / TLB miss / 缺页 | `perf stat -e cache-misses,dTLB-load-misses` |
 
 > **模块：** [`05.6` 内核调试](../05.6-kernel-debugging/)（printk / Kprobes / KASAN / KGDB / Ftrace / Lockdep）
-> · [`06.6` Systems Performance](../06.6-systems-performance/)（perf 方法论）
+> · [`06.6` Systems Performance](../06.6.5-systems-performance/)（perf 方法论）
 
 ### 必须吃透的六个机制
 
@@ -269,7 +269,7 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 > ⚠️ **无锁代码的 bug 用 printf 调不出来**——加日志就改变了时序。
 > 必须用 TSan + `perf c2c` + 离线 core dump 三件套。
 >
-> **模块：** [`06.6` Systems Performance](../06.6-systems-performance/) · [`06.7` BPF 可观测](../06.7-bpf-observability/)
+> **模块：** [`06.6` Systems Performance](../06.6.5-systems-performance/) · [`06.7` BPF 可观测](../06.7-bpf-observability/)
 
 这是**唯一别人替代不了你**的一级。前面三级是通用系统能力，这一级是 HFT 专属。
 

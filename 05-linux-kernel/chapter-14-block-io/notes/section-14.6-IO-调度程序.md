@@ -159,7 +159,7 @@ CFQ 给**时间片**，但设备吞吐会波动（GC、磨损均衡、内部队�
 | **`/sys/block/*/queue/scheduler`** | 确认当前挂的是哪个 |
 | **`blktrace` + `blkparse`** | 拆解块层各阶段耗时（Q→G→I→D→C） |
 
-→ [06.6 SysPerf Ch9 §9.4](../../../06.6-systems-performance/chapter-09-disks/notes/section-9.4-硬件与软件架构.md) · [Ch15 bpf biolatency](../../../06.6-systems-performance/chapter-15-bpf/)
+→ [06.6 SysPerf Ch9 §9.4](../../../06.6.5-systems-performance/chapter-09-disks/notes/section-9.4-硬件与软件架构.md) · [Ch15 bpf biolatency](../../../06.6.5-systems-performance/chapter-15-bpf/)
 
 
 

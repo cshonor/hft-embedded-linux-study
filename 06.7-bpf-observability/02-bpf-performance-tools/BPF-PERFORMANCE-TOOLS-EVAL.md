@@ -14,7 +14,7 @@
 ## 一句话结论
 
 **eBPF 工具谱系百科全书** — Brendan Gregg 把"用 BPF 看什么指标"讲到了极致。  
-本模块主书，**按 [OUTLINE](./OUTLINE.md) 的 🔴 标注精读工具章节即可**；原理全貌补 [Learning eBPF](../01-learning-ebpf/LEARNING-EBPF-NOTES.md)。
+本模块主书，**按 [OUTLINE](./OUTLINE.md) 的 🔴 标注精读工具章节即可**；原理全貌补 [Learning eBPF](../../06.6-learning-ebpf/LEARNING-EBPF-NOTES.md)。
 
 ---
 
@@ -43,10 +43,10 @@
 
 1. **无 CO-RE / libbpf** — 现代 eBPF 开发已转向 libbpf + CO-RE（编译一次到处运行），本书 BCC Python 脚本范式在生产中逐渐淘汰
 2. **内核 5.x+ 新特性缺失** — bpf_iter、struct ops、BTF CO-RE、links/freplace、bpf_timer 等都没讲
-3. **不教你写 eBPF 程序** — 纯工具使用；想自己写程序看 [Learning eBPF](../01-learning-ebpf/LEARNING-EBPF-NOTES.md)
+3. **不教你写 eBPF 程序** — 纯工具使用；想自己写程序看 [Learning eBPF](../../06.6-learning-ebpf/LEARNING-EBPF-NOTES.md)
 4. **部分工具已演进** — bpftrace 语法、BCC 工具名有变动，实际使用以最新版为准
 
-> 这些局限正是引入 [Learning eBPF](../01-learning-ebpf/LEARNING-EBPF-NOTES.md) 作为现代补充的原因。
+> 这些局限正是引入 [Learning eBPF](../../06.6-learning-ebpf/LEARNING-EBPF-NOTES.md) 作为现代补充的原因。
 
 ---
 
@@ -73,7 +73,7 @@ Ch 1–2 → Ch 4–5 → Ch 6 → Ch 10 (+ XDP note) → 附录 A/B
 | 书 | 视角 | 互补点 |
 |----|------|--------|
 | **BPF Performance Tools**（本书） | 用工具看指标 | 工具谱系 + 性能分析方法论 |
-| [Learning eBPF](../01-learning-ebpf/LEARNING-EBPF-NOTES.md) | 写 eBPF 程序 | libbpf/CO-RE 现代栈、验证器、程序类型 |
+| [Learning eBPF](../../06.6-learning-ebpf/LEARNING-EBPF-NOTES.md) | 写 eBPF 程序 | libbpf/CO-RE 现代栈、验证器、程序类型 |
 | Linux Observability with BPF | 运维观测案例 | 更老，与本书重叠，不必入 |
 
 **协同读法：** 本书练工具（怎么用）→ Learning eBPF 补原理与现代开发栈（怎么写）。

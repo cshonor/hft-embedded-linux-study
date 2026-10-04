@@ -37,7 +37,7 @@
 
 ## 交叉引用
 
-- `06.6-systems-performance/`：系统级性能调优
+- `06.6.5-systems-performance/`：系统级性能调优
 - `05.6-kernel-debugging/`：内核调试工具体系
 - `14-hft-engineering/chapter-09-latency-measurement-benchmarking/`：本 ch03 是它的实操方法基础
 - `projects/P10-hft-prototype/docs/benchmark.md`：用 ch03 的报告模板落地延迟数据

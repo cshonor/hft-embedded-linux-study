@@ -48,4 +48,4 @@
 - libc 断栈：[chapter-13-应用程序.md](../chapter-13-applications/)
 - BCC 调试：[chapter-04-BCC.md](../chapter-04-bcc/)
 - 方法论：[chapter-03-性能分析.md](../chapter-03-performance-analysis/)
-- SysPerf 基准：[chapter-12-benchmarking](../../../06.6-systems-performance/chapter-12-benchmarking/)
+- SysPerf 基准：[chapter-12-benchmarking](../../../06.6.5-systems-performance/chapter-12-benchmarking/)

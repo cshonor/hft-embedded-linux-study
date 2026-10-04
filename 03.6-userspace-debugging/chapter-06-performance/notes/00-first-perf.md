@@ -102,7 +102,7 @@ perf 本体在本仓库的验证环境跑不了（容器没有 PMU 权限），
 - 前置：[1.0 学前篇](../../chapter-01-methodology/notes/00-gcc-first-steps.md)（gcc 七词命令，`-O0` 与 `-O2` 对性能结论的影响见 6.1 踩坑）
 - 展开：[6.1 perf 基础采样](01-perf-basics.md)（record/report 实操）、[6.2 火焰图](02-flamegraph.md)（把折叠栈画成图）
 - demo：`code/c6_1_cache_miss.c`（访存顺序 11 倍差距）、`code/c6_2_self_sampler.c`（60 行自制采样器）
-- 深入：[06.6 Systems Performance](../../../06.6-systems-performance/)（系统级性能分析的主战场）
+- 深入：[06.6 Systems Performance](../../../06.6.5-systems-performance/)（系统级性能分析的主战场）
 
 ---
 

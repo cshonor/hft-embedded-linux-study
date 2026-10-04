@@ -48,5 +48,5 @@
 - 上一章：[chapter-15-容器](../chapter-15-containers/)
 - 下一章：[chapter-17-其他BPF工具](../chapter-17-other-tools/)
 - CPU stolen / runqlat：[chapter-06-cpus](../chapter-06-cpus/)
-- 云/虚拟化：[06.6-systems-performance](../../../06.6-systems-performance/)
+- 云/虚拟化：[06.6.5-systems-performance](../../../06.6.5-systems-performance/)
 - Hennessy 虚拟化：[15-computer-architecture](../../../15-computer-architecture/)

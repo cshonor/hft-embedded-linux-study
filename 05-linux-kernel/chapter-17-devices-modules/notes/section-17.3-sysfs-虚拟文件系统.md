@@ -159,7 +159,7 @@ Documentation/ABI/ 下的四个等级：
 > Ch 5.6 讲过"添加系统调用的替代方案"——**sysfs 就是那个首选替代**。
 > 一个内核参数的读写，用 sysfs 实现比加系统调用简单一个数量级，且不侵占 ABI。
 
-→ [06.6 SysPerf Ch9 scheduler](../../../06.6-systems-performance/chapter-09-disks/notes/section-9.4-硬件与软件架构.md) · [Ch 5](../../chapter-05-system-calls/) **优先 sysfs 而非新 syscall**
+→ [06.6 SysPerf Ch9 scheduler](../../../06.6.5-systems-performance/chapter-09-disks/notes/section-9.4-硬件与软件架构.md) · [Ch 5](../../chapter-05-system-calls/) **优先 sysfs 而非新 syscall**
 
 
 

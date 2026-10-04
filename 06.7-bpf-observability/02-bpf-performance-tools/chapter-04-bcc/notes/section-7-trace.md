@@ -51,7 +51,7 @@ trace 'sock_alloc "%d", 1' 'r::sock_release "%d", -1'
 | 锁 | mutex_lock 成功路径 | mutex_unlock | 持有未释放（死锁前兆） |
 | 内存 | c:malloc | c:free | 泄漏字节数（配 size 参数） |
 
-注意配对的坑：**中途退出的进程**（exit 时内核批量清理）会让对账暂时不归零——对账要按 PID 分列或排除短命进程，否则误报。这与 [entry/exit 配对 map 泄漏](../../../01-learning-ebpf/chapter-10-programming/) 是同构问题。
+注意配对的坑：**中途退出的进程**（exit 时内核批量清理）会让对账暂时不归零——对账要按 PID 分列或排除短命进程，否则误报。这与 [entry/exit 配对 map 泄漏](../../../../06.6-learning-ebpf/chapter-10-programming/) 是同构问题。
 
 ### 其他
 

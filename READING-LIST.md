@@ -14,9 +14,19 @@
 
 ---
 
+## 0. Learning eBPF — Liz Rice
+
+> 笔记目录：[06.6-learning-ebpf/](./06.6-learning-ebpf/)
+
+> eBPF 原理入门：map、验证器、程序/附加类型、libbpf + CO-RE 现代开发栈。
+> **先于下面 ## 1 阅读**（技术前置：会写探针，再学观测什么）——也可以与 ## 1 平行，
+> 但 ## 8（BPT）必须排在这两本之后（它是前两者的交汇应用）。
+
+---
+
 ## 1. Systems Performance: Enterprise and the Cloud 2nd — Brendan Gregg
 
-> 笔记目录：[06.6-systems-performance/](./06.6-systems-performance/)
+> 笔记目录：[06.6.5-systems-performance/](./06.6.5-systems-performance/)
 
 > **建议前置：** [02-computer-systems](./02-computer-systems/) 地基篇（Ch4–6/8–9/12）+ [19-Hennessy](./15-computer-architecture/) Ch2。  
 > 性能调优总纲：perf、NUMA、软中断、网卡调优 — **在懂 cache/进程/锁之后再读，事半功倍**。
@@ -239,7 +249,7 @@
 
 > 笔记目录：[06.7-bpf-observability/](./06.7-bpf-observability/)
 
-> eBPF、XDP 小包过滤、内核观测。**紧接 [06.6-Systems-Performance](./06.6-systems-performance/) 阅读**（Gregg 性能双书第二本；不必等内核/网络全书）。
+> eBPF、XDP 小包过滤、内核观测。**紧接 [## 0 Learning eBPF](./06.6-learning-ebpf/) 与 [## 1 Systems Performance](./06.6.5-systems-performance/) 阅读**（Gregg 性能双书第二本；前两者的交汇应用，不必等内核/网络全书）。
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|

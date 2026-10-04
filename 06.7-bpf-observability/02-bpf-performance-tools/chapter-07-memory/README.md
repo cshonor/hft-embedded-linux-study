@@ -57,6 +57,6 @@
 - 磁盘 I/O：[chapter-09-磁盘IO.md](../chapter-09-disk-io/)
 - 内核内存工具：[chapter-14-kernel](../chapter-14-kernel/)
 - 方法论：[chapter-03-性能分析.md](../chapter-03-performance-analysis/)
-- SysPerf 内存：[chapter-07-memory](../../../06.6-systems-performance/chapter-07-memory/)
+- SysPerf 内存：[chapter-07-memory](../../../06.6.5-systems-performance/chapter-07-memory/)
 - CSAPP 虚拟内存：[chapter-09-virtual-memory](../../../02-computer-systems/chapter-09-virtual-memory/)
 - MM 理论：[06-linux-mm](../../../06-linux-mm/)

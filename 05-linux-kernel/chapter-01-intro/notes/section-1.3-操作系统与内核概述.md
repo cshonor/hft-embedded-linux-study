@@ -47,7 +47,7 @@
 > 内核倾向只提供机制，策略交给用户态（调度有 `nice`/`SCHED_FIFO` 旋钮；缓存替换内核只给 `posix_fadvise` 提示）。**HFT 的立场是反过来**——把策略从内核/OS 手里夺回来自己定（绑核、轮询、自管内存），用的正是内核提供的机制接口。
 
 → 自制 OS 对照：01 Day 5 GDT/IDT · Day 20 INT 0x40 API  
-→ [06.6 SysPerf Ch3 术语](../../../06.6-systems-performance/chapter-03-operating-systems/notes/section-3.1-核心术语.md)
+→ [06.6 SysPerf Ch3 术语](../../../06.6.5-systems-performance/chapter-03-operating-systems/notes/section-3.1-核心术语.md)
 
 
 

@@ -56,7 +56,7 @@ sys_read() ──► VFS（统一语义）
 
 > 分层心智模型的价值：**把"IO 慢"这个模糊陈述拆成 syscall 层 / VFS 层 / 具体实现层三选一**，再选对工具。与 06.6 SysPerf Ch8 的 USE 方法（每层都问利用率/饱和度/错误）是同一件事。
 
-→ [06.6 SysPerf Ch8 VFS 追踪](../../../06.6-systems-performance/chapter-08-file-systems/notes/section-8.4-文件系统架构与特性.md)
+→ [06.6 SysPerf Ch8 VFS 追踪](../../../06.6.5-systems-performance/chapter-08-file-systems/notes/section-8.4-文件系统架构与特性.md)
 
 
 

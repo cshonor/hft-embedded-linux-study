@@ -12,7 +12,7 @@
 
 > **后续：**
 > - [04-cpp](../04-cpp/)（C++，调试多态 / 模板 / STL 代码时回来查）
-> - [06.6-systems-performance](../06.6-systems-performance/)（性能分析，从"改对"转向"改快"）
+> - [06.6.5-systems-performance](../06.6.5-systems-performance/)（性能分析，从"改对"转向"改快"）
 > - [06.7-bpf-observability](../06.7-bpf-observability/)（eBPF 动态追踪，从"调试"转向"可观测"）
 
 ---

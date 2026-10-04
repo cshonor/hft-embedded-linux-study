@@ -60,5 +60,5 @@
 - 上一章：[chapter-07-内存](../chapter-07-memory/)（页缓存即内存：CACHED_MB / bufgrow 解释 free）
 - 下一章：[chapter-09-磁盘IO](../chapter-09-disk-io/)（物理 I/O：biolatency/biosnoop；readahead 的 SSD 案例续讲）
 - VFS 教学 OS：thirty-days-os day-18-dir
-- SysPerf 文件系统：[chapter-08-file-systems](../../../06.6-systems-performance/chapter-08-file-systems/)（若存在）
+- SysPerf 文件系统：[chapter-08-file-systems](../../../06.6.5-systems-performance/chapter-08-file-systems/)（若存在）
 - 方法论：[chapter-03-性能分析](../chapter-03-performance-analysis/)

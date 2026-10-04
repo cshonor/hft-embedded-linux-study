@@ -16,17 +16,20 @@
 | **05** · **06**（**16** 可后） ·（+ **05.5** **05.6** **06.5** 现代补充） | linux-kernel · linux-mm（→ ULK 深度） | 内核共同基础 |
 | **07**–**10** | ARM · 构建 · 驱动/DT · 飞控 | 嵌入式支线 |
 | **11** · **11.5** · **12** · **12.5** · **13** | TCP/IP · 抓包 · 内核网络 · 现代网络 · DPDK | 网络纵深 |
-| **06.6** · **06.7** | systems-performance · bpf-observability | 性能观测 |
+| **06.6** · **06.6.5** · **06.7** | learning-ebpf · systems-performance · bpf-observability | 性能观测 |
 | **14** · **17** · **18** · **19** | hft-engineering · rust · rust-quant · markets | HFT 上层 |
 
-> 📌 **`06.6` / `06.7` 编号虽是 `.6`/`.7`，却排在 `13` DPDK 之后读**——性能方法论需要有真实系统可 profile 才有意义，
+> 📌 **`06.6` / `06.6.5` / `06.7` 编号虽是 `.6` 系，却排在 `13` DPDK 之后读**——性能方法论需要有真实系统可 profile 才有意义，
 > 所以编号顺序 ≠ 阅读顺序，此处是唯一例外（详见下节）。
 
-### Gregg 双书 · `06.6` → `06.7`（后置）
+### 性能三书 · `06.6` → `06.6.5` → `06.7`（后置）
 
-| 06.6 systems-performance | 06.7 bpf-observability |
-|------------------------|----------------------|
-| USE/RED、延迟分解、perf/Ftrace | bpftrace/BCC 生产落地 |
+| 06.6 learning-ebpf | 06.6.5 systems-performance | 06.7 bpf-observability |
+|--------------------|---------------------------|------------------------|
+| 会写探针：map/验证器/CO-RE | 观测什么：USE/RED、延迟分解、perf/Ftrace | 工具落地：bpftrace/BCC 生产谱系 |
+
+> 顺序逻辑：**先会写（06.6）→ 再知道看什么（06.6.5）→ 最后工具百科（06.7）**。
+> 06.6 与 06.6.5 也可平行互换（SysPerf 不依赖 BPF），但 06.7（BPT）必须压轴——它是前两者的交汇。
 
 **执行顺序：** 先完成 **03–06** 与 **11**–**13** 网络/DPDK，再开 **`06.6` → `06.7`** — 有真实系统可 profile 后再读方法论。
 
@@ -286,7 +289,7 @@
 | [01 C](./01-c-language/) · [02 计算机系统](./02-computer-systems/) | 01–02 |
 | [03 用户态](./03-linux-userspace-api/) · [05 内核](./05-linux-kernel/) · [06 MM](./06-linux-mm/) | 03 · 05 · 06 |
 | [07–10 嵌入式](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–10) | 07–10 |
-| [11–13 网络](./11-tcpip-protocols/) · [06.6–06.7 性能](./06.6-systems-performance/) · [14 HFT](./14-hft-engineering/) | 11–13 · 06.6/06.7 · 14 |
+| [11–13 网络](./11-tcpip-protocols/) · [06.6–06.7 性能](./06.6.5-systems-performance/) · [14 HFT](./14-hft-engineering/) | 11–13 · 06.6/06.7 · 14 |
 
 → [README.md](./README.md) · [README.md](./README.md)
 
@@ -388,7 +391,7 @@
 |------|----------|
 | C / 指针 / 结构体 | [01](./01-c-language/) · [02](./02-computer-systems/) · [04](./03-linux-userspace-api/) |
 | 进程 / VM / 中断 / 同步 | [07](./05-linux-kernel/) · [09](./06-linux-mm/) |
-| 性能 / 绑核 / BPF | [06.6](./06.6-systems-performance/) · [06.7](./06.7-bpf-observability/) · [14](./14-hft-engineering/) |
+| 性能 / 绑核 / BPF | [06.6](./06.6.5-systems-performance/) · [06.7](./06.7-bpf-observability/) · [14](./14-hft-engineering/) |
 | 网络 / 零拷贝思想 | [04/M2](./04-cpp/M2-cpp-network-programming/) · [12](./12-kernel-networking/) · [13](./13-dpdk/) |
 
 ### 岗位定位（支线完成后）

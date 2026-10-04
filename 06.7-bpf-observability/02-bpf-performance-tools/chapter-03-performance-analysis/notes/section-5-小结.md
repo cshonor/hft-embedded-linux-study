@@ -45,7 +45,7 @@ BCC 11 工具清单（execsnoop→…→profile）── 定位具体层
 2. 事件驱动复盘：昨日 P99 尖刺 → runqlat/profile/biosnoop/tcpretrans 四件套按序下钻。
 3. 资源盲区盘点：按 USE 资源图核对监控覆盖，补齐饱和度类指标（队列、重传、runq）。
 
-落地建议 1 的关键是**存档对比**：单轮清单只有瞬时值，"开盘前后各一轮"的 diff 才能暴露变化（开盘后 runq 尖刺、行情风暴期 retrans 飙升）。这与 sar 趋势定位、BPF 现场下钻的分工（见 [14-SysPerf Ch4 观测工具](../../../../06.6-systems-performance/chapter-04-observability-tools/)）同构。
+落地建议 1 的关键是**存档对比**：单轮清单只有瞬时值，"开盘前后各一轮"的 diff 才能暴露变化（开盘后 runq 尖刺、行情风暴期 retrans 飙升）。这与 sar 趋势定位、BPF 现场下钻的分工（见 [14-SysPerf Ch4 观测工具](../../../../06.6.5-systems-performance/chapter-04-observability-tools/)）同构。
 
 ## 自测
 

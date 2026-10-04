@@ -86,7 +86,7 @@ b.trace_print()                                   # 用户态：Python，收事�
 - `opensnoop -x` 是发现**配置漂移**的利器：容器化交易组件挂载路径变化后，反复 ENOENT 的重试循环会直接烧 CPU 并拖慢初始化
 - ERR 列是"免费的健康度信号"：定期抓一段 `-x` 输出做 diff，EMFILE 增长 = fd 泄漏前兆（交易网关的常见慢性病）
 - bpftrace（原型验证）→ BCC/libbpf（产品化）的演进路径，对应 HFT 观测工具的迭代纪律：先证明指标有用，再工程化常驻
-- 交叉引用：BCC 内部机制（运行时编译、libbcc 架构）详解见 [Ch4 BCC](../../chapter-04-bcc/) 与 [Learning eBPF Ch5](../../../01-learning-ebpf/chapter-05-core-btf-libbpf/)
+- 交叉引用：BCC 内部机制（运行时编译、libbcc 架构）详解见 [Ch4 BCC](../../chapter-04-bcc/) 与 [Learning eBPF Ch5](../../../../06.6-learning-ebpf/chapter-05-core-btf-libbpf/)
 
 <details>
 <summary>📝 自测题（点击展开）</summary>

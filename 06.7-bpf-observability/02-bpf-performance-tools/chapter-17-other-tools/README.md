@@ -48,5 +48,5 @@
 - BCC 工具源：[chapter-04-BCC.md](../chapter-04-bcc/)
 - bpftrace：[chapter-05-bpftrace.md](../chapter-05-bpftrace/)
 - 容器/K8s：[chapter-15-容器.md](../chapter-15-containers/)
-- SysPerf 监控方法论：[chapter-02-methodologies](../../../06.6-systems-performance/chapter-02-methodologies/)
+- SysPerf 监控方法论：[chapter-02-methodologies](../../../06.6.5-systems-performance/chapter-02-methodologies/)
 - HFT 工程监控：[chapter-09-latency-measurement-benchmarking](../../../14-hft-engineering/chapter-09-latency-measurement-benchmarking/README.md)

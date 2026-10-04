@@ -87,7 +87,7 @@ static long ratelimit_pages = 32;                 /* :68  */
 
 > 注意 `sync()` 是**全系统**刷盘，会把其他文件、其他盘的脏页一起带下去——HFT 里误用 `sync()` 能造成**几百毫秒级**的长尾，绝不能进热路径。
 
-→ [06.6 SysPerf Ch8 FS](../../../06.6-systems-performance/chapter-08-file-systems/) · [Ch7 `vm.dirty_*`](../../../06.6-systems-performance/chapter-07-memory/notes/section-7.6-调优指南.md) · [Ch 14 块 I/O](../../chapter-14-block-io/)
+→ [06.6 SysPerf Ch8 FS](../../../06.6.5-systems-performance/chapter-08-file-systems/) · [Ch7 `vm.dirty_*`](../../../06.6.5-systems-performance/chapter-07-memory/notes/section-7.6-调优指南.md) · [Ch 14 块 I/O](../../chapter-14-block-io/)
 
 
 

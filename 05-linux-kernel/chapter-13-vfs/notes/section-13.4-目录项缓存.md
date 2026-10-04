@@ -42,7 +42,7 @@
 
 > RCU-walk 的设计哲学和 [Ch9 per-VMA lock](../../chapter-09-kernel-sync-intro/notes/section-9.3-并发的原因.md) 同宗：**乐观无锁走到底，发现被改就整趟作废重走**。绝大多数 walk 无人竞争，一次成功；少数冲突方退慢路，全局吞吐大幅提升。
 
-| 观测 | `sar -v` dentry/inode cache — [SysPerf §8.6](../../../06.6-systems-performance/chapter-08-file-systems/notes/section-8.6-观测工具.md)；精确数字看 `/proc/sys/fs/dentry-state`（nr_dentry/nr_unused/…） |
+| 观测 | `sar -v` dentry/inode cache — [SysPerf §8.6](../../../06.6.5-systems-performance/chapter-08-file-systems/notes/section-8.6-观测工具.md)；精确数字看 `/proc/sys/fs/dentry-state`（nr_dentry/nr_unused/…） |
 
 **HFT：** 日志/配置 **冷路径** 才关心 dcache；热路径 **已打开 fd** 或 **`mmap`** 绕过反复路径解析。
 

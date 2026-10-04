@@ -41,7 +41,7 @@
 
 **HFT 对照：** 用户态订单簿用 **红黑树/跳表 O(log n)**；内核 CFS 同理 — **算法层与业务层同一套复杂度语言**。
 
-→ [02-CSAPP 算法复杂度](../../../02-computer-systems/) · [06.6 SysPerf 方法论](../../../06.6-systems-performance/chapter-02-methodologies/)
+→ [02-CSAPP 算法复杂度](../../../02-computer-systems/) · [06.6 SysPerf 方法论](../../../06.6.5-systems-performance/chapter-02-methodologies/)
 
 
 

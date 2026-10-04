@@ -4,7 +4,7 @@
 
 > **文件夹 02** · 知其所以然 — 程序如何在硬件上跑。  
 > **机器级默认架构：** **x86-64 + Linux System V + AT&T gas**（Ch3 起）；**HFT 只练 AT&T，不学 Intel 语法**。Ch4 **Y86-64** 仅为流水线教学子集。ARM 对照 → [07-ARM64](../07-arm-architecture/)。
-> **下一本：** [06.6-Systems-Performance](../06.6-systems-performance/) → [06.7-BPF](../06.7-bpf-observability/) → [14-HFT](../14-hft-engineering/) / [18-Rust](../18-rust-quant/)  
+> **下一本：** [06.6-Systems-Performance](../06.6.5-systems-performance/) → [06.7-BPF](../06.7-bpf-observability/) → [14-HFT](../14-hft-engineering/) / [18-Rust](../18-rust-quant/)  
 > 全链路 → [README.md](../README.md)
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
@@ -70,7 +70,7 @@ Hennessy Ch2（理论）→ CSAPP Ch6（落地）
 Ch 10–11 网络 / epoll
 ```
 
-→ 读完地基再读 [06.6-Systems-Performance](../06.6-systems-performance/) · Hennessy 理论 → [15-computer-architecture](../15-computer-architecture/)
+→ 读完地基再读 [06.6-Systems-Performance](../06.6.5-systems-performance/) · Hennessy 理论 → [15-computer-architecture](../15-computer-architecture/)
 
 ---
 

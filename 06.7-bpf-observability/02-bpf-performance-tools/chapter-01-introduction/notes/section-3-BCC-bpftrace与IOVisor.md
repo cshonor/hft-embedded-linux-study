@@ -25,7 +25,7 @@ BCC 的内核侧是 C，意味着**每次工具启动都要现场把 C 源码编
 - 代价二：**结构体布局绑定编译时的内核版本**——工具与内核版本错位时可能编不过，或更糟：编过了但字段偏移错（CO-RE/BTF 就是为了解决这个，见下）
 - 代价三：LLVM 运行时依赖让 BCC 工具二进制约几十 MB，最小化安装的交易机/嵌入式设备放不下
 
-这就是 bpftrace 也长不大、libbpf+CO-RE 单二进制最终胜出的结构性原因（[Learning eBPF Ch5](../../../01-learning-ebpf/chapter-05-core-btf-libbpf/)：BCC 之弊与 CO-RE 要素）。
+这就是 bpftrace 也长不大、libbpf+CO-RE 单二进制最终胜出的结构性原因（[Learning eBPF Ch5](../../../../06.6-learning-ebpf/chapter-05-core-btf-libbpf/)：BCC 之弊与 CO-RE 要素）。
 
 ## 库的血统
 
@@ -47,7 +47,7 @@ BCC 的内核侧是 C，意味着**每次工具启动都要现场把 C 源码编
 ### HFT 关联
 
 - 现场排障优先级：**BCC 现成工具 → bpftrace 单行/短脚本 → 定制 BCC**。bpftrace 是"问答式"探针，10 秒内回答一个假设；BCC 工具适合挂后台长跑收集
-- 交易机最小化安装的场景（发行版不带 BCC 的重型依赖链）→ 对应 ply 的嵌入式定位思路；现代替代是 libbpf + CO-RE 单二进制（见 [learning-ebpf Ch5](../../../01-learning-ebpf/chapter-05-core-btf-libbpf/)）——静态编译、无运行时编译、跨内核版本可移植，正是交易机部署观测探针的理想形态
+- 交易机最小化安装的场景（发行版不带 BCC 的重型依赖链）→ 对应 ply 的嵌入式定位思路；现代替代是 libbpf + CO-RE 单二进制（见 [learning-ebpf Ch5](../../../../06.6-learning-ebpf/chapter-05-core-btf-libbpf/)）——静态编译、无运行时编译、跨内核版本可移植，正是交易机部署观测探针的理想形态
 - 版本错位风险要写进运维 runbook：**BCC 工具跟着内核升级走**（重装 headers + 重编译），CO-RE 工具跟着 BTF 走（`/sys/kernel/btf/vmlinux` 存在即可）——两类工具的"升级检查项"不同，混在一张表里会漏检
 
 <details>

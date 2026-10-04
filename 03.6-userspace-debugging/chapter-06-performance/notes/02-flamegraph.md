@@ -182,5 +182,5 @@ perf script | stackcollapse-perf.pl | flamegraph.pl > engine_cpu.svg
 ## 交叉引用
 
 - [6.1 perf 基础采样](01-perf-basics.md)
-- [06.6 Systems Performance](../../../06.6-systems-performance/README.md)
+- [06.6 Systems Performance](../../../06.6.5-systems-performance/README.md)
 - [Ch6 性能类](../README.md)

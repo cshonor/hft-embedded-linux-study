@@ -20,7 +20,7 @@ S = \frac{1}{(1 - p) + \frac{p}{k}}
 
 **HFT：** 端到端延迟 = 收包 + 解码 + 策略 + 发单 + **排队/内核/网卡**。用 [14-HFT ch10](../../../14-hft-engineering/chapter-09-latency-measurement-benchmarking/README.md) 或 span 分解找 **最大 p**，再动刀。
 
-→ 方法论：[06.6-Systems-Performance Ch 2 延迟分解](../../../06.6-systems-performance/chapter-02-methodologies/)
+→ 方法论：[06.6-Systems-Performance Ch 2 延迟分解](../../../06.6.5-systems-performance/chapter-02-methodologies/)
 
 ### 1.9.2 并发和并行 (Concurrency and Parallelism)
 

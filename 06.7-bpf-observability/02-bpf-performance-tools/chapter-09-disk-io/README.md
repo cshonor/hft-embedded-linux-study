@@ -50,5 +50,5 @@
 - 下一章：[chapter-10-网络.md](../chapter-10-networking/)
 - 内存/swap：[chapter-07-内存.md](../chapter-07-memory/)
 - 检查清单：[chapter-03-性能分析.md](../chapter-03-performance-analysis/)
-- SysPerf 磁盘：[chapter-09-disks](../../../06.6-systems-performance/chapter-09-disks/)
+- SysPerf 磁盘：[chapter-09-disks](../../../06.6.5-systems-performance/chapter-09-disks/)
 - CSAPP I/O：[chapter-10-system-io](../../../02-computer-systems/chapter-10-system-io/)

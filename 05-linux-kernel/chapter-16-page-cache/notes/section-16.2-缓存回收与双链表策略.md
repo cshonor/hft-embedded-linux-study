@@ -91,7 +91,7 @@ struct lruvec {
 | **`echo 3 > drop_caches`** | 只在**维护窗口**用——它会清空整个页缓存，紧接着必然是缓存冷启动的批量 IO |
 | **cgroup `memory.low`** | 给交易进程留保护水位，让回收录入优先从同 cgroup 的日志/回放进程身上拿 |
 
-→ **Ch 12** 物理页回收 · [Ch 17 页/dcache 回收 slab 视角](../../chapter-17-devices-modules/) · [06.6 Ch7 内存调优](../../../06.6-systems-performance/chapter-07-memory/notes/section-7.6-调优指南.md)
+→ **Ch 12** 物理页回收 · [Ch 17 页/dcache 回收 slab 视角](../../chapter-17-devices-modules/) · [06.6 Ch7 内存调优](../../../06.6.5-systems-performance/chapter-07-memory/notes/section-7.6-调优指南.md)
 
 
 

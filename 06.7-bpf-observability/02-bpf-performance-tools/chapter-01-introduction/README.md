@@ -5,7 +5,7 @@
 
 > 本章定位：**全书导论** — 术语（跟踪/采样/可观测性）、前端格局（BCC/bpftrace/ply）、两个上手工具（execsnoop/biolatency）与两个真实排障故事、插桩选型（动态 kprobes/uprobes vs 静态 tracepoint/USDT）、同一工具的两副面孔（bpftrace 版 opensnoop vs BCC 版）。技术细节在 [Ch 2](../chapter-02-technology-background/)；BCC / bpftrace 专章见 [Ch 4](../chapter-04-bcc/) · [Ch 5](../chapter-05-bpftrace/)。  
 > **HFT：** 生产裸机把 **BCC 预制工具 + bpftrace 即兴脚本** 当作与 `perf` 并列的标配 — 本章建立「该用哪条链、能解决什么盲区」的地图。  
-> **SysPerf 对照：** [06.6-Systems-Performance Ch 15 BCC/bpftrace](../../../06.6-systems-performance/chapter-15-bpf/) · [Ch 4 观测工具](../../../06.6-systems-performance/chapter-04-observability-tools/)
+> **SysPerf 对照：** [06.6-Systems-Performance Ch 15 BCC/bpftrace](../../../06.6.5-systems-performance/chapter-15-bpf/) · [Ch 4 观测工具](../../../06.6.5-systems-performance/chapter-04-observability-tools/)
 
 ---
 

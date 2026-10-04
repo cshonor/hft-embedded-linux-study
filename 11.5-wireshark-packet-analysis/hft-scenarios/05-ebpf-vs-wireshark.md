@@ -162,4 +162,4 @@ sudo tcpdump -nni eth0 -c 10000
 - [HFT 模块：BPF 可观测性](../../06.7-bpf-observability/)
 - [HFT 模块：内核网络](../../12-kernel-networking/)
 - [HFT 模块：现代网络](../../12.5-modern-networking/)
-- [HFT 模块：系统性能](../../06.6-systems-performance/)
+- [HFT 模块：系统性能](../../06.6.5-systems-performance/)

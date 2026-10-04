@@ -54,7 +54,7 @@ uretprobe:/bin/bash:readline      /bin/bash 中 readline() 返回位置插针
 
 > 细节：函数只有一个入口但**可以有多个返回点**（不同位置 return），返回探针会对**所有**返回点插桩（原理见第 2 章）。
 
-> 现代内核还有更快的替代：**fentry/fexit**（基于编译期 patch 的函数入口直连，无断点陷入，x86 5.5+/ARM64 6.0+），语义与 kprobe/kretprobe 类似但开销更低且是"稳定接口"。挂点选型决策树见 [Learning eBPF Ch7](../../../01-learning-ebpf/chapter-07-program-attachment-types/)；ftrace 机制详解见 [14-SysPerf Ch14 ftrace](../../../../06.6-systems-performance/chapter-14-ftrace/)。
+> 现代内核还有更快的替代：**fentry/fexit**（基于编译期 patch 的函数入口直连，无断点陷入，x86 5.5+/ARM64 6.0+），语义与 kprobe/kretprobe 类似但开销更低且是"稳定接口"。挂点选型决策树见 [Learning eBPF Ch7](../../../../06.6-learning-ebpf/chapter-07-program-attachment-types/)；ftrace 机制详解见 [14-SysPerf Ch14 ftrace](../../../../06.6.5-systems-performance/chapter-14-ftrace/)。
 
 ---
 

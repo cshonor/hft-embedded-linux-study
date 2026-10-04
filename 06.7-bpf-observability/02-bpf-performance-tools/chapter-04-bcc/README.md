@@ -57,5 +57,5 @@
 - 下一章：[chapter-05-bpftrace](../chapter-05-bpftrace/)
 - 技术地基：[chapter-02-技术背景](../chapter-02-technology-background/)
 - BCC 自研：[appendix-C-BCC工具开发](../appendix-C-BCC工具开发.md)
-- SysPerf BPF 章：[chapter-15-bpf](../../../06.6-systems-performance/chapter-15-bpf/)
+- SysPerf BPF 章：[chapter-15-bpf](../../../06.6.5-systems-performance/chapter-15-bpf/)
 - 网络工具实践：[chapter-10-网络](../chapter-10-networking/)

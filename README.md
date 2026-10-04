@@ -41,8 +41,9 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 | **12** | [kernel-networking](./12-kernel-networking/) | 内核网络栈（Rosen） | 5B |
 | **12.5** | [modern-networking](./12.5-modern-networking/) | 现代网络：XDP / eBPF / io_uring | 5B |
 | **13** | [dpdk](./13-dpdk/) | 用户态高速网络 | 5B |
-| **06.6** | [systems-performance](./06.6-systems-performance/) | 系统性能方法论（Gregg） | 5B |
-| **06.7** | [bpf-observability](./06.7-bpf-observability/) | BPF / 可观测（Gregg） | 5B |
+| **06.6** | [learning-ebpf](./06.6-learning-ebpf/) | eBPF 原理入门（Liz Rice） | 5B |
+| **06.6.5** | [systems-performance](./06.6.5-systems-performance/) | 系统性能方法论（Gregg） | 5B |
+| **06.7** | [bpf-observability](./06.7-bpf-observability/) | BPF 性能工具（Gregg） | 5B |
 | **14** | [hft-engineering](./14-hft-engineering/) | HFT 工程实践 | 5B |
 | **15** | [computer-architecture](./15-computer-architecture/) | 体系结构加深（拓展） | 6 |
 | **16** | [linux-kernel-deep](./16-linux-kernel-deep/) | 内核深度 ULK3（拓展） | 6 |
@@ -65,7 +66,7 @@ Phase3  03 用户态 API → 03.5 socket → 03.6 调试 → 穿插 04 C++
 Phase4  05 内核 → 05.5 现代内核 → 05.6 调试 → 06 MM → 06.5 现代 MM
    ↓
 Phase5  A 嵌入式: 07 → 08 → 09 → P5 板级实战
-        B HFT:    11 → 11.5 → 12 → 12.5 → 13 → 06.6 → 06.7 → 14
+        B HFT:    11 → 11.5 → 12 → 12.5 → 13 → 06.6 → 06.6.5 → 06.7 → 14
    ↓
 Phase6  拓展: 15 · 16 · 17 · 18 · 19
 ```
@@ -93,10 +94,10 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19
 |:--:|----------|----------|----------|---------------------|------------|
 | **L0** | `01` · `02` | 指针算术、struct 布局、堆分配、ABI | 自实现 `malloc` + 对齐/合并 benchmark | gdb 看 struct 布局 · ASan/UBSan · valgrind · core dump —— `03.6` | 能解释 chunk header / bins / `M_MMAP_THRESHOLD` |
 | **L1** | `03` · `03.5` · `04` | TLPI：fd、线程、`mmap`、信号、`epoll` | 多线程 TCP echo server（epoll ET + 线程池） | `strace -T -tt` · gdb 多线程 · `lsof` · TSan —— `03.6` | p99 < 200μs；能画出请求完整路径 |
-| **L2** | `05` · `05.5` · `06` · `06.5` | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | ftrace · KASAN/KCSAN · `crash`/KGDB · `perf stat` · smaps/numastat —— `05.6` + `06.6` | 能用火焰图 + `perf stat` 说清瓶颈归属 |
+| **L2** | `05` · `05.5` · `06` · `06.5` | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | ftrace · KASAN/KCSAN · `crash`/KGDB · `perf stat` · smaps/numastat —— `05.6` + `06.6.5` | 能用火焰图 + `perf stat` 说清瓶颈归属 |
 | **L3** | `11` · `12` · `12.5` | 组播、UDP、socket 选项、NAPI | UDP 组播行情接收器（含丢包统计） | tcpdump/Wireshark · `ss -tin` · `ethtool -S` · dropwatch · `nstat` —— `11.5` + `06.7` | 10 万 pps 下**零丢包**，能说出丢包在哪一层 |
-| **L4** | `15` · `07` · `02` | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | **`perf c2c`** · TSan · bpftrace · `taskset`/`numactl` 验证 —— `06.6` + `06.7` | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
-| **L5** | `13` · `14` · `19` | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 全链路埋点 histogram · bpftrace 分段计时 · PTP 比对 · `testpmd` —— `06.6` + `06.7` + `13` | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
+| **L4** | `15` · `07` · `02` | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | **`perf c2c`** · TSan · bpftrace · `taskset`/`numactl` 验证 —— `06.6.5` + `06.7` | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
+| **L5** | `13` · `14` · `19` | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 全链路埋点 histogram · bpftrace 分段计时 · PTP 比对 · `testpmd` —— `06.6.5` + `06.7` + `13` | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
 
 > 模块编号对应[上方总览表](#模块总览编号--学习顺序)的文件夹。完整知识点 / 交付细节 / 验收清单 → [HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md)
 
@@ -104,7 +105,7 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19
 > **不是靠感觉判断的，只能靠本列工具测出来**——不会调试，就等于证明不了项目做完了。
 > 新手最常见的失败是重开发轻调试：代码写完跑通就以为结束，结果答不出「慢在哪、丢在哪、崩在哪」。
 >
-> **三层顺序固定：正确性（`03.6` / `05.6`）→ 性能（`06.6`）→ 持续观测（`06.7`）** —— 先让它对，再让它快，最后让它可观测。
+> **三层顺序固定：正确性（`03.6` / `05.6`）→ 性能（`06.6.5`）→ 持续观测（`06.6` → `06.7`）** —— 先让它对，再让它快，最后让它可观测（先学写探针 `06.6`，再上工具谱系 `06.7`）。
 > 每级的可操作命令清单（含具体参数）→ [HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md)。
 
 > **ARM64 汇编在 L4 第一次变现：** x86 是 TSO 强序，`acquire/release` 编译成零指令——「忘了写 `memory_order`」在 x86 上常常碰巧能跑；ARM64 弱序，`ldar`/`stlr` 少一条就直接崩。
@@ -121,7 +122,7 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19
 | **P4** | 可加载内核模块：字符设备 + kmalloc 追踪 + /proc 统计 | `05` `05.5` `05.6` `06` | P3+P3.5+P2.5 |
 | **P5** | 树莓派嵌入式全链路（5 子项目） | `07`–`10` | P4 |
 | **P6** | raw socket 抓包 + 逐层解析 + TCP 流重组 + eBPF 追踪 NAPI | `11` `12` `12.5` `06.7` | P3 |
-| **P7** | DPDK packet forwarder + perf 火焰图 + bpftrace 延迟探针 | `13` `06.6` `06.7` | P6 |
+| **P7** | DPDK packet forwarder + perf 火焰图 + bpftrace 延迟探针 | `13` `06.6.5` `06.7` | P6 |
 | **P8** | 限价订单簿撮合引擎：无锁 ring + 绑核/Hugepage | `14` `18` `19` | P4+P5+P7 |
 | **P10** | HFT 单机原型：DPDK 行情 + 撮合 + 策略 + 风控 + 回测 | `13` `14` `15` `19` | P7+P8 |
 

@@ -73,6 +73,6 @@ Part II  Ch 6 CPU → Ch 10 网络 (+ note-XDP)
 附录 A/B bpftrace 速查
 ```
 
-→ **紧接** [06.6-Systems-Performance](../../06.6-systems-performance/)（Gregg 双书第二本）· vs DPDK → [13-DPDK](../../13-dpdk/)
+→ **紧接** [06.6-Systems-Performance](../../06.6.5-systems-performance/)（Gregg 双书第二本）· vs DPDK → [13-DPDK](../../13-dpdk/)
 
 完整路线 → [HFT-READING-ROADMAP.md](../../HFT-READING-ROADMAP.md)

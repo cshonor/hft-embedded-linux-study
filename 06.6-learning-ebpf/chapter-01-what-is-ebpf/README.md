@@ -27,4 +27,4 @@
 - 验证器细节 → `../chapter-06-verifier/`
 - bpf() 系统调用 → `../chapter-04-bpf-syscall/`
 - XDP 数据路径 → `../chapter-08-networking/`
-- BPF 之巅对照：`../EBPF-BOOKS-COMPARISON.md`
+- BPF 之巅对照：`../../06.7-bpf-observability/EBPF-BOOKS-COMPARISON.md`

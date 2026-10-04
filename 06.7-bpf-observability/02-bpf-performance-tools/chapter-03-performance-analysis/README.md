@@ -3,7 +3,7 @@
 > **BPF Performance Tools** · Brendan Gregg · 印刷 pp.71–90 · **精读 🔴**
 
 > 本章定位：**性能分析速成课** — 不是 BPF 语法，而是**目标、四大方法论、两套检查清单**（Linux 60 秒 + BCC 11 工具）。连接 [Ch 2 技术背景](../chapter-02-technology-background/README.md) 与 [Ch 4 BCC 专章](../chapter-04-bcc/README.md)。
-> **HFT：** 生产 incident 先明确目标（延迟/成本），再 **60 秒粗筛**，最后 **BCC/bpftrace 精准下钻** — 与 [SysPerf Ch 2 方法论](../../../06.6-systems-performance/chapter-02-methodologies/) 同序。
+> **HFT：** 生产 incident 先明确目标（延迟/成本），再 **60 秒粗筛**，最后 **BCC/bpftrace 精准下钻** — 与 [SysPerf Ch 2 方法论](../../../06.6.5-systems-performance/chapter-02-methodologies/) 同序。
 > **上一章：** [chapter-02-technology-background](../chapter-02-technology-background/README.md) · **下一章：** [chapter-04-bcc](../chapter-04-bcc/README.md)
 
 ---
@@ -38,5 +38,5 @@
 - 上一章：[chapter-02-technology-background](../chapter-02-technology-background/README.md)
 - 下一章：[chapter-04-bcc](../chapter-04-bcc/README.md)
 - Ch 1 工具初探：[chapter-01-introduction](../chapter-01-introduction/README.md)
-- SysPerf 方法论：[06.6-systems-performance Ch 2](../../../06.6-systems-performance/chapter-02-methodologies/)
+- SysPerf 方法论：[06.6.5-systems-performance Ch 2](../../../06.6.5-systems-performance/chapter-02-methodologies/)
 - 全书目录与页码对照：[BOOK-TOC.md](../BOOK-TOC.md)
