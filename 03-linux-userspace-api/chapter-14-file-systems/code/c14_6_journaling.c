@@ -150,7 +150,7 @@ int main(void)
         printf("  写之前   transactions = %lld\n", t0);
 
         memset(buf, 'J', sizeof(buf));
-        fd = open("/app/c14_6_journal", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        fd = open("/tmp/c14_6_journal", O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (fd == -1) {
             printf("  open errno=%d (%s)\n", errno, strerror(errno));
         } else {
@@ -173,7 +173,7 @@ int main(void)
             close(fd);
             printf("  第二次 close 后 transactions = %lld   （比写之前 %+lld）\n",
                    jbd2_txn_count(jinfo, NULL, 0), jbd2_txn_count(jinfo, NULL, 0) - t0);
-            unlink("/app/c14_6_journal");
+            unlink("/tmp/c14_6_journal");
         }
         printf("  ↑ 该计数是**整机（宿主）累计值**，只能看增量方向，不能当绝对量。\n");
     }

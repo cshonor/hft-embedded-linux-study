@@ -178,7 +178,7 @@ static long tail_file(const char *path, long nlines, FILE *out)
 /* ---------- 自测模式：造一个多行文件，跑几组参数 ---------- */
 static int self_test(void)
 {
-    const char *p = "/app/ex13_5_sample.txt";
+    const char *p = "/tmp/ex13_5_sample.txt";
     const int NLINES = 1000;
     FILE *fp = fopen(p, "w");
     struct stat st;
@@ -220,7 +220,7 @@ static int self_test(void)
                那么 -n 1/100/500/1000 的首行应当分别是
                line-1000 / line-0901 / line-0501 / line-0001。 */
             {
-                const char *tmp = "/app/ex13_5_out.txt";
+                const char *tmp = "/tmp/ex13_5_out.txt";
                 FILE *o = fopen(tmp, "w");
                 if (o == NULL)
                     return EXIT_FAILURE;
@@ -268,7 +268,7 @@ static int self_test(void)
 
     printf("\n== 边界情况（每一条都真跑一遍，不靠人眼判断）==\n");
     {
-        const char *p2 = "/app/ex13_5_nonl.txt";
+        const char *p2 = "/tmp/ex13_5_nonl.txt";
         /* 16 字节、2 个 '\n'：按 tail 的定义是 **3 行**（最后一行没有结尾换行） */
         const char *SAMPLE = "a\nb\nc-no-newline";
         int fd = open(p2, O_CREAT | O_WRONLY | O_TRUNC, 0644);

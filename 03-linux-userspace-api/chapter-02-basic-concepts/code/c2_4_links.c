@@ -136,9 +136,9 @@ int main(void)
 
     printf("\n=== ⑤ 硬链接不能跨文件系统 ===\n");
     errno = 0;
-    if (link(sym, "/app/c2_4_xlink") == 0) {
+    if (link(sym, "/tmp/c2_4_xlink") == 0) {
         printf("  link(/tmp/... -> /app/...) 竟然成功 -> 说明 /tmp 与 /app 同一个 FS\n");
-        unlink("/app/c2_4_xlink");
+        unlink("/tmp/c2_4_xlink");
     } else {
         printf("  link(/tmp/... -> /app/...) 失败 errno=%d(%s)\n", errno, strerror(errno));
         printf("  EEXIST(%d)=目标已存在  EXDEV(%d)=跨文件系统\n", EEXIST, EXDEV);

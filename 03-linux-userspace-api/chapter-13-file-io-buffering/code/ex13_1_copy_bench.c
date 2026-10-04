@@ -37,8 +37,8 @@
 #define BUF_SIZE 4096           /* 与 Listing 4-1 的默认做法一致 */
 #endif
 
-#define SRC  "/app/ex13_1_src.bin"
-#define DST  "/app/ex13_1_dst.bin"
+#define SRC  "/tmp/ex13_1_src.bin"
+#define DST  "/tmp/ex13_1_dst.bin"
 #define TOTAL (1u << 20)        /* 源文件 1 MiB（CE 的 RLIMIT_FSIZE = 16 MiB） */
 
 static double now_sec(void)

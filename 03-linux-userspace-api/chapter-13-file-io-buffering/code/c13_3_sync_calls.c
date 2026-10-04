@@ -34,7 +34,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define F1 "/app/c13_3.bin"
+#define F1 "/tmp/c13_3.bin"
 
 static double now_sec(void)
 {

@@ -29,7 +29,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define F1 "/app/ex13_3.txt"
+#define F1 "/tmp/ex13_3.txt"
 #define PAYLOAD "0123456789-ABCDEFGHIJ"        /* 21 字节 */
 static const size_t PLEN = 21;
 

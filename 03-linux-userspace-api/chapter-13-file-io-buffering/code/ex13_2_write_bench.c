@@ -32,7 +32,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define OUT "/app/ex13_2.bin"
+#define OUT "/tmp/ex13_2.bin"
 
 /* 四种模式，对应书里 write_bytes.c 的四个编译分支 */
 enum { M_PLAIN = 0, M_OSYNC, M_FSYNC, M_FDATASYNC };

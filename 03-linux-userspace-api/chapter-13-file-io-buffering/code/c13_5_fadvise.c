@@ -28,7 +28,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define F1 "/app/c13_5.bin"
+#define F1 "/tmp/c13_5.bin"
 
 int main(void)
 {

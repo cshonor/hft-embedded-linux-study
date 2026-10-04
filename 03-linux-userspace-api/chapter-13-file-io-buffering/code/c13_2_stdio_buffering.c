@@ -173,7 +173,7 @@ int main(void)
 
     printf("\n== ④ fileno() / fdopen()：两层之间的桥 ==\n");
     {
-        const char *path = "/app/c13_2.txt";
+        const char *path = "/tmp/c13_2.txt";
         FILE *fp = fopen(path, "w");
         int fd;
 

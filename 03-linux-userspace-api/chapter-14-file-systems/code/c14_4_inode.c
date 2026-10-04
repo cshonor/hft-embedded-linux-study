@@ -88,10 +88,10 @@ int main(void)
         struct stat st;
         int fd;
 
-        unlink("/app/c14_4_a");
-        unlink("/app/c14_4_b");
+        unlink("/tmp/c14_4_a");
+        unlink("/tmp/c14_4_b");
 
-        fd = open("/app/c14_4_a", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        fd = open("/tmp/c14_4_a", O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (fd == -1) {
             printf("  open errno=%d (%s)\n", errno, strerror(errno));
         } else {
@@ -99,16 +99,16 @@ int main(void)
             printf("  写入 %zd 字节到 /app/c14_4_a\n", n);
             close(fd);
 
-            stat("/app/c14_4_a", &st);
+            stat("/tmp/c14_4_a", &st);
             printf("  link 前: ino=%-10llu nlink=%lu\n",
                    (unsigned long long) st.st_ino, (unsigned long) st.st_nlink);
 
-            if (link("/app/c14_4_a", "/app/c14_4_b") == -1) {
+            if (link("/tmp/c14_4_a", "/tmp/c14_4_b") == -1) {
                 printf("  link errno=%d (%s)\n", errno, strerror(errno));
             } else {
                 struct stat s2;
-                stat("/app/c14_4_a", &st);
-                stat("/app/c14_4_b", &s2);
+                stat("/tmp/c14_4_a", &st);
+                stat("/tmp/c14_4_b", &s2);
                 printf("  link 后: a  ino=%-10llu nlink=%lu\n",
                        (unsigned long long) st.st_ino, (unsigned long) st.st_nlink);
                 printf("           b  ino=%-10llu nlink=%lu\n",
@@ -118,7 +118,7 @@ int main(void)
 
                 /* 跨 FS 硬链接 */
                 errno = 0;
-                if (link("/app/c14_4_a", "/tmp/c14_4_c") == -1)
+                if (link("/tmp/c14_4_a", "/tmp/c14_4_c") == -1)
                     printf("  link 到 /tmp（另一个 FS）-> -1 errno=%d (%s)\n",
                            errno, strerror(errno));
                 else
@@ -126,20 +126,20 @@ int main(void)
             }
 
             /* 删掉一条名字 */
-            unlink("/app/c14_4_b");
-            stat("/app/c14_4_a", &st);
+            unlink("/tmp/c14_4_b");
+            stat("/tmp/c14_4_a", &st);
             printf("  unlink(\"b\") 后: nlink=%lu（数据一个字节都没动）\n",
                    (unsigned long) st.st_nlink);
 
             /* ---------- ③ unlink 之后 fd 还能读 ---------- */
             sec("③ unlink 之后：名字没了，已打开的 fd 仍能读");
-            fd = open("/app/c14_4_a", O_RDONLY);
+            fd = open("/tmp/c14_4_a", O_RDONLY);
             if (fd != -1) {
                 char buf[32];
                 ssize_t n;
 
-                unlink("/app/c14_4_a");
-                if (stat("/app/c14_4_a", &st) == -1)
+                unlink("/tmp/c14_4_a");
+                if (stat("/tmp/c14_4_a", &st) == -1)
                     printf("  unlink(\"a\") 后 stat 失败 errno=%d (%s) —— 名字没了\n",
                            errno, strerror(errno));
                 n = read(fd, buf, sizeof(buf) - 1);
@@ -159,7 +159,7 @@ int main(void)
     {
         struct stat st;
         int fd;
-        const char *p = "/app/c14_4_size";
+        const char *p = "/tmp/c14_4_size";
 
         unlink(p);
         fd = open(p, O_WRONLY | O_CREAT | O_TRUNC, 0644);

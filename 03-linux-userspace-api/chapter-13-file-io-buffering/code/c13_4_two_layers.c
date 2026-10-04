@@ -30,7 +30,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define F1 "/app/c13_4.txt"
+#define F1 "/tmp/c13_4.txt"
 #define PAYLOAD "0123456789ABCDEF"
 
 static long vmstat_val(const char *key)

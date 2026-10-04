@@ -98,7 +98,7 @@ int main(void)
 
     printf("-- ① 反面教材：fprintf 之后直接 write 同一个 fd --\n");
     {
-        const char *p = "/app/c13_7_a.txt";
+        const char *p = "/tmp/c13_7_a.txt";
         FILE *fp = fopen(p, "w");
         int fd;
 
@@ -118,7 +118,7 @@ int main(void)
 
     printf("\n-- ② 修法一：混用前先 fflush --\n");
     {
-        const char *p = "/app/c13_7_b.txt";
+        const char *p = "/tmp/c13_7_b.txt";
         FILE *fp = fopen(p, "w");
         int fd;
 
@@ -139,7 +139,7 @@ int main(void)
 
     printf("\n-- ③ 修法二：干脆关掉 stdio 缓冲 --\n");
     {
-        const char *p = "/app/c13_7_c.txt";
+        const char *p = "/tmp/c13_7_c.txt";
         FILE *fp = fopen(p, "w");
         int fd;
 
@@ -160,7 +160,7 @@ int main(void)
 
     printf("\n-- ④ 换一个 fd 不解决问题（dup 出来的 fd 共享同一个文件偏移） --\n");
     {
-        const char *p = "/app/c13_7_d.txt";
+        const char *p = "/tmp/c13_7_d.txt";
         FILE *fp = fopen(p, "w");
         int dupfd;
 
@@ -181,7 +181,7 @@ int main(void)
 
     printf("\n-- ⑤ 反向的坑：用另一个 fd 去 lseek，会让 stdio 写错位置 --\n");
     {
-        const char *p = "/app/c13_7_e.txt";
+        const char *p = "/tmp/c13_7_e.txt";
         FILE *fp = fopen(p, "w");
         int fd;
 

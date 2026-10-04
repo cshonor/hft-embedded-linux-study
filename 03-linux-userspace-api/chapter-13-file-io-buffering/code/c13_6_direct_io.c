@@ -46,7 +46,7 @@
 #define STX_DIO_ALIGN 0x00004000
 #endif
 
-#define EXT4_PATH "/app/c13_6.bin"
+#define EXT4_PATH "/tmp/c13_6.bin"
 #define TMPFS_PATH "/tmp/c13_6.bin"
 
 static void fs_name(const char *path, char *out, size_t cap)
@@ -157,7 +157,7 @@ int main(void)
     printf("\n== ② 问内核：O_DIRECT 的对齐要求到底是多少 ==\n");
     printf("  （statx(2) 的 STATX_DIOALIGN，Linux 6.1 起可用）\n");
     printf("  对 %s：\n", EXT4_PATH);
-    ask_dio_align("/app");
+    ask_dio_align("/");   /* 原为 "/app"（CE 容器挂载点）；普通 Linux 用根文件系统代表 ext4 */
     printf("  对 %s：\n", TMPFS_PATH);
     ask_dio_align("/tmp");
 

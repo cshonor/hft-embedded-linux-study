@@ -80,7 +80,10 @@ for f in c13_*.c ex13_*.c; do
 done
 ```
 
-11 个自编 demo **不需要任何额外旗标**（`_GNU_SOURCE` 没用到；`sys/statfs.h`、`sys/statvfs.h`、`sys/random.h` 之类的头都显式包含）。两个 `ex13_*` benchmark 会创建 `/app/ex13_1_*.bin`、`/app/ex13_2.bin`，`ex13_5_tail` 会在 `/app` 下建样本文件——**这些路径是配合 CE 的 ext4 挂载点选的**，换环境请改宏 `OUT`/`SRC`。
+11 个自编 demo **不需要任何额外旗标**（`_GNU_SOURCE` 没用到；`sys/statfs.h`、`sys/statvfs.h`、`sys/random.h` 之类的头都显式包含）。两个 `ex13_*` benchmark 会创建 `/tmp/ex13_1_*.bin`、`/tmp/ex13_2.bin`，`ex13_5_tail` 会在 `/tmp` 下建样本文件。
+
+> **路径变更说明（2026-10）**：源码里的输出路径已从 `/app/`（作者 CE 容器的 ext4 挂载点，普通 Linux 不存在 → ENOENT）统一改为 `/tmp/`。
+> 注意 `/tmp` 在**本机/容器里可能是 tmpfs**（O_SYNC/fsync 耗时失真、O_DIRECT 是假的）——做 benchmark 前先 `df -T /tmp` 确认；是 tmpfs 就改宏 `OUT`/`SRC` 指到真实磁盘分区（本机 Ubuntu 24.04 的 `/tmp` 在根 ext4 上，实测可用）。
 
 4 个原书程序都需要头替身（**同目录即可**）：
 

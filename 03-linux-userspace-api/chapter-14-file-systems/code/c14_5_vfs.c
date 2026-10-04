@@ -155,10 +155,10 @@ int main(void)
         struct stat sa, sb;
         int fd1, fd2;
 
-        unlink("/app/c14_5_a");
-        unlink("/app/c14_5_b");
+        unlink("/tmp/c14_5_a");
+        unlink("/tmp/c14_5_b");
 
-        fd1 = open("/app/c14_5_a", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        fd1 = open("/tmp/c14_5_a", O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (fd1 == -1) {
             printf("  open errno=%d (%s)\n", errno, strerror(errno));
         } else {
@@ -166,9 +166,9 @@ int main(void)
             printf("  写入 %zd 字节\n", n);
             close(fd1);
 
-            if (link("/app/c14_5_a", "/app/c14_5_b") == 0) {
-                fd1 = open("/app/c14_5_a", O_RDONLY);
-                fd2 = open("/app/c14_5_b", O_RDONLY);
+            if (link("/tmp/c14_5_a", "/tmp/c14_5_b") == 0) {
+                fd1 = open("/tmp/c14_5_a", O_RDONLY);
+                fd2 = open("/tmp/c14_5_b", O_RDONLY);
                 fstat(fd1, &sa);
                 fstat(fd2, &sb);
                 printf("  fd1 -> /app/c14_5_a  ino=%llu\n", (unsigned long long) sa.st_ino);
@@ -182,8 +182,8 @@ int main(void)
                 close(fd1);
                 close(fd2);
             }
-            unlink("/app/c14_5_a");
-            unlink("/app/c14_5_b");
+            unlink("/tmp/c14_5_a");
+            unlink("/tmp/c14_5_b");
         }
     }
 

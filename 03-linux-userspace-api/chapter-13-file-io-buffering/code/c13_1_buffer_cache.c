@@ -77,7 +77,7 @@ static double now_sec(void)
     return (double) ts.tv_sec + (double) ts.tv_nsec / 1e9;
 }
 
-#define TMPFILE "/app/c13_1.bin"
+#define TMPFILE "/tmp/c13_1.bin"
 
 int main(void)
 {

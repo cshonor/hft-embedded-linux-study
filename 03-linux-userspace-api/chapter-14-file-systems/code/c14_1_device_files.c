@@ -154,23 +154,23 @@ int main(void)
     /* ---------- ⑤ mknod(2) ---------- */
     sec("⑤ mknod(2)：造 FIFO 不需要特权，造设备节点要 CAP_MKNOD");
     {
-        unlink("/app/c14_1_fifo");
+        unlink("/tmp/c14_1_fifo");
         errno = 0;
-        if (mknod("/app/c14_1_fifo", S_IFIFO | 0666, 0) == -1)
+        if (mknod("/tmp/c14_1_fifo", S_IFIFO | 0666, 0) == -1)
             printf("  mknod(FIFO)   -> -1 errno=%d (%s)\n", errno, strerror(errno));
         else
             printf("  mknod(FIFO)   -> 0  **成功**（FIFO 与普通文件不走设备号）\n");
 
-        unlink("/app/c14_1_node");
+        unlink("/tmp/c14_1_node");
         errno = 0;
-        if (mknod("/app/c14_1_node", S_IFCHR | 0666, makedev(1, 3)) == -1)
+        if (mknod("/tmp/c14_1_node", S_IFCHR | 0666, makedev(1, 3)) == -1)
             printf("  mknod(chr 1:3) -> -1 errno=%d (%s)  ← 缺 CAP_MKNOD\n",
                    errno, strerror(errno));
         else
             printf("  mknod(chr 1:3) -> 0  **成功**\n");
 
-        unlink("/app/c14_1_fifo");
-        unlink("/app/c14_1_node");
+        unlink("/tmp/c14_1_fifo");
+        unlink("/tmp/c14_1_node");
     }
 
     /* ---------- ⑥ /dev/null vs /dev/zero ---------- */
