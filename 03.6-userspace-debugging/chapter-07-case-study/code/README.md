@@ -143,6 +143,17 @@ feed 里 `int slots[16]; slots[o->id] = 1;`，而 `id` 从 1 涨到 200 →
 Program terminated with signal SIGSEGV (11)
 ```
 
+> ⚠ **Ubuntu/Debian 本机复现注意**（2026-10 Ubuntu 24.04 / gcc 13.3 实测）：
+> Ubuntu 的 gcc **默认开启 `-fstack-protector-strong`**，所以"什么都不加"并不等于
+> "无栈保护"——直接 `cc -DBUG_CRASH ...` 在本机会得到金丝雀的 **134** 而不是 139。
+> 要复现 139 必须**显式关闭**：
+>
+> ```bash
+> cc -g -O0 -pthread -Wall -Wextra -fno-stack-protector -DBUG_CRASH -o c7_1_crash_nosp c7_1_trader.c
+> ```
+>
+> （对照组 `cc` 是 Compiler Explorer 的裸 gcc 13.3，发行版补丁不在其中。）
+
 ### 带栈金丝雀（`-fstack-protector-all`，`exit 134`）
 
 ```text
