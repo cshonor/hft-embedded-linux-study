@@ -6351,6 +6351,8 @@ gcc -O2 -S t.c -o - | grep -A5 'main'
 <li><code class="c">buf</code> 退化为 <code class="c">&amp;buf[0]</code>，类型 <code class="c">int (*)[3]</code>（指向一行的指针）</li>
 <li><code class="c">buf[i]</code> 退化为 <code class="c">&amp;buf[i][0]</code>，类型 <code class="c">int *</code></li>
 <li><code class="c">&amp;buf</code> 类型 <code class="c">int (*)[4][3]</code>：<code class="c">+1</code> 跳整个二维数组</li>
+<li>退化例外是 <strong>4 项</strong>（<code class="c">sizeof</code>、<code class="c">_Alignof</code>、一元 <code class="c">&amp;</code>、字符串字面量初始化数组），不是"sizeof、&amp; 两个"；<code class="c">_Alignof</code> 标准只吃 type-name，对数组名表达式实际生效 3 项（3/4 辨析见 <a href="#s-8-1">8.1.1</a>）</li>
+<li>退化只剥<strong>最外一层</strong>：<code class="c">buf</code> 的首元素是一整行 <code class="c">int[3]</code>，所以退化为行指针 <code class="c">int(*)[3]</code>，不是 <code class="c">int*</code> 更不是 <code class="c">int**</code></li>
 </ul>
 <h3>三层"剥皮"</h3>
 <pre class="code" data-label="C"><code class="c">buf        /* &quot;4 行的数组&quot; → 退化为指向&quot;1 行&quot;的指针 int(*)[3] */
@@ -6430,7 +6432,15 @@ mov     eax, DWORD PTR [rax + 2*12 + 1*4]   ; base + 28
 </tr>
 <tr>
 <td>"<code class="c">int **p = buf</code> 合法"</td>
-<td>非法，类型不匹配（行连续 vs 行分散）</td>
+<td>非法，类型不匹配（行连续 vs 行分散；布局/访存次数对比见 <strong>8.2.3</strong>）</td>
+</tr>
+<tr>
+<td>"退化例外只有 sizeof、&amp; 两个"</td>
+<td>C11 列 4 项（sizeof、_Alignof、一元 &amp;、字面量初始化），对数组名实际生效 3 项</td>
+</tr>
+<tr>
+<td>"<code class="c">buf[i][j]</code> 两次 <code class="c">*</code> 都读内存"</td>
+<td>第一次 <code class="c">*</code> 免费（行数组立即退化回同地址），只有第二次真正 load（<strong>8.2.3</strong>）</td>
 </tr>
 </tbody>
 </table></div>
@@ -6473,16 +6483,13 @@ printf(&quot;%d\n&quot;, (int)sizeof(arr));
       <section class="section" id="s-8-2-3">
         <div class="sec-head"><div class="sec-no">8.2</div><h2>.3 下标</h2></div>
 <h2>本节讲什么</h2>
-<p>二维下标展开与行/列访问模式。这一节把 <code class="c">buf[i][j]</code> 的双重解引用拆开，讲清每次下标"剥一层"的过程。</p>
+<p>二维下标展开与行/列访问模式。这一节把 <code class="c">buf[i][j]</code> 的双重解引用拆开，讲清每次下标"剥一层"的过程——并钉死两件事：<strong>两次 <code class="c">*</code> 并不对称</strong>（第一次免费、第二次才真正 load），以及<strong>二维数组不是 <code class="c">int**</code></strong>（真双重解引用是两次 load + 行分散）。</p>
 <h2>要点</h2>
 <pre class="code" data-label="C"><code class="c">buf[i][j] == *(buf[i] + j) == *(*(buf + i) + j)
 </code></pre>
-<h3>双重展开</h3>
+<h3>双重展开：五次类型变化</h3>
 <pre class="code" data-label="C"><code class="c">int buf[4][3];
-/* buf + i：跳 i 行（每行 3 个 int） → 指向第 i 行 */
-/* *(buf + i) = buf[i]：第 i 行，退化为 &amp;buf[i][0]（int*） */
-/* buf[i] + j：跳 j 个 int → 指向 buf[i][j] */
-/* *(buf[i] + j) = buf[i][j]：int 值 */
+buf[i][j] == *(buf[i] + j) == *(*(buf + i) + j)
 </code></pre>
 <div class="tbl-wrap"><table>
 <thead>
@@ -6490,31 +6497,86 @@ printf(&quot;%d\n&quot;, (int)sizeof(arr));
 <th>步骤</th>
 <th>表达式</th>
 <th>类型</th>
+<th>步长</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>行指针</td>
+<td>退化</td>
+<td><code class="c">buf</code></td>
+<td><code class="c">int (*)[3]</code>（指向第 0 行）</td>
+<td>—</td>
+</tr>
+<tr>
+<td>行偏移</td>
 <td><code class="c">buf + i</code></td>
-<td><code class="c">int (*)[3]</code></td>
+<td><code class="c">int (*)[3]</code>（第 i 行地址）</td>
+<td><code class="c">sizeof(int[3])</code> = 12</td>
 </tr>
 <tr>
-<td>行首元素地址</td>
-<td><code class="c">buf[i]</code> ≡ <code class="c">*(buf+i)</code></td>
-<td><code class="c">int *</code></td>
+<td>第一次 <code class="c">*</code></td>
+<td><code class="c">*(buf+i)</code> ≡ <code class="c">buf[i]</code></td>
+<td><code class="c">int[3]</code>（行数组）→ 再退化为 <code class="c">int *</code></td>
+<td>—</td>
 </tr>
 <tr>
-<td>元素指针</td>
-<td><code class="c">buf[i] + j</code></td>
-<td><code class="c">int *</code></td>
+<td>列偏移</td>
+<td><code class="c">*(buf+i) + j</code></td>
+<td><code class="c">int *</code>（<code class="c">&amp;buf[i][j]</code>）</td>
+<td><code class="c">sizeof(int)</code> = 4</td>
 </tr>
 <tr>
-<td>元素值</td>
-<td><code class="c">buf[i][j]</code> ≡ <code class="c">*(*(buf+i)+j)</code></td>
-<td><code class="c">int</code></td>
+<td>第二次 <code class="c">*</code></td>
+<td><code class="c">*(*(buf+i)+j)</code></td>
+<td><code class="c">int</code>（值）</td>
+<td>—</td>
 </tr>
 </tbody>
 </table></div>
+<pre class="code" data-label="C"><code class="c">/* buf + i：跳 i 行（每行 3 个 int） → 指向第 i 行 */
+/* *(buf + i) = buf[i]：第 i 行，退化为 &amp;buf[i][0]（int*） */
+/* buf[i] + j：跳 j 个 int → 指向 buf[i][j] */
+/* *(buf[i] + j) = buf[i][j]：int 值 */
+</code></pre>
+<h3>两次 <code class="c">*</code> 不对称：第一次免费，第二次才 load</h3>
+<p>"双重解引用"是个<strong>有迷惑性的俗称</strong>。C 语义层写了两个 <code class="c">*</code>，机器层只有<strong>一次</strong> load：</p>
+<ul>
+<li><strong>第一次 <code class="c">*</code> 不产生任何内存访问。</strong> <code class="c">*(buf+i)</code> 得到的是行数组 <code class="c">int[3]</code>（一个左值），它作为 <code class="c">+</code> 的操作数<strong>立即又退化</strong>成 <code class="c">int *</code>——地址数值不变，只是类型解释从 <code class="c">int(*)[3]</code> 换成 <code class="c">int*</code>。编译器眼里 <code class="c">*(buf+i)+j</code> 和 <code class="c">(int*)(buf+i)+j</code> 是同一个值。</li>
+<li><strong>第二次 <code class="c">*</code> 才真正 load</strong>，从 <code class="c">&amp;buf[i][j]</code> 取出 <code class="c">int</code>。</li>
+</ul>
+<p>**真正的双重解引用是 <code class="c">int **</code>：第一次 <code class="c">*</code> 必须先去内存读出一个指针（行地址存在别处），第二次才能读值——两次 load，而且各行可能分散在堆上。对比：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">int buf[4][3]</code></th>
+<th><code class="c">int *p[4]</code>（退化为 <code class="c">int**</code>）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内存布局</td>
+<td>12 个 int 连续 48 字节</td>
+<td>4 个指针连续，各行<strong>分散</strong>在堆上</td>
+</tr>
+<tr>
+<td><code class="c">x[i][j]</code> 访存</td>
+<td><strong>1 次 load</strong>（基址+(i×3+j)×4 编译期算）</td>
+<td><strong>2 次 load</strong>（先读行指针，再读值）</td>
+</tr>
+<tr>
+<td><code class="c">sizeof(x)</code></td>
+<td>48</td>
+<td>32（4 个指针）</td>
+</tr>
+<tr>
+<td>cache</td>
+<td>行连续，预取友好</td>
+<td>行分散，可能每行一次 miss</td>
+</tr>
+</tbody>
+</table></div>
+<p>HFT 落点：热路径传二维表用 <code class="c">int (*row)[COLS]</code> 或干脆打平成 <code class="c">buf[i*COLS+j]</code> 的一维数组——<strong>不要 <code class="c">int**</code></strong>。</p>
 <h3>行列遍历</h3>
 <pre class="code" data-label="C"><code class="c">for (i = 0; i &lt; 4; i++)
     for (j = 0; j &lt; 3; j++)
@@ -6596,6 +6658,14 @@ cube[i][j][k] == *(*(*(cube + i) + j) + k);
 <td>编译期线性化成一次访存（连续存储）</td>
 </tr>
 <tr>
+<td>"'双重解引用' = 两次 <code class="c">*</code> 都读内存"</td>
+<td>第一次 <code class="c">*</code> 免费（行数组立即退化回同地址）；真两次 load 的是 <code class="c">int**</code></td>
+</tr>
+<tr>
+<td>"<code class="c">int **p = buf</code> 只是风格不同"</td>
+<td>布局都不同：二维连续 48 字节 vs 指针数组 + 行分散；<code class="c">buf</code> 退化是 <code class="c">int(*)[3]</code>，类型也不匹配</td>
+</tr>
+<tr>
 <td>"外层内层顺序无所谓"</td>
 <td>大数组按列遍历 cache 差 10x</td>
 </tr>
@@ -6629,7 +6699,8 @@ gcc -O2 -S t3.c -o - | grep -A5 '^get'
 <h2>自测要点</h2>
 <ol>
 <li><code class="c">buf[i][j]</code> 的双重展开是什么？每一步类型如何变化？</li>
-<li>为什么 <code class="c">buf[i][j]</code> 在汇编里是一次访存而非两次？（编译期线性化）</li>
+<li>为什么说"双重解引用"是有迷惑性的俗称？两次 <code class="c">*</code> 各做了什么？</li>
+<li><code class="c">int buf[4][3]</code> 和 <code class="c">int *p[4]</code> 在内存布局、访存次数、sizeof 上有什么差别？</li>
 <li>按行遍历和按列遍历哪个快？为什么？</li>
 <li>三维 <code class="c">cube[i][j][k]</code> 怎么线性化？需要哪些维的大小？</li>
 <li>VLA 二维的 <code class="c">grid[i][j]</code> 为什么比定长慢？</li>
@@ -6644,6 +6715,24 @@ printf(&quot;%d\n&quot;, p[4]);
 <details>
 <summary>参考答案</summary>
 <p>合法，输出 5。二维数组在内存中是连续的，p 指向首元素。p[4] 等价于 *(p + 4)，访问第 5 个 int，即 arr[1][1] = 5。这种"扁平化"访问虽然合法，但不推荐——可读性差。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">int buf[3][4];</code> 放进表达式里，<code class="c">buf</code> 退化之后是什么类型？</p>
+<p>A. <code class="c">int **</code>　B. <code class="c">int *</code>　C. <code class="c">int (*)[4]</code>　D. <code class="c">int[4]</code></p>
+<details>
+<summary>参考答案</summary>
+<p><strong>C</strong>。退化规则是"指向首元素的指针"——二维数组的首元素不是单个 <code class="c">int</code>，而是<strong>一整行 <code class="c">int[4]</code></strong>，所以 <code class="c">buf</code> 退化为指向行的指针 <code class="c">int (*)[4]</code>。这是最多人卡壳的地方：不管几维数组，退化只剥<strong>最外一层</strong>。选 A 是把"二维"和"指针的指针"混为一谈（布局完全不同，见本节对比表）；选 B 忘了首元素是行；选 D 没退化。</p>
+</details>
+<p><strong>题目 3：</strong> 64 位平台，<code class="c">int buf[3][4];</code>：</p>
+<ol>
+<li><code class="c">sizeof(buf)</code>、<code class="c">sizeof(buf[0])</code>、<code class="c">sizeof(&amp;buf[0])</code> 各是多少？</li>
+<li><code class="c">buf + 1</code> 和 <code class="c">&amp;buf + 1</code> 的地址差各是多少字节？</li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><strong>48 / 16 / 8</strong>。<code class="c">sizeof(buf)</code> 是整个数组 3×4×4；<code class="c">buf[0]</code> 是一行 <code class="c">int[4]</code> 为 16；<code class="c">&amp;buf[0]</code> 是指针，恒 8。</li>
+<li><code class="c">buf + 1</code>：<code class="c">buf</code> 退化为 <code class="c">int(*)[4]</code>，步长 = 一行 = <strong>16 字节</strong>；<code class="c">&amp;buf + 1</code>：类型 <code class="c">int(*)[3][4]</code>，步长 = 整个数组 = <strong>48 字节</strong>。两者数值起点相同，类型不同，步长差 3 倍——同一地址的三种解释（<code class="c">buf</code> / <code class="c">&amp;buf[0][0]</code> / <code class="c">&amp;buf</code>）见 8.2.2。</li>
+</ol>
 </details>
       </section>
       <section class="section" id="s-8-2-4">
