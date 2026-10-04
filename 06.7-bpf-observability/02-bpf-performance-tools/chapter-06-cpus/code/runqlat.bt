@@ -1,0 +1,43 @@
+#!/usr/bin/env bpftrace
+/* runqlat.bt — 运行队列延迟直方图（02-ch06 §4 块9，书上 runqlat 的 bpftrace 版）
+ *
+ * 测的是"任务被唤醒 → 真正上 CPU"的等待时间（调度延迟，HFT 金标准之一）。
+ *
+ * 原理：
+ *   sched_wakeup[_new]：入队，记时间戳（按目标 pid）
+ *   sched_switch：
+ *     - prev 是 TASK_RUNNING（被动切换）→ 它重新入队，也记时间戳
+ *     - next 有入队记录 → 求差 = 它的队列等待
+ *
+ * 用法: sudo bpftrace runqlat.bt
+ * 读数: 直方图尾部 >1ms 要紧张；热核上应全部 < 数十 µs
+ */
+
+#include <linux/sched.h>
+
+BEGIN
+{
+    printf("Tracing CPU scheduler... Hit Ctrl-C to end.\n");
+}
+
+tracepoint:sched:sched_wakeup,
+tracepoint:sched:sched_wakeup_new
+{
+    @qtime[args->pid] = nsecs;
+}
+
+tracepoint:sched:sched_switch
+{
+    if (args->prev_state == TASK_RUNNING)
+        @qtime[args->prev_pid] = nsecs;      /* 被动切换：重新入队 */
+    $ns = @qtime[args->next_pid];
+    if ($ns) {
+        @usecs = hist((nsecs - $ns) / 1000);
+        delete(@qtime[args->next_pid]);
+    }
+}
+
+END
+{
+    clear(@qtime);
+}
