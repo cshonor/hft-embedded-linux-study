@@ -14,6 +14,10 @@
 |--|------|
 | 设计一文 | [docs/design.md](./docs/design.md) |
 | 可运行工程 | [part-a-demo/](./part-a-demo/) |
+| **生产形态重写（六阶段）** | [part-b-production/](./part-b-production/) |
+
+> ⚠️ 2026-10-01：启动 **part-b-production** —— 按生产工程标准分模块重写（协议/gap 恢复/拒单链风控/绑核/审计日志），
+> 目标平台 Pi 5。Phase 1（线协议 + 序列号状态机 + 自测）已完成。part-a 保持可跑，作为对照。
 
 ```bash
 cd projects/P10-hft-prototype/part-a-demo
