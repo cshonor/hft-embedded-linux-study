@@ -117,6 +117,6 @@ xdpdump -i eth0 --rx-capture entry,exit
 
 ## 相关
 
-- [chapter-10-网络.md](./chapter-10-networking/)
+- [chapter-10-networking](./chapter-10-networking/)
 - [15-Advanced note-XDP](../../13-dpdk/02-Advanced-Book/notes/note-XDP与DPDK对照.md)
 - [13-DPDK](../../13-dpdk/)

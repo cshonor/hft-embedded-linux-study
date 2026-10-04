@@ -25,8 +25,8 @@
 | 11 | Cloud Computing | [chapter-11](./chapter-11-cloud-computing/) | ⚪ |
 | 12 | Benchmarking | [chapter-12](./chapter-12-benchmarking/) | 🟡 |
 | 13 | perf | [chapter-13](./chapter-13-perf/) | 🔴 |
-| 16 | Ftrace | [chapter-14](./chapter-14-ftrace/) | 🟡 |
-| 16 | BPF | [chapter-15](./chapter-15-bpf/) | 🔴 |
+| 14 | Ftrace | [chapter-14](./chapter-14-ftrace/) | 🟡 |
+| 15 | BPF | [chapter-15](./chapter-15-bpf/) | 🔴 |
 | 16 | Case Study | [chapter-16](./chapter-16-case-studies/) | 🟡 |
 
 ## 附录
