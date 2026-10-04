@@ -135,7 +135,7 @@
 
 ## Item 25 {#item-25}
 
-- [x] **Dependabot + `cargo deny check`**：dependabot.yml + [deny.toml](../deny.toml) + CI `cargo-deny`
+- [x] **Dependabot + `cargo deny check`**：dependabot.yml + [deny.toml](./deny.toml) + CI `cargo-deny`
 - [x] **`[workspace.dependencies]`**：[Cargo.toml](./Cargo.toml) + [WORKSPACE.md](./ER-demos/WORKSPACE.md)
 
 ## Item 26 {#item-26}

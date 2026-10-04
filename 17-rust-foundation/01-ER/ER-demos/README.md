@@ -28,7 +28,7 @@ cd Chapter-06-Beyond-Standard-Rust/Item-35-bindgen/demo-sys-workspace && cargo t
 | 21 | [WORKSPACE.md](./WORKSPACE.md) MSRV + CI `msrv` / `semver-checks` |
 | 22 | [Item-22/demo](../Chapter-04-Dependencies/Item-22-minimize-visibility/demo/) |
 | 24 | [Item-24/demo](../Chapter-04-Dependencies/Item-24-re-export-api-types/demo/) |
-| 25 | [Cargo.toml](./Cargo.toml) + [deny.toml](../../deny.toml) + Dependabot |
+| 25 | [Cargo.toml](./Cargo.toml) + [deny.toml](../deny.toml) + Dependabot |
 | 26 | [Item-26/demo](../Chapter-04-Dependencies/Item-26-feature-creep/demo/) |
 | 29 | [clippy.toml](./clippy.toml) |
 | 30 | [Item-30/demo](../Chapter-05-Tooling/Item-30-beyond-unit-tests/demo/) + CI `matrix-demo` |

@@ -57,7 +57,7 @@ cargo public-api
 ### Dependabot + `cargo deny`
 
 - `.github/dependabot.yml` — 每周更新 `01-ER/ER-demos` 等 lock
-- 根目录 [`deny.toml`](../../deny.toml) — advisories / licenses / bans
+- 根目录 [`deny.toml`](../deny.toml) — advisories / licenses / bans
 - CI `cargo-deny` job：`cargo deny check all`
 
 本地：
