@@ -80,8 +80,8 @@ S_max = 1 / 0.2 = 5×
 
 | f | S(8 核) | S_max |
 |---|---------|-------|
-| 5% | ~4.7× | 20× |
-| **10%** | ~4.3× | **10×** |
+| 5% | ~5.9× | 20× |
+| **10%** | ~4.7× | **10×** |
 | **20%** | ~3.3× | **5×** |
 
 8 核往往 **远不到 S_max** — 所以先看 **S(8)** 够不够，再决定加核；若 f=20%，加到 32 核收益极小。
@@ -197,7 +197,7 @@ def amdahl_latency(T0_us: float, f: float, n: int) -> float:
     return T0_us / amdahl_speedup(f, n)
 
 # f=10%, 8 核
-print(amdahl_speedup(0.1, 8))           # ~4.3
+print(amdahl_speedup(0.1, 8))           # ~4.7
 print(1/0.1)                            # S_max = 10
 print(amdahl_latency(10.0, 0.1, 9999))  # 理想 → ~1 μs
 ```
