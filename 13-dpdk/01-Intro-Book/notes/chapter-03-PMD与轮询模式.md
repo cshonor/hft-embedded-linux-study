@@ -91,6 +91,12 @@ BURST=1   :  p50 ≈ parse        p999 ≈ parse           ← 最确定，吞�
 BURST=32  :  p50 ≈ parse×16     p999 ≈ parse×31        ← 吞吐高，尾延迟差
 ```
 
+**首轮实测（内核栈对照版，lo 自发自收）**已固化在
+[code/mcast-minimal/RESULTS.md](../code/mcast-minimal/RESULTS.md) R1：
+v=1/8/32 三档下 `hist_burst` p999 为 6.4μs → 26μs → 70μs，
+方向与本节预测定性一致——但平均批量只有 1.0–1.3（发送端瓶颈），
+队头等待的量级验证要等 pktgen/硬件发包把批次压满后复测（R2 待办见该文件）。
+
 **HFT 怎么选：**
 
 - 纯行情解码（收进来 → 解码 → 喂策略）：常用 **8~32**，吞吐优先

@@ -9,6 +9,7 @@
 ```
 mcast-minimal/
 ├── README.md
+├── RESULTS.md               # 实测记录（环境 + 分位数据 + 复测清单）
 ├── Makefile
 └── src/
     ├── hist.h                 # 分位直方图（header-only，两版共用）
@@ -123,7 +124,9 @@ dpdk-devbind.py --bind=vfio-pci 0000:01:00.0
 ## 延伸
 
 - 批量大小实验：改 `-v` / `BURST_SIZE`，观察 `hist_burst` 的 p999。
-  批量越大吞吐越高，但批次内后包的队头等待越长 —— 这就是"吞吐 vs 尾延迟"的取舍
+  批量越大吞吐越高，但批次内后包的队头等待越长 —— 这就是"吞吐 vs 尾延迟"的取舍。
+  **首轮实测已固化在 [RESULTS.md](./RESULTS.md)**（R1：lo 自发自收，v=1/8/32 三档，
+  burst p999 6.4μs→26μs→70μs，方向与笔记预测一致；局限与复测条件见该文件）
 - 加解码：在 `parse_packet()` 返回后直接读 `v->payload`，接 MoldUDP64 / ITCH
 - 延迟测量方法论：[12.5/chapter-15/notes/03-latency-measurement.md](../../../../12.5-modern-networking/chapter-15-debugging-perf-tuning/notes/03-latency-measurement.md)
 - 组播行情笔记：[chapter-05-组播行情接入](../../notes/chapter-05-组播行情接入.md)

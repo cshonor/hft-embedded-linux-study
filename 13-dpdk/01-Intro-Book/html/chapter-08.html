@@ -587,18 +587,42 @@ rte_eth_dev_filter_ctrl(port_id, RTE_ETH_FILTER_FDIR,
 <h3>一、流分类是什么</h3>
 <p>网卡依据包 <strong>特性</strong> 分类，将结果：</p>
 <ul>
-<li>记录在 <strong>RX 描述符</strong> 中，或  </li>
+<li>记录在 <strong>RX 描述符</strong> 中，或</li>
 <li><strong>直接</strong> 把流导入 <strong>特定队列</strong></li>
 </ul>
 <p>DPDK 通过 <strong>mbuf</strong> 读标志 — <strong>免软件 parse 包头</strong>。</p>
+<p>本质是把软件里这段每个包都要跑的判断：</p>
+<pre class="code" data-label="C"><code class="c">/* 软件路径：逐层解封装，每包 ~几十~上百 cycles */
+eth = rte_pktmbuf_mtod(m, void *);
+if (eth-&gt;ether_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4)) {
+    ip = (void *)(eth + 1);
+    if (ip-&gt;next_proto_id == IPPROTO_UDP) { /* ... */ }
+}
+</code></pre>
+<p>变成<strong>读一个硬件已经写好的字段</strong>——下面第二节。</p>
 <hr />
 <h3>二、包类型识别（Packet Type Offload）</h3>
-<p>高级网卡（如 <strong>Intel XL710</strong>）在硬件识别：</p>
+<p>高级网卡（如 <strong>Intel XL710/E810</strong>）在硬件识别：</p>
 <ul>
-<li><strong>L3/L4</strong>：IPv4/IPv6、TCP、UDP  </li>
-<li><strong>隧道</strong>：VXLAN、NVGRE 等  </li>
+<li><strong>L3/L4</strong>：IPv4/IPv6、TCP、UDP</li>
+<li><strong>隧道</strong>：VXLAN、NVGRE、GRE 等（内外层各给一套）</li>
 </ul>
-<p>信息挂在 <strong>接收描述符 / mbuf ol_flags</strong> — 应用 <strong>跳过</strong> 逐层解封装判断。</p>
+<p>信息挂在 <strong>接收描述符</strong>，DPDK 映射为 <code class="c">mbuf-&gt;packet_type</code>：</p>
+<pre class="code" data-label="C"><code class="c">/* 硬件路径：一次掩码判断，无指针跳转、无分支级联 */
+uint32_t pt = m-&gt;packet_type;
+
+if ((pt &amp; RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV4 &amp;&amp;
+    (pt &amp; RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_UDP) {
+    /* 直接按已知偏移取 UDP 头，跳过 ether_type/proto 的逐层判断 */
+}
+
+/* 隧道场景还能一次问出内层协议： */
+if ((pt &amp; RTE_PTYPE_TUNNEL_MASK) == RTE_PTYPE_TUNNEL_VXLAN) { /* ... */ }
+</code></pre>
+<p>收益不只是省 cycles：<strong>分支更可预测</strong>。软件逐层判断的级联 if 在混合流量下
+分支预测失败率高；掩码比较是无分支的，流水线更顺——
+这正是 <a href="chapter-15.html#s-3">ch03 ILP 一节</a>
+讲的"把控制相关转成数据相关"。</p>
 <hr />
 <h3>三、RSS（Receive Side Scaling）— 负载均衡</h3>
 <div class="tbl-wrap"><table>
@@ -611,37 +635,86 @@ rte_eth_dev_filter_ctrl(port_id, RTE_ETH_FILTER_FDIR,
 <tbody>
 <tr>
 <td><strong>关键字</strong></td>
-<td>常取 <strong>四元组</strong>（IP + 端口）等</td>
+<td>常取 <strong>四元组</strong>（IP + 端口）等，由 <code class="c">rss_hf</code> 位掩码选择</td>
 </tr>
 <tr>
 <td><strong>哈希</strong></td>
-<td>如 <strong>Toeplitz</strong> 算法 → hash 值</td>
+<td><strong>Toeplitz</strong> 算法 + 40 字节随机密钥 → 32 位 hash</td>
 </tr>
 <tr>
 <td><strong>散列</strong></td>
-<td>hash <strong>模队列数</strong> → 分配到 <strong>RX queue</strong></td>
+<td>hash 低 7 位查 <strong>RETA</strong>（重定向表，128 项）→ RX queue</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>对称哈希 (Symmetric Hash)：</strong><br />
-正向与反向流（A→B 与 B→A）→ <strong>同一队列 / 同一核</strong> — <strong>防火墙、会话表</strong> 必需。</p>
-<p><strong>HFT：</strong> 无状态 <strong>tick 解码</strong> 常用 RSS <strong>Spread</strong> 多核；有 <strong>per-flow 状态</strong> 时考虑对称哈希或 <strong>FD</strong>。</p>
+<p>注意散列<strong>不是直接模队列数</strong>——中间隔着 RETA 表，这意味着：</p>
+<pre class="code" data-label="C"><code class="c">/* RETA 可逐队列改权重：让 queue 0 承担 2 倍流量 */
+struct rte_eth_rss_reta_entry64 reta_conf[2];  /* 128 项 = 2 组 64 */
+/* ... 填表：奇数项→queue0，偶数项→queue1，2:1 分流 ... */
+rte_eth_dev_rss_reta_update(port, reta_conf, 128);
+
+/* 选择参与哈希的字段：行情 UDP 按四元组 */
+struct rte_eth_rss_conf rss = {
+    .rss_hf = RTE_ETH_RSS_IPV4 | RTE_ETH_RSS_UDP,   /* src/dst IP + src/dst port */
+    .rss_key = NULL,   /* NULL = 用网卡默认密钥；多机同行为要显式固定 */
+};
+rte_eth_dev_rss_hash_update(port, &amp;rss);
+</code></pre>
+<p><strong>对称哈希 (Symmetric Hash)：</strong>
+正向与反向流（A→B 与 B→A）→ <strong>同一队列 / 同一核</strong> — <strong>防火墙、会话表</strong> 必需。
+Intel 卡可通过修改 RSS 密钥（交换输入字节序的特制法）或对 TCP 用
+<code class="c">RTE_ETH_RSS_SYMMETRIC_XOR</code>（新驱动）实现；实现不了就退化到 Flow Director 逐会话定向。</p>
+<p>⚠ <strong>HFT 的坑（<a href="chapter-15.html#s-2">§2 已详述</a>）：</strong> 组播行情<strong>固定五元组</strong>，
+RSS hash 后全部落进<strong>同一个队列</strong>——RSS 对组播粉丝扇出场景<strong>完全无效</strong>，
+分流只能靠 Flow Director 按组播组+端口逐条定向。</p>
+<p><strong>软件兜底：</strong> 老网卡/虚拟网卡不支持 RSS 时，DPDK 提供软件 RSS
+（<code class="c">rte_thash</code> 同款 Toeplitz 在 PMD 内算），代价是哈希计算回到 CPU。</p>
 <hr />
 <h3>四、Flow Director — 精确匹配</h3>
 <p>Intel <strong>精确匹配</strong> 技术：</p>
 <ul>
-<li>网卡内 <strong>匹配表</strong> — 按 <strong>特定 TCP 会话</strong> 等字段  </li>
-<li>命中 → <strong>导向预留的特定队列</strong></li>
+<li>网卡内 <strong>匹配表</strong> — 按 <strong>特定 TCP 会话</strong> 等字段（XL710 约 8K 条 perfect-match）</li>
+<li>命中 → <strong>导向预留的特定队列</strong>（也能打标、丢弃）</li>
 </ul>
-<p><strong>用途：</strong> 少量 <strong>控制流 / 会话</strong> 从海量转发流量中 <strong>硬件剥离</strong> — CPU <strong>零过滤</strong>。</p>
+<p>DPDK 里新旧两套接口：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>接口</th>
+<th>状态</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">rte_eth_dev_filter_ctrl()</code> + <code class="c">RTE_ETH_FILTER_FDIR</code></td>
+<td>旧版/废弃</td>
+<td>早期 ixgbe/i40e 专用</td>
+</tr>
+<tr>
+<td><strong><code class="c">rte_flow_*</code></strong></td>
+<td><strong>现行标准</strong></td>
+<td>统一 Match/Action 模型，见 <a href="chapter-15.html#s-5">§5 RMT</a></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>用途：</strong> 少量 <strong>控制流 / 会话</strong> 从海量转发流量中 <strong>硬件剥离</strong> — CPU <strong>零过滤</strong>。
+HFT 典型配置（组播组 224.1.0.1:10001 → queue 3 的完整代码）见
+<a href="chapter-15.html#s-2">§2 Flow Director 一节</a>。</p>
+<p>表项是<strong>稀缺资源</strong>：8K 条对逐会话 TCP 定向够用，
+想按"每个 symbol 一条规则"扇出万级行情频道就超了——
+那种规模要么归并成掩码规则，要么回到软件分发。</p>
 <hr />
 <h3>五、QoS（服务质量）</h3>
 <p>依据 <strong>VLAN UP（用户优先级）</strong> 等：</p>
 <ul>
-<li>划分 <strong>Traffic Class (TC)</strong>  </li>
-<li>TC 间 <strong>Weighted Strict Priority</strong> 等 <strong>硬件调度</strong> — 保障高优先级带宽  </li>
+<li>划分 <strong>Traffic Class (TC)</strong></li>
+<li>TC 间 <strong>Weighted Strict Priority</strong> 等 <strong>硬件调度</strong> — 保障高优先级带宽</li>
 </ul>
-<p>HFT：共置机 <strong>裸金属</strong> 较少用 VLAN QoS；<strong>托管/NFV</strong> 场景更常见。</p>
+<p>HFT：共置机 <strong>裸金属</strong> 较少用 VLAN QoS；<strong>托管/NFV</strong> 场景更常见。
+但有一个变体值得知道：<strong>行情和订单共网卡</strong>时，用 TC 把订单标高优先级，
+避免行情突发挤占订单出口带宽——交易所共置网段内这通常是交换机侧配置，
+主机侧只需打 VLAN/DSCP 标记。</p>
 <hr />
 <p>← <a href="chapter-15.html#s-2">2. 多队列</a> · 下一节 <a href="chapter-15.html#s-4">4. 实战</a></p>
       </section>
@@ -723,6 +796,8 @@ rte_eth_dev_filter_ctrl(port_id, RTE_ETH_FILTER_FDIR,
     ↓
 动作 (Action) — 分配队列、丢弃、打标签、计数 …
 </code></pre>
+<p>要点是"<strong>可重构</strong>"：匹配哪些字段、做什么动作，不再烧死在芯片里，
+而是由软件在运行时下发——这是从固定功能网卡走向可编程数据面的分水岭。</p>
 <hr />
 <h3>二、各类技术 = 不同 Match/Action</h3>
 <div class="tbl-wrap"><table>
@@ -731,6 +806,7 @@ rte_eth_dev_filter_ctrl(port_id, RTE_ETH_FILTER_FDIR,
 <th>技术</th>
 <th>Match（简）</th>
 <th>Action（简）</th>
+<th>rte_flow 对应</th>
 </tr>
 </thead>
 <tbody>
@@ -738,29 +814,85 @@ rte_eth_dev_filter_ctrl(port_id, RTE_ETH_FILTER_FDIR,
 <td><strong>RSS</strong></td>
 <td>哈希关键字（四元组等）</td>
 <td><strong>散列到 queue</strong></td>
+<td><code class="c">RTE_FLOW_ACTION_TYPE_RSS</code></td>
 </tr>
 <tr>
 <td><strong>Flow Director</strong></td>
 <td><strong>精确</strong> 五元组/自定义</td>
 <td><strong>导向指定 queue</strong></td>
+<td>pattern + <code class="c">..._QUEUE</code></td>
 </tr>
 <tr>
 <td><strong>QoS</strong></td>
 <td>VLAN UP / TC</td>
 <td><strong>优先级调度</strong></td>
+<td><code class="c">..._MARK</code> / <code class="c">..._PF</code>/<code class="c">VF</code></td>
 </tr>
 <tr>
 <td><strong>包类型识别</strong></td>
 <td>帧格式解析</td>
 <td><strong>描述符写 ptype</strong></td>
+<td>（硬件自动，非流表）</td>
 </tr>
 </tbody>
 </table></div>
 <p><strong>统一视角：</strong> 区别仅在 <strong>匹配字段</strong> 与 <strong>动作语义</strong> — 便于理解 <strong>新一代智能网卡</strong> 能力边界。</p>
 <hr />
-<h3>三、趋势</h3>
-<p><strong>网卡智能化</strong> — CPU 从 <strong>分类/分发</strong> 中解放 → 上层 <strong>SDN / NFV / 策略</strong> 获得更多算力。</p>
-<p>HFT：<strong>硬件 RSS+FD</strong> 把 <strong>fan-out</strong> 做在 NIC；策略核专注 <strong>解码与交易逻辑</strong>。</p>
+<h3>三、DPDK 的落地：rte_flow 就是 RMT 接口</h3>
+<p><code class="c">rte_flow_*</code> API 把 RMT 思想变成了可移植代码——
+<strong>pattern 数组描述 Match，action 数组描述 Action</strong>，都由 <code class="c">END</code> 收尾：</p>
+<pre class="code" data-label="C"><code class="c">/* Match: IPv4 + UDP 且 dst_port == 10001 → Action: 进 queue 3 + 计数 */
+struct rte_flow_item pattern[] = {
+    { .type = RTE_FLOW_ITEM_TYPE_ETH },
+    { .type = RTE_FLOW_ITEM_TYPE_IPV4 },
+    { .type = RTE_FLOW_ITEM_TYPE_UDP,
+      .spec = &amp;(struct rte_flow_item_udp){
+              .hdr.dst_port = rte_cpu_to_be_16(10001) },
+      .mask = &amp;(struct rte_flow_item_udp){
+              .hdr.dst_port = 0xffff } },        /* 掩码=精确匹配这个端口 */
+    { .type = RTE_FLOW_ITEM_TYPE_END },
+};
+
+struct rte_flow_action actions[] = {
+    { .type = RTE_FLOW_ACTION_TYPE_QUEUE,
+      .conf = &amp;(struct rte_flow_action_queue){ .index = 3 } },
+    { .type = RTE_FLOW_ACTION_TYPE_COUNT },      /* 顺手让硬件计数，免软件统计 */
+    { .type = RTE_FLOW_ACTION_TYPE_END },
+};
+
+struct rte_flow_attr attr = { .ingress = 1, .priority = 0 };
+struct rte_flow_error err;
+struct rte_flow *flow =
+    rte_flow_create(port, &amp;attr, pattern, actions, &amp;err);
+/* 先 rte_flow_validate() 试错是常规做法：不同网卡支持的 item/action 组合差异很大 */
+</code></pre>
+<p>三个工程要点：</p>
+<ol>
+<li><strong>可移植性是"查询出来"的</strong>：网卡能力差异极大，下发前先 <code class="c">rte_flow_validate()</code>，
+   不支持就降级（如 COUNT→软件计数）。写死一套规则换卡必翻车。</li>
+<li><strong>priority 决定匹配顺序</strong>：多条规则可能同时命中时，数值小的先匹配——
+   "丢弃特定垃圾流"的 DROP 规则要给比"放行同类流"更高的优先级。</li>
+<li><strong>每条硬件规则都有创建成本</strong>（µs~ms 级，要写网卡寄存器/TCAM）：
+   规则在<strong>启动时一次下发</strong>，别在数据面热路径上增删——
+   行情频道动态订阅的场景，频道→队列的映射变化应走 RETA 更新或软件层。</li>
+</ol>
+<hr />
+<h3>四、趋势：从"可配置"到"可编程"</h3>
+<pre class="code" data-label="code"><code class="c">固定功能网卡        →  可配置（RSS/FD/QoS，本节）  →  可编程数据面
+（match/action 烧死）   （字段可选，动作可选）           （P4 程序、DPU 上的 ARM 核）
+</code></pre>
+<ul>
+<li><strong>P4 / 可编程交换芯片</strong>（Tofino 系）：Match/Action 表本身由 P4 程序定义，
+  RMT 的完全体——HFT 里的对应物是 Arista 7130 这类带 FPGA 的交换机，
+  把订单编码、风控前置做到<strong>线速几百 ns</strong>，直接越过主机。</li>
+<li><strong>DPU / SmartNIC</strong>（BlueField、IPU）：网卡上带通用核，
+  把策略的一部分下推过去——收益是解放主机核、路径更短；
+  代价是<strong>调试链条剧增</strong>（网卡里的代码不在你的 perf/gdb 视野里），
+  且订单路径多一跳 PCIe 之前要先想清楚延迟账。</li>
+</ul>
+<p>HFT：<strong>硬件 RSS+FD</strong> 把 <strong>fan-out</strong> 做在 NIC；策略核专注 <strong>解码与交易逻辑</strong>。
+再往下推（FPGA/DPU）是"用工程复杂度换最后几百 ns"——
+只有在主机路径已被 <a href="chapter-07.html#ch-7">ch07</a> 的方法榨干之后才值得考虑。</p>
 <hr />
 <p>← <a href="chapter-15.html#s-4">4. 实战</a> · 下一节 <a href="chapter-15.html#s-6">6. 索引</a></p>
       </section>

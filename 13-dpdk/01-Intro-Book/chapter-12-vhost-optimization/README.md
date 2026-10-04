@@ -18,6 +18,25 @@
 
 ---
 
+## HFT 视角：vhost-user 的价值在"同一台机器内部"
+
+vhost 的演进（内核 vhost-net → 用户态 vhost-user）做的事，
+和 DPDK 对用户态网络做的事是**同一件**：把数据面从内核搬出来，
+用轮询消灭中断、用共享大页消灭拷贝——virtio 的 VM-exit 问题在**后端**被解掉了。
+
+对 HFT 的直接相关性不强（主路径上没有 VM），但两个间接场景：
+
+| 场景 | 说明 |
+|------|------|
+| **同机多实例隔离**：一台物理机上跑 N 个策略容器/VM，行情需要扇出给每个实例 | vhost-user（经 OVS-DPDK 或 vhost-switch）是共享大页零拷贝路径，比经内核 bridge 低一个量级 |
+| **理解 OVS-DPDK 生态** | [Ch14](../chapter-14-ovs-dpdk-acceleration/) 的加速方案就架在 vhost-user 上；券商侧的虚拟化网关大概率是这套栈 |
+
+**可带走的设计语言**：vhost-user 的 unix socket 控制面（传 fd、协商特性）+
+共享内存数据面，是"**控制面与数据面分离**"的教科书案例——
+你自己设计进程间行情分发时，同一套模式（socket 协商 + 大页 ring）直接可用。
+
+---
+
 ## 相关
 
 - 上一章：[chapter-11-virtio-paravirtualization/](../chapter-11-virtio-paravirtualization/)
