@@ -22,7 +22,7 @@
 | OpenOnload / RDMA / RoCE 与 DPDK 取舍（verbs 语义、ibverbs 骨架、RoCE 无损坑、选型决策树） | [note-openonload-rdma对比](./notes/note-openonload-rdma对比.md) | 🟡 |
 | XDP / tc-BPF / AF_XDP 与 DPDK 对照（XDP 程序骨架、AF_XDP ring 代码、渐进路线） | [note-XDP与DPDK对照](./notes/note-XDP与DPDK对照.md) | 🟡 |
 
-→ 全书 BPF/XDP 深入：[06.7-BPF note-XDP](../../06.7-bpf-observability/02-bpf-performance-tools/note-XDP与tc-BPF.md)
+→ 全书 BPF/XDP 深入：[06.7-BPF note-XDP](../../06.7-bpf-observability/note-XDP与tc-BPF.md)
 
 ---
 

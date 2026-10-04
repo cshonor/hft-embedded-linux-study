@@ -16,7 +16,7 @@
 
 ## 0. Learning eBPF — Liz Rice
 
-> 笔记目录：[06.6-learning-ebpf/](./06.6-learning-ebpf/)
+> 笔记目录：[06.6-ebpf-foundation/](./06.6-ebpf-foundation/)
 
 > eBPF 原理入门：map、验证器、程序/附加类型、libbpf + CO-RE 现代开发栈。
 > **先于下面 ## 1 阅读**（技术前置：会写探针，再学观测什么）——也可以与 ## 1 平行，
@@ -249,7 +249,7 @@
 
 > 笔记目录：[06.7-bpf-observability/](./06.7-bpf-observability/)
 
-> eBPF、XDP 小包过滤、内核观测。**紧接 [## 0 Learning eBPF](./06.6-learning-ebpf/) 与 [## 1 Systems Performance](./06.6.5-systems-performance/) 阅读**（Gregg 性能双书第二本；前两者的交汇应用，不必等内核/网络全书）。
+> eBPF、XDP 小包过滤、内核观测。**紧接 [## 0 Learning eBPF](./06.6-ebpf-foundation/) 与 [## 1 Systems Performance](./06.6.5-systems-performance/) 阅读**（Gregg 性能双书第二本；前两者的交汇应用，不必等内核/网络全书）。
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|
@@ -257,7 +257,7 @@
 | Part I Ch 4–5 BCC / bpftrace | **精读** | 工具链快速上手 |
 | Part II Ch 6 CPU | **精读** | off-CPU、run queue、抖动定位 |
 | Part II Ch 10 网络 | **精读** | 套接字延迟、TCP/UDP 重传丢包 |
-| XDP / tc-BPF | **精读** | 见 [note-XDP与tc-BPF.md](./06.7-bpf-observability/02-bpf-performance-tools/note-XDP与tc-BPF.md)；vs DPDK |
+| XDP / tc-BPF | **精读** | 见 [note-XDP与tc-BPF.md](./06.7-bpf-observability/note-XDP与tc-BPF.md)；vs DPDK |
 | Part II Ch 7 内存 / Ch 13–14 应用·内核 | **选读** | alloc、fault、调度唤醒 |
 | Part I Ch 3 / Part III Ch 17–18 | **选读** | 方法论、排障技巧 |
 | 附录 A/B bpftrace 单行/备忘单 | **精读** | 现场速查 |

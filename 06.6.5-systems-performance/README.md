@@ -5,7 +5,7 @@
 > **文件夹 06.6.5** · 性能分析方法论。
 > **执行顺序（HFT）：** 建议在 **06 TLPI + 07/01 MikanOS + 09–13 网络/DPDK** 之后、**14 HFT** 之前开读（见 [README](../README.md)）。
 > **前置：** [02-CSAPP](../02-computer-systems/) · [19-Hennessy](../15-computer-architecture/) · 最好已有 **03–06** 系统基础
-> **上一本（可选平行）：** [06.6-Learning-eBPF](../06.6-learning-ebpf/)（eBPF 技术前置，两本顺序可互换——本书不依赖 BPF）
+> **上一本（可选平行）：** [06.6-Learning-eBPF](../06.6-ebpf-foundation/)（eBPF 技术前置，两本顺序可互换——本书不依赖 BPF）
 > **下一本：** [06.7-BPF](../06.7-bpf-observability/)（前两者的交汇应用，必须压轴）
 > 全链路 → [README.md](../README.md)
 

@@ -4,25 +4,25 @@
 
 > **定位：** BCC/bpftrace 工具谱系——按 CPU/内存/IO/网络资源域的观测工具百科与性能分析方法
 > **前置（双前置，缺一不可）：**
-> [06.6-Learning-eBPF](../06.6-learning-ebpf/)（会写探针）+ [06.6.5-Systems-Performance](../06.6.5-systems-performance/)（知道观测什么）——本书是前两者的交汇应用，**必须压轴**
+> [06.6-Learning-eBPF](../06.6-ebpf-foundation/)（会写探针）+ [06.6.5-Systems-Performance](../06.6.5-systems-performance/)（知道观测什么）——本书是前两者的交汇应用，**必须压轴**
 > **建议时机：** 已有 Linux 内核/网络/DPDK 或 HFT 压测靶子后再开 — 用 eBPF 验证真实系统
 > **后续：** [14-HFT](../14-hft-engineering/) / [18-Rust](../18-rust-quant/)
 
-> 📌 **历史变更（2026-10）：** 本模块原为双书目录，`01-learning-ebpf` 已提为独立模块
-> [06.6-learning-ebpf](../06.6-learning-ebpf/)（阅读顺序 06.6 → 06.6.5 → 06.7）。
+> 📌 **历史变更（2026-10）：** 本模块原为双书目录，`01-learning-ebpf` 已提为独立模块（现 `06.6-ebpf-foundation`）；本书章节已提升到本目录根级（无 02 层）
+> [06.6-ebpf-foundation](../06.6-ebpf-foundation/)（阅读顺序 06.6 → 06.6.5 → 06.7）。
 
 ---
 
 ## 目录结构
 
 ```
-06.7-bpf-observability/
-├── 02-bpf-performance-tools/    ← 唯一主书（工具谱系）
-│   ├── OUTLINE.md               全书目录 + HFT 读/跳标注
-│   ├── BPF-PERFORMANCE-TOOLS-EVAL.md
-│   ├── chapter-01~18/           章导读 + 分节笔记 + code/（.bt 程序与脚本）
-│   ├── appendix-A~E             bpftrace/BCC/指令附录
-│   └── note-XDP与tc-BPF.md      HFT 延伸
+06.7-bpf-observability/       ← 单书模块：BPF Performance Tools（章节已提升至根级）
+├── OUTLINE.md                全书目录 + HFT 读/跳标注
+├── BPF-PERFORMANCE-TOOLS-EVAL.md
+├── BOOK-TOC.md / SUPPLEMENT-web-resources.md
+├── chapter-01~18/            章导读 + 分节笔记 + code/（.bt 程序与脚本）
+├── appendix-A~E              bpftrace/BCC/指令附录
+├── note-XDP与tc-BPF.md       HFT 延伸
 ├── EBPF-BOOKS-COMPARISON.md  ← eBPF 三书对比与协同读法
 ├── ref-*.md                  ← 模块级参考（bpftrace 脚本/排查决策树/评审清单）
 └── README.md
@@ -48,7 +48,7 @@
 
 ## 内部导航
 
-各章导读见 [02-bpf-performance-tools/OUTLINE.md](./02-bpf-performance-tools/OUTLINE.md)（含 🔴🟡⚪ HFT 读/跳标注）。
+各章导读见 [02-bpf-performance-tools/OUTLINE.md](./OUTLINE.md)（含 🔴🟡⚪ HFT 读/跳标注）。
 
 **HFT 精读捷径：**
 
@@ -66,7 +66,7 @@ Ch 1–2 → Ch 4–5 → Ch 6 → Ch 10 (+ note-XDP) → 附录 A/B
 
 ## 交叉阅读
 
-- **双前置** → [06.6-learning-ebpf](../06.6-learning-ebpf/) · [06.6.5-systems-performance](../06.6.5-systems-performance/)
+- **双前置** → [06.6-ebpf-foundation](../06.6-ebpf-foundation/) · [06.6.5-systems-performance](../06.6.5-systems-performance/)
 - 后续内核/内存/网络 → [05-linux-kernel](../05-linux-kernel/) · [06-linux-mm](../06-linux-mm/) · [12-kernel-networking](../12-kernel-networking/)（读时可回头用 eBPF 验证）
 - DPDK 对照 → [13-dpdk](../13-dpdk/)（XDP early drop vs 用户态旁路）
 - Rust eBPF → [18-rust-quant](../18-rust-quant/)（Aya/bpf2go）

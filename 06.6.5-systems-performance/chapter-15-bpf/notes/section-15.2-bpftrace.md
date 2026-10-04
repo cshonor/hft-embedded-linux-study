@@ -141,7 +141,7 @@ sudo bpftrace -e 'profile:hz:99 { @[kstack] = count(); }'
 ### 衔接
 
 - 上一节：[15.1.7 BCC vs bpftrace](./section-15.1.7-BCC-vs-bpftrace.md)（什么时候用它、什么时候不用）
-- 深入：[06.7-BPF ch05 bpftrace](../../../06.7-bpf-observability/02-bpf-performance-tools/chapter-05-bpftrace/)（语言参考全书级展开）
+- 深入：[06.7-BPF ch05 bpftrace](../../../06.7-bpf-observability/chapter-05-bpftrace/)（语言参考全书级展开）
 - 弹药库：[附录 C bpftrace 单行命令](../../appendix-C-bpftrace单行命令.md)
 
 ---

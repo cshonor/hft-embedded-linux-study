@@ -81,7 +81,7 @@ BOOKS = [
     _b("13-dpdk/01-Intro-Book", "DPDK 入门", "DPDK 应用基础 · 初阶", "network"),
     _b("13-dpdk/02-Advanced-Book", "DPDK 进阶", "DPDK 深入与性能调优", "network"),
     # ---- 性能分析 · eBPF ----
-    _b("06.6-learning-ebpf", "Learning eBPF", "O'Reilly · 入门到 verifier", "perf"),
+    _b("06.6-ebpf-foundation", "Learning eBPF", "O'Reilly · 入门到 verifier", "perf"),
     _b("06.6.5-systems-performance", "Systems Performance", "Brendan Gregg · 企业版中文笔记", "perf"),
     _b("06.7-bpf-observability/02-bpf-performance-tools", "BPF Performance Tools", "Brendan Gregg · 上下册笔记", "perf"),
     # ---- HFT · 量化 · 运动控制 ----

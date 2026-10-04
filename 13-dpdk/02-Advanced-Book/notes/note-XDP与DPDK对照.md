@@ -4,7 +4,7 @@
 
 > **本篇分工：** [note-openonload-rdma对比](./note-openonload-rdma对比.md) 讲**绕开内核**的路线；
 > 本篇讲**留在内核里**能快到什么程度（XDP）、以及半绕开的 AF_XDP 怎么当"低风险第一步"。
-> eBPF/XDP 的工具链与观测深入在 [06.7-BPF](../../../06.7-bpf-observability/02-bpf-performance-tools/note-XDP与tc-BPF.md)，本篇只落到**与 DPDK 的取舍**。
+> eBPF/XDP 的工具链与观测深入在 [06.7-BPF](../../../06.7-bpf-observability/note-XDP与tc-BPF.md)，本篇只落到**与 DPDK 的取舍**。
 
 ---
 
@@ -148,7 +148,7 @@ DPDK 在数据面拿确定性。别把 XDP 装到 DPDK 接管的网卡上——�
 
 ## 五、相关章节
 
-- 深入 XDP 实现与工具：[06.7-BPF note-XDP与tc-BPF](../../../06.7-bpf-observability/02-bpf-performance-tools/note-XDP与tc-BPF.md)
+- 深入 XDP 实现与工具：[06.7-BPF note-XDP与tc-BPF](../../../06.7-bpf-observability/note-XDP与tc-BPF.md)
 - AF_XDP UMEM 布局：[12.5/chapter-06/notes/03-af-xdp-umem-layout](../../../12.5-modern-networking/chapter-06-af-xdp/notes/03-af-xdp-umem-layout.md)
 - 旁路后的完整链路：[01-Intro chapter-04 零拷贝与用户态旁路](../../01-Intro-Book/notes/chapter-04-零拷贝与用户态旁路.md)
 - 方案总表：[note-openonload-rdma对比](./note-openonload-rdma对比.md)

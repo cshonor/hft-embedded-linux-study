@@ -34,7 +34,7 @@
 |------|------|--------|
 | **bcc 库** | Python/Lua/C++ 绑定，`BPF(text='...')` 一行加载 | 工具开发者 |
 | **bcc-tools** | 70+ 预制单用途工具，`/usr/share/bcc/tools/` | 所有人 |
-| **libbpf 时代** | 新工具渐迁 libbpf + CO-RE（BTF 重定位），详见 [06.7-BPF ch04](../../../06.7-bpf-observability/02-bpf-performance-tools/chapter-04-bcc/) | 新项目 |
+| **libbpf 时代** | 新工具渐迁 libbpf + CO-RE（BTF 重定位），详见 [06.7-BPF ch04](../../../06.7-bpf-observability/chapter-04-bcc/) | 新项目 |
 
 ### 二、一次 BCC 工具调用的完整生命周期
 
@@ -164,7 +164,7 @@ int trace_wake(struct pt_regs *ctx) {
 
 - 上一节：[15.0 BPF 背景与架构](./section-15.0-BPF背景与架构.md)（验证器与 map 的机制总览）
 - 下一节：[15.1.7 BCC vs bpftrace](./section-15.1.7-BCC-vs-bpftrace.md)（双剑怎么分工）
-- 深入：[06.7-BPF ch04 BCC](../../../06.7-bpf-observability/02-bpf-performance-tools/chapter-04-bcc/)（BCC 编程全书级展开）
+- 深入：[06.7-BPF ch04 BCC](../../../06.7-bpf-observability/chapter-04-bcc/)（BCC 编程全书级展开）
 - 单行弹药库：[附录 C bpftrace 单行命令](../../appendix-C-bpftrace单行命令.md)
 
 ---

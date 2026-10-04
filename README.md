@@ -41,7 +41,7 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 | **12** | [kernel-networking](./12-kernel-networking/) | 内核网络栈（Rosen） | 5B |
 | **12.5** | [modern-networking](./12.5-modern-networking/) | 现代网络：XDP / eBPF / io_uring | 5B |
 | **13** | [dpdk](./13-dpdk/) | 用户态高速网络 | 5B |
-| **06.6** | [learning-ebpf](./06.6-learning-ebpf/) | eBPF 原理入门（Liz Rice） | 5B |
+| **06.6** | [ebpf-foundation](./06.6-ebpf-foundation/) | eBPF 原理入门（Liz Rice） | 5B |
 | **06.6.5** | [systems-performance](./06.6.5-systems-performance/) | 系统性能方法论（Gregg） | 5B |
 | **06.7** | [bpf-observability](./06.7-bpf-observability/) | BPF 性能工具（Gregg） | 5B |
 | **14** | [hft-engineering](./14-hft-engineering/) | HFT 工程实践 | 5B |

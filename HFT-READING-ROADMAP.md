@@ -16,7 +16,7 @@
 | **05** · **06**（**16** 可后） ·（+ **05.5** **05.6** **06.5** 现代补充） | linux-kernel · linux-mm（→ ULK 深度） | 内核共同基础 |
 | **07**–**10** | ARM · 构建 · 驱动/DT · 飞控 | 嵌入式支线 |
 | **11** · **11.5** · **12** · **12.5** · **13** | TCP/IP · 抓包 · 内核网络 · 现代网络 · DPDK | 网络纵深 |
-| **06.6** · **06.6.5** · **06.7** | learning-ebpf · systems-performance · bpf-observability | 性能观测 |
+| **06.6** · **06.6.5** · **06.7** | ebpf-foundation · systems-performance · bpf-observability | 性能观测 |
 | **14** · **17** · **18** · **19** | hft-engineering · rust · rust-quant · markets | HFT 上层 |
 
 > 📌 **`06.6` / `06.6.5` / `06.7` 编号虽是 `.6` 系，却排在 `13` DPDK 之后读**——性能方法论需要有真实系统可 profile 才有意义，
@@ -24,7 +24,7 @@
 
 ### 性能三书 · `06.6` → `06.6.5` → `06.7`（后置）
 
-| 06.6 learning-ebpf | 06.6.5 systems-performance | 06.7 bpf-observability |
+| 06.6 ebpf-foundation | 06.6.5 systems-performance | 06.7 bpf-observability |
 |--------------------|---------------------------|------------------------|
 | 会写探针：map/验证器/CO-RE | 观测什么：USE/RED、延迟分解、perf/Ftrace | 工具落地：bpftrace/BCC 生产谱系 |
 
