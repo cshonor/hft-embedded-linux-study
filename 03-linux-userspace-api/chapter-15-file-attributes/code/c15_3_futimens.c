@@ -33,6 +33,10 @@
 #ifndef UTIME_OMIT
 #define UTIME_OMIT ((1ll << 30) - 2ll)   /* 与 Linux 同值 1,111,111,111ns */
 #endif
+#else                            /* Linux/glibc：字段名无 -spec 后缀 */
+#define AT(sb)  ((sb)->st_atim)
+#define MT(sb)  ((sb)->st_mtim)
+#define CT(sb)  ((sb)->st_ctim)
 #endif
 
 static void dump(const char *tag, const struct stat *sb)
@@ -120,8 +124,8 @@ int main(void)
         struct stat sb_l2;
         if (lstat(lnk, &sb_l2) == -1) { perror("lstat2"); return EXIT_FAILURE; }
         printf("  链接 mtime: %ld.%09ld（改前 %ld.%09ld）\n",
-               (long) sb_l2.st_mtimespec.tv_sec, (long) sb_l2.st_mtimespec.tv_nsec,
-               (long) sb_l.st_mtimespec.tv_sec, (long) sb_l.st_mtimespec.tv_nsec);
+               (long) MT(&sb_l2).tv_sec, (long) MT(&sb_l2).tv_nsec,
+               (long) MT(&sb_l).tv_sec, (long) MT(&sb_l).tv_nsec);
     }
     printf("  ⚠️ 不带 AT_SYMLINK_NOFOLLOW 时 utimensat 会跟随链接改到「目标文件」，\n");
     printf("     链接自身的时间戳是全章唯一只能用这个标志改的东西。\n");

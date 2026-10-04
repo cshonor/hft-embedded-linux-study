@@ -24,6 +24,9 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#if defined(__linux__)
+#include <sys/sysmacros.h>   /* glibc ≥2.28 起 major/minor 只在这里，sys/types.h 不再捎带 */
+#endif
 #include <time.h>
 #include <unistd.h>
 

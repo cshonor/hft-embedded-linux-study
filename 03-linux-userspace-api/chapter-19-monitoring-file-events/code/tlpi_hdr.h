@@ -34,7 +34,9 @@
 #ifndef TLPI_HDR_H
 #define TLPI_HDR_H
 
-#include "get_num.h"   /* 原书 tlpi_hdr.h 也含它；t_unlink.c 用 getInt */
+/* 注：原书 tlpi_hdr.h 会带 get_num.h，但本章没有任何 demo 用 getInt/getLong
+ * （t_unlink.c 在 ch18），本目录也不放 get_num.[ch]——勿把该 include 抄回来，
+ * 否则 Linux 下全部编译失败（2026-10 实测修复）。 */
 
 /* 原书头里的 Boolean（t_stat.c 用到）； mac 上 enum 常量冲突，用 int+宏 */
 #define TRUE 1

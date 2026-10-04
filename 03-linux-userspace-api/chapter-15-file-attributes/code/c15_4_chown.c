@@ -24,6 +24,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#if defined(__APPLE__)
+#define CT(sb)  ((sb).st_ctimespec)
+#else                            /* Linux/glibc：字段名无 -spec 后缀 */
+#define CT(sb)  ((sb).st_ctim)
+#endif
+
 /* 相当于 TLPI ugid_functions.h 的 groupIdFromName（本 demo 自带迷你版） */
 static gid_t groupIdFromNameSafe(const char *name)
 {
@@ -62,14 +68,14 @@ int main(void)
     if (chown(path, -1, -1) == -1) { perror("chown(-1,-1)"); return EXIT_FAILURE; }
     if (stat(path, &a) == -1) { perror("stat2"); return EXIT_FAILURE; }
     printf("  ctime %ld.%09ld → %ld.%09ld（%s）\n",
-           (long) b.st_ctimespec.tv_sec, (long) b.st_ctimespec.tv_nsec,
-           (long) a.st_ctimespec.tv_sec, (long) a.st_ctimespec.tv_nsec,
-           b.st_ctimespec.tv_sec != a.st_ctimespec.tv_sec ||
-           b.st_ctimespec.tv_nsec != a.st_ctimespec.tv_nsec ? "动了" : "没动");
+           (long) CT(b).tv_sec, (long) CT(b).tv_nsec,
+           (long) CT(a).tv_sec, (long) CT(a).tv_nsec,
+           CT(b).tv_sec != CT(a).tv_sec ||
+           CT(b).tv_nsec != CT(a).tv_nsec ? "动了" : "没动");
     printf("  ⚠️ POSIX 规定 chown() 成功后应更新 ctime（含 no-op 版）；Linux 实测\n");
     printf("     会动。本机 macOS 实测%s——BSD 对「值没变」短路了。\n",
-           b.st_ctimespec.tv_sec != a.st_ctimespec.tv_sec ||
-           b.st_ctimespec.tv_nsec != a.st_ctimespec.tv_nsec ? "动了" : "没动（跨平台差异！）");
+           CT(b).tv_sec != CT(a).tv_sec ||
+           CT(b).tv_nsec != CT(a).tv_nsec ? "动了" : "没动（跨平台差异！）");
     printf("     审计代码别依赖「空 chown 必动 ctime」，两个平台表现不同。\n\n");
 
     /* ---------- ②③ 非特权改属主 / 改属组 ---------- */
