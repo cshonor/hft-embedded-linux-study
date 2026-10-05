@@ -19,15 +19,18 @@
 #include <pwd.h>
 #include <grp.h>
 #include <sys/acl.h>
-#include <acl/libacl.h>         /* acl_get_perm_np() */
+#include <acl/libacl.h>
+
+/* Ubuntu 24.04 的 libacl 2.3.2 还没有 acl_get_perm()（2.3.3+ 才有），
+ * 用等价的旧版 acl_get_perm()——在 Linux 上两者行为一致（2026-10 实测修复）。 */
 #include "tlpi_hdr.h"
 
 static void perms_str(acl_permset_t ps, char *out)
 {
     /* 逐位探测：r w x（draft 只定义这三个；ACL_MASK entry 另说） */
-    out[0] = acl_get_perm_np(ps, ACL_READ)  == 1 ? 'r' : '-';
-    out[1] = acl_get_perm_np(ps, ACL_WRITE) == 1 ? 'w' : '-';
-    out[2] = acl_get_perm_np(ps, ACL_EXECUTE) == 1 ? 'x' : '-';
+    out[0] = acl_get_perm(ps, ACL_READ)  == 1 ? 'r' : '-';
+    out[1] = acl_get_perm(ps, ACL_WRITE) == 1 ? 'w' : '-';
+    out[2] = acl_get_perm(ps, ACL_EXECUTE) == 1 ? 'x' : '-';
     out[3] = '\0';
 }
 
