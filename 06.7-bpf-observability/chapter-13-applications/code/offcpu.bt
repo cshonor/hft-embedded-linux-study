@@ -1,32 +1,37 @@
 #!/usr/bin/env bpftrace
-/* offcpu.bt — off-CPU 阻塞栈直方图（02-ch13 §4 块4）
+/* offcpu.bt — off-CPU 阻塞时长直方图（02-ch13 §4 块4）
  *
- * finish_task_switch 的 arg0 = 被换下的线程（开始"不在 CPU 上"）；
- * 当前换入的线程若之前有换下记录 → 求差 = 它的 off-CPU 时长。
- * 按 [kstack, ustack, comm, tid] 聚合 → 阻塞在哪、多久，一次说清。
+ * 原版 kprobe:finish_task_switch 在内核 7.0 无法 attach（该函数已进
+ * kprobe 黑名单/notrace，"cannot attach kprobe, Invalid argument"，
+ * 2026-10 本机实测）——改用稳定 ABI tracepoint:sched:sched_switch。
+ *
+ * 语义差异（如实说明）：
+ *   sched_switch 触发时 current 仍是换下者（prev），拿不到换入者（next）
+ *   的内核/用户栈，故聚合键退化为 [next_comm]——时长统计精确，
+ *   栈画像请用 offcputime-bpfcc（BCC 版走的内核路径不同，可用）。
+ *
+ * 模型：prev 下 CPU 记时间戳；某 pid 作为 next 上 CPU 时结算差值
+ *       = 它的 off-CPU 时长（与书 §4 一致）。
  *
  * 用法: sudo bpftrace offcpu.bt
- * 对照: offcputime-bpfcc（成品，支持 -p 过滤与 folded 输出）
+ * 对照: offcputime-bpfcc（成品，支持栈聚合与 -p 过滤）
  */
-
-#include <linux/sched.h>
 
 BEGIN
 {
-    printf("Tracing nanosecond time in off-cpu stacks. Ctrl-C to end.\n");
+    printf("Tracing off-CPU time (by next_comm). Ctrl-C to end.\n");
 }
 
-kprobe:finish_task_switch
+tracepoint:sched:sched_switch
 {
-    /* 记录前一个线程的睡眠开始时间 */
-    $prev = (struct task_struct *)arg0;
-    @start[$prev->pid] = nsecs;
+    /* prev 开始睡（无论主动/被动，离开 CPU 即 off） */
+    @start[args->prev_pid] = nsecs;
 
-    /* 当前线程开始用 CPU 时，记录直方图 */
-    $last = @start[tid];
+    /* next 上 CPU：若它有离开记录，结算 off-CPU 时长 */
+    $last = @start[args->next_pid];
     if ($last != 0) {
-        @[kstack, ustack, comm, tid] = hist(nsecs - $last);
-        delete(@start[tid]);
+        @[args->next_comm] = hist(nsecs - $last);
+        delete(@start[args->next_pid]);
     }
 }
 

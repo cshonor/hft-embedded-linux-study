@@ -1,25 +1,37 @@
 #!/usr/bin/env bpftrace
 /* pidns-switch.bt — PID 命名空间切换计数（02-ch15 §4 块3，书上 pidnss 的 bpftrace 版）
  *
- * finish_task_switch 时比较 prev/curr 的 PID namespace：
- * 不同 = CPU 从一个容器（或宿主机）切到另一个——容器边界的调度穿越画像。
- * nodename 就是容器的主机名（k8s 里 = pod 名）。
+ * 原版 kprobe:finish_task_switch 在内核 7.0 无法 attach（黑名单/notrace，
+ * 2026-10 本机实测）；4 个 linux/ns*.h 内核头也被 static_assert 挡住。
+ * 改用 tracepoint:sched:sched_switch + per-CPU 前后对比模型（语义等价）：
+ *   同一 CPU 上，前一个换入者与本次换入者的 PID namespace 不同
+ *   = CPU 跨越了容器边界——容器调度穿越画像。
+ *
+ * nsproxy 结构体走 BTF，无需内核头。nodename 就是容器主机名（k8s = pod 名）。
  *
  * 用法: sudo bpftrace pidns-switch.bt
  */
 
-#include <linux/sched.h>
-#include <linux/nsproxy.h>
-#include <linux/utsname.h>
-#include <linux/pid_namespace.h>
-
-kprobe:finish_task_switch
+BEGIN
 {
-    $prev = (struct task_struct *)arg0;
+    printf("Tracing PID namespace crossings. Ctrl-C to end.\n");
+}
+
+tracepoint:sched:sched_switch
+{
     $curr = (struct task_struct *)curtask;
-    $prev_pidns = $prev->nsproxy->pid_ns_for_children->ns.inum;
-    $curr_pidns = $curr->nsproxy->pid_ns_for_children->ns.inum;
-    if ($prev_pidns != $curr_pidns) {
-        @[$prev_pidns, $prev->nsproxy->uts_ns->name.nodename] = count();
+    if ($curr->nsproxy != 0) {
+        $ns = $curr->nsproxy->pid_ns_for_children->ns.inum;
+        $prev = @last_ns[cpu];
+        if ($prev != 0 && $prev != $ns) {
+            @crossings[$prev, $ns] = count();
+            @[str($curr->nsproxy->uts_ns->name.nodename)] = count();
+        }
+        @last_ns[cpu] = $ns;
     }
+}
+
+END
+{
+    clear(@last_ns);
 }
