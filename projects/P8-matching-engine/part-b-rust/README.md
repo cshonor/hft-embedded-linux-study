@@ -10,10 +10,11 @@
 |----|------|
 | Phase 1：限价单撮合（价格优先 + FIFO + 部分成交 + 撤单） | ✅ 与 part-a 五用例**逐断言对齐** |
 | Phase 2：Market / IOC / FOK + 成交回报（Trade 含 taker/maker id） | ✅ 6 个新增用例 |
-| Phase 3：无锁 SPSC ring 衔接行情输入 | ⬜ 未做（届时才需要 `unsafe`，且只允许在 ring 的 push/pop 内） |
+| Phase 3：无锁 SPSC ring 衔接行情输入 | ✅ 5 用例（含 **100 万单无丢无重**链路验收 + ring 传递后撮合结果 == 单线程基准） |
 | Phase 4：绑核/大页/mlock + 延迟基准 | ⬜ 未做（目标 Pi 5，同 P10 part-b Phase 5） |
 
-**安全边界：整个 crate 零 unsafe**（本阶段没有无锁队列，所以一行都不需要）。
+**安全边界：unsafe 只存在于 `spsc.rs` 的 `try_push` / `try_pop` / `Drop`**（18-rust-quant ch02 纪律的落地形态）；
+`book.rs` / `types.rs` / 全部测试仍是纯安全 Rust。
 
 ## 构建与测试
 
@@ -23,7 +24,15 @@ make test          # = cargo test --release（12 用例，与 part-a 对齐 5 + 
 cargo clippy       # 干净（无警告）
 ```
 
-本机验证（2026-10，rustc 1.99.0 / Ubuntu 24.04 x86_64）：**12/12 通过**。
+本机验证（2026-10，rustc 1.99.0 / Ubuntu 24.04 x86_64）：**17/17 通过**（LOB 12 + SPSC 5），clippy 零警告。
+
+## Phase 3 新增：spsc.rs
+
+- 语义同 P10 `spsc_ring.hpp`：固定数组 + 两个原子下标（累计值），满 = `head - tail >= N`，`N` 必须 2 的幂（`const {}` 编译期断言）
+- `head`/`tail` 各占 64B（`#[repr(C, align(64))]`）防伪共享——06.6.5/ch13 的 false_sharing_demo 就是这个问题的实测
+- 内存序：写数据 → `Release` head++；`Acquire` 读 head → 读数据（反了会读半成品）
+- 背压：`try_push` 满返回 `Err(原值)`，调用方 `spin_loop`（不睡觉——睡觉就是 µs 级上下文切换）
+- 链路验收（`tests/spsc_test.rs`）：生产者猛推 100 万单，消费者撮合，**无丢（popped==TOTAL）无重（last_id==TOTAL）**，0.13s 跑完
 
 ## 设计要点（与 C++ 版的语义对照）
 

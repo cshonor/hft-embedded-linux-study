@@ -4,7 +4,9 @@
 //! 加 Phase 2 的 Market/IOC/FOK。整个 crate **零 unsafe**。
 
 pub mod book;
+pub mod spsc;
 pub mod types;
 
 pub use book::Book;
+pub use spsc::SpscRing;
 pub use types::{Order, OrderType, Price, Qty, Side, Trade};

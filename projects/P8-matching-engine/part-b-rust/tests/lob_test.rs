@@ -2,7 +2,7 @@
 //!
 //! 前五个测试与 C++ 版**逐断言对齐**（同名、同数据、同预期）。
 
-use p8_lob::{Book, Order, OrderType, Side};
+use p8_lob::{Book, Order, Side};
 
 // ---------- Phase 1：与 part-a-lob/lob_test.cpp 逐断言对齐 ----------
 
