@@ -36,7 +36,11 @@ add_executable(test_book tests/test_book.cpp)
 target_link_libraries(test_book PRIVATE hft)
 add_test(NAME book COMMAND test_book)
 
+add_executable(test_feed tests/test_feed.cpp)
+target_link_libraries(test_feed PRIVATE hft)
+add_test(NAME feed COMMAND test_feed)
+
 # Release 默认 -O3（生产延迟敏感代码的底线）
-foreach(t test_protocol test_book)
+foreach(t test_protocol test_book test_feed)
     target_compile_options(${t} PRIVATE $<$<CONFIG:Release>:-O3>)
 endforeach()
