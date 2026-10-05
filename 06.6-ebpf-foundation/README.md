@@ -37,6 +37,21 @@
 | 10 | bpftrace 编程 | [chapter-10-programming/](./chapter-10-programming/) |
 | 11 | 未来展望 | [chapter-11-future/](./chapter-11-future/) |
 
+## 本机实跑验证记录（2026-10-05 · Ubuntu 24.04 / kernel 7.0.0-38-generic · root 实测）
+
+除树莓派 5 实验仓回灌外，以下关键链路已在本机（x86_64）root 实跑验证：
+
+| 链路 | 章 | 结果 |
+|------|----|------|
+| BCC Hello World（UID 计数 map） | ch02 | ✅ `UID 1000: 27 / UID 0: 3` 聚合正常 |
+| XDP 挂载 lo + trace_pipe 输出 | ch03 | ✅ 挂载成功，`Hello World N` 计数正常 |
+| CO-RE 全链路（vmlinux.h→skeleton→load→attach→perf event） | ch05 | ✅ execve 事件实时推送（含 comm 过滤） |
+| verifier 反例实验 | ch06 | ✅ NULL 解引用 / map 越界（`off=12 size=1`）被拒，修正版加载通过 |
+
+bpftrace 侧（[06.7 ch06](../06.7-bpf-observability/chapter-06-cpus/code/runqlat.bt)）：
+✅ runqlat.bt 实测直方图峰值 8–16µs，与笔记"热核 < 数十 µs"一致。
+（顺带修复：bpftrace 的 `if` 必须带 `{}`，原 C 风格单语句 if 实跑报 `unexpected map`。）
+
 ## 相关
 
 - 工具谱系（姊妹书） → [06.7-bpf-observability](../06.7-bpf-observability/)
