@@ -37,7 +37,6 @@
 | **[CH4](./04-linux-gnu/)** | **Linux / GNU** | gcc 其实只是"司机"；`-fanalyzer` 也会沉默；gdb 全程实测；DWARF 就住在 ELF 里；Linux 上写 C 用什么 | ✅ **Pi 实测** |
 | **[CH5](./05-boundary/)** | 平台边界 | MSVC 的 C 标准缺口、`<unistd.h>` 与 Winsock、UTF-8/CRLF、为什么 TLPI 必须在 Linux 上跑、**MSVC 不吃 GNU 扩展怎么办**、**内核模块要真 Linux 吗（WSL2 够不够 + Pi insmod 实测）** | ✅ 官方核实 + Pi 实测 |
 | **[CH6](./06-cheatsheet/)** | 速查表 | 一页纸：三族选项映射、调试命令、常见坑 | — |
-| **[CH7](./07-shell-bash/)** | shell / bash | 工作台语言：一页速查 + 坑点清单 + 73 个 .sh 的注解语料；不开书式精读，边用边学 | 🌱 骨架起步 |
 | **—** | [demo/](./demo/) | 60 行的 `ptrbug.c`，当四套编译器 + 三个调试器的共同靶子；另有 [`hello-mod/`](./demo/hello-mod/) 最小可加载内核模块 | ✅ Mac + Pi |
 
 > **状态约定：** ✅ 实测 = 在 `demo/` 上真实跑过，输出为真机输出。
