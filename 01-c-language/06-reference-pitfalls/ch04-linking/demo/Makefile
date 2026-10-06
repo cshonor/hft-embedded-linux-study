@@ -7,9 +7,11 @@ all:
 	$(MAKE) -C demo03_static_lib
 	$(MAKE) -C demo04_bss_data
 	$(MAKE) -C demo05_undef
+	$(MAKE) -C demo06_unused_static
 clean:
 	$(MAKE) -C demo01_extern clean
 	$(MAKE) -C demo02_extern_type clean
 	$(MAKE) -C demo03_static_lib clean
 	$(MAKE) -C demo04_bss_data clean
 	$(MAKE) -C demo05_undef clean
+	$(MAKE) -C demo06_unused_static clean

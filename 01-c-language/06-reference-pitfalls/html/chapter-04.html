@@ -284,6 +284,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-4-6"><span class="n">4.6</span>强符号与弱符号</a>
           <a href="#s-4-7"><span class="n">4.7</span>未定义引用</a>
           <a href="#s-4-8"><span class="n">4.8</span>头文件保护与循环包含</a>
+          <a href="#s-4-9"><span class="n">4.9</span>未使用函数与链接依赖</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -310,7 +311,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Koenig《C Traps and Pitfalls》· C 陷阱与缺陷</div>
           <h1>第 4 章 连接</h1>
           <div class="meta">
-<span>book <b>01-c-language · 06-reference-pitfalls</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>9</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>01-c-language · 06-reference-pitfalls</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>10</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -807,6 +808,107 @@ typedef struct { int x; } Point;
 #endif
 </code></pre>
 <p>或用 <code class="c">#pragma once</code>（非标准但被主流编译器支持，更简洁）。保护宏名应唯一（通常基于文件路径）。</p>
+</details>
+      </section>
+      <section class="section" id="s-4-9">
+        <div class="sec-head"><div class="sec-no">4.9</div><h2>未使用函数与链接依赖</h2></div>
+<h2>本节讲什么</h2>
+<p>声明/实现分离的基本规则（<a href="#s-4-1">4.1</a>、<a href="#s-4-8">4.8</a>）之后，藏着一个更细的陷阱：<strong>一个没人调用的函数，它体内的外部依赖会不会拖垮链接？</strong> 答案不是一句"会"或"不会"，而是取决于 <strong>链接属性 × 编译器 × 优化级别</strong> 三个变量。常见教程（以及 MSVC 的行为）说"加 <code class="c">static</code> 且未调用就不会报错"——<strong>这个说法在 GCC <code class="c">-O0</code> 下是错的</strong>，本节用实测把边界钉死。</p>
+<p>先澄清一个术语混淆：<code class="c">gcc -c math.c</code>（只编译）<strong>永远不做链接检查</strong>，无论函数用没用、依赖缺不缺都能过；只有产生可执行文件的<strong>链接步骤</strong>才去解析符号。<code class="c">gcc math.c -o math</code> 是一条命令走完编译+链接，报错发生在链接阶段，不是"编译"阶段。</p>
+<h2>要点</h2>
+<h3>声明与实现分离（30 秒回顾）</h3>
+<ul>
+<li>声明放 <code class="c">.h</code>（或调用前手写 <code class="c">extern</code> 声明，不推荐），实现放 <code class="c">.c</code></li>
+<li>每个 <code class="c">.c</code> 独立编译成 <code class="c">.o</code>，<strong>编译期只查"名字有没有声明"</strong>；链接器统一把声明绑定到实现</li>
+<li>没声明就用 → <strong>编译错</strong>；声明了但实现所在 <code class="c">.o</code> 没参与链接 → <strong>链接错</strong>（<code class="c">undefined reference</code>，见 <a href="#s-4-7">4.7</a>）</li>
+</ul>
+<h3>未使用函数的三种情形</h3>
+<p>设 <code class="c">math.c</code> 里有一个 <code class="c">multiply</code>，<strong>没有任何人调用它</strong>，它体内调用了外部函数 <code class="c">logmsg</code>（实现在 <code class="c">log.c</code>）。现在链接时<strong>故意不带 <code class="c">log.o</code></strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th><code class="c">multiply</code> 链接属性</th>
+<th>结果</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td>外部链接（无 <code class="c">static</code>）</td>
+<td>🔴 <strong>一定报</strong> <code class="c">undefined reference</code></td>
+<td>外部符号必须发射进 <code class="c">.o</code>——编译器不知道别的 TU 会不会调它 → 它对 <code class="c">logmsg</code> 的引用一定进入符号表 → 链接器一定去查</td>
+</tr>
+<tr>
+<td>B</td>
+<td>内部链接（<code class="c">static</code>），<strong>未被消除</strong></td>
+<td>🔴 报错</td>
+<td>函数体还在 <code class="c">.o</code> 里，引用照样进符号表</td>
+</tr>
+<tr>
+<td>C</td>
+<td>内部链接（<code class="c">static</code>），<strong>被编译器消除</strong></td>
+<td>🟢 链接通过</td>
+<td>没人调用的内部链接函数是死代码，编译器<strong>有权</strong>整个删掉，连带删掉对 <code class="c">logmsg</code> 的引用</td>
+</tr>
+</tbody>
+</table></div>
+<p>B 和 C 的分界线不在标准里——C 标准<strong>允许</strong>消除不可达的内部链接函数，但<strong>不强制</strong>。于是它变成编译器实现 + 优化级别的函数：</p>
+<h3>实测：clang vs gcc × -O0/-O2</h3>
+<p>同一份代码（<code class="c">static int multiply</code> 未被调用，依赖外部 <code class="c">logmsg</code>，链接不带 <code class="c">log.o</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具链</th>
+<th><code class="c">-O0</code></th>
+<th><code class="c">-O2</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>clang 23.1.0</strong>（macOS arm64）</td>
+<td>🟢 通过——<code class="c">-O0</code> 就消除，<code class="c">nm</code> 里连 <code class="c">multiply</code> 都没有</td>
+<td>🟢 通过</td>
+</tr>
+<tr>
+<td><strong>gcc 14.2</strong>（Debian 13 / Pi 5）</td>
+<td>🔴 <strong>报错</strong>——<code class="c">nm</code> 可见 <code class="c">t multiply</code> + <code class="c">U logmsg</code>，<code class="c">undefined reference to 'logmsg'</code></td>
+<td>🟢 通过（死代码消除后）</td>
+</tr>
+</tbody>
+</table></div>
+<p>gcc <code class="c">-O0</code> 保留未使用的 static 函数（方便调试时下断点），clang 任何级别都直接不发射。<strong>"static 未调用就不报错"只是优化开启后的经验，不是语言保证。</strong></p>
+<p>情形 A 在任何编译器、任何优化级别都报错——外部链接函数必须导出，没有豁免。</p>
+<h3>被调用就回到常识</h3>
+<p><code class="c">static</code> 且<strong>被调用</strong>（情形 D）：函数必然保留，依赖的 <code class="c">logmsg</code> 必须有实现参与链接，否则报错——与优化级别无关。</p>
+<h2>与 HFT/嵌入式</h2>
+<ul>
+<li><strong>别把"能链接过"押在优化级别上</strong>：同一份代码 Debug（<code class="c">-O0</code>）挂、Release（<code class="c">-O2</code>）过，是构建系统的大忌。嵌入式里想要确定性的死代码剔除，用 <strong><code class="c">-ffunction-sections -fdata-sections</code> + 链接时 <code class="c">--gc-sections</code></strong>——由链接器按 section 粒度回收，行为写在构建脚本里，不看编译器心情</li>
+<li><strong>条件编译的依赖同样适用</strong>：<code class="c">#ifdef</code> 关掉的函数体在预处理阶段就消失（连编译都不参与）；而"留着但没人调"的函数走的是本节这条路，两回事</li>
+<li>HFT 网关按模块部分链接（<code class="c">ld -r</code>）时，情形 A 的外部符号引用会一路带到最终链接才爆，排查时先 <code class="c">nm -u</code> 看未定义符号来自哪个 <code class="c">.o</code></li>
+</ul>
+<h2>与后续衔接</h2>
+<ul>
+<li><strong><a href="#s-4-1">4.1</a></strong> extern 声明 vs 定义；<strong><a href="#s-4-3">4.3</a></strong> static 内部链接；<strong><a href="#s-4-7">4.7</a></strong> 漏 <code class="c">.o</code> 的通用解法</li>
+<li><strong><a href="chapter-05.html#ch-5">Expert C ch05</a></strong> 链接器符号解析全流程</li>
+<li><strong><a href="chapter-03.html#s-3-6">Pointers on C 3.6</a></strong> 三种链接属性的严格定义</li>
+<li><strong><a href="chapter-06.html#ch-6">Embedded 6.10</a></strong> <code class="c">--gc-sections</code> 与符号决议</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> <code class="c">math.c</code> 中定义了 <code class="c">static int square(int x){ return x*x; }</code>，全程序无人调用。链接时报 <code class="c">undefined reference to 'square'</code> 可能吗？报 <code class="c">undefined reference</code> 给 <code class="c">square</code> 体内调用的外部函数可能吗？</p>
+<details>
+<summary>参考答案</summary>
+<ul>
+<li>报 <code class="c">square</code> 自己：<strong>不可能</strong>。内部链接符号不导出，外部 TU 引用不到它，链接器不会替别人找 <code class="c">square</code>。</li>
+<li>报 <code class="c">square</code> 体内的外部依赖：<strong>可能，看编译器和优化级别</strong>。gcc <code class="c">-O0</code> 会保留未使用的 static 函数，其体内的外部引用进入符号表 → 依赖缺实现就报错；gcc <code class="c">-O2</code> / clang 任意级别会消除该函数 → 不报错。</li>
+</ul>
+</details>
+<p><strong>题目 2：</strong> 把 <code class="c">square</code> 的 <code class="c">static</code> 去掉，仍然无人调用，链接时缺它依赖的外部实现，报不报错？为什么和 static 情形不同？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>一定报错，与优化级别无关。</strong> 外部链接函数必须发射并导出符号——编译器无法证明其他翻译单元不会调用它，所以函数体一定进 <code class="c">.o</code>，体内的外部引用一定进未定义符号表，链接器一定去解析。static 情形的"豁免"恰恰来自内部链接允许编译器证明"无人可达"从而整体消除。</p>
 </details>
       </section>
 

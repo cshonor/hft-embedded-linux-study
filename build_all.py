@@ -50,6 +50,7 @@ BOOKS = [
     _b("01-c-language/06-reference-pitfalls", "参考 · 陷阱与缺陷", "Koenig《C Traps and Pitfalls》· C 陷阱与缺陷", "c-lang"),
     _b("01.5-cmake-build", "CMake 构建系统", "《CMake构建实战》+ Professional CMake · 任务节点式", "c-lang"),
     _b("01.7-platform-toolchain", "三条 C 工具链互译", "Windows/MSVC ↔ macOS/Xcode ↔ Linux/GNU：公共认知层 + 三条支线 + 平台边界；Mac 与 Pi 全程实测", "c-lang"),
+    _b("01.8-shell-bash", "shell / bash 工作台语言", "薄模块：一页速查 + 坑点清单 + 73 个 .sh 注解语料；边用边学不做书式精读", "c-lang"),
     # ---- 数字逻辑 · 体系结构 ----
     _b("00-digital-logic-cpu", "数字逻辑与 CPU", "Digital Design 实践笔记 · RPi", "digital"),
     _b("02-computer-systems", "Computer Systems", "CSAPP · 深入理解计算机系统", "digital"),
