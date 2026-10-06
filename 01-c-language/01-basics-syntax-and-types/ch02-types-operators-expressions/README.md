@@ -22,6 +22,7 @@ C 的底层核心：类型如何在内存中存储、表达式如何求值、运
   - [2.2.3 stdint.h](./2.2.3-stdint.h.md)
   - [2.2.4 inttypes.h](./2.2.4-inttypes.h.md)
 - [2.3 常量](./2.3-常量.md)
+  - [2.3.1 字符常量的类型与整型提升](./2.3.1-字符常量的类型与整型提升.md) — `sizeof('c')`=4 为什么、提升发生/不发生的边界表、`char ch = 0xFF` 经典坑、`_Generic`/`static_assert` 取证
 - [2.4 声明](./2.4-声明.md) — 局部/全局基础声明、初始化、声明 vs 定义浅讲
 - [2.5 算术运算符](./2.5-算术运算符.md)
 - [2.6 关系运算符与逻辑运算符](./2.6-关系运算符与逻辑运算符.md) — 0/1 真值、`&&`/`||` 短路、判空安全写法
@@ -36,7 +37,9 @@ C 的底层核心：类型如何在内存中存储、表达式如何求值、运
 ## Demo
 
 ```bash
-cd demo && make -C demo01_sizeof && ./demo01_sizeof/main
+cd demo
+make -C demo01_sizeof        && ./demo01_sizeof/main          # 各类型宽度
+make -C demo02_char_promotion && ./demo02_char_promotion/main  # 字符常量类型 + 整型提升
 ```
 
 ---
