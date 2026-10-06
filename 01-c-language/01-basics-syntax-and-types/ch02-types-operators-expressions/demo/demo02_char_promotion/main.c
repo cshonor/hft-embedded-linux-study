@@ -72,14 +72,17 @@ int main(void)
     {
         char ch = (char)0xFF;
         int mask = 0xFF;    /* 用变量接一下，避开编译器的「常量恒假」告警 */
+        int neg  = -1;      /* 同理：字面量 -1 在 char 为 unsigned 的平台上会触 -Wtype-limits */
 
         printf("char is %s on this platform\n", ((char)-1 < 0) ? "signed" : "unsigned");
         printf("(int)ch                    = %d   (0x%08X)\n", (int)ch, (unsigned)(int)ch);
         printf("ch == mask(0xFF)           -> %s   <- 两边都提升为 int 再比\n",
                (ch == mask) ? "true" : "false");
-        printf("ch == -1                   -> %s\n", (ch == -1) ? "true" : "false");
+        printf("ch == neg(-1)              -> %s\n", (ch == neg) ? "true" : "false");
         printf("(unsigned char)ch == 0xFF  -> %s   <- 截回 8 位再提升，才对得上\n",
                ((unsigned char)ch == mask) ? "true" : "false");
+        printf("  ^ char 的符号性由目标 ABI 决定：arm64 Linux unsigned / x86_64 与 macOS signed\n");
+        printf("    同一份代码在两平台上，ch == mask 的结论完全相反（见 2.3.1 §5）\n");
 
         /* 下面是「裸字面量」写法：结果同样是 false，但编译器会直接告警
          * clang: warning: result of comparison of constant 255 with expression
