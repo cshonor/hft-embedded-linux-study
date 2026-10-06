@@ -4,6 +4,8 @@
 
 **验证状态：19/19 `build code = 0` · `didExecute = True` · `diagnostics = 0`**（编译旗标 `-O0 -Wall -Wextra`；`c2_12` 额外 `-pthread`，`c2_9` 额外 `-ldl`）。
 
+> 另有 2 个 `.S` 纯汇编 demo（`c2_1_nolibc_arm64.S` / `c2_1_nolibc_x64.S`，不在 19 个 `.c` 计数内）：`-nostdlib -static` 零 glibc 裸调系统调用；arm64 版在 Pi 5（gcc 14.2）实测，x64 版在 CE（gcc 14.2）实测执行。
+
 > 📌 **本章官方源码：无。** TLPI 第 2 章是概念章，原书**没有配套示例程序**——这 19 个 demo 全部是本模块自写并实跑验证的。每一节笔记的「代码」小节里那段 `c` 代码块，都与本目录的 `.c` 文件**逐字一致**（由 `sync_note_code.py` 灌入、`cmp_note_code.py` 校验），所以笔记正文引用的 gcc 行号（如 `<source>:33`）读者能直接对上。
 
 ---
@@ -13,6 +15,8 @@
 | 文件 | 对应节 | 演示什么 | 环境依赖 |
 |------|--------|----------|----------|
 | `c2_1_syscall.c` | 2.1 | 三条写路径（`printf` / `write` / 裸 `syscall`）走同一个 syscall；**缓冲时机实验**（`_exit` vs `exit`、`fflush` 位置） | 无 |
+| `c2_1_nolibc_arm64.S` | 2.1 | **零 glibc**：纯汇编 `svc` 裸调 `write`+`exit`；`-nostdlib -static`，`ldd`=not a dynamic executable，strace 全程仅 2 次 syscall，二进制 1296 B | arm64 Linux（Pi 5 实测，gcc 14.2） |
+| `c2_1_nolibc_x64.S` | 2.1 | 同上 x86-64 版：`syscall` 指令，`write=1`/`exit=60` 直接对 `syscall_64.tbl` | x86-64 Linux（CE gcc 14.2 实测执行） |
 | `c2_2_minishell.c` | 2.2 | 迷你 shell：4 个内置命令 + `fork`/`exec`/`wait` 循环；`system()` 的 8 位退出码语义 | 需要 `/bin/sh`（容器无 → 返回 `32512`） |
 | `c2_3_cred.c` | 2.3 | 三份身份（R/E/S）；**权限位三级匹配的完整推演**（纯逻辑）+ 用 mode 位做真实文件实验；`EACCES` vs `EROFS` | 读 `/proc/self/status`；`/tmp` 可写 |
 | `c2_4_links.c` | 2.4 | 建硬/软链接、inode 与链接计数、`stat` 跟随 vs `lstat` 不跟随、删原文件后的行为、7 种文件类型一次认全 | `/tmp` 可写 |

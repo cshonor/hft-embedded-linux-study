@@ -29,7 +29,7 @@ int main(void)
     write(STDOUT_FILENO, m1, strlen(m1));          /* glibc 薄封装 → sys_write */
 
     const char *m2 = "[syscall]  hello from syscall(SYS_write)\n";
-    syscall(SYS_write, STDOUT_FILENO, m2, strlen(m2));   /* 绕过 glibc 直接发号 */
+    syscall(SYS_write, STDOUT_FILENO, m2, strlen(m2));   /* 绕开 write() 这层封装；syscall() 本体仍是 glibc 函数 */
 
     printf("[printf]   hello from printf()\n");
     printf("  三条都落在同一个 fd 1；前两条立即进内核，第三条先入用户态缓冲。\n");
