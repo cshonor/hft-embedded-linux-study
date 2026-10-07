@@ -6,8 +6,8 @@
 > **前置：** [04 C++（至少 M1 Modern）](../README.md) · [03.5 UNP（C 侧 socket）](../../03.5-unix-network-api/)  
 > **书目：** 陈硕 *Linux 多线程服务端编程*
 
-**本地权威仓库：** `C:\Users\12392\Desktop\Computer Networking\PNP`  
-本模块从该目录 **复制** 实验笔记（`NN_主题.md`，目录名已改 ASCII）；真正写代码时在权威仓库补全。
+**实验笔记来源：** 早期 Windows 权威仓库的 **复制**（`NN_主题.md`，目录名已改 ASCII）；
+当前权威版本即本仓——Linux 环境下直接在本模块演进，不再回同步。
 
 ## 实验笔记（9 个，扁平结构）
 
