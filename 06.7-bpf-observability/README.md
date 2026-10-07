@@ -71,3 +71,21 @@ Ch 1–2 → Ch 4–5 → Ch 6 → Ch 10 (+ note-XDP) → 附录 A/B
 - DPDK 对照 → [13-dpdk](../13-dpdk/)（XDP early drop vs 用户态旁路）
 - Rust eBPF → [18-rust-quant](../18-rust-quant/)（Aya/bpf2go）
 - 跨模块 → [README.md](../README.md)
+
+---
+
+## 本机实跑验证记录（2026-10 · Ubuntu 24.04 / kernel 7.0.0-38-generic / bpftrace root 批量实测）
+
+全部 **33 个 `.bt` 逐一 root 实跑：32 OK + 1 设计性例外**（`rename-exchange-kill.bt` 需 `--unsafe`，单独验证可 attach）。.bash 全量 `bash -n` ✅、.py 全量 `py_compile` ✅。
+
+书中例子写于 kernel 4.x/5.x 时代，在**内核 7.0 上需要以下适配**（已全部修复并在文件头注释标注）：
+
+| 失效类别 | 涉及脚本 | 修法 |
+|---|---|---|
+| 内核头 `static_assert` 解析失败 | faults-by-file / oomkill / read-by-fs / vfs-read-by-file / slab-name / tcp-state-trace | 不 `#include`，类型走 BTF；TCP 宏改字面量 |
+| kprobe 符号消失/改名 | slab-name（`kmem_cache_alloc` 内联）/ blkthrot（`blk_throtl_bio` 重构）/ blk-plug（`blk_flush_plug_list` 内联）/ numa-migrate（改 folio 版） | 换稳定 tracepoint 或现存符号 |
+| `finish_task_switch` 进 kprobe 黑名单 | offcpu / pidns-switch | 改 `tracepoint:sched:sched_switch` 语义等价模型 |
+| bpftrace 语法/API | runqlat（if 必须带 `{}`）/ mem-expand（filter 合并）/ pagefault-ustack（`page-faults` 复数）/ tcp-state-trace（无 `lport()`）/ pidns-switch（nodename 已是 string） | 逐一修复 |
+
+**经验**：非 root 的语法检查覆盖不到这些——bpftrace 的 root 检查先于解析报错，
+只有 root 实跑能暴露。runqlat 实测直方图（调度延迟峰值 8–16µs）与笔记"热核 < 数十 µs"一致。
