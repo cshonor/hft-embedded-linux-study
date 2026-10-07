@@ -1271,7 +1271,125 @@ auto b = &quot;x&quot;sv;   // std::string_view，实测 sizeof = 16（ptr + len
 </tbody>
 </table></div>
 <p>⚠️ <strong>实测</strong>：<code class="c">-std=c++11</code> 下写 <code class="c">u8'x'</code> 直接报 <code class="c">error: use of undeclared identifier 'u8'</code>——<strong><code class="c">u8</code> 字符字面量是 C++17 才有的，字符串字面量 <code class="c">u8"..."</code> 才是 C++11</strong>。别记混。</p>
-<h3>6. C++20 的 <code class="c">char8_t</code> 断裂与迁移</h3>
+<h3>6. 字符串字面量的两种形态：数组 vs 指针</h3>
+<p>前面几节（§1–§5）讲的是<strong>字符</strong>字面量（单引号），这一节讲<strong>字符串</strong>字面量（双引号）的两种落地形态——这是 C/C++ 共有的、也是初学者最先撞上的一组对立：</p>
+<pre class="code" data-label="cpp"><code class="c">char buf[] = &quot;hello&quot;;   // 形态 A：数组 —— 拷贝一份，可写
+char *p    = &quot;hello&quot;;   // 形态 B：指针 —— 指向只读段，不可写
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>形态 A <code class="c">char buf[] = "hello"</code></th>
+<th>形态 B <code class="c">char *p = "hello"</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>声明的东西</td>
+<td><strong>数组</strong>（6 字节）</td>
+<td><strong>指针</strong>（8 字节）</td>
+</tr>
+<tr>
+<td>是否拷贝</td>
+<td>✅ 把字面量内容<strong>复制</strong>进数组</td>
+<td>❌ 只存地址，无拷贝</td>
+</tr>
+<tr>
+<td>存储位置</td>
+<td>自动存储期在<strong>栈</strong>；<code class="c">static</code>/全局在 <strong>.data（可写）</strong></td>
+<td>字面量在 <strong>.rodata / <code class="c">__TEXT</code>（只读）</strong></td>
+</tr>
+<tr>
+<td>可写吗</td>
+<td>✅ <code class="c">buf[0]='H'</code> 合法</td>
+<td>❌ UB（见下）</td>
+</tr>
+<tr>
+<td><code class="c">sizeof</code></td>
+<td><strong>6</strong>（数组长度，含 <code class="c">'\0'</code>）</td>
+<td><strong>8</strong>（指针本身大小）</td>
+</tr>
+<tr>
+<td>是否含 <code class="c">'\0'</code></td>
+<td>✅ 自动补</td>
+<td>✅ 自动补</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实测</strong>（clang 23.1.0 / macOS arm64）：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(l_arr)   = 6        l_arr (栈)     = 0x16f06b0b4
+sizeof(l_p)     = 8        literal &quot;hello&quot;= 0x100d93e9c   ← __TEXT 只读段
+sizeof(&quot;hello&quot;) = 6        g_arr (可写)   = 0x100d98010   ← __DATA 段
+</code></pre>
+<p>三个地址分属不同区域，一眼能看出"拷贝"和"指过去"的区别。</p>
+<p>⚠️ <strong>"栈上"这个说法只对一半</strong>：<code class="c">char buf[] = "hello"</code> 写在函数里才是栈；写成 <code class="c">static char buf[]</code> 或放在文件作用域，它在 <strong>.data 段</strong>（可写），由加载器填充，<strong>同样可写</strong>，但不是栈。上面实测的 <code class="c">g_arr</code> 就在 .data，<code class="c">g_arr[0]='H'</code> 实测成功输出 <code class="c">Hello</code>。</p>
+<h4>C 与 C++ 在这里又分道扬镳</h4>
+<p>这是比"能不能改"更根本的差异——<strong>字符串字面量的静态类型</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>语言</th>
+<th><code class="c">"hello"</code> 的类型</th>
+<th><code class="c">char *p = "hello";</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>C</strong>（C89→C23 全版本）</td>
+<td><strong><code class="c">char[6]</code></strong>（<strong>没有 const</strong>）</td>
+<td>✅ 合法，<code class="c">-Wall</code> 下<strong>零警告</strong></td>
+</tr>
+<tr>
+<td><strong>C++</strong>（C++03 起）</td>
+<td><strong><code class="c">const char[6]</code></strong></td>
+<td>❌ ill-formed</td>
+</tr>
+</tbody>
+</table></div>
+<p>实测：</p>
+<pre class="code" data-label="shell"><code class="c">$ clang   -std=c11 -Wall          t.c    # C：无警告，静默埋雷
+$ clang   -std=c11 -Wwrite-strings t.c   # warning: initializing 'char *' with an
+                                         # expression of type 'const char[6]' discards qualifiers
+$ clang++ -std=c++17              t.cpp  # warning: ISO C++11 does not allow conversion
+                                         # from string literal to 'char *' [-Wwritable-strings]
+$ clang++ -std=c++17 -pedantic-errors t.cpp  # error: 同上
+</code></pre>
+<p>C++ 从类型系统层面直接把这条 UB 通道封死；C 为了向后兼容保留了 <code class="c">char *</code> 赋值，所以<strong>工程上必须自觉写 <code class="c">const char *</code></strong>，并开 <code class="c">-Wwrite-strings</code>。</p>
+<h4>修改只读段会发生什么（实测）</h4>
+<pre class="code" data-label="C"><code class="c">char *p = &quot;hello&quot;;
+p[0] = 'H';   /* UB */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>环境</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>macOS arm64（本机实测）</strong></td>
+<td><strong>SIGBUS(10)</strong>，<code class="c">echo $?</code> = <strong>138</strong></td>
+</tr>
+<tr>
+<td>Linux x86-64 / aarch64</td>
+<td>通常 <strong>SIGSEGV(11)</strong>，<code class="c">$?</code> = 139</td>
+</tr>
+<tr>
+<td>裸机 MCU（常量在 Flash）</td>
+<td>可能<strong>静默丢弃写入</strong>，也可能 HardFault</td>
+</tr>
+</tbody>
+</table></div>
+<p>注意本机是 <strong>SIGBUS 不是 SIGSEGV</strong>——macOS arm64 对 <code class="c">__TEXT</code> 段的写保护走的是 bus error。标准只保证"未定义行为"，<strong>不保证崩溃</strong>，所以别拿"跑起来没崩"当正确性的证据。</p>
+<h4>常量合并（实测）</h4>
+<pre class="code" data-label="C"><code class="c">char *s1 = &quot;abc&quot;;
+char *s2 = &quot;abc&quot;;
+printf(&quot;%d\n&quot;, s1 == s2);   /* 实测输出 1 —— 同一地址 */
+</code></pre>
+<p>编译器做<strong>字面量合并</strong>（<code class="c">-fmerge-constants</code>，默认开），两个指针指向同一块只读内存。所以写 <code class="c">s1[0]</code> 会<strong>连带改掉 <code class="c">s2</code></strong>。反过来，用 <code class="c">==</code> 比较字符串内容永远是错的——比的是地址。</p>
+<h3>7. C++20 的 <code class="c">char8_t</code> 断裂与迁移</h3>
 <p>这是 C++20 最痛的一处<strong>静默 breaking change</strong>，本机实测三个断点：</p>
 <p><strong>断点 1：赋值给 <code class="c">const char*</code> 失败</strong></p>
 <pre class="code" data-label="cpp"><code class="c">#include &lt;string&gt;
@@ -1425,6 +1543,7 @@ clang++ -std=c++20 -fsyntax-only $(git ls-files '*.cpp')
 <p><strong>4（升级）</strong> 一段 C++17 代码里有 <code class="c">const char *p = u8"abc";</code>，升级到 C++20 会怎样？给出两种修复写法。</p>
 <p><strong>5（字节序）</strong> <code class="c">'RIFF'</code> 的值是多少？第一个字符在高字节还是低字节？（提示：先实测，别信任何笔记里的现成答案）</p>
 <p><strong>6（端口性）</strong> 为什么 HFT 代码里不该出现裸 <code class="c">char</code> 做数值运算？举出两个 <code class="c">char</code> 符号性相反的平台。</p>
+<p><strong>7（两种形态）</strong> <code class="c">char buf[] = "hello";</code> 和 <code class="c">char *p = "hello";</code> 的 <code class="c">sizeof</code> 各是多少？<code class="c">buf[0]='H'</code> 和 <code class="c">p[0]='H'</code> 分别什么结果？把这两行放进 C++ 编译会怎样？</p>
 <details>
 <summary>参考答案</summary>
 <p><strong>1.</strong>
@@ -1443,6 +1562,10 @@ const char *b = reinterpret_cast&lt;const char *&gt;(u8&quot;abc&quot;);  // ③
 </code></pre>
 <p><strong>5.</strong> 实测 <strong>0x52494646</strong>。第一个字符 <code class="c">'R'</code>(0x52) 在<strong>最高字节</strong>：<code class="c">value = c1&lt;&lt;24 | c2&lt;&lt;16 | c3&lt;&lt;8 | c4</code>。注意这是<strong>实现定义</strong>行为，跨编译器不可移植，FourCC 请用显式 <code class="c">uint32_t</code> 拼接。</p>
 <p><strong>6.</strong> 因为 <code class="c">char</code> 的符号性标准未规定：aarch64 Linux (gcc) 是 <strong>unsigned</strong>，x86-64 Linux 和 arm64 macOS 是 <strong>signed</strong>。同一个字节 0x80 在两边分别是 128 和 -128，<code class="c">if (c &gt; 0)</code> 结论相反。数值一律用 <code class="c">uint8_t</code> / <code class="c">int8_t</code>。</p>
+<p><strong>7.</strong>
+- <code class="c">sizeof(buf)</code> = <strong>6</strong>（数组，含 <code class="c">'\0'</code>），<code class="c">sizeof(p)</code> = <strong>8</strong>（指针本身）
+- <code class="c">buf[0]='H'</code> ✅ 合法，实测输出 <code class="c">Hello</code>；<code class="c">p[0]='H'</code> ❌ UB，实测 macOS arm64 收 <strong>SIGBUS</strong>（<code class="c">$?</code>=138）
+- 放进 C++：<code class="c">char buf[] = "hello";</code> 完全没问题（数组初始化，拷贝）；<code class="c">char *p = "hello";</code> 是 <strong>ill-formed</strong>——C++ 里字面量类型是 <code class="c">const char[6]</code>，clang 报 <code class="c">ISO C++11 does not allow conversion from string literal to 'char *'</code>（<code class="c">-pedantic-errors</code> 下变 error）。必须写 <code class="c">const char *p</code>。</p>
 </details>
 <h2>延伸</h2>
 <p>← <a href="#s-2-1">2.1 基本内置类型</a> | <a href="#s-2-2">2.2 变量 →</a></p>
