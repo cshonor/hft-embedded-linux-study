@@ -493,4 +493,4 @@ C++20 很多特性在 C++17 基础上完善：
 
 ---
 
-← [OUTLINE 里程碑表](./OUTLINE.md) · [06 索引](./README.md) · [学习链总览](../README.md)
+← [OUTLINE 里程碑表](./OUTLINE.md) · [04 索引](./README.md) · [学习链总览](../README.md)

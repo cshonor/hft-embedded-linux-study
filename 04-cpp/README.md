@@ -2,7 +2,7 @@
 
 **文件夹 `04`** · [OUTLINE](./OUTLINE.md) · [README](../README.md)
 
-> **定位：** 本仓库 **M2 PNP / muduo**（C++ 网络编程）、**`17` HFT** 的 C++ 前置。  
+> **定位：** 本仓库 **M2 PNP / muduo**（C++ 网络编程）、**[14 HFT](../14-hft-engineering/)** 的 C++ 前置。  
 > **笔记正文已在本目录：** 自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制，按 M0–M5 六个模块组织（每个模块内部书从 01 开始编号）。  
 > **C 语言** 在本仓 [01-c-language](../01-c-language/)（不要在这里重复啃 K&R）。
 
