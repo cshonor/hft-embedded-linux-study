@@ -1,47 +1,129 @@
-# 条款 33：把非叶子类设计为抽象类，强制约束子类实现接口，架构约束
+# 条款 33：把非叶子类设计为抽象类，强制约束子类实现接口
 
 ## 本节讲什么
 
-> 待补充详细笔记（错误案例、原理、正确写法、代码示例）。
+**Make non-leaf classes abstract.** 继承体系里，"中间类"（既被继承又继承别人）
+如果可以被**直接实例化**，常常是建模事故：它不代表任何真实概念，
+却允许用户创建一个"什么都不是"的对象。
+把非叶子类设计为抽象类（含纯虚函数），让"只能继承、不能实例化"
+成为编译期约束。
 
-## 示例
-
-```cpp
-class NonLeaf {
-public:
-    virtual void mustImplement() = 0;
-protected:
-    NonLeaf() = default;  // 抽象类，不能实例化
-};
-```
+← 上一条 [item32 面向未来设计](./item32-面向未来做程序设计（兼容扩展、向后兼容设计思想）.md)；
+下一条 [item35 标准演进](./item35-理解C++语言标准演进的方向，写与时俱进、不过时的代码.md)。
 
 ---
 
+## 1. 问题：可实例化的中间类是建模漏洞
+
+```cpp
+class FeedMessage {                  // 中间类：有公共字段（seq/ts），
+public:                              // 但"一条 generic 行情消息"是什么？
+    uint64_t seq; int64_t ts;
+    virtual ~FeedMessage() = default;
+};
+class SnapMsg : public FeedMessage { /*...*/ };
+class TradeMsg : public FeedMessage { /*...*/ };
+
+FeedMessage m;      // ✅ 能编译——但它是什么？既不是快照也不是逐笔，
+                    //    处理代码收到它该怎么办？（语义空洞的对象合法存在）
+```
+
+`FeedMessage` 存在的意义是"公共接口 + 公共字段的载体"——
+它**不对应任何真实消息**。允许实例化 = 允许语义空洞的对象在系统里流动，
+每个处理点都要为"这到底是什么"埋单（→ 18.4 的 RTTI 滥用正是这么开始的）。
+
+## 2. 解法：纯虚函数强制抽象
+
+```cpp
+class FeedMessage {
+public:
+    uint64_t seq; int64_t ts;
+    virtual MsgType type() const = 0;        // 纯虚：派生类必须表态"我是谁"
+    virtual ~FeedMessage() = default;
+};
+// FeedMessage m;      // ❌ 编译错误：抽象类不能实例化——
+                        // 只有具体消息类型（Snap/Trade）能存在
+```
+
+效果：
+- **编译期强制**：派生类必须实现 type()（否则派生类也是抽象的）——
+  "忘了实现"从静默 bug 变编译错误（→ Effective item34 的纯虚语义）
+- **语义完整**：系统里流动的每个消息对象都有具体身份——
+  type() 字段 + switch 的分发（→ 18.4 HFT 关联）有了完整性的类型保证
+
+## 3. 边界：什么时候中间类**可以**具体
+
+- **它本身就是完整概念**：`class IocOrder : public Order {}`——
+  若 `Order` 就是"普通限价单"（完整语义，实盘大量存在），
+  它该是具体的；IOC 是特例派生——**判别：这个类有独立的业务含义吗**
+- **CRTP 基类**：`StrategyBase<Derived>` 本来就只为被继承存在——
+  模板基类没有"直接实例化"的通道（实例化要 Derive 参数），
+  不需要抽象类约束（→ Effective item35 CRTP）
+- 注意与 item32 的区别：本条管"**类型层次**的完整性"，
+  item32 管"**演化**的兼容性"——抽象基类的 type() 字段同时服务两者
+  （新消息类型 = 新派生类 + 新枚举值，编译期强制各处分发更新）
+
+## HFT 关联
+
+- 消息体系的 type() 纯虚 + switch 分发是行情处理的骨架：
+  "每条消息都有明确类型"由编译器保证——分发表的穷尽性检查
+  （-Wswitch，→ 19.2 ③）才有意义
+- 策略基类的"纯虚 on_tick"（→ Effective item34 HFT）同款：
+  策略对象不允许"什么都不处理"地存在——能实例化的基类策略
+  上线就是静默不接单的事故
+- 抽象类 + 工厂（`create(msg_type) -> unique_ptr<FeedMessage>`）：
+  反序列化的标准形态——工厂按 type 字段构造具体类，
+  返回类型是抽象基类指针（异构容器的入口）
+
 ## 代码自测
 
-**题目 1：** 为什么要把非叶子类设计为抽象类？
-```cpp
-class Shape {  // 非抽象
-public:
-    virtual double area() const { return 0; }  // 默认实现
-    virtual ~Shape() = default;
-};
-class Circle : public Shape { ... };
-Shape s;  // 创建 Shape 实例有意义吗？
-```
+**题目 1：** 为什么"可实例化的中间类"是建模漏洞？它制造了什么成本？
 
 <details>
 <summary>参考答案</summary>
 
-创建 `Shape` 实例没有意义——形状必须是一个具体形状。如果允许 `Shape s;`，`s.area()` 返回 0，这是无意义的默认值。将 `Shape` 设计为抽象类（纯虚函数）：
-```cpp
-class Shape {
-public:
-    virtual double area() const = 0;  // 纯虚
-    virtual ~Shape() = default;
-};
-// Shape s;  // 编译错误，无法实例化抽象类
-```
-好处：1) 防止无意义的实例化；2) 强制派生类实现接口；3) 架构上更清晰——Shape 是接口不是实现。
+中间类（如 FeedMessage）的存在意义是"公共接口/字段的载体"——
+它**不对应任何真实实体**（没有"generic 行情消息"这种东西）。
+允许实例化 = 语义空洞的对象合法存在：① 每个处理点被迫考虑
+"收到一个什么都不是的对象怎么办"（防御代码扩散）；
+② 它成为 RTTI/类型探测的温床（处理代码不知道它是 Snap 还是 Trade
+还是"那个中间物"——18.4 的 dynamic_cast 链就是这么长出来的）；
+③ 新成员的默认值埋雷（中间类的字段被"默认构造"出一个
+看似合理实则无意义的值）。抽象化后：**不存在**成为编译期事实——
+语义完整性从"靠纪律"升级为"靠类型系统"。
+
+</details>
+
+**题目 2：** `virtual ~T() = default` 和"抽象类"是什么关系？纯虚析构行吗？
+
+<details>
+<summary>参考答案</summary>
+
+正交但常相伴：虚析构管"经基类指针 delete 的安全"（Effective item21 的特例），
+抽象化管"不许直接实例化"——基类通常两个都要
+（`virtual ~Base() = default;` + 至少一个纯虚函数）。
+**纯虚析构**（`virtual ~Base() = 0;`）技术上可以——它让类抽象的同时
+保留析构虚性；但**必须提供定义**（派生类析构会调基类析构，
+链接时需要 `Base::~Base() {}` 的实现体）——这是个语言冷知识，
+工程上更常见的是"虚析构 default + 另一个纯虚（如 type()）"的组合：
+语义更清晰（type() 表达"抽象的业务原因"，析构只管安全）。
+
+</details>
+
+**题目 3：** CRTP 基类需要抽象类约束吗？为什么？
+
+<details>
+<summary>参考答案</summary>
+
+**不需要**——CRTP 基类（`template <typename D> class StrategyBase`）
+**无法被直接实例化**：写 `StrategyBase<?> base;` 时必须给出模板参数，
+而参数就是派生类自己（`StrategyBase<MyStrat>` 只在 MyStrat 的定义语境
+才有意义）——"脱离派生类实例化基类"在语法上就构造不出来。
+这就是 CRTP 相对经典继承的一个隐藏优势：
+"只能继承不能实例化"是**结构自带**的，不需要纯虚函数来强制
+（还顺带零 vptr——Effective item35 的编译期多态）。
+对照：经典继承的中间类没有这层结构保护，
+"可实例化"是默认状态——所以本条（抽象化）是经典继承的义务，
+CRTP 体系里是免费获得的。
 
 </details>
