@@ -2963,6 +2963,75 @@ enum { MASK = (1u &lt;&lt; 3) | (1u &lt;&lt; 5) };   /* 编译期 0x28 */
 
 int shift(int x) { return 1 &lt;&lt; x; }      /* 运行期 */
 </code></pre>
+<p><strong>汇编证据（Compiler Explorer 实测：GCC 13.3 / Clang 18.1.0）</strong>：</p>
+<pre class="code" data-label="C"><code class="c">int folded(void)      { return 3 * 4 + 5; }
+int not_folded(int x) { return x * 2 + 1; }
+</code></pre>
+<pre class="code" data-label="asm"><code class="c">folded:                        ; gcc -O2 x86-64 (Intel 语法)
+        mov     eax, 17        ; 3*4+5 编译期算完，无 imul/add
+        ret
+not_folded:
+        lea     eax, [rdi+1+rdi]  ; x 未知折不了，优化成一条 lea（强度削减）
+        ret
+</code></pre>
+<p>aarch64 上折叠结果是 <code class="c">mov w0, #17; ret</code>（clang <code class="c">-O2</code>），乘法指令同样消失。</p>
+<p><strong>三个易混概念</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>行为</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>常量折叠 folding</td>
+<td>表达式全是常量，编译期求值</td>
+<td><code class="c">3 * 4 + 5</code> → <code class="c">17</code></td>
+</tr>
+<tr>
+<td>常量传播 propagation</td>
+<td>把变量替换为其已知常量值，再触发折叠</td>
+<td><code class="c">enum { A = 5 }; return A * 2;</code> → <code class="c">10</code></td>
+</tr>
+<tr>
+<td>强度削减 strength reduction</td>
+<td>折不了时换廉价指令</td>
+<td><code class="c">x * 2 + 1</code> → 一条 <code class="c">lea</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">-O0</code> 并不等于「不折叠」（实测对照）</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>表达式</th>
+<th>GCC 13.3 <code class="c">-O0</code></th>
+<th>Clang 18.1.0 <code class="c">-O0</code></th>
+<th>两者 <code class="c">-O2</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">3*4+5</code>（纯字面量）</td>
+<td>折叠 <code class="c">mov eax, 17</code></td>
+<td>折叠 <code class="c">mov eax, 17</code></td>
+<td>折叠</td>
+</tr>
+<tr>
+<td><code class="c">const int a = 3; return a * 4 + 5;</code></td>
+<td><strong>不折叠</strong>：栈存储 + <code class="c">sal eax, 2</code> + <code class="c">add eax, 5</code></td>
+<td>折叠 <code class="c">mov w0, #17</code>（aarch64；仍保留栈槽供调试）</td>
+<td>折叠</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>纯字面量由<strong>前端常量求值</strong>处理，与优化等级无关——C 标准要求编译期可求值</li>
+<li>想学汇编时看「原样翻译」的算术指令：用 <strong>GCC <code class="c">-O0</code> + <code class="c">const</code> 局部变量</strong>，能看到真实的栈存取与 <code class="c">sal</code>/<code class="c">add</code></li>
+<li><strong>浮点不随便折</strong>：<code class="c">3.0 * 4.0</code> 是否折叠受舍入模式与浮点异常约束，激进折叠要 <code class="c">-ffast-math</code>；IEEE 语义下编译器默认保守</li>
+</ul>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -3002,6 +3071,7 @@ gcc -E const.c | less    # 查看折叠结果
 <li><strong>ch06</strong> <code class="c">__builtin_constant_p</code>、<code class="c">likely</code></li>
 <li><strong>5.9.2</strong> <code class="c">sizeof</code> 数组编译期常量</li>
 <li><strong>ch09</strong> 宏与内联函数选型</li>
+<li><strong>07-arm-architecture</strong> 折叠结果的最终形态：aarch64 <code class="c">mov w0, #17</code> 立即数编码</li>
 </ul>
 <hr />
 <h2>代码自测</h2>
@@ -3029,6 +3099,27 @@ printf(&quot;%d\n&quot;, n); // 可能输出 10（常量折叠）或 20（实际
 </code></pre>
 <p>常量折叠使得修改 const 变量后，读取值可能不变——编译器直接用编译期常量替换了读取操作。</p>
 </details>
+<p><strong>题目 2：</strong> GCC <code class="c">-O0</code>（不优化）下，下面两个函数生成的汇编一样吗？</p>
+<pre class="code" data-label="C"><code class="c">int f(void) { return 3 * 4 + 5; }
+int g(void) { const int a = 3; return a * 4 + 5; }
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p>不一样（GCC 13.3 实测）：</p>
+<ul>
+<li><code class="c">f</code>：纯字面量表达式由<strong>前端常量求值</strong>处理，与优化等级无关 → <code class="c">mov eax, 17</code></li>
+<li><code class="c">g</code>：<code class="c">const</code> 局部变量在 GCC <code class="c">-O0</code> 下<strong>不折叠</strong> → 栈存储 + <code class="c">sal eax, 2</code> + <code class="c">add eax, 5</code>，开 <code class="c">-O1</code> 以上才折掉</li>
+</ul>
+<p>两个推论：</p>
+<ol>
+<li><strong><code class="c">-O0</code> ≠ 不优化</strong>。常量求值、指令选择（<code class="c">*4</code> → <code class="c">sal</code>）这类变换在 <code class="c">-O0</code> 照样发生。</li>
+<li>编译器行为不统一：Clang 18.1.0 在 <code class="c">-O0</code> 下连 <code class="c">g</code> 也折成 <code class="c">mov w0, #17</code>（aarch64），但仍保留 <code class="c">a</code> 的栈槽供调试器观察。「折叠与否」不能凭直觉断言，要看具体编译器 + 优化等级 + 表达式形态。</li>
+</ol>
+</details>
+<hr />
+<blockquote>
+<p>实测环境：Compiler Explorer（godbolt.org），GCC 13.3 x86-64 / Clang 18.1.0 x86-64 与 aarch64 交叉。建议自己动手改表达式形态（浮点、volatile、enum）复现对照。</p>
+</blockquote>
       </section>
       <section class="section" id="s-5-8">
         <div class="sec-head"><div class="sec-no">5.8</div><h2>从变量到指针</h2></div>
