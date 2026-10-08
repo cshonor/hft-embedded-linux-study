@@ -6079,29 +6079,63 @@ struct Sales_data {
 <pre class="code" data-label="cpp"><code class="c">#pragma once
 </code></pre>
 <ul>
-<li>一行、无宏冲突；GCC/Clang/MSVC 均支持；非 C++ 标准</li>
+<li>一行、无宏冲突；GCC/Clang/MSVC/ICC 均支持；非 C++ 标准</li>
 </ul>
+<h3>两种方案的机制差异（为什么 pragma once 更快）</h3>
+<p>两者效果相同（同一编译单元内头文件只展开一次），但机制完全不同——这决定了大型项目里的预处理速度差异：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>特性</th>
-<th><code class="c">#ifndef</code></th>
+<th></th>
+<th><code class="c">#ifndef</code> 守卫</th>
 <th><code class="c">#pragma once</code></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>标准</td>
-<td>✅</td>
-<td>扩展</td>
+<td>判重依据</td>
+<td>宏 <code class="c">SALES_DATA_H</code> 是否已定义</td>
+<td>预处理器按<strong>文件身份</strong>（device + inode）记录「已读过」</td>
+</tr>
+<tr>
+<td>第二次 <code class="c">#include</code> 时</td>
+<td>文件<strong>仍被打开、逐行扫描</strong>，内容被 <code class="c">#ifndef</code> 挡掉</td>
+<td><strong>直接跳过，不再打开文件</strong></td>
+</tr>
+<tr>
+<td>标准地位</td>
+<td>纯标准 C/C++，任何编译器可移植</td>
+<td>非标准扩展，但主流编译器全支持</td>
+</tr>
+<tr>
+<td>典型出错面</td>
+<td><strong>宏名撞车</strong>（两个库都叫 <code class="c">UTILS_H</code> → 后包含的那个被静默跳过）</td>
+<td>无宏名，不存在撞名问题</td>
 </tr>
 <tr>
 <td>适用</td>
-<td>跨平台库、嵌入式</td>
-<td>现代本地项目</td>
+<td>跨平台库、SDK 头文件、嵌入式</td>
+<td>自己的项目、现代本地工程</td>
 </tr>
 </tbody>
 </table></div>
+<h3><code class="c">#pragma once</code> 的四个坑（按 HFT/嵌入式场景重要性排序）</h3>
+<ol>
+<li><strong>硬链接 / 构建系统拷贝副本</strong>：同一头文件以两个不同 inode 存在时（构建系统 <code class="c">cp</code> 了一份、或不同路径挂载），inode 判重失效 → 当成两个文件<strong>包含两次 → 重定义错误</strong>。<code class="c">#ifndef</code> 靠宏名，不受路径影响。</li>
+<li><strong>非主流嵌入式工具链</strong>：交叉编译遇到厂商私有编译器时 <code class="c">#pragma once</code> 未必支持。所以 Linux 内核、glibc 的头文件<strong>全用 <code class="c">#ifndef</code> 守卫</strong>——它们必须保证任何编译器都能过。</li>
+<li><strong>符号链接 / 网络文件系统</strong>：不同 symlink 指向同一文件，主流编译器能正确解析到同一 inode；但早期 MSVC 和某些 NFS（inode 不稳定）有过翻车记录。</li>
+<li><strong>故意重复包含的场景不能用</strong>：X-Macro 技巧（头文件被包含多次、每次展开不同内容）与 <code class="c">#pragma once</code> 互斥。</li>
+</ol>
+<h3>实践结论</h3>
+<ul>
+<li><strong>自己的项目</strong>（应用层、策略代码）：直接 <code class="c">#pragma once</code>，一行省事；大型项目头文件被传递包含成百上千次，少 open 文件是实打实的预处理提速。</li>
+<li><strong>对外发布的库 / SDK 头文件</strong>：用 <code class="c">#ifndef</code> 守卫，可移植性优先。</li>
+<li>两者<strong>可同时写</strong>，互不冲突（很多开源库这么干）。</li>
+</ul>
+<blockquote>
+<p>💡 <code class="c">#pragma</code> 本身是标准给编译器留的「私货通道」：标准只定义 <code class="c">#pragma</code> 这个语法壳，后面跟什么（<code class="c">once</code>、<code class="c">pack</code>、<code class="c">comment</code>……）由各编译器自定；遇到不认识的 pragma，标准要求<strong>忽略</strong>（最多 warning）。所以 <code class="c">#pragma once</code> 虽非标准，写了也不会把代码编译挂掉。</p>
+</blockquote>
+<p>C 语言侧同一主题的完整展开（<code class="c">#include</code> 的查找顺序、尖括号 vs 引号、嵌套包含）见 C 模块笔记 <a href="../../../../01-c-language/02-advanced-pointers-and-memory/html/chapter-14.html#s-14-4">14.4 文件包含</a>。</p>
 <hr />
 <h2>八、高频易错点</h2>
 <ol>
@@ -6201,12 +6235,14 @@ int main() {
 - D. <code class="c">class Foo;</code></p>
 <p><strong>2（判断）</strong> <code class="c">#pragma once</code> 是 C++ 标准的一部分。</p>
 <p><strong>3（踩坑）</strong> <code class="c">struct Sales_data { ... }</code> 末尾忘写分号会怎样？</p>
+<p><strong>4（场景）</strong> 构建系统把 <code class="c">common/</code> 目录复制了一份到 <code class="c">build/out/common/</code>，两个副本里的头文件都写了 <code class="c">#pragma once</code>，某个 <code class="c">.cpp</code> 同时 include 了两个路径下的同名头文件，结果报「重定义」。换成 <code class="c">#ifndef</code> 守卫为什么就不会？</p>
 <details>
 <summary>参考答案</summary>
 <ol>
 <li>B。<code class="c">int g = 10;</code> 是定义，头文件被多文件包含会重定义。A 是 extern 声明（安全），C 是函数声明（安全），D 是前置声明（安全）。</li>
 <li>错。<code class="c">#pragma once</code> 是编译器扩展（GCC/Clang/MSVC 都支持），不是 C++ 标准。<code class="c">#ifndef</code> 才是标准做法。两者作用相同（防重复包含）。</li>
 <li>编译报错。<code class="c">struct</code> 定义末尾的分号是语法要求，漏了会让编译器把后面的内容误当成 struct 的一部分或变量声明。C 和 C++ 都要求这个分号。</li>
+<li><code class="c">#pragma once</code> 按<strong>文件身份（device + inode）</strong>判重，两个物理副本 inode 不同，被当成两个文件各展开一次 → 重定义。<code class="c">#ifndef</code> 靠<strong>宏名</strong>判重，两份内容里的守卫宏同名，第二次包含时宏已定义、内容被跳过，所以安全。教训：存在「同一头文件多副本」的构建布局时，<code class="c">#pragma once</code> 会失效。</li>
 </ol>
 </details>
 <hr />
