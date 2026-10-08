@@ -3364,6 +3364,9 @@ char *p = &quot;hello&quot;;                            /* p 指向只读字面�
 </table></div>
 <blockquote>
 <p>多字符常量 <code class="c">'ab'</code> 三处都是 4（类型仍是 <code class="c">int</code>，值实现定义）。告警方面：clang <strong>默认</strong>就报 <code class="c">-Wmultichar</code>，gcc 要加 <code class="c">-Wall -Wextra</code> 才报（两平台均实测）。</p>
+</blockquote>
+<p>多字符常量最常见的正当用途是 <strong>FourCC 魔法数</strong>——文件格式与协议里的 4 字节标识（如 <code class="c">'RIFF'</code>），源码里一眼可读。但正因为值实现定义（拼接顺序不保证），<strong>写进协议的数值应该用显式常量</strong>（<code class="c">0x52494646</code> 或移位表达式），跨平台代码不依赖 <code class="c">'RIFF'</code> 的具体值。</p>
+<blockquote>
 <p><strong>⚠ <code class="c">__STDC_VERSION__</code> 的坑</strong>：gcc 14.2 的 <code class="c">-std=c23</code> 报的是 <strong><code class="c">202000L</code></strong> 而不是标准最终的 <code class="c">202311L</code>
 （gcc 15 才改成 <code class="c">202311</code>）。所以写特性探测时 <strong><code class="c">#if __STDC_VERSION__ &gt;= 202311L</code> 在 gcc 14 上会误判成「不是 C23」</strong>。
 我自己的探针就踩了这个坑，最后是直接编译 <code class="c">u8'a'</code> 确认 gcc 14.2 <strong>支持</strong> <code class="c">u8</code> 字符常量与 <code class="c">char8_t</code>（<code class="c">sizeof(char8_t)</code> = 1、值 97）。
@@ -3555,6 +3558,44 @@ sizeof(c + 0)  = 4
 sizeof(c == 0) = 4
 </code></pre>
 <p><strong>想要「1 字节的字符常量」怎么写？</strong> 显式转：<code class="c">sizeof((char)'c')</code> = 1。或者干脆用 <code class="c">sizeof(char)</code>（语义更清楚）。</p>
+<h3>3.5 <code class="c">if (c == 'a')</code> 逐步走一遍：比较的两个操作数各自提升</h3>
+<p>这个主题最常见的问题形式是「<code class="c">char</code> 在 <code class="c">if</code> 条件里比较，会不会变成 <code class="c">int</code>」——<strong>会，而且两边都按 <code class="c">int</code> 比</strong>。以 <code class="c">if (c == 'a')</code> 为例：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>C 里的情况</th>
+<th>C++ 里的情况</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>左操作数 <code class="c">c</code>（<code class="c">char</code> 变量）</td>
+<td>提升为 <code class="c">int</code>（符号扩展还是零扩展按目标 ABI，见 §5）</td>
+<td>同左</td>
+</tr>
+<tr>
+<td>右操作数 <code class="c">'a'</code></td>
+<td><strong>本身就是 <code class="c">int</code> 97</strong>（§1），无需提升</td>
+<td>类型是 <code class="c">char</code>，同样提升为 <code class="c">int</code> 97</td>
+</tr>
+<tr>
+<td>实际执行的比较</td>
+<td><code class="c">(int)c == 97</code></td>
+<td><code class="c">(int)c == 97</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>两种语言殊途同归：C 少一步提升（常量天生是 <code class="c">int</code>），C++ 多一步（常量也是 <code class="c">char</code>），<strong>最终都是 <code class="c">int</code> 与 <code class="c">int</code> 比较，不存在「按 8 位比较」这回事</strong>。提升次数不同（C 一次、C++ 两次），结果完全相同。</p>
+<p>再由 §5 已实测的事实直接推出两个同族坑（纯逻辑推演，不需要新实测）：</p>
+<pre class="code" data-label="C"><code class="c">char c = (char)0x80;
+if ((c &gt;&gt; 1) == 0x40) { ... }   /* signed char 平台上恒 false */
+</code></pre>
+<p>以为「右移一位等于除以 2 得 64」就掉进去了：<strong>提升发生在移位之前</strong> —— <code class="c">c</code> 先提升为 <code class="c">int</code> 的 <code class="c">-128</code>（<code class="c">0xFFFFFF80</code>），<code class="c">&gt;&gt;</code> 算术右移得 <code class="c">-64</code>（<code class="c">0xFFFFFFC0</code>），与 <code class="c">0x40</code>（64）不等。移的是 32 位的 -128，不是 8 位的 0x80。</p>
+<pre class="code" data-label="C"><code class="c">char c = ...;
+if (c &lt; 200) { ... }            /* signed char 平台上恒 true */
+</code></pre>
+<p><code class="c">char</code> 有符号时取值范围 -128~127，<code class="c">c &lt; 200</code> <strong>恒真</strong>；clang 会报 <code class="c">-Wtautological-constant-out-of-range-compare</code>（与 §2.3 实测的同款告警），gcc 侧对应 <code class="c">-Wtype-limits</code>。这类「跟一个永远够不着的常量比较」的写法，几乎都是把字节当成了 0–255。</p>
 <h3>4. 提升的<strong>正收益</strong>：窄类型算术不塌</h3>
 <p>提升不是纯麻烦，它是 C 里 <strong>窄类型能参与算术</strong>的前提：</p>
 <pre class="code" data-label="C"><code class="c">unsigned char x = 100, y = 200;
@@ -3725,13 +3766,14 @@ printf(&quot;%d&quot;, z);    /* 65  —— 同一个 int，按 %d 打印 */
 <li><strong><code class="c">getchar()</code> 返回 <code class="c">int</code></strong> 和「字符常量是 <code class="c">int</code>」是同一套规则的两种面孔</li>
 <li><strong><code class="c">printf("%c", c)</code> 安全（提升已代为完成）</strong>，<code class="c">printf("%s", c)</code> 是 UB</li>
 <li><strong>gcc 14 的 <code class="c">-std=c23</code> 报 <code class="c">__STDC_VERSION__ = 202000L</code></strong>（非 202311），特性探测别写 <code class="c">&gt;= 202311L</code></li>
+<li><strong>比较运算的两个操作数各自提升</strong>：<code class="c">if (c == 'a')</code> 在 C 里 1 次提升、C++ 里 2 次，殊途同归按 <code class="c">int</code> 比；<strong>提升发生在移位之前</strong>（<code class="c">(char)0x80 &gt;&gt; 1</code> 在 signed char 平台得 <code class="c">-64</code> 不是 <code class="c">0x40</code>）；指令层对应 <code class="c">sxtb/uxtb</code>（ARM）、<code class="c">movsx/movzx</code>（x86）；C++ 把 <code class="c">'a'</code> 改成 <code class="c">char</code> 的动机是重载决议</li>
 </ol>
 <h2>HFT / 底层开发的用处</h2>
 <ol>
 <li><strong>协议字段解析</strong>：帧头字段、状态码天然是「8 位无符号字节」。读进 <code class="c">char</code> 再和 <code class="c">0x80</code>、<code class="c">0xFF</code> 这种掩码比，就是 §5 的坑 —— 一律 <code class="c">uint8_t</code>（<a href="chapter-02.html#s-2-2-3">2.2.3</a>）</li>
 <li><strong>寄存器位域</strong>：<code class="c">volatile uint8_t *reg</code> 读回的值参与运算必先提升为 <code class="c">int</code>；显式 cast 到 <code class="c">uint32_t</code> 后再移位/掩码，避免符号扩展把高位带进来</li>
 <li><strong><code class="c">switch</code> 分发</strong>：<code class="c">case 'A':</code> 能工作正是因为 <code class="c">case</code> 常量是 <code class="c">int</code>、<code class="c">switch</code> 条件也被提升 —— 但这也意味着 <strong><code class="c">switch</code> 不会帮你发现 <code class="c">char</code>/<code class="c">int</code> 的符号性差异</strong></li>
-<li><strong>热路径上的对齐成本</strong>：提升本身是零成本（寄存器本来就是 32 位宽），编译器直接生成 32 位运算；<strong>代价只在语义上</strong>，不在指令数上</li>
+<li><strong>热路径上的对齐成本</strong>：提升本身是零成本（寄存器本来就是 32 位宽），编译器直接生成 32 位运算；<strong>代价只在语义上</strong>，不在指令数上。提升在指令层面有确定的名字：ARM 是 <code class="c">sxtb</code>（sign-extend byte）/ <code class="c">uxtb</code>（zero-extend byte），x86 是 <code class="c">movsx</code> / <code class="c">movzx</code>——<strong>选哪条正好由 §5 那张 ABI 符号性矩阵决定</strong>，反汇编里可以直接看到</li>
 <li><strong>编译开关</strong>：CI / 本地构建带 <code class="c">-Wall -Wextra -Wconversion -Wsign-compare</code>，能把这一类问题挡在提交前；<strong>但别指望它兜底</strong> —— 在 <code class="c">char</code> 为 unsigned 的 aarch64 Linux 上，§5 那份错代码一个告警都不会有</li>
 <li><strong>跨平台移植的第一道体检</strong>：换平台前先用 §5 的 <code class="c">_Static_assert</code> 探针确认 <code class="c">char</code> 符号性（Mac arm64 signed ≠ Pi aarch64 unsigned）；涉及字节一律 <code class="c">uint8_t</code>，不靠 <code class="c">char</code></li>
 </ol>
@@ -3787,6 +3829,14 @@ if ((uint32_t)flags == 0xFFu) { ... }       /* 显式拓宽，语义清楚 */
 </tr>
 </tbody>
 </table></div>
+<p><strong>C++ 为什么改这条规则</strong>：直接动机是<strong>重载决议</strong>。若沿用 C 的规则（<code class="c">'a'</code> 是 <code class="c">int</code>），字符实参会被分派到 <code class="c">int</code> 重载，与直觉相反：</p>
+<pre class="code" data-label="cpp"><code class="c">void f(char c);
+void f(int i);
+
+f('a');   // C++：'a' 是 char → 精确匹配 f(char)
+          // 若 'a' 按 C 规则是 int，这里会调到 f(int)
+</code></pre>
+<p>让「字符字面量按字符处理」，<code class="c">sizeof('c')</code> 从 4 变 1 只是这个决定的副产品。</p>
 <p><strong>实践含义</strong>：同一份「<code class="c">sizeof('c')</code> 是几」的代码，C 里是 4、C++ 里是 1 —— 混合编译的工程里，凡是依赖这个值的断言/数组长度，<strong>两边要分开写</strong>。</p>
 <h2>与前后章节衔接</h2>
 <ul>
@@ -3885,6 +3935,13 @@ done
 <p><strong>实测结果</strong>：<code class="c">aarch64-linux-gnu</code> / <code class="c">armv7-linux-gnueabihf</code> / <code class="c">riscv64-linux-gnu</code> → <strong>UNSIGNED</strong>；<code class="c">x86_64-linux-gnu</code> / <code class="c">arm64-apple-darwin</code> / <code class="c">x86_64-apple-darwin</code> → <strong>SIGNED</strong>。
 在树莓派上 <code class="c">gcc 14.2</code> 与 <code class="c">clang 19</code> 对同一个 <code class="c">aarch64-linux-gnu</code> 结论一致（都 unsigned）→ 这是 <strong>目标 ABI</strong> 的规定。</p>
 <p><strong>复习</strong>：<a href="chapter-02.html#s-2-3-1">2.3.1 §5</a>。</p>
+</details>
+<p><strong>题目 5：</strong> 两问。① <code class="c">char c = 'a'; if (c == 'a')</code> 在 C 和 C++ 里各发生了<strong>几次</strong>整型提升？② <code class="c">char c = (char)0x80; if ((c &gt;&gt; 1) == 0x40)</code> 在 <code class="c">char</code> 有符号的平台上结果是什么？为什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>① C 里 <strong>1 次</strong>（只有 <code class="c">c</code> 需要提升；<code class="c">'a'</code> 的类型天生是 <code class="c">int</code>，见 §1）。C++ 里 <strong>2 次</strong>（<code class="c">'a'</code> 的类型是 <code class="c">char</code>，左右两边都提升）。两种语言最终都按 <code class="c">int</code> 比较，结果相同——提升次数不同，语义殊途同归。</p>
+<p>② <strong>false</strong>。提升发生在移位<strong>之前</strong>：<code class="c">c</code> 先提升为 <code class="c">int</code> 的 <code class="c">-128</code>（<code class="c">0xFFFFFF80</code>），<code class="c">&gt;&gt;</code> 算术右移一位得 <code class="c">-64</code>（<code class="c">0xFFFFFFC0</code>），与 <code class="c">0x40</code>（64）不等。移的是 32 位的 -128，不是 8 位的 <code class="c">0x80</code>。若预期「右移得 64」，应写 <code class="c">((unsigned char)c &gt;&gt; 1)</code>——先截回 8 位无符号，再提升、再移。</p>
+<p><strong>复习</strong>：<a href="chapter-02.html#s-2-3-1">2.3.1 §3.5</a>、<a href="#s-2-9">2.9 按位运算符</a>。</p>
 </details>
       </section>
       <section class="section" id="s-2-4">
