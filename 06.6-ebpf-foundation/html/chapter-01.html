@@ -335,17 +335,20 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </ul>
       </section>
       <section class="section" id="s-1-1">
-        <div class="sec-head"><div class="sec-no">1.1</div><h2>起源与演进（原书 §1.1–1.3）</h2></div>
-<blockquote>
-<p>合并自原 section-1～3。文件名序号是合并后的笔记序号；正文小节标题沿用原书节号，历史 § 引用依然有效。</p>
-</blockquote>
+        <div class="sec-head"><div class="sec-no">1.1</div><h2>起源与演进</h2></div>
 <h2>1.1 起源：1993 年的 BSD Packet Filter 论文</h2>
 <blockquote>
 <p>本节讲什么：eBPF 的"前身" cBPF 为什么诞生、它解决的性能问题是什么、以及为什么说 BPF 从第一天起就不只是"抓包工具"。</p>
 </blockquote>
+<p><strong>一句话核心</strong>：老方案是包来了先整个拷贝到用户态、由用户程序判断丢不丢，来回切换上下文 + 拷贝内存，开销巨大；BPF 是把过滤逻辑（一小段字节码）提前加载进内核，包到内核时<strong>直接在内核里判决</strong>——不匹配当场扔，根本不拷贝，也就不需要反复系统调用和上下文切换。</p>
 <h2>1. 问题背景：内核抓包为什么慢</h2>
-<p>1990 年代初，抓包工具（如 tcpdump 的前身）是这样工作的：网卡每收到一个包，<strong>内核把整个包完整拷贝一份</strong>给用户态的过滤进程，过滤进程再决定要不要。</p>
-<p>问题：过滤逻辑跑在用户态，但过滤所需的数据在内核里——<strong>每个包都要白白经历一次"内核→用户态"拷贝 + 上下文切换</strong>，哪怕最后 99% 的包都被丢弃。当你只想抓 SSH 流量而网卡灌进来全机房流量时，这个开销是灾难性的。</p>
+<p>1990 年代初，抓包工具（Wireshark/tcpdump 底层的 libpcap，早期就是这套模型）是这样工作的：网卡每收到一个包，<strong>内核把整个包完整拷贝一份</strong>给用户态的过滤进程，过滤进程再决定要不要。</p>
+<p>代价有两笔，每个包都逃不掉：</p>
+<ul>
+<li><strong>上下文切换</strong>：每次 <code class="c">recv</code> 系统调用，CPU 要保存/恢复寄存器、陷入内核再返回；流量大时每秒几百万包，切换本身就吃掉大量 CPU。（现代内核为防 Meltdown 开了 KPTI，进出内核还要切页表，这笔账比 1993 年更贵。）</li>
+<li><strong>内存拷贝</strong>：内核缓冲区 → 用户态缓冲区，整个包复制一遍。</li>
+</ul>
+<p>最冤的是：<strong>就算这个包是垃圾包、最后要丢弃，也得先拷贝上来、切到用户态判断一遍，再告诉内核扔掉</strong>——全额付费，零产出。当你只想抓 SSH 流量而网卡灌进来全机房流量时，这个开销是灾难性的。</p>
 <p><strong>两次拷贝问题图示：</strong></p>
 <pre class="code" data-label="code"><code class="c">   网卡 ──包──▶ 内核协议栈 ──完整包拷贝──▶ 用户态过滤进程
                                         （在这里才判断&quot;要不要&quot;）
@@ -354,11 +357,17 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </code></pre>
 <h2>2. 论文的答案：把过滤程序搬进内核</h2>
 <p>McCanne &amp; Van Jacobson（劳伦斯伯克利实验室，1993）提出：与其把数据搬到过滤器，不如把<strong>过滤器编译成字节码，塞进内核执行</strong>。内核里跑一个小"伪机器"（pseudo-machine）——一套 32 位寄存器虚拟机，解释执行（当时还没有 JIT）过滤器指令。</p>
+<p>用户态从此只做<strong>一次</strong>动作：把过滤规则编译成 BPF 字节码，通过一次系统调用（<code class="c">setsockopt(SO_ATTACH_FILTER)</code>）上传进内核、挂到 socket 上。之后每个包到达，包留在内核里，由这台伪机器就地判决：</p>
 <pre class="code" data-label="code"><code class="c">   网卡 ──包──▶ [内核: BPF 伪机器执行过滤器]
                       │
               包在此就地判决 ──只有&quot;要&quot;的包──▶ 拷贝给用户态
                       └──&quot;不要&quot;的包零拷贝成本丢弃
 </code></pre>
+<p><strong>极简对比</strong>：</p>
+<pre class="code" data-label="code"><code class="c">老式：包 → 内核 → 拷贝+上下文切换 → 用户态判断 → 再切回内核丢包
+BPF：包 → 内核 → 内核内 BPF 直接判断，不匹配当场丢弃；匹配才拷贝给用户态
+</code></pre>
+<p>注意 BPF 搬进内核的<strong>只是短小的过滤判断逻辑</strong>，不是整个防火墙程序——后来 Linux 给这台小机器配了安全前提（验证器）和性能前提（JIT 编译成本地机器码），见 §1.2 的五件套。（再往后 Linux 又加了 PACKET_RX_RING mmap 环形缓冲，匹配的包连"拷贝到用户态"都省了——这是今天 tcpdump 的现状。）</p>
 <p>这就是 BPF 名字的由来：<strong>BSD Packet Filter</strong>。性能上还赢了一个隐性优势：BPF 论文的设计（两个寄存器 + 无间接寻址）比同时代对手（CSPF）的树遍历结构更容易映射成高效机器码，实测快 20 倍左右。</p>
 <h2>3. 论文里的示例程序</h2>
 <p>BPF 过滤器是一门"类汇编"指令集，比如"只要 IP 包"：</p>
@@ -394,13 +403,15 @@ L2:     ret     #0                 # 0 = 丢弃
 </tr>
 </tbody>
 </table></div>
-<p>两个细节值得注意：</p>
+<p>三个细节值得注意：</p>
 <ul>
 <li><strong>偏移 12</strong>：以太网帧头 = 6 字节目的 MAC + 6 字节源 MAC，第 13 字节起是 2 字节 ethertype——<strong>过滤器和数据结构布局强耦合</strong>。这个主题 30 年后换个面目再次出现：CO-RE 就是为了解决"内核数据结构布局变了，我的程序怎么办"（第 5 章）</li>
-<li>今天 <code class="c">tcpdump -d</code> 仍能看到这套指令：<code class="c">tcpdump -d 'ip'</code> 输出的就是 cBPF 字节码——你没有必要手写它，libpcap 替你把过滤表达式编译出来</li>
+<li><strong><code class="c">ret</code> 的返回值不是布尔，是"拷贝多少字节给用户态"</strong>：&gt;0 = 保留（通常给满 snaplen），0 = 丢弃——所以"接收/丢弃"判决和"拷贝量"是同一个数字</li>
+<li>今天 <code class="c">tcpdump -d</code> 仍能看到这套指令：<code class="c">tcpdump -d 'ip'</code> 输出的就是 cBPF 字节码——你没有必要手写它，libpcap 替你把过滤表达式编译出来（实测：本机 libpcap 把 <code class="c">tcp port 80</code> 编成 20 条指令，IPv4/IPv6 两个分支，IPv4 分支还要先用 IP 头长度算 X 寄存器再取端口——因为 IPv4 头是变长的）</li>
 </ul>
 <h2>4. 深远意义</h2>
 <p><strong>从第一天起，BPF 的核心思想就是"作者写自定义程序在内核里执行"</strong>——"包过滤"只是它的第一个应用场景。指令集 + 内核执行环境这两个要素 1993 年就齐了，后面 30 年的演进（64 位重写、maps、验证器、更多挂钩点）只是给这台机器不断"加装备"。理解了这一点，后面所有历史都顺理成章。</p>
+<p>顺带厘清一个容易混淆的点：<strong>用户态并没有消失，而是职责变了</strong>——它只负责一次性加载 BPF 程序、读取统计结果（maps）、管理生命周期；逐包的过滤/事件判断在内核里跑，每个包不再触发反复的系统调用和上下文切换。</p>
 <hr />
 <p><strong>衔接</strong>：下一节看这台"伪机器"如何一步步长成今天 64 位的 eBPF——时间线上只有 5 个节点值得记。</p>
 <hr />
@@ -578,10 +589,7 @@ L2:     ret     #0                 # 0 = 丢弃
 <p><strong>衔接</strong>：术语清了，下一节回到地基问题——为什么"在内核里执行"这件事价值巨大？先看用户态/内核态的边界长什么样。</p>
       </section>
       <section class="section" id="s-1-2">
-        <div class="sec-head"><div class="sec-no">1.2</div><h2>内核边界与传统扩展路径（原书 §1.4–1.5）</h2></div>
-<blockquote>
-<p>合并自原 section-4～5。文件名序号是合并后的笔记序号；正文小节标题沿用原书节号，历史 § 引用依然有效。</p>
-</blockquote>
+        <div class="sec-head"><div class="sec-no">1.2</div><h2>内核边界与传统扩展路径</h2></div>
 <h2>1.4 内核与用户空间（底层视角）</h2>
 <blockquote>
 <p>本节讲什么：为什么"能在内核里挂代码"约等于"能看穿一切应用"。这一节是你 TLPI 学习的复习——用户态/内核态边界，但从 eBPF 视角再看一遍。</p>
@@ -784,10 +792,7 @@ sudo bpftrace -e 'tracepoint:raw_syscalls:sys_enter { @[comm] = count(); }'  # e
 <p><strong>衔接</strong>：安全性解锁之后，eBPF 相比传统观测手段的具体优势可以数出来了——下一节：三大优势。</p>
       </section>
       <section class="section" id="s-1-3">
-        <div class="sec-head"><div class="sec-no">1.3</div><h2>三大优势与云原生对比（原书 §1.6–1.7）</h2></div>
-<blockquote>
-<p>合并自原 section-6～7。文件名序号是合并后的笔记序号；正文小节标题沿用原书节号，历史 § 引用依然有效。</p>
-</blockquote>
+        <div class="sec-head"><div class="sec-no">1.3</div><h2>三大优势与云原生对比</h2></div>
 <h2>1.6 eBPF 的三大优势</h2>
 <blockquote>
 <p>本节讲什么：动态加载、高性能、零侵入——每个优势的机制依据是什么，配具体数字。</p>
@@ -931,10 +936,7 @@ eBPF 观测:  每个事件 ──在内核里直接被过滤/聚合──▶ 只
 <p><strong>衔接</strong>：至此第 1 章完——从 1993 的伪机器到云原生的内核层基础设施。下一章动手：写第一个 eBPF 程序，从 Hello World 开始。</p>
       </section>
       <section class="section" id="s-1-4">
-        <div class="sec-head"><div class="sec-no">1.4</div><h2>HFT关联与自测题（原书 §1.8–1.9）</h2></div>
-<blockquote>
-<p>合并自原 section-8～9。文件名序号是合并后的笔记序号；正文小节标题沿用原书节号，历史 § 引用依然有效。</p>
-</blockquote>
+        <div class="sec-head"><div class="sec-no">1.4</div><h2>HFT关联与自测题</h2></div>
 <h2>1.8 HFT 关联</h2>
 <blockquote>
 <p>本节讲什么：第 1 章的概念怎么落到 HFT 工程上——不是"能做什么"的罗列，而是三个具体武器。</p>

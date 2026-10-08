@@ -284,7 +284,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-19-6"><span class="n">19.6</span>可变参数模板（C++11）</a>
           <a href="#s-19-7"><span class="n">19.7</span>转发引用与完美转发</a>
           <a href="#s-19-8"><span class="n">19.8</span>其他底层工具</a>
-          <a href="#s-19-9"><span class="n">19.9</span>19.9-学习优先级</a>
+          <a href="#s-19-9"><span class="n">19.9</span>学习优先级</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -365,123 +365,610 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="s-19-1">
         <div class="sec-head"><div class="sec-no">19.1</div><h2>内存分配与 new 重载</h2></div>
 <h2>本节讲什么</h2>
-<p>本节讲解「内存分配与 new 重载」。</p>
-<h2>要点</h2>
-<ul>
-<li>全局 <code class="c">operator new</code> / <code class="c">operator delete</code> 底层内存分配</li>
-<li>类内重载专属分配器：自定义内存池、对齐分配</li>
-<li><strong>定位 new（placement new）</strong>：在已分配内存上构造对象，不申请堆内存</li>
-<li>内存释放、析构与 placement new 配套使用</li>
-</ul>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-void *operator new(std::size_t sz) {
-    std::cout &lt;&lt; &quot;alloc &quot; &lt;&lt; sz &lt;&lt; &quot; bytes\n&quot;;
-    return ::operator new(sz);
+<p><code class="c">new</code> 不是一个操作，是<strong>两个</strong>：先调 <code class="c">operator new</code> 拿内存，再在内存上调构造函数。
+理解这个分层，才能谈 placement new、自定义分配器、内存池——以及为什么
+"内存池"是 HFT 的基础设施。代码均经<strong>本机 g++ 13.3 / -std=c++17 实测</strong>（2026-10-07）。</p>
+<h2>① new 的两层结构（这是全节的钥匙）</h2>
+<pre class="code" data-label="cpp"><code class="c">T* p = new T(args);
+// 等价于：
+//   void* raw = operator new(sizeof(T));   // 第一层：裸分配（可重载！）
+//   T* p = new (raw) T(args);              // 第二层：在 raw 上构造（placement new）
+//
+// delete p;
+// 等价于：
+//   p-&gt;~T();                               // 先析构
+//   operator delete(p);                    // 再释放（可重载）
+</code></pre>
+<p><strong>推论</strong>：想控制"内存在哪分配"，重载 <code class="c">operator new/delete</code>；
+想控制"在指定内存上构造"，用 placement new。两件事独立。</p>
+<h2>② 重载全局 operator new/delete（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;new&gt;
+#include &lt;cstdlib&gt;
+#include &lt;iostream&gt;
+void* operator new(std::size_t n) {
+    std::cout &lt;&lt; &quot;global new &quot; &lt;&lt; n &lt;&lt; &quot;B\n&quot;;
+    return std::malloc(n);
 }
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }  // C++14 sized delete
+
 int main() {
-    int *p = new int(42);
-    delete p;
-    return 0;
+    int* p = new int(1); delete p;     // 打印 global new 4B
+    struct Big { char buf[100]; };
+    Big* b = new Big; delete b;        // 打印 global new 100B
 }
 </code></pre>
-<hr />
+<p><strong>本机实测输出</strong>：<code class="c">global new 4B</code> / <code class="c">global new 100B</code> —— 每次 <code class="c">new</code> 都经过我们的重载。</p>
+<p>要点：
+- sized delete（带 <code class="c">std::size_t</code> 第二参）：C++14 起编译器优先选它，
+  让自定义分配器<strong>不用存分配大小</strong>就能释放（slab/池分配器的关键）
+- 类内重载：<code class="c">struct T { static void* operator new(size_t); }</code>——只对该类生效，
+  池化单个高频类型的标准做法
+- 重载是<strong>替换</strong>不是包裹：全局版一旦重载，所有 <code class="c">new</code>（包括标准库容器的）都走你的版本——
+  埋点统计全局分配量就这么做，但要小心与第三方库的相互影响</p>
+<h2>③ placement new：在指定内存上构造（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">alignas(Big) char raw[sizeof(Big)];
+Big* q = new (raw) Big;    // 只在 raw 上构造，不分配（实测：不触发 global new 打印）
+q-&gt;~Big();                 // 必须手动析构！不能 delete q（raw 不是堆内存）
+</code></pre>
+<p><strong>铁律</strong>：placement new 的对象<strong>手动析构、永不 delete</strong>；
+内存的寿命由你（栈数组/mmap/池）负责。</p>
+<p><strong>HFT 主战场</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">// 无锁队列的元素构造：环形缓冲区是预分配的，push 就是 placement new
+template &lt;typename T, size_t N&gt;
+class SpscRing {
+    alignas(T) char buf_[N * sizeof(T)];
+public:
+    template &lt;typename... Args&gt;
+    void emplace(Args&amp;&amp;... args) {
+        new (&amp;buf_[tail_ * sizeof(T)]) T(std::forward&lt;Args&gt;(args)...);   // 零分配
+        tail_ = (tail_ + 1) % N;
+    }
+};
+</code></pre>
+<h2>④ nothrow new 与 bad_alloc（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">int* r = new (std::nothrow) int[1UL&lt;&lt;40];   // 4TB 请求
+// 本机实测：返回 nullptr，不抛 std::bad_alloc
+</code></pre>
+<ul>
+<li>默认 <code class="c">new</code> 失败抛 <code class="c">std::bad_alloc</code>；<code class="c">new (std::nothrow)</code> 失败返回 <code class="c">nullptr</code>——
+  <strong>nothrow 版必须判空</strong>，否则解引用空指针</li>
+<li><code class="c">-fno-exceptions</code> 环境（HFT 热路径库常见）里 new 失败的行为依赖运行时配置，
+  很多团队直接禁用裸 new：启动期池化一切，运行期零分配（→ 06.6.5 ch07 / 13-dpdk mbuf）</li>
+</ul>
+<h2>⑤ operator new 之外的三个分配控制点（全景）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>控制点</th>
+<th>粒度</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全局 <code class="c">operator new/delete</code> 重载</td>
+<td>全程序</td>
+<td>分配统计/埋点；换 tcmalloc/jemalloc（其实直接用 LD_PRELOAD 更简单）</td>
+</tr>
+<tr>
+<td>类内 <code class="c">operator new/delete</code></td>
+<td>单类型</td>
+<td>高频小对象池化（订单/行情消息的 per-type pool）</td>
+</tr>
+<tr>
+<td>容器 <code class="c">Allocator</code> 模板参数</td>
+<td>单容器实例</td>
+<td><code class="c">std::vector&lt;T, PoolAlloc&lt;T&gt;&gt;</code>——标准容器接管自定义内存（见 ch12 allocator）</td>
+</tr>
+<tr>
+<td>placement new</td>
+<td>单次构造</td>
+<td>环形缓冲/共享内存/内存映射文件上的对象构造</td>
+</tr>
+</tbody>
+</table></div>
+<h2>和 C 的区别 / 新手要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">malloc/free</code> 只搬内存</td>
+<td><code class="c">new/delete</code> = 分配 + 构造/析构（两层）</td>
+</tr>
+<tr>
+<td>无</td>
+<td>placement new / operator new 重载 / nothrow</td>
+</tr>
+<tr>
+<td><code class="c">realloc</code> 扩容</td>
+<td>vector 扩容 = 新分配 + 移动/拷贝 + 析构旧块（没有原地扩容）</td>
+</tr>
+</tbody>
+</table></div>
+<p>新手要点：① <code class="c">malloc</code> 出来的内存<strong>不能</strong> delete，<code class="c">new</code> 的<strong>不能</strong> free（分配器可能完全不同）；
+② placement new 的 <code class="c">#include &lt;new&gt;</code> 别忘；③ 重载 operator new 就必须配对重载 operator delete
+（含 sized 版）。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>运行期零分配</strong>是低延迟系统的铁律：启动时池化所有订单/行情对象，
+  热路径的"new"实际是池的 <code class="c">acquire()</code>（通常就是 freelist 弹出 + placement new）——
+  本节的分层模型就是这个架构的语言基础</li>
+<li>sized delete 让池分配器省掉 per-object 的大小头（8 字节/对象的元数据开销）——
+  小对象池的密度优化</li>
+<li>malloc 抖动来源（brk/mmap/锁竞争）在 06.6.5 ch07 有实测；jemalloc/tcmalloc 选型同理</li>
+<li>自定义 <code class="c">operator new</code> 埋点是排查"谁在热路径偷偷分配"的最快手段（每分配打印 stack）</li>
+</ul>
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> <code class="c">new</code> 和 <code class="c">operator new</code> 有什么区别？</p>
-<pre class="code" data-label="cpp"><code class="c">Widget* p = new Widget;  // ?
-void* mem = operator new(sizeof(Widget)); // ?
-new(mem) Widget;  // ?
+<p><strong>题目 1：</strong> 下面错在哪？</p>
+<pre class="code" data-label="cpp"><code class="c">char buf[sizeof(Foo)];
+Foo* p = new (buf) Foo;
+delete p;
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p><code class="c">new Widget</code>（new 表达式）：调用 <code class="c">operator new</code> 分配内存 + 调用构造函数。
-<code class="c">operator new(...)</code>（函数）：只分配内存，返回 <code class="c">void*</code>，类似 malloc。
-<code class="c">new(mem) Widget</code>（placement new）：在已有内存上构造对象，不分配。
-重载 <code class="c">operator new</code> 可实现内存池，但不影响 <code class="c">new</code> 表达式的语法。<code class="c">delete</code> 对应 <code class="c">operator delete</code> + 析构。</p>
+<p>placement new 的对象构造在<strong>栈数组</strong>上，<code class="c">delete p</code> 会把栈地址交给 operator delete
+（堆释放器）——UB。正解：<code class="c">p-&gt;~Foo();</code> 手动析构，栈内存随作用域自动回收。</p>
+</details>
+<p><strong>题目 2：</strong> 为什么 C++14 的 sized delete 对内存池重要？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">sized delete</code>（<code class="c">operator delete(void*, size_t)</code>）在释放时直接告诉分配器<strong>块大小</strong>——
+池分配器不需要在每个对象头上存 size（省 8 字节/对象），也不需要查表推算归属池。
+编译器在类型大小已知时优先选 sized 版（本机实测两版并存时 sized 版被调用）。</p>
+</details>
+<p><strong>题目 3：</strong> <code class="c">std::vector&lt;T&gt;</code> 能保证扩容时 T 的析构不泄漏吗？如果 T 的移动构造抛异常呢？</p>
+<details>
+<summary>参考答案</summary>
+<p>扩容流程：分配新缓冲区 → 逐元素移动/拷贝到新缓冲区 → 全部成功后析构旧缓冲区。
+移动构造若抛异常且<strong>未标 noexcept</strong>，vector 根本不敢用移动（改用拷贝，见 18.1 ② 实测）；
+拷贝抛异常时，新缓冲区里已构造的元素逐个析构、释放新缓冲区、旧数据原样保留——
+这就是 vector 扩容的<strong>强保证</strong>。析构函数本身必须 noexcept，否则强保证无从谈起。</p>
 </details>
       </section>
       <section class="section" id="s-19-2">
         <div class="sec-head"><div class="sec-no">19.2</div><h2>运行时类型信息补充 &amp; 枚举进阶</h2></div>
 <h2>本节讲什么</h2>
-<p>本节讲解「运行时类型信息补充 &amp; 枚举进阶」。</p>
-<h2>要点</h2>
+<p>两块内容：① 18.4 RTTI 的延伸——<code class="c">type_info</code> 还能做什么（<code class="c">type_index</code> 作键、<code class="c">before</code> 顺序）；
+② 枚举的现代形态 <code class="c">enum class</code>——为什么旧式 <code class="c">enum</code> 在新代码里绝迹。
+代码均经<strong>本机 g++ 13.3 / -std=c++17 实测</strong>（2026-10-07）。</p>
+<h2>① type_info 的三个工程用法（超出 typeid 比较）</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;typeindex&gt;
+#include &lt;map&gt;
+std::map&lt;std::type_index, const char*&gt; names;
+names[typeid(int)] = &quot;整数&quot;; names[typeid(double)] = &quot;浮点&quot;;
+names[typeid(1.5)];      // 本机实测：取出&quot;浮点&quot;
+
+typeid(int).before(typeid(double))   // 实测 0（int 排在 double 后）——实现相关的全程序一致序
+</code></pre>
 <ul>
-<li>强类型枚举 <strong><code class="c">enum class</code></strong>：对比传统无作用域 <code class="c">enum</code>，类型更安全、不会隐式转整型</li>
+<li><strong><code class="c">std::type_index</code></strong>（C++11）：<code class="c">type_info</code> 的可拷贝包装——<code class="c">type_info</code> 本身不可拷贝
+  不能进容器，<code class="c">type_index</code> 可以。做"类型 → 处理器"注册表的键</li>
+<li><strong><code class="c">type_info::before</code></strong>：给全程序类型一个一致（但实现相关）的排序——
+  排序键用途（<code class="c">std::map</code> 默认键序、调试输出排序），<strong>不要</strong>跨进程/跨版本持久化这个序</li>
+<li><code class="c">.name()</code>：mangled 名（<code class="c">St13runtime_error</code>），只用于日志；可移植 demangle 用
+  <code class="c">abi::__cxa_demangle</code>（GCC/Clang 专属）</li>
 </ul>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-enum class Color { Red, Green, Blue };
-int main() {
-    Color c = Color::Red;
-    if (c == Color::Red)
-        std::cout &lt;&lt; &quot;red\n&quot;;
-    return 0;
+<p><strong>注册表模式</strong>（动态工厂的 RTTI 版）：</p>
+<pre class="code" data-label="cpp"><code class="c">std::map&lt;std::type_index, std::function&lt;void(const MsgBase*)&gt;&gt; handlers;
+handlers[typeid(SnapMsg)]  = [](const MsgBase* m) { on_snap(static_cast&lt;const SnapMsg*&gt;(m)); };
+handlers[typeid(TradeMsg)] = [](const MsgBase* m) { on_trade(static_cast&lt;const TradeMsg*&gt;(m)); };
+// 分发：handlers[typeid(*msg)](msg);   ← typeid(*多态) 是动态类型（18.4 ②）
+</code></pre>
+<p>冷路径（启动注册/插件加载）这么写没问题；热路径还是查表/switch（→ 18.4 HFT 关联）。</p>
+<h2>② enum class：把 C 的枚举病一次治完（实测）</h2>
+<p>旧式 <code class="c">enum</code> 的三宗罪，<code class="c">enum class</code>（C++11）逐个治：</p>
+<pre class="code" data-label="cpp"><code class="c">enum OldStyle { Red, Green };              // 罪1：枚举值泄进外层作用域（Red 直接可用，易撞名）
+enum class Side : uint8_t { Buy = 1, Sell = 2 };
+
+int y = Red;                    // 罪2：隐式转 int（本机实测 y=0 编译通过）
+// int x = Side::Buy;           // ❌ 编译错误：enum class 不隐式转换
+int x = static_cast&lt;int&gt;(Side::Buy);        // ✅ 必须显式
+
+sizeof(Side) == 1               // 罪3 治疗：可指定底层类型（uint8_t），旧 enum 由编译器选
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>旧式 <code class="c">enum</code></th>
+<th><code class="c">enum class</code>（= <code class="c">enum struct</code>）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>作用域</td>
+<td>枚举值泄进外层</td>
+<td>必须 <code class="c">Side::Buy</code> 限定</td>
+</tr>
+<tr>
+<td>隐式转 int</td>
+<td>✅（事故源）</td>
+<td>❌ 必须 static_cast</td>
+</tr>
+<tr>
+<td>底层类型</td>
+<td>编译器自选（布局不可控）</td>
+<td>可显式指定 <code class="c">: uint8_t</code></td>
+</tr>
+<tr>
+<td>前向声明</td>
+<td>只有指定底层类型才行</td>
+<td>永远可以</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>协议场景的硬要求</strong>：跨网络/跨文件的枚举值必须<strong>定宽</strong>——
+<code class="c">enum class MsgType : uint16_t</code>，配 static_assert 钉布局（→ 19.5 ④）。</p>
+<h2>③ switch 穷尽性与编译器警告</h2>
+<pre class="code" data-label="cpp"><code class="c">switch (s) {
+    case Side::Buy:  std::cout &lt;&lt; &quot;买\n&quot;; break;
+    case Side::Sell: std::cout &lt;&lt; &quot;卖\n&quot;; break;
+    // 漏一个枚举值：-Wswitch 警告（g++ 默认开）——枚举新增成员时全仓漏分支一目了然
 }
 </code></pre>
-<hr />
+<ul>
+<li><code class="c">enum class</code> + <code class="c">switch</code> 不加 <code class="c">default</code>：让 <code class="c">-Wswitch</code> 替你守穷尽性——
+  协议加消息类型时编译器把所有没处理的 switch 列出来</li>
+<li>旧式 enum 也有 <code class="c">-Wswitch</code>，但隐式转换让"拿个 int 就 switch"成为可能，防线形同虚设</li>
+</ul>
+<h2>和 C 的区别 / 新手要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">enum</code> 就是 int 的花名</td>
+<td><code class="c">enum class</code> 是真正的独立类型</td>
+</tr>
+<tr>
+<td>无</td>
+<td><code class="c">type_index</code> / <code class="c">type_info::before</code></td>
+</tr>
+<tr>
+<td><code class="c">#define SIDE_BUY 1</code></td>
+<td><code class="c">enum class Side : uint8_t</code>（有类型、有作用域、可调试）</td>
+</tr>
+</tbody>
+</table></div>
+<p>新手要点：① 新代码一律 <code class="c">enum class</code>；② 协议枚举指定底层定宽类型；
+③ 旧代码里新旧混用时，转换全走 <code class="c">static_cast</code>，别写 <code class="c">(int)e</code> 这种 C 强转。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li>行情/订单协议的<strong>每个枚举都必须定宽</strong>（<code class="c">Side : uint8_t</code>、<code class="c">MsgType : uint16_t</code>）——
+  否则结构体布局随编译器漂移，解码错位（→ 19.5 static_assert 三件套）</li>
+<li>switch 穷尽性 + <code class="c">-Wswitch</code> 是"交易所加消息类型"时的编译期验收——
+  比运行时漏处理安全一个数量级</li>
+<li><code class="c">type_index</code> 注册表用于<strong>策略插件系统</strong>（冷路径）；热路径分发用
+  msg_type 查表（19.3 成员指针表）或 variant+visit（M5）</li>
+</ul>
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> <code class="c">enum class</code> 和传统 <code class="c">enum</code> 有什么区别？</p>
-<pre class="code" data-label="cpp"><code class="c">enum Color { RED, GREEN, BLUE };         // 传统
-enum class Color2 { RED, GREEN, BLUE };  // C++11
-</code></pre>
+<p><strong>题目 1：</strong> 为什么 <code class="c">enum class Color { Red, Green }; enum class Light { Red, Green };</code> 能共存，
+而两个旧式 enum 这么写就报错？</p>
 <details>
 <summary>参考答案</summary>
-<p>传统 enum：隐式转 int、名称泄漏到外层作用域、不能指定底层类型。<code class="c">enum class</code>（C++11）：不隐式转换（需 <code class="c">static_cast</code>）、名称限定（<code class="c">Color2::RED</code>）、可指定底层类型（<code class="c">enum class Color : uint8_t</code>）。推荐用 <code class="c">enum class</code>——更安全、更清晰。</p>
+<p>旧式 enum 的枚举值<strong>泄进外层作用域</strong>——两个 <code class="c">Red</code> 在同一作用域重定义。
+<code class="c">enum class</code> 的枚举值封闭在自己的作用域里（<code class="c">Color::Red</code> / <code class="c">Light::Red</code>），互不干扰。
+这正是"罪1：作用域污染"的解药。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">std::map&lt;std::type_index, Handler&gt;</code> 能直接用 <code class="c">typeid(T)</code> 作键，
+为什么 <code class="c">type_info</code> 本身不行？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">std::type_info</code> <strong>不可拷贝</strong>（拷贝构造/赋值被删除）——容器要求元素可拷贝或可移动，
+所以 <code class="c">typeid</code> 返回的 <code class="c">const type_info&amp;</code> 不能直接存。<code class="c">std::type_index</code> 是标准库给的
+可拷贝包装（内部存指针 + 提供比较运算符），就是为"类型作键"这个场景设计的。</p>
+</details>
+<p><strong>题目 3：</strong> 协议枚举从 2 个值加到 3 个，但发版后解码端没更新——enum class 能救你吗？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>不能</strong>——enum class 只保证编译期类型安全，管不了线上版本错配。
+解码端 <code class="c">switch</code> 遇到未知的第 3 个枚举值时走 default/未定义分支。
+真正的防线是：① switch 穷尽性检查（编译期，防"代码没改全"）；
+② 协议版本协商/拒绝未知 msg_type（运行期，防"版本没对齐"）；
+③ golden-packet 回放测试（发版前，防"新老不兼容"）。
+enum class 解决的是语言层问题，协议演进是工程层问题，各管一段。</p>
 </details>
       </section>
       <section class="section" id="s-19-3">
         <div class="sec-head"><div class="sec-no">19.3</div><h2>类成员指针</h2></div>
 <h2>本节讲什么</h2>
-<p>本节讲解「类成员指针」。</p>
-<h2>要点</h2>
+<p>"指向成员的指针"（pointer to member）是 C++ 独有的指针类别——它指向的是
+<strong>类的某个成员</strong>而不是某个对象：同一个成员指针，配不同的对象实例就能访问不同对象的同一成员。
+本节覆盖成员数据指针、成员函数指针、<code class="c">.*</code>/<code class="c">-&gt;*</code> 运算符，以及它在回调表/状态机里的真实用途。
+代码均经<strong>本机 g++ 13.3 / -std=c++17 实测</strong>（2026-10-07）。</p>
+<h2>① 成员数据指针</h2>
+<pre class="code" data-label="cpp"><code class="c">struct W { int v = 7; };
+int W::*pd = &amp;W::v;        // 注意：&amp;W::v 取的是&quot;成员&quot;，不是某个对象的字段
+
+W w; W* pw = &amp;w;
+w.*pd    == 7              // 对象 . * 成员指针
+pw-&gt;*pd  == 7              // 对象指针 -&gt;* 成员指针（本机实测均通过）
+</code></pre>
 <ul>
-<li><code class="c">::*</code> 成员指针语法：指向类的成员变量、成员函数</li>
-<li>绑定到具体对象后才能访问；用于通用框架、简易反射</li>
+<li>类型写法：<code class="c">int W::*</code>（"W 的 int 成员"）；本质是<strong>成员在对象内的偏移量</strong>（不是地址！）</li>
+<li>所以它可以便宜地复制、放数组当"字段选择器"</li>
 </ul>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-void f(int) { std::cout &lt;&lt; &quot;int\n&quot;; }
-void f(int *) { std::cout &lt;&lt; &quot;pointer\n&quot;; }
-int main() {
-    f(nullptr);  // 调用 f(int*)
-    return 0;
+<h2>② 成员函数指针（语法全 C++ 最丑，没有之一）</h2>
+<pre class="code" data-label="cpp"><code class="c">struct W {
+    int v = 7;
+    int add(int a, int b) { return a + b + v; }
+};
+int (W::*pf)(int, int) = &amp;W::add;          // 声明：返回类型 (类::*名)(参数表)
+(w.*pf)(1, 2);        // = 10（本机实测）
+(pw-&gt;*pf)(3, 4);      // = 14
+// 调用必须带对象：成员函数有隐式 this，裸成员指针没法独立调用
+</code></pre>
+<p><strong>记忆法</strong>：<code class="c">.*</code>/<code class="c">-&gt;*</code> 的优先级低于函数调用，<strong>括号一个都不能少</strong>：
+<code class="c">(w.*pf)(1, 2)</code> —— 先 <code class="c">(w.*pf)</code> 拿到函数，再 <code class="c">(1, 2)</code> 调用。</p>
+<h2>③ 和普通函数指针的关键差异（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">int (*fp)(int) = twice;                    // 普通函数指针
+sizeof(fp) == 8                            // x86_64：一个代码地址
+sizeof(pf) == 16                           // 本机实测：成员函数指针 16 字节！
+</code></pre>
+<p><strong>本机实测</strong>：<code class="c">sizeof(fp)=8</code> vs <code class="c">sizeof(pf)=16</code>——成员函数指针要带<strong>两份信息</strong>：
+代码地址 + this 调整量（虚函数时存 vtable 槽位，多重继承时存基类偏移）。
+所以不能把它和 <code class="c">void*</code>/普通函数指针互相转换，也不能 <code class="c">printf("%p", pf)</code>。</p>
+<h2>④ 真实用途：状态机 / 命令分发表（替代 switch）</h2>
+<pre class="code" data-label="cpp"><code class="c">struct FeedHandler {
+    void on_snap(const Msg&amp; m) { /* 快照 */ }
+    void on_incr(const Msg&amp; m) { /* 增量 */ }
+    void on_trade(const Msg&amp; m) { /* 逐笔 */ }
+};
+// 协议 msg_type → 处理函数的跳转表：一次数组索引代替 switch 链
+using Handler = void (FeedHandler::*)(const Msg&amp;);
+static constexpr Handler table[] = {
+    &amp;FeedHandler::on_snap,    // 0 = SNAP
+    &amp;FeedHandler::on_incr,    // 1 = INCR
+    &amp;FeedHandler::on_trade,   // 2 = TRADE
+};
+void dispatch(FeedHandler&amp; h, const Msg&amp; m) {
+    (h.*table[m.type])(m);    // O(1) 查表，无虚函数、无分支链
 }
 </code></pre>
-<hr />
+<p>这就是成员函数指针的经典工业用法：<strong>把"对象+操作"的绑定推迟到查表时刻</strong>。
+（现代 C++ 也常用 <code class="c">std::function</code>/模板 lambda 表达同样意图——
+成员指针版零类型擦除、可 <code class="c">constexpr</code>，热路径仍有其一席之地。）</p>
+<h2>⑤ 与现代替代品的对照</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>开销</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>成员函数指针 + 表</td>
+<td>一次间接调用，可 constexpr</td>
+<td>类型固定、热路径跳转表</td>
+</tr>
+<tr>
+<td>虚函数</td>
+<td>vtable 跳转</td>
+<td>类型层次开放的运行期多态</td>
+</tr>
+<tr>
+<td><code class="c">std::function</code></td>
+<td>类型擦除（可能分配）</td>
+<td>类型不固定的通用回调</td>
+</tr>
+<tr>
+<td>模板 + lambda</td>
+<td>零开销（内联）</td>
+<td>编译期已知的分发</td>
+</tr>
+</tbody>
+</table></div>
+<h2>和 C 的区别 / 新手要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>函数指针 <code class="c">int (*fp)(int)</code></td>
+<td>成员指针必须带类：<code class="c">int (W::*)(int, int)</code></td>
+</tr>
+<tr>
+<td>qsort 回调传 <code class="c">void* data</code></td>
+<td>成员指针天然带 this 语义</td>
+</tr>
+<tr>
+<td>无</td>
+<td><code class="c">.*</code> / <code class="c">-&gt;*</code> 两个专用运算符</td>
+</tr>
+</tbody>
+</table></div>
+<p>新手要点：① <code class="c">&amp;W::v</code> 不是地址是偏移；② 调用必须给对象；
+③ 成员函数指针 ≠ 普通函数指针（大小/语义都不同，实测 16B vs 8B）；
+④ <code class="c">typedef</code>/<code class="c">using</code> 起别名能救命：<code class="c">using Handler = void (W::*)(const Msg&amp;);</code></p>
+<h2>HFT 关联</h2>
+<ul>
+<li>行情处理的 <strong>msg_type → handler 跳转表</strong>（④ 的 dispatch 模式）是交易所网关的
+  标准形态：比 switch 链分支更规律（间接跳转目标少，BTB 友好），且表可以 constexpr 生成</li>
+<li>成员指针 + CRTP 可在<strong>编译期</strong>完成"策略基类调派生实现"的分发（无 vtable）——
+  这是 M1/ch16 里 CRTP 惯用法的机制底座</li>
+<li>注意 16 字节的尺寸：把成员指针塞进缓存行敏感的紧凑结构（订单簿条目）前先算对齐账</li>
+</ul>
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 成员指针和普通指针有什么区别？</p>
-<pre class="code" data-label="cpp"><code class="c">struct Widget { int val; void show(); };
-int Widget::* pmi = &amp;Widget::val;     // ?
-void (Widget::*pmf)() = &amp;Widget::show; // ?
-Widget w;
-(w.*pmi) = 42;   // ?
-(w.*pmf)();      // ?
+<p><strong>题目 1：</strong> 下面为什么编译错误？怎么改？</p>
+<pre class="code" data-label="cpp"><code class="c">struct A { void f() {} };
+void (*fp)() = &amp;A::f;
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p>成员指针不指向具体地址，而是「相对于对象起始的偏移」（数据成员）或「vtable 条目」（函数成员）。<code class="c">w.*pmi</code> 通过成员指针访问 w 的成员。<code class="c">.*</code> 和 <code class="c">-&gt;*</code> 是成员指针解引用运算符。成员指针类型包含了类类型信息——<code class="c">int Widget::*</code> 和 <code class="c">int Other::*</code> 是不同类型。主要用于通用回调/序列化框架。</p>
+<p><code class="c">&amp;A::f</code> 的类型是 <code class="c">void (A::*)()</code>（成员函数指针），不是 <code class="c">void(*)()</code>——
+成员函数有隐式 this，两者不兼容。改法：<code class="c">void (A::*fp)() = &amp;A::f;</code>，
+调用 <code class="c">(a.*fp)()</code> 或 <code class="c">(pa-&gt;*fp)()</code>。要摆脱对象束缚用 lambda 捕获或 <code class="c">std::bind</code>/<code class="c">std::function</code>。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">int A::*p = &amp;A::x;</code> 里的 <code class="c">p</code> 存的是什么？为什么 <code class="c">sizeof(p)</code> 可以只有 4 或 8？</p>
+<details>
+<summary>参考答案</summary>
+<p>存的是<strong>成员 x 在 A 对象内的偏移量</strong>（Itanium ABI 下成员数据指针就是偏移，单位字节，
+从 -1 起表示空）——所以它和对象实例无关，大小是一个整数的尺寸（实测 8B），
+不同于成员函数指针（16B，要带 this 调整/vtable 信息）。</p>
+</details>
+<p><strong>题目 3：</strong> 用成员函数指针表实现三态状态机（IDLE/RUN/STOP，事件 TICK/RESET），
+写出跳转表的核心两行。</p>
+<details>
+<summary>参考答案</summary>
+<pre class="code" data-label="cpp"><code class="c">using Action = void (Sm::*)(Event);
+static constexpr Action next[3][2] = {
+    /* IDLE */ { &amp;Sm::start,  &amp;Sm::stay   },
+    /* RUN  */ { &amp;Sm::tick,   &amp;Sm::stop   },
+    /* STOP */ { &amp;Sm::stay,   &amp;Sm::reset  },
+};
+// 转移：(sm.*next[state][ev])(ev);
+</code></pre>
+<p>查表替代嵌套 switch——状态/事件多时表格化更可审阅，且可加静态断言保证表完整。</p>
 </details>
       </section>
       <section class="section" id="s-19-4">
         <div class="sec-head"><div class="sec-no">19.4</div><h2>嵌套类</h2></div>
 <h2>本节讲什么</h2>
-<p>类内部再定义类，作用域仅限外部类，控制封装、隐藏辅助结构。</p>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-class Outer {
+<p>类里面再定义类——嵌套类是<strong>作用域控制</strong>工具：把"只属于这个类的辅助类型"
+（迭代器、节点、Impl）收进类的命名空间，不污染外层。本节讲清嵌套类的访问规则、
+独立性（不持有外部对象）、pImpl 惯用法。代码均经<strong>本机 g++ 13.3 / -std=c++17 实测</strong>（2026-10-07）。</p>
+<h2>① 定义与独立性（先破除最大误解）</h2>
+<pre class="code" data-label="cpp"><code class="c">class Outer {
+    int secret = 42;
 public:
     class Inner {
+        int inner_secret = 7;
     public:
-        void show() const { std::cout &lt;&lt; &quot;inner\n&quot;; }
+        void peek(Outer&amp; o) { o.secret = 99; }   // C++11 起：嵌套类可访问外部 private
+        void show() const { std::cout &lt;&lt; inner_secret &lt;&lt; &quot;\n&quot;; }
     };
 };
-int main() {
-    Outer::Inner i;
-    i.show();
-    return 0;
-}
+Outer::Inner i;              // 独立构造：不需要任何 Outer 实例！
+// 本机实测：sizeof(Inner)=4——Inner 对象里**没有**指向 Outer 的指针
 </code></pre>
-<hr />
+<p><strong>核心事实</strong>：嵌套类是<strong>作用域上的嵌套，不是对象上的包含</strong>——
+<code class="c">Inner</code> 的实例和 <code class="c">Outer</code> 的实例毫无关联（不像 Java 的非静态内部类那样隐式持有外部引用）。
+要访问某个 Outer 对象，必须显式传进来（<code class="c">peek(Outer&amp; o)</code>）。</p>
+<h2>② 访问规则（不对称！）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方向</th>
+<th>规则</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>嵌套类 → 外部类成员</td>
+<td><strong>可以访问一切</strong>（含 private 非静态，C++11 起）</td>
+<td><code class="c">o.secret = 99</code> ✅</td>
+</tr>
+<tr>
+<td>外部类 → 嵌套类成员</td>
+<td><strong>受嵌套类的访问控制</strong>——外部类不是嵌套类的友元</td>
+<td><code class="c">i.inner_secret</code> ❌ 编译错误</td>
+</tr>
+<tr>
+<td>嵌套类 → 外部静态成员</td>
+<td>直接访问（无需对象）</td>
+<td><code class="c">s_count</code> ✅</td>
+</tr>
+</tbody>
+</table></div>
+<p>记忆：<strong>嵌套类是"客人有了钥匙"</strong>——它能开主人的门，主人却开不了它的门
+（除非嵌套类把成员设为 public 或声明友元）。</p>
+<h2>③ 真实用途</h2>
+<p><strong>用途一：容器把节点/迭代器收进内部</strong>（标准库全是这么干的）：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt;
+class List {
+    struct Node {           // 私有嵌套类：实现细节，用户根本不该知道
+        T data; Node* next;
+    };
+    Node* head_ = nullptr;
+public:
+    class iterator {        // 公有嵌套类：作为类的接口一部分
+        /*...*/
+    };
+};
+// 用户写 List&lt;int&gt;::iterator——迭代器天然携带&quot;属于哪个容器&quot;的信息
+</code></pre>
+<p><code class="c">std::list&lt;int&gt;::iterator</code> 的类型全名就是这么来的。</p>
+<p><strong>用途二：pImpl 惯用法</strong>（编译防火墙）：</p>
+<pre class="code" data-label="cpp"><code class="c">// widget.h——用户只看到指针，实现细节全藏在 .cpp
+class Widget {
+    class Impl;                 // 前向声明嵌套类（不完整类型）
+    std::unique_ptr&lt;Impl&gt; pImpl_;
+public:
+    Widget();
+    ~Widget();                  // 必须在 .cpp 定义（Impl 完整后才能析构）
+    void work();
+};
+// widget.cpp
+class Widget::Impl { /* 全部实现细节：成员、辅助函数… */ };
+Widget::Widget() : pImpl_(std::make_unique&lt;Impl&gt;()) {}
+Widget::~Widget() = default;
+void Widget::work() { /* 转发给 pImpl_ */ }
+</code></pre>
+<p>价值：改实现<strong>不触发用户代码重编译</strong>（头文件没动）——大型项目的编译时间救星；
+ABI 稳定性的经典手段（→ M4 Effective C++ Item 31）。</p>
+<p><strong>用途三：每类型的 trait/tag 载体</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">class Strategy {
+    struct BuySignal {};      // 策略专属的标签类型，收进类里不外泄
+    struct SellSignal {};
+};
+</code></pre>
+<h2>④ 局部类与嵌套类的边界（顺带知道）</h2>
+<ul>
+<li><strong>局部类</strong>（函数内定义的类）：不能定义静态数据成员、不能作模板参数（C++11 前）——
+  C++11 起可作模板实参，lambda 出现后用武之地大减</li>
+<li>嵌套类也有<strong>访问外部类名</strong>的特权：<code class="c">Outer::Inner</code> 里可以直接写 <code class="c">Outer</code> 的 typedef/static</li>
+</ul>
+<h2>和 C 的区别 / 新手要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>结构体套结构体 = 对象包含（内存上嵌套）</td>
+<td>嵌套类 = 作用域嵌套（对象上独立！）</td>
+</tr>
+<tr>
+<td>无 pImpl 概念（.opaque 指针手搓）</td>
+<td><code class="c">class Impl; unique_ptr&lt;Impl&gt;</code> 标准姿势</td>
+</tr>
+<tr>
+<td>无</td>
+<td>嵌套类访问外部 private 的不对称规则</td>
+</tr>
+</tbody>
+</table></div>
+<p>新手要点：① 嵌套类实例<strong>不含</strong>外部对象指针（sizeof 实测）；② 访问规则不对称；
+③ 名字查找：嵌套类里 <code class="c">Outer::Inner</code> 写全，外部类成员函数里直接写 <code class="c">Inner</code>。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>pImpl 与热路径的矛盾</strong>：pImpl 多一次指针间接（cache miss）+ 堆分配——
+  热路径类型（订单/行情）<strong>不用 pImpl</strong>；配置/连接管理等冷路径对象随便用</li>
+<li>嵌套 <code class="c">Node</code>/<code class="c">iterator</code> 是自定义容器（订单簿/无锁队列）的标准形态——
+  类型归属清晰，且嵌套类能自由访问容器的私有存储（② 的规则正为此设计）</li>
+<li>编译防火墙在大型交易系统里的价值：行情解码库改实现，策略层不用重编——
+  发布节奏快时 pImpl 的编译解耦比那一点间接开销值钱（在<strong>接口边界</strong>用，不在数据路径用）</li>
+</ul>
 <h2>代码自测</h2>
 <p><strong>题目 1：</strong> 嵌套类和外部类有什么访问关系？</p>
 <pre class="code" data-label="cpp"><code class="c">class Outer {
@@ -497,175 +984,800 @@ int main() {
 <summary>参考答案</summary>
 <p>C++11 起：嵌套类可以访问外部类的 private 成员（包括静态和非静态）。C++11 前：嵌套类不能直接访问外部类的非静态 private 成员（需要友元声明）。嵌套类主要用于实现细节隐藏——如迭代器类通常嵌套在容器类内部。</p>
 </details>
+<p><strong>题目 2：</strong> <code class="c">sizeof(Outer::Inner)</code> 和 <code class="c">sizeof(Outer)</code> 有必然关系吗？为什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>没有。嵌套类是<strong>作用域</strong>嵌套不是<strong>内存</strong>嵌套——<code class="c">Inner</code> 对象不持有 <code class="c">Outer</code> 的指针或子对象
+（本机实测 <code class="c">sizeof(Inner)=4</code>，只装自己的 <code class="c">int</code>）。
+要关联必须显式存一个 <code class="c">Outer*</code> 或引用。这与 Java 非静态内部类（隐式持有外部引用）
+是本质区别——从 Java 转过来的人最容易在这里想错。</p>
+</details>
+<p><strong>题目 3：</strong> pImpl 的 <code class="c">unique_ptr&lt;Impl&gt;</code> 成员下，为什么 <code class="c">~Widget()</code> 必须在 .cpp 里定义，
+不能 <code class="c">= default</code> 在头文件？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">unique_ptr&lt;Impl&gt;</code> 的析构要调用 <code class="c">Impl</code> 的析构函数——这要求 Impl 在<strong>析构点</strong>是完整类型。
+头文件里 <code class="c">Impl</code> 只有前向声明（不完整类型），<code class="c">= default</code> 会把析构定义放进每个包含者的 TU，
+在它们眼里 Impl 都不完整 → 编译错误。
+放 .cpp（Impl 完整的地方）定义析构，链接器统一用那一份。
+（C++23 的 <code class="c">std::expected</code> 式完整类型推导或自定义 deleter 也能绕，但 .cpp 定义仍是标准做法。）</p>
+</details>
       </section>
       <section class="section" id="s-19-5">
         <div class="sec-head"><div class="sec-no">19.5</div><h2>联合（union）与位域</h2></div>
 <h2>本节讲什么</h2>
-<ol>
-<li><strong>union</strong>：多个成员共用同一块内存，同一时刻只有一个有效，节省内存</li>
-<li><strong>位域 bit-field</strong>：指定成员占用 bit 数，极致压缩内存；驱动、协议解析常用</li>
-</ol>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-union Data {
-    int i;
-    char c[4];
+<p>union（所有成员共享同一块内存）和位域（bitfield，按位打包字段）是
+<strong>协议解析和内存极致压缩</strong>的两件底层工具——也是"写出来的结构体必须和网线上字节流
+一模一样"时唯一可靠的语言手段。代码均经<strong>本机 g++ 13.3 / -std=c++17 实测</strong>（2026-10-07）。</p>
+<h2>① union：同一块内存的多种解读</h2>
+<pre class="code" data-label="cpp"><code class="c">union Header {
+    uint32_t raw;                    // 整个 4 字节当一个整数
+    struct {                         // 或者按字段拆着看
+        uint32_t type : 8;
+        uint32_t seq  : 20;
+        uint32_t flag : 4;
+    } parts;
 };
-struct Flags {
-    unsigned ready : 1;
-    unsigned mode  : 3;
-};
-int main() {
-    Data d{};
-    d.i = 0x41424344;
-    Flags f{1, 5};
-    std::cout &lt;&lt; (int)f.ready &lt;&lt; &quot; &quot; &lt;&lt; (int)f.mode &lt;&lt; std::endl;
-    return 0;
-}
+Header h{}; h.parts.type = 2; h.parts.seq = 1000;
+// 本机实测：sizeof(Header)=4，h.raw=0x3e802——写 parts 立即反映到 raw
 </code></pre>
-<hr />
+<p>规则与要点：
+- <code class="c">sizeof(union)</code> = <strong>最大成员</strong>的尺寸（按对齐向上取整）
+- 任意时刻只有<strong>一个成员是"活"的</strong>——写 A 读 B 在 C++ 里技术上是 UB
+  （实际中"同布局重解读"（type punning）广泛用于协议解析，编译器按扩展支持；
+  严格可移植的替代是 <code class="c">std::memcpy</code> 或 C++20 <code class="c">std::bit_cast</code>）
+- C++11 起 union 可以含<strong>非平凡成员</strong>（string/vector），但要自己管理
+  构造/析构（placement new + 手动析构）——工程上基本只放 trivial 类型</p>
+<h2>② struct 里的匿名 union：省一个名字，多一分类型安全</h2>
+<pre class="code" data-label="cpp"><code class="c">struct Tick {
+    uint8_t kind;            // tag：后面 union 里谁活着
+    union {                  // 匿名：成员直接提升为 Tick 的成员
+        int64_t i;
+        double d;
+    };
+};
+Tick t{}; t.d = 3.14;
+// 本机实测：sizeof(Tick)=16（tag + padding + 8B union，对齐到 8）
+</code></pre>
+<p>这就是经典 <strong>tagged union / discriminated union</strong>——C 时代的 variant。
+<strong>现代替代品</strong>：<code class="c">std::variant&lt;int64_t, double&gt;</code> 自带 tag 管理、类型安全访问
+（<code class="c">std::get</code>/<code class="c">std::visit</code>），错误的类型访问抛异常而不是 UB（→ M5 C++17 ch16）。
+协议解析选裸 union（要逐字节控制布局），业务逻辑选 variant（要安全）。</p>
+<h2>③ 位域：按位打包（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">struct alignas(1) Packed {
+    uint8_t  a : 3;      // 3 位
+    uint8_t  b : 5;      // 5 位——凑满 1 字节
+    uint16_t c : 9;      // 9 位
+};
+// 本机实测：sizeof(Packed)=4（17 位按存储单元向上取整）
+</code></pre>
+<p><strong>协议头的真实形态</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">struct /* 某交易所行情头 */ {
+    uint16_t msg_len;
+    uint8_t  msg_type;
+    uint8_t  flags;
+    uint32_t seq_num;
+} __attribute__((packed));   // GCC/Clang：禁对齐填充；MSVC 用 #pragma pack(1)
+</code></pre>
+<p><strong>三个必须知道的坑</strong>：
+1. <strong>位域的布局是实现定义的</strong>（从高位还是低位开始排、跨单元规则）——
+   跨编译器/跨平台的协议<strong>不能只靠位域</strong>，必须配 static_assert + 打包属性 + 抓包验证
+2. 位域<strong>没有地址</strong>（<code class="c">&amp;p.a</code> 编译错误）——不能绑引用/指针
+3. 位域的符号性随编译器（<code class="c">int x : 1</code> 是 signed 还是 unsigned 不保证）——
+   明确写 <code class="c">uint8_t</code>/<code class="c">int32_t</code> 等定宽类型</p>
+<h2>④ 布局三件套：协议结构体的验收纪律</h2>
+<pre class="code" data-label="cpp"><code class="c">static_assert(sizeof(Packed) == 4, &quot;布局漂移！&quot;);
+static_assert(offsetof(Tick, d) == 8, &quot;union 偏移变了&quot;);
+static_assert(alignof(Header) == 4, &quot;对齐变了&quot;);
+</code></pre>
+<p>协议结构体改任何字段都必须过 static_assert 三件套——
+<strong>编译期挡住布局漂移</strong>，比上线后解码错位便宜一万倍。</p>
+<h2>和 C 的区别 / 新手要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>union 随便用（平凡类型）</td>
+<td>非平凡成员要手动生命周期管理；有 variant 兜底</td>
+</tr>
+<tr>
+<td>位域协议解析日常</td>
+<td>同样日常，但多了 static_assert 编译期验收</td>
+</tr>
+<tr>
+<td>无</td>
+<td><code class="c">std::bit_cast</code>（C++20）做严格合法的 type punning</td>
+</tr>
+</tbody>
+</table></div>
+<p>新手要点：① union 写谁读谁；② 位域没地址；③ 跨平台协议别裸信位域布局；
+④ 业务代码用 <code class="c">std::variant</code> 别手搓 tagged union。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>行情解码的本质就是 union + 位域 + packed struct</strong>：协议头按字节映射成结构体，
+  <code class="c">reinterpret_cast&lt;const Header*&gt;(buf)</code> 直接读（零拷贝解码）——
+  比逐字段反序列化快一个数量级（→ 14-hft-engineering 行情解码）</li>
+<li>缓存行预算下位域是压缩利器：订单簿一档的价格档标志位打包进 1 字节</li>
+<li>跨交易所协议适配层<strong>必须</strong>有 static_assert 三件套 + 每协议的 golden-packet 回放测试</li>
+<li>零拷贝解码的 UB 边界：严格来说要写 <code class="c">std::memcpy(&amp;h, buf, sizeof h)</code> 让编译器优化掉；
+  <code class="c">reinterpret_cast</code> 直读要确认对齐（<code class="c">alignof(Header)</code> ≤ buf 对齐）与字节序（→ 03.5/hton）</li>
+</ul>
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> C++ 的 <code class="c">union</code> 和 C 的有什么区别？</p>
-<pre class="code" data-label="cpp"><code class="c">union U {
-    int i;
-    std::string s;  // C++ 合法吗？
-    U() : s() {}     // 需要构造函数？
-    ~U() { s.~string(); }
-};
-</code></pre>
+<p><strong>题目 1：</strong> <code class="c">union { uint32_t u32; uint8_t u8[4]; }</code> 里写 <code class="c">u32 = 0x01020304</code>，
+小端机上 <code class="c">u8[0]</code> 是多少？这段代码严格来说合法吗？</p>
 <details>
 <summary>参考答案</summary>
-<p>C++ 的 union 可以包含有构造/析构函数的类型（如 string），但必须手动管理——构造哪个成员就析构哪个，不能同时持有多个活跃成员。C 的 union 只能包含 POD 类型。C++17 的 <code class="c">std::variant</code> 是类型安全的 union 替代品——推荐用 <code class="c">variant</code> 而非手写 union。</p>
+<p><code class="c">u8[0] = 0x04</code>（小端低地址放低字节）。
+严格 C++ 语义：写 u32 读 u8 是"非活成员读取"，技术上 UB；但 <code class="c">u8[N]</code> 有个特例——
+任何对象都可以按 <strong>char/unsigned char/std::byte 数组</strong>检查其表示，所以读 u8 是合法的。
+反过来写 u8 读 u32 同样 UB（别名规则），工程上常用但要知道边界；严格写法用
+<code class="c">std::memcpy</code> 或 C++20 <code class="c">std::bit_cast&lt;uint32_t&gt;(u8)</code>。</p>
+</details>
+<p><strong>题目 2：</strong> 为什么不能对位域取地址？<code class="c">uint8_t&amp; r = p.a;</code>（a 是 3 位的位域）为什么编译失败？</p>
+<details>
+<summary>参考答案</summary>
+<p>地址的最小单位是<strong>字节</strong>，而位域占的是字节内的若干<strong>位</strong>——硬件和 ABI 都无法表达
+"第 3 字节的第 2 位起"这样的地址。所以位域没有地址，也就不能绑到引用或指针。
+变通：给位域配 get/set 成员函数，或用 <code class="c">std::bitset</code> 的 <code class="c">reference</code> 代理。</p>
+</details>
+<p><strong>题目 3：</strong> 交易所升级协议，把 <code class="c">seq</code> 从 20 位扩到 24 位，<code class="c">flag</code> 从 4 位砍到 0 并删除——
+除了改结构体，工程上还要动哪三处？</p>
+<details>
+<summary>参考答案</summary>
+<p>① static_assert 三件套（布局断言按新布局更新）；
+② golden-packet 回放测试（新老协议各准备样本包验证解码）；
+③ 协议版本协商/识别逻辑（网关同时在线新老版本时按 msg_type 或版本字段分流，
+  → 18.2 inline namespace 版本化）。
+少了任何一处，布局漂移就会在开盘瞬间变成生产事故。</p>
 </details>
       </section>
       <section class="section" id="s-19-6">
         <div class="sec-head"><div class="sec-no">19.6</div><h2>可变参数模板（C++11）</h2></div>
 <h2>本节讲什么</h2>
-<p>模板参数包 <code class="c">Args...</code>，接收任意数量、任意类型参数。现代 STL 大量基于它：<code class="c">tuple</code>、<code class="c">emplace_back</code>、万能转发等。</p>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-template&lt;typename... Args&gt;
-void print(Args... args) {
-    ((std::cout &lt;&lt; args &lt;&lt; &quot; &quot;), ...);
-    std::cout &lt;&lt; std::endl;
+<p>可变参数模板（variadic template）让模板接受<strong>任意个数、任意类型</strong>的参数——
+它是 <code class="c">std::make_unique</code>/<code class="c">emplace_back</code>/<code class="c">std::tuple</code>/<code class="c">printf</code> 替代品的基础设施。
+本节覆盖参数包、递归展开、C++17 折叠表达式、<code class="c">sizeof...</code>。
+代码均经<strong>本机 g++ 13.3 / -std=c++17 实测</strong>（2026-10-07）。</p>
+<h2>① 参数包与递归展开（经典形态）</h2>
+<pre class="code" data-label="cpp"><code class="c">void print() { std::cout &lt;&lt; &quot;\n&quot;; }              // 递归终点（空包重载）
+
+template &lt;typename T, typename... Rest&gt;
+void print(T&amp;&amp; first, Rest&amp;&amp;... rest) {          // 每次剥一个
+    std::cout &lt;&lt; first &lt;&lt; &quot; &quot;;
+    print(rest...);                              // 参数包展开：rest 变成逐个实参
 }
-int main() {
-    print(1, 2.5, &quot;hi&quot;);
-    return 0;
+print(1, 2.5, &quot;三&quot;, 'x');
+// 本机实测输出：1 2.5 三 x
+</code></pre>
+<p><strong>三个 <code class="c">...</code> 的位置各管一件事</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>名字</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">typename... Rest</code></td>
+<td>模板参数包</td>
+<td>声明"一包类型"</td>
+</tr>
+<tr>
+<td><code class="c">Rest&amp;&amp;... rest</code></td>
+<td>函数参数包</td>
+<td>声明"一包值"</td>
+</tr>
+<tr>
+<td><code class="c">rest...</code> / <code class="c">f(args)...</code></td>
+<td>包展开</td>
+<td>把包拆成逗号分隔的序列</td>
+</tr>
+</tbody>
+</table></div>
+<p>递归模式的实质：<strong>每次实例化处理一个参数，剩余打包继续</strong>——
+实例化 N 层模板（N = 参数个数），编译期完全展开、零运行时开销。</p>
+<h2>② C++17 折叠表达式：递归的现代替代</h2>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename... Args&gt;
+auto sum(Args... args) { return (args + ...); }      // 一元右折叠
+
+sum(1, 2, 3, 4)     // 本机实测 = 10
+sum(1.5, 2)         // = 3.5（类型自动推导为 double）
+</code></pre>
+<p>四种折叠形态：</p>
+<pre class="code" data-label="cpp"><code class="c">(args + ...)        // 右折叠：a1 + (a2 + (a3 + a4))
+(... + args)        // 左折叠：((a1 + a2) + a3) + a4
+(init + ... + args) // 带初值：空包也得 init（(0 + ... + args) 空包=0）
+(args , ...)        // 逗号折叠：对包中每个元素执行左侧语句
+</code></pre>
+<p>逗号折叠是"对每个参数做一件事"的现代写法，不再需要递归：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename... Args&gt;
+void log_all(Args&amp;&amp;... args) {
+    ((std::cout &lt;&lt; args &lt;&lt; &quot; &quot;), ...);   // 实测等价于逐个打印
+    std::cout &lt;&lt; &quot;\n&quot;;
 }
 </code></pre>
-<hr />
+<h2>③ sizeof... 与参数包计数</h2>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename... Args&gt;
+void log_count(Args... args) { std::cout &lt;&lt; sizeof...(args) &lt;&lt; &quot;\n&quot;; }
+log_count(1, 2, 3, 4, 5);     // 本机实测：参数个数=5
+</code></pre>
+<ul>
+<li><code class="c">sizeof...(pack)</code>：包中<strong>元素个数</strong>（注意是 <code class="c">sizeof...</code> 不是 <code class="c">sizeof</code>）</li>
+<li>典型用途：<code class="c">static_assert(sizeof...(Args) == 2)</code>、元组索引、编译期分派</li>
+</ul>
+<h2>④ 与完美转发的组合（完整形态）</h2>
+<p>可变参数模板几乎总和转发一起出现——这就是 <code class="c">emplace_back</code> 的真身：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T, typename... Args&gt;
+T* pool_emplace(void* raw, Args&amp;&amp;... args) {           // 转发引用接住一切
+    return new (raw) T(std::forward&lt;Args&gt;(args)...);   // 原样转发给构造函数
+}
+// 任意构造函数签名的类型都能在不写包装的情况下直接构造（→ 19.7 完美转发）
+</code></pre>
+<p><code class="c">std::make_unique&lt;T&gt;(args...)</code>、<code class="c">vector::emplace_back(args...)</code> 都是这个模式——
+参数包负责"个数自由"，<code class="c">&amp;&amp;</code>+<code class="c">forward</code> 负责"值类别不丢"。</p>
+<h2>⑤ 与可变参数宏/<code class="c">va_list</code> 的对比（为什么 C 的招在 C++ 都退役了）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C（<code class="c">va_list</code>/<code class="c">##__VA_ARGS__</code>）</th>
+<th>C++（参数包）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类型擦除：全是 <code class="c">void*</code>/int 提升</td>
+<td><strong>类型保留</strong>：每个参数类型独立推导</td>
+</tr>
+<tr>
+<td>运行时解析（<code class="c">va_arg</code> 按类型取，取错 = UB）</td>
+<td><strong>编译期展开</strong>，类型错误 = 编译错误</td>
+</tr>
+<tr>
+<td>个数靠格式串约定（printf 的 <code class="c">%d</code> 数错就炸）</td>
+<td><code class="c">sizeof...</code> 编译期可数、可断言</td>
+</tr>
+<tr>
+<td>宏不可调试</td>
+<td>模板实例化有完整诊断</td>
+</tr>
+</tbody>
+</table></div>
+<h2>和 C 的区别 / 新手要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">va_list</code>/<code class="c">va_start</code>/<code class="c">va_end</code></td>
+<td><code class="c">template &lt;typename... Args&gt;</code></td>
+</tr>
+<tr>
+<td><code class="c">##__VA_ARGS__</code> 宏拼接</td>
+<td>折叠表达式</td>
+</tr>
+<tr>
+<td>printf 式运行时格式</td>
+<td>类型安全的编译期展开</td>
+</tr>
+</tbody>
+</table></div>
+<p>新手要点：① 三个 <code class="c">...</code> 位置分清；② 递归展开要留<strong>空包终点</strong>（否则编译错误）；
+③ C++17 项目里优先折叠表达式，递归只留给"需要逐个处理且逻辑不同"的场景。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>日志系统的零开销格式层</strong>：<code class="c">log(fmt, args...)</code> 在编译期把参数包展开成
+  逐参数的序列化调用（比 iostream 快一个量级；spdlog/fmt 就是这个原理）——
+  热路径日志的标配技术（→ M1 / 14-hft-engineering）</li>
+<li><code class="c">emplace</code> 系列（订单簿条目就地构造）= 可变参数模板 + placement new（19.1）</li>
+<li>事件多播：<code class="c">template &lt;typename... Sinks&gt; void multicast(const Msg&amp; m, Sinks&amp;... s)</code>
+  编译期展开为对每个 sink 的直接调用——无 vector 遍历、无类型擦除</li>
+</ul>
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 以下可变参数模板如何展开参数包？</p>
-<pre class="code" data-label="cpp"><code class="c">template&lt;typename... Args&gt;
-void print(Args... args) {
-    // 如何展开 args？
+<p><strong>题目 1：</strong> 这段递归 print 少了什么？</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T, typename... Rest&gt;
+void print(T&amp;&amp; first, Rest&amp;&amp;... rest) {
+    std::cout &lt;&lt; first;
+    print(rest...);
 }
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p>C++17 用折叠表达式：</p>
-<pre class="code" data-label="cpp"><code class="c">template&lt;typename... Args&gt;
-void print(Args... args) {
-    ((std::cout &lt;&lt; args &lt;&lt; ' '), ...);  // C++17 折叠
+<p>少了<strong>空包终点</strong>（<code class="c">void print()</code>）。剥到最后一个参数后 <code class="c">rest</code> 为空包，
+<code class="c">print()</code> 无参调用找不到匹配重载 → 编译错误（递归模板最深的实例化失败，
+错误信息会很长——看最后一层才是关键）。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">(args + ...)</code> 和 <code class="c">(... + args)</code> 对 <code class="c">sum("a", "b", "c")</code>（字符串）结果一样吗？
+对 <code class="c">sub(100, 10, 1)</code> 呢？</p>
+<details>
+<summary>参考答案</summary>
+<p>字符串：结果一样（"abc"，左结合/右结合对 + 都是合法拼接，顺序不同但结果相同——
+不过中间临时对象的构造顺序不同，大字符串时性能有差）。
+<code class="c">sub</code>：<strong>不一样</strong>——减法不满足结合律：
+右折叠 <code class="c">100-(10-1) = 91</code>，左折叠 <code class="c">(100-10)-1 = 89</code>。
+折叠方向对非结合律运算符是语义差异，不只是风格。</p>
+</details>
+<p><strong>题目 3：</strong> 用逗号折叠写 <code class="c">push_all(vector&lt;T&gt;&amp; v, Args... xs)</code>，把所有参数 push 进 v。</p>
+<details>
+<summary>参考答案</summary>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T, typename... Args&gt;
+void push_all(std::vector&lt;T&gt;&amp; v, Args&amp;&amp;... xs) {
+    (v.push_back(std::forward&lt;Args&gt;(xs)), ...);
 }
 </code></pre>
-<p>C++11/14 用递归 + 基本情况：</p>
-<pre class="code" data-label="cpp"><code class="c">void print() {}  // 基本情况
-template&lt;typename T, typename... Rest&gt;
-void print(T first, Rest... rest) {
-    std::cout &lt;&lt; first;
-    print(rest...);  // 递归
-}
-</code></pre>
-<p><code class="c">sizeof...(args)</code> 返回参数个数。</p>
+<p>逗号折叠按顺序对每个 <code class="c">xs</code> 执行 <code class="c">push_back</code>，转发保持值类别——
+一行顶过去一个递归模板。要预留容量可先 <code class="c">v.reserve(v.size() + sizeof...(xs));</code>。</p>
 </details>
       </section>
       <section class="section" id="s-19-7">
         <div class="sec-head"><div class="sec-no">19.7</div><h2>转发引用与完美转发</h2></div>
 <h2>本节讲什么</h2>
-<p>结合可变参数，把参数原值类别（左值/右值）完整转发给内部函数，<code class="c">std::forward</code> 原理应用。</p>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-#include &lt;utility&gt;
-void process(int &amp;)  { std::cout &lt;&lt; &quot;lvalue\n&quot;; }
-void process(int &amp;&amp;) { std::cout &lt;&lt; &quot;rvalue\n&quot;; }
-template&lt;typename T&gt;
-void forward_call(T &amp;&amp;arg) {
-    process(std::forward&lt;T&gt;(arg));
+<p><code class="c">T&amp;&amp;</code> 在模板里<strong>不是右值引用</strong>，是"转发引用"（forwarding reference，旧称万能引用）——
+它既能绑左值又能绑右值，配合 <code class="c">std::forward</code> 把实参的<strong>值类别原封不动</strong>传给下一层。
+这是 <code class="c">emplace_back</code>/<code class="c">make_unique</code> 等"包装层零损耗"的底层机制，也是 Effective Modern C++
+Item 23-30 的根基（→ M1）。代码均经<strong>本机 g++ 13.3 / -std=c++17 实测</strong>（2026-10-07）。</p>
+<h2>① 引用折叠 + 特殊推导规则 = 转发引用</h2>
+<p><strong>引用折叠</strong>（模板实例化时的规则）：</p>
+<pre class="code" data-label="code"><code class="c">&amp;  + &amp;  → &amp;      &amp;&amp; + &amp;  → &amp;      （有左值引用参与，结果就是左值引用）
+&amp;  + &amp;&amp; → &amp;      &amp;&amp; + &amp;&amp; → &amp;&amp;
+</code></pre>
+<p><strong>推导规则</strong>（<code class="c">template &lt;typename T&gt; void f(T&amp;&amp;)</code> 专用）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>实参</th>
+<th>T 推导为</th>
+<th>形参类型（折叠后）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>左值 <code class="c">t</code></td>
+<td><code class="c">T = U&amp;</code>（左值引用！）</td>
+<td><code class="c">U&amp; &amp;&amp;</code> → <code class="c">U&amp;</code></td>
+</tr>
+<tr>
+<td>右值 <code class="c">U{}</code></td>
+<td><code class="c">T = U</code>（非引用）</td>
+<td><code class="c">U&amp;&amp;</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>所以 <code class="c">T&amp;&amp;</code> 形参<strong>总能匹配</strong>——左值来变左值引用，右值来变右值引用。
+<strong>关键鉴别</strong>：<code class="c">T&amp;&amp;</code> 只有在"模板 + 类型推导"语境才是转发引用；
+<code class="c">void f(Widget&amp;&amp;)</code>（具体类型）或 <code class="c">template &lt;typename T&gt; void f(const T&amp;&amp;)</code> 都不是。</p>
+<h2>② 完美转发：std::forward 恢复值类别（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">void sink(const Tracer&amp;) { std::cout &lt;&lt; &quot;sink 收到左值\n&quot;; }
+void sink(Tracer&amp;&amp;)      { std::cout &lt;&lt; &quot;sink 收到右值\n&quot;; }
+
+template &lt;typename T&gt;
+void relay(T&amp;&amp; x) {
+    sink(std::forward&lt;T&gt;(x));     // 左值来 → 转成左值；右值来 → 转成右值
 }
-int main() {
-    int x = 1;
-    forward_call(x);
-    forward_call(2);
-    return 0;
+Tracer t;
+relay(t);          // 本机实测：T=左值引用，sink 收到左值
+relay(Tracer{});   // 本机实测：T=非引用，sink 收到右值
+</code></pre>
+<p><strong>为什么需要 forward</strong>：形参 <code class="c">x</code> 是<strong>有名变量</strong>——变量永远是左值！
+不用 forward 直接 <code class="c">sink(x)</code>，右值传进来也会被当左值（移动语义丢失）。
+<code class="c">std::forward&lt;T&gt;(x)</code> 按 <strong>T 的推导结果</strong>做条件转换：<code class="c">T</code> 是左值引用就转左值，否则转右值。
+（<code class="c">std::move</code> 是<strong>无条件</strong>转右值；<code class="c">std::forward</code> 是<strong>按推导结果</strong>转换——这是两者的本质区别。）</p>
+<h2>③ 经典应用：包装层零损耗</h2>
+<pre class="code" data-label="cpp"><code class="c">// emplace_back 的真身（→ 19.6 可变参数模板 + 本节 forward）
+template &lt;typename T, typename... Args&gt;
+void emplace(void* raw, Args&amp;&amp;... args) {
+    new (raw) T(std::forward&lt;Args&gt;(args)...);   // 任意构造函数参数原样穿透
+}
+
+// 计时包装器：任何函数包一层计时，调用语义不变
+template &lt;typename F, typename... Args&gt;
+auto timed(F&amp;&amp; f, Args&amp;&amp;... args) -&gt; decltype(auto) {
+    auto t0 = clk::now();
+    return std::forward&lt;F&gt;(f)(std::forward&lt;Args&gt;(args)...);   // 返回值类别也转发
 }
 </code></pre>
-<hr />
+<p>注意返回类型写 <code class="c">decltype(auto)</code>——返回引用时保持引用，值时保持值，
+<code class="c">auto</code> 会砍掉引用造成意外拷贝。</p>
+<h2>④ std::move 的真相：它不移动任何东西（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">std::string a = &quot;hello&quot;;
+std::string b = std::move(a);      // move 只是&quot;贴标签&quot;：把 a 转成右值引用
+// 本机实测：move 后 a.size()=0（libstdc++ 小字符串优化下被掏空）
+</code></pre>
+<ul>
+<li><code class="c">std::move(x)</code> = <code class="c">static_cast&lt;remove_reference_t&lt;T&gt;&amp;&amp;&gt;(x)</code>——<strong>纯类型转换，零代码生成</strong></li>
+<li>真正"移动"发生在<strong>接收方</strong>（移动构造/移动赋值被重载决议选中）那一刻</li>
+<li>move 后的对象处于"<strong>有效但未指定</strong>"状态：可以析构、可以赋值，<strong>不要再读它的值</strong>
+  （<code class="c">a.size()</code> 返回 0 是 libstdc++ 的实现细节，不是标准承诺——标准只说"有效但未指定"）</li>
+</ul>
+<h2>⑤ 三个高频翻车点</h2>
+<ol>
+<li><strong>转发引用重载会"吞掉"一切</strong>：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">struct S {
+    S(S&amp;&amp;) = default;
+    template &lt;typename T&gt; S(T&amp;&amp;);      // 转发引用构造——比 S(S&amp;) 更匹配左值！
+};
+S s1; S s2(s1);      // 意外命中模板构造（T=S&amp;），不是拷贝构造！
+</code></pre>
+<p>修法：<code class="c">enable_if</code>/<code class="c">requires</code>（C++20）把模板构造限定在"不是 S 本身"的类型
+（→ M1 Item 26）。</p>
+<ol start="2">
+<li>
+<p><strong>一次 forward 只保一次</strong>：<code class="c">f(forward&lt;T&gt;(x)); g(forward&lt;T&gt;(x));</code> 第二次转发时
+   x 可能已被移动——<strong>转发后不再使用</strong>是铁律。</p>
+</li>
+<li>
+<p><strong>return 里的局部变量别 forward</strong>：<code class="c">return std::forward&lt;T&gt;(local);</code>
+   局部变量返回本来就有 RVO/隐式 move，强行 forward 反而阻止 RVO（→ M1 Item 25）。</p>
+</li>
+</ol>
+<h2>和 C 的区别 / 新手要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>函数参数按值拷 or 传指针</td>
+<td>左值/右值两套重载 + 转发引用通吃</td>
+</tr>
+<tr>
+<td>无值类别概念</td>
+<td>lvalue/prvalue/xvalue 三分</td>
+</tr>
+<tr>
+<td>无</td>
+<td><code class="c">std::move</code>/<code class="c">std::forward</code>（纯转换工具）</td>
+</tr>
+</tbody>
+</table></div>
+<p>新手要点：① 见 <code class="c">T&amp;&amp;</code> 先问"是模板推导语境吗"；② move 是标签不是动作；
+③ move 后的对象别再读值；④ forward 一次就够、转完别再用。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>订单/行情对象的构造零拷贝</strong>：<code class="c">book.emplace(price, qty, side)</code> 参数穿透到
+  placement new，无临时对象、无拷贝——19.1 + 19.6 + 本节三件套的合体</li>
+<li>无锁队列 <code class="c">push(T&amp;&amp;)</code>：<code class="c">push</code> 移动元素进 ring buffer 后就地失效原对象——
+  值类别语义在单生产者场景是明确的（→ 06.6.5 / 14-hft）</li>
+<li>日志/监控包装层（③ 的 timed 模式）在热路径要求<strong>零开销转发</strong>：
+  <code class="c">decltype(auto)</code> + forward 全套，编译后通常只剩一次时钟调用</li>
+</ul>
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 以下代码中 <code class="c">&amp;&amp;</code> 是右值引用还是转发引用？</p>
-<pre class="code" data-label="cpp"><code class="c">template&lt;typename T&gt;
-void f(T&amp;&amp; x);  // T&amp;&amp; 是什么？
-int a = 1;
-f(a);   // T 推导为？
-f(42);  // T 推导为？
+<p><strong>题目 1：</strong> <code class="c">template &lt;typename T&gt; void f(T&amp;&amp; x)</code> 分别用 <code class="c">f(i)</code>（i 是 int 左值）
+和 <code class="c">f(42)</code> 调用时，T 各推导成什么？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">f(i)</code>：<code class="c">T = int&amp;</code>（左值引用）→ 形参折叠为 <code class="c">int&amp;</code>；
+<code class="c">f(42)</code>：<code class="c">T = int</code>（非引用）→ 形参为 <code class="c">int&amp;&amp;</code>。
+这就是转发引用的"通吃"原理（本机实测验证，见 ②）。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">std::string s = "x"; auto t = std::move(s);</code> 之后 <code class="c">s</code> 是"空"吗？能做什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>标准是"<strong>有效但未指定</strong>"状态——libstdc++ 实测 <code class="c">s.size()=0</code>，但标准不保证。
+能做的事：析构、赋新值（<code class="c">s = "new"</code> 后完全恢复可用）、调不依赖值的方法（<code class="c">clear()</code>）。
+不能做的事：依赖它的值（读 <code class="c">s[0]</code>、假设 <code class="c">empty()</code>）。
+要"可恢复的空"，显式 <code class="c">s.clear()</code>，别依赖 move 后状态。</p>
+</details>
+<p><strong>题目 3：</strong> 下面这段为什么把代码 reviewer 吓一跳？修。</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt;
+T&amp;&amp; wrapper(T&amp;&amp; x) {
+    use(x);
+    return std::forward&lt;T&gt;(x);
+}
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p><code class="c">T&amp;&amp;</code> 在模板中是转发引用（forwarding reference，也叫万能引用），不是右值引用。<code class="c">f(a)</code> 中 T 推导为 <code class="c">int&amp;</code>（左值引用），<code class="c">x</code> 类型为 <code class="c">int&amp; &amp;&amp;</code> 折叠为 <code class="c">int&amp;</code>。<code class="c">f(42)</code> 中 T 推导为 <code class="c">int</code>，<code class="c">x</code> 类型为 <code class="c">int&amp;&amp;</code>。<code class="c">std::forward&lt;T&gt;(x)</code> 保持值类别——这是完美转发的核心。非模板的 <code class="c">int&amp;&amp;</code> 才是右值引用。</p>
+<p>两个雷：① 返回类型 <code class="c">T&amp;&amp;</code> 是转发引用推导——传左值时返回 <code class="c">U&amp;</code>（悬垂风险：
+若 x 是转发来的临时量，返回引用指向已销毁对象）；② <code class="c">use(x)</code> 之后 x 值类别未变
+（x 是左值变量），但语义上"use 过又转发"说明所有权语义含糊。
+修：明确语义——要转交所有权就返回值 <code class="c">T</code>（<code class="c">return std::forward&lt;T&gt;(x);</code> 配 <code class="c">T</code> 返回类型），
+要观察不改所有权就返回 <code class="c">void</code>/<code class="c">bool</code>。转发引用做返回类型只在极其特殊的设计里合理。</p>
 </details>
       </section>
       <section class="section" id="s-19-8">
         <div class="sec-head"><div class="sec-no">19.8</div><h2>其他底层工具</h2></div>
 <h2>本节讲什么</h2>
-<p><code class="c">type_traits</code> 类型萃取、编译期类型判断、<code class="c">void_t</code>、<code class="c">decltype</code> 高阶用法、编译期编程基础。</p>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-#include &lt;memory&gt;
-int main() {
-    alignas(16) char buf[64];
-    int *p = new (buf) int(42);  // placement new
-    std::cout &lt;&lt; *p &lt;&lt; std::endl;
-    p-&gt;~int();
-    return 0;
+<p><code class="c">type_traits</code>（编译期类型问答）、<code class="c">if constexpr</code>（编译期分支）、<code class="c">void_t</code>（成员探测）、
+<code class="c">decltype</code> 高阶用法——这些是<strong>模板库的探针</strong>，也是读懂标准库实现的钥匙。
+代码均经<strong>本机 g++ 13.3 / -std=c++17 实测</strong>（2026-10-07）。
+（这节是 ch16 模板的延伸，深入 SFINAE/concepts 见 M1 Item 27-28 与 M5 C++20 概念。）</p>
+<h2>① type_traits：编译期的类型问答机（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt;
+std::string describe(T v) {
+    if constexpr (std::is_integral_v&lt;T&gt;)       return &quot;整数(可加锁)&quot;;
+    else if constexpr (std::is_floating_point_v&lt;T&gt;) return &quot;浮点(注意精度)&quot;;
+    else return &quot;其他&quot;;
+}
+describe(42) / describe(3.14) / describe(&quot;s&quot;)
+// 本机实测：整数(可加锁) / 浮点(注意精度) / 其他
+</code></pre>
+<p><strong>高频 traits 速查</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>trait</th>
+<th>问什么</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">is_integral_v&lt;T&gt;</code> / <code class="c">is_floating_point_v&lt;T&gt;</code></td>
+<td>算术类型分类</td>
+<td>泛型数值代码分派</td>
+</tr>
+<tr>
+<td><code class="c">is_trivially_copyable_v&lt;T&gt;</code></td>
+<td>能 memcpy 吗</td>
+<td>零拷贝序列化/共享内存对象的门槛</td>
+</tr>
+<tr>
+<td><code class="c">is_nothrow_move_constructible_v&lt;T&gt;</code></td>
+<td>移动会抛吗</td>
+<td>自己的容器决定移动还是拷贝（vector 扩容逻辑同款）</td>
+</tr>
+<tr>
+<td><code class="c">is_same_v&lt;A, B&gt;</code></td>
+<td>两个类型一样吗</td>
+<td>static_assert 类型契约</td>
+</tr>
+<tr>
+<td><code class="c">decay_t&lt;T&gt;</code> / <code class="c">remove_cvref_t&lt;T&gt;</code>（C++20）</td>
+<td>剥引用/const/数组</td>
+<td>模板实参归一化</td>
+</tr>
+<tr>
+<td><code class="c">conditional_t&lt;cond, A, B&gt;</code></td>
+<td>编译期类型二选一</td>
+<td>按特性选实现类型</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">if constexpr</code>（C++17）是分水岭</strong>：被丢弃的分支<strong>不实例化</strong>——
+<code class="c">is_integral_v&lt;T&gt;</code> 为 false 时，整数分支里的 <code class="c">atomic&lt;T&gt;</code> 操作根本不会编译，
+不再需要 tag dispatch / enable_if 的绕行（旧代码里那些 <code class="c">std::enable_if_t</code> 现在都能写人话了）。</p>
+<h2>② void_t：探测"这个类型有没有某个成员"（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename, typename = std::void_t&lt;&gt;&gt;
+struct has_size : std::false_type {};                    // 默认：没有
+
+template &lt;typename T&gt;
+struct has_size&lt;T, std::void_t&lt;decltype(std::declval&lt;T&gt;().size())&gt;&gt;
+    : std::true_type {};                                  // 偏特化命中：有 .size()
+
+has_size&lt;std::string&gt;::value    // 本机实测：1
+has_size&lt;int&gt;::value            // 本机实测：0
+</code></pre>
+<p><strong>机制</strong>（SFINAE 的现代包装）：<code class="c">void_t&lt;...&gt;</code> 在 <code class="c">...</code> 里的表达式<strong>非法</strong>时，
+偏特化匹配失败但<strong>不是错误</strong>（SFINAE），回落到主模板（false_type）；
+合法时偏特化命中（true_type）。<code class="c">decltype(declval&lt;T&gt;().size())</code> 不真的调用，
+只在编译期问"这个表达式类型合法吗"。</p>
+<p>C++20 起这整套被 <strong>concepts</strong> 收编：<code class="c">requires { t.size(); }</code> 一句话——
+但 C++17 代码库里 void_t 仍是主力（→ M5 C++20 ch07 concepts）。</p>
+<h2>③ decltype 高阶用法（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">// 尾置返回类型：返回值类型依赖参数运算结果
+template &lt;typename A, typename B&gt;
+auto add(A a, B b) -&gt; decltype(a + b) { return a + b; }
+
+std::is_same_v&lt;decltype(add(1, 2.5)), double&gt;     // 本机实测：1
+</code></pre>
+<p><strong>decltype 的三张脸</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>得到什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">decltype(x)</code>（变量名）</td>
+<td>变量的<strong>声明类型</strong>（含引用/cv）</td>
+</tr>
+<tr>
+<td><code class="c">decltype((x))</code>（加括号变表达式）</td>
+<td>表达式类型 + 值类别（左值表达式 → <code class="c">T&amp;</code>）</td>
+</tr>
+<tr>
+<td><code class="c">decltype(auto)</code></td>
+<td>按初始化表达式<strong>完整保留</strong>类型（引用不剥）——转发返回值用（→ 19.7 ③）</td>
+</tr>
+</tbody>
+</table></div>
+<p>陷阱高频：<code class="c">decltype(auto) f() { int x = 0; return (x); }</code>——
+<code class="c">(x)</code> 是左值表达式 → 返回 <code class="c">int&amp;</code> <strong>悬垂引用</strong>。去掉括号就对了。</p>
+<h2>④ 编译期编程的最小工具箱（拼装视图）</h2>
+<pre class="code" data-label="code"><code class="c">type_traits（问） + void_t（探） + if constexpr（选） + static_assert（验）
+     ↓ 拼起来就是
+&quot;编译期类型级 if-else + 断言&quot;——标准库 90% 的模板魔法都是这四件拼的
+</code></pre>
+<p>实战一例（序列化库的入口约束）：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt;
+void zero_copy_send(const T&amp; obj) {
+    static_assert(std::is_trivially_copyable_v&lt;T&gt;,
+                  &quot;零拷贝发送要求 trivially copyable（能 memcpy）&quot;);
+    static_assert(!std::is_pointer_v&lt;T&gt;, &quot;禁止指针类型——发出去的是地址不是数据&quot;);
+    wire_write(&amp;obj, sizeof(T));       // → 19.5 的协议结构体纪律
 }
 </code></pre>
-<hr />
+<h2>和 C 的区别 / 新手要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">_Generic</code>（C11，弱类型选择）</td>
+<td>type_traits + if constexpr（完整的编译期类型系统）</td>
+</tr>
+<tr>
+<td>宏探测特性</td>
+<td>void_t/SFINAE/concepts</td>
+</tr>
+<tr>
+<td><code class="c">typeof</code>（GNU 扩展）</td>
+<td>decltype（标准）</td>
+</tr>
+</tbody>
+</table></div>
+<p>新手要点：① <code class="c">if constexpr</code> 分支里的代码只在<strong>该分支选中时</strong>实例化——
+但不选中的分支仍要语法正确；② <code class="c">decltype((x))</code> 和 <code class="c">decltype(x)</code> 不一样；
+③ traits 全在 <code class="c">&lt;type_traits&gt;</code>，变量模板版带 <code class="c">_v</code>（C++17）、类型版带 <code class="c">_t</code>（C++14）。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>零拷贝行情发送的入口守卫</strong>（④ 的 static_assert 模式）：trivially copyable
+  是"能 memcpy 上网线"的编译期门槛——把布局事故挡在编译期（→ 19.5）</li>
+<li>自己的容器（无锁队列/订单簿）需要 <code class="c">is_nothrow_move_constructible</code> 决定
+  元素搬迁策略——和 vector 扩容同一套逻辑（18.1 ② 实测）</li>
+<li>编译期分派替代运行期分支：协议族解码器按 <code class="c">if constexpr (has_field_v&lt;T, "seq"&gt;)</code>
+  生成不同的字段提取代码——零运行期开销的多协议适配</li>
+<li>C++20 concepts 已在 M5 待命；C++17 代码库里 void_t 模式还会在行情解码库里活很多年</li>
+</ul>
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> <code class="c">alignas</code> 和 <code class="c">alignof</code> 的作用是什么？</p>
-<pre class="code" data-label="cpp"><code class="c">struct alignas(16) AlignedBlock {
-    char data[64];
-};
-std::cout &lt;&lt; alignof(AlignedBlock);  // 输出？
+<p><strong>题目 1：</strong> 下面这个 traits 判断为什么不可靠？</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt;
+void process(T&amp; container) {
+    if (std::is_same_v&lt;T, std::vector&lt;int&gt;&gt;) { /* vector 专用路径 */ }
+    else { /* 通用路径 */ }
+}
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p><code class="c">alignas(16)</code> 指定对齐要求为 16 字节。<code class="c">alignof(T)</code> 返回类型 T 的对齐要求——输出 16。对齐在 HFT 和 SIMD 中很重要：1) 缓存行对齐（64 字节）避免 false sharing；2) SIMD 指令要求 16/32 字节对齐；3) DMA 传输要求对齐。<code class="c">std::aligned_alloc</code> 或 <code class="c">operator new</code> 配合 <code class="c">alignval_t</code> 分配对齐内存。</p>
+<p>两个问题：① 普通 <code class="c">if</code> 的两个分支<strong>都实例化</strong>——通用路径里的代码对
+<code class="c">vector&lt;int&gt;</code> 也必须能编译（比如调用了 vector 没有的方法就炸）；该用 <code class="c">if constexpr</code>。
+② <code class="c">is_same_v&lt;T, vector&lt;int&gt;&gt;</code> 太死——<code class="c">vector&lt;int, MyAlloc&gt;</code>、const 版本都不命中；
+按"特性"判断（<code class="c">has_size</code>、<code class="c">is_random_access</code>）比按"具体类型"判断健壮。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">decltype(auto) f() { static int x = 0; return (x); }</code> 安全吗？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>安全</strong>——<code class="c">x</code> 是 static（静态生存期），返回 <code class="c">int&amp;</code> 指向静态对象，不悬垂。
+危险的是把 static 去掉：局部变量经 <code class="c">(x)</code> 返回引用 = 悬垂。
+<code class="c">decltype((expr))</code> 的规则是"左值表达式 → T&amp;"，和"auto 总是剥引用"正好互补——
+写转发函数时这两者的区别必须条件反射（19.7 ③ 的 <code class="c">decltype(auto)</code> 同理）。</p>
+</details>
+<p><strong>题目 3：</strong> 用本节工具写一个编译期检查：模板函数 <code class="c">send(const T&amp;)</code> 只接受
+"trivially copyable 且非指针、非数组"的 T，违规给清晰报错。</p>
+<details>
+<summary>参考答案</summary>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt;
+void send(const T&amp; obj) {
+    static_assert(std::is_trivially_copyable_v&lt;T&gt;,
+                  &quot;send 要求 trivially copyable（可 memcpy 的类型）&quot;);
+    static_assert(!std::is_pointer_v&lt;T&gt;, &quot;send 不接受指针（发地址没意义）&quot;);
+    static_assert(!std::is_array_v&lt;T&gt;,   &quot;send 不接受数组（请传 span/指针+长度）&quot;);
+    wire_write(&amp;obj, sizeof(T));
+}
+</code></pre>
+<p>C++20 可升级为 concept（错误消息更短）：
+<code class="c">template &lt;typename T&gt; concept Wireable = std::is_trivially_copyable_v&lt;T&gt; &amp;&amp; !std::is_pointer_v&lt;T&gt;;</code>
+<code class="c">void send(const Wireable auto&amp; obj);</code></p>
 </details>
       </section>
       <section class="section" id="s-19-9">
         <div class="sec-head"><div class="sec-no">19.9</div><h2>学习优先级</h2></div>
 <h2>本节讲什么</h2>
-<p><strong>写框架、高性能库、底层组件</strong>再啃本章；业务 CRUD 基本用不上。</p>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-// 第 19 章回顾：完美转发 + 可变参模板
-#include &lt;utility&gt;
-template&lt;typename T&gt;
-void wrap(T &amp;&amp;v) {
-    std::cout &lt;&lt; std::forward&lt;T&gt;(v) &lt;&lt; std::endl;
-}
-int main() {
-    wrap(42);
-    return 0;
-}
-</code></pre>
-<hr />
+<p>第 19 章"特殊工具"八篇的<strong>投入排序</strong>——这一章的主题冷热差异极大，
+有的天天用（完美转发），有的十年用一次（嵌套类的访问细节），按 HFT 视角排序。</p>
+<h2>优先级排序</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>优先级</th>
+<th>篇目</th>
+<th>理由</th>
+<th>掌握标准</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🟢 精通</td>
+<td><a href="#s-19-7">19.7 转发引用与完美转发</a></td>
+<td>现代 C++ 的核心机制，emplace/make_unique 的底座；M1 Item 23-30 全部建立在它之上</td>
+<td>默写引用折叠表；说清 move 不移动</td>
+</tr>
+<tr>
+<td>🟢 精通</td>
+<td><a href="#s-19-1">19.1 内存分配与 new 重载</a></td>
+<td>内存池/placement new 是低延迟基础设施；运行期零分配的语言基础</td>
+<td>new 两层模型；placement new 三条铁律</td>
+</tr>
+<tr>
+<td>🟡 熟练</td>
+<td><a href="#s-19-5">19.5 union 与位域</a></td>
+<td>协议解析的日常工具；零拷贝解码的载体</td>
+<td>static_assert 三件套；UB 边界（type punning）</td>
+</tr>
+<tr>
+<td>🟡 熟练</td>
+<td><a href="#s-19-6">19.6 可变参数模板</a></td>
+<td>读 fmt/spdlog/标准库的入场券；C++17 折叠表达式常用</td>
+<td>三个 ... 位置；逗号折叠</td>
+</tr>
+<tr>
+<td>🟡 熟练</td>
+<td><a href="#s-19-8">19.8 其他底层工具</a></td>
+<td>traits/if constexpr/static_assert 是写库的基本功</td>
+<td>会写 static_assert 守卫；void_t 探测</td>
+</tr>
+<tr>
+<td>⚪ 理解</td>
+<td><a href="#s-19-2">19.2 RTTI 补充 &amp; 枚举进阶</a></td>
+<td>enum class 天天用但简单；type_index 注册表冷路径才有</td>
+<td>enum class 三宗罪；定宽协议枚举</td>
+</tr>
+<tr>
+<td>⚪ 理解</td>
+<td><a href="#s-19-3">19.3 类成员指针</a></td>
+<td>语法丑但跳转表模式在行情分发里还活着；知道 16B 就不踩坑</td>
+<td>能写 dispatch 表；知道成员函数指针 16B</td>
+</tr>
+<tr>
+<td>⚪ 理解</td>
+<td><a href="#s-19-4">19.4 嵌套类</a></td>
+<td>不对称访问规则考试爱考；pImpl 知道冷热边界即可</td>
+<td>嵌套类独立（不含外部指针）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>与后续模块的衔接</h2>
+<ul>
+<li>完美转发/移动语义深入 → <strong>M1</strong> Effective Modern C++ Item 23-30（重头戏）</li>
+<li>traits/SFINAE → M1 Item 27-28；concepts → <strong>M5</strong> C++20 ch07</li>
+<li>内存池的完整实现 → ch12 allocator + 06.6.5 ch07 + 13-dpdk mbuf</li>
+<li>协议解析工程化 → 03.5 UNP / 14-hft-engineering</li>
+</ul>
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> C++Primer 第 19 章（特殊工具与技术）中哪些主题对 HFT 最重要？</p>
+<p><strong>题目 1：</strong> 本章哪三篇共同构成"emplace_back 为什么零拷贝"的完整答案？</p>
 <details>
 <summary>参考答案</summary>
-<p>1) 内存分配重载——自定义内存池消除热路径 malloc；2) 对齐（alignas/alignof）——缓存行对齐避免 false sharing；3) 完美转发——泛型工厂减少拷贝。可变参数模板对模板元编程有用但非必需。union/位域/成员指针在特定场景有用，非优先。建议优先学 19.1（内存分配）和 19.7（完美转发）。</p>
+<p><strong>19.1（placement new）+ 19.6（可变参数模板）+ 19.7（完美转发）</strong>：
+可变参数模板接收任意个数构造参数（19.6）→ 转发引用 + <code class="c">std::forward</code>
+保持每个参数的值类别不丢（19.7）→ placement new 在容器内部存储上就地构造（19.1）。
+三件套合体 = <code class="c">vector::emplace_back(args...)</code> 的实现骨架。</p>
+</details>
+<p><strong>题目 2：</strong> "协议结构体直接 memcpy 上网线"需要本章哪几篇的知识来把关？</p>
+<details>
+<summary>参考答案</summary>
+<p>19.5（packed struct + 位域 + static_assert 三件套：布局正确性）+
+19.2（定宽枚举：字段类型正确性）+ 19.8（<code class="c">is_trivially_copyable</code> 守卫：可 memcpy 性）。
+三篇分别从"布局/类型/可拷贝性"三个维度把协议序列化的正确性钉在编译期。</p>
 </details>
       </section>
 

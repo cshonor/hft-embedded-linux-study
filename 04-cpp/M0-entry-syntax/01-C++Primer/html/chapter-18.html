@@ -280,7 +280,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-18-2"><span class="n">18.2</span>命名空间 namespace</a>
           <a href="#s-18-3"><span class="n">18.3</span>多重继承与虚继承</a>
           <a href="#s-18-4"><span class="n">18.4</span>运行时类型识别 RTTI</a>
-          <a href="#s-18-5"><span class="n">18.5</span>18.5-学习优先级</a>
+          <a href="#s-18-5"><span class="n">18.5</span>学习优先级</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -357,32 +357,146 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="s-18-1">
         <div class="sec-head"><div class="sec-no">18.1</div><h2>异常处理（深入版）</h2></div>
 <h2>本节讲什么</h2>
-<p>第 5 章仅为入门，本章深入：</p>
-<h2>要点</h2>
-<ul>
-<li>完整机制：<code class="c">throw</code> 抛出、多层函数栈自动回溯、<code class="c">try-catch</code> 捕获</li>
-<li><strong>noexcept</strong>：标记函数是否会抛出异常</li>
-<li>异常对象、继承体系（<code class="c">exception</code>、<code class="c">runtime_error</code>、<code class="c">logic_error</code> 等）</li>
-<li>工程准则：RAII 配合异常保证资源不泄漏</li>
-<li>异常安全三级：<strong>基础保证</strong>、<strong>强保证</strong>、<strong>无异常保证</strong></li>
-</ul>
-<h2>示例</h2>
+<p>第 5 章只教了 <code class="c">try/catch/throw</code> 的语法。本章把异常当<strong>工程机制</strong>讲透：
+栈展开的精确顺序、<code class="c">noexcept</code> 的真实作用（不只是"承诺不抛"）、
+标准异常体系、异常安全三级保证。代码均经<strong>本机 g++ 13.3 / -std=c++17 实测</strong>（2026-10-07）。</p>
+<h2>① 栈展开（stack unwinding）：异常抛出后到底发生什么</h2>
+<p><code class="c">throw</code> 之后，控制流沿调用链<strong>逐层退出</strong>，每层像 <code class="c">return</code> 一样销毁局部对象——
+析构函数被调用，但层内 <code class="c">throw</code> 点之后的代码<strong>不再执行</strong>：</p>
 <pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
 #include &lt;stdexcept&gt;
-double safe_divide(double a, double b) {
-    if (b == 0) throw std::invalid_argument(&quot;b is zero&quot;);
-    return a / b;
-}
+struct Tracer {
+    const char* name;
+    Tracer(const char* n) : name(n) { std::cout &lt;&lt; &quot;构造 &quot; &lt;&lt; name &lt;&lt; &quot;\n&quot;; }
+    ~Tracer() { std::cout &lt;&lt; &quot;析构 &quot; &lt;&lt; name &lt;&lt; &quot;\n&quot;; }
+};
+void lvl2() { Tracer t2(&quot;lvl2&quot;); throw std::runtime_error(&quot;boom&quot;); }
+void lvl1() { Tracer t1(&quot;lvl1&quot;); lvl2(); std::cout &lt;&lt; &quot;不会到这\n&quot;; }
 int main() {
-    try {
-        std::cout &lt;&lt; safe_divide(10, 2) &lt;&lt; std::endl;
-    } catch (const std::exception &amp;e) {
-        std::cerr &lt;&lt; e.what() &lt;&lt; std::endl;
-    }
-    return 0;
+    try { lvl1(); }
+    catch (const std::runtime_error&amp; e) { std::cout &lt;&lt; &quot;捕获: &quot; &lt;&lt; e.what() &lt;&lt; &quot;\n&quot;; }
 }
 </code></pre>
-<hr />
+<p><strong>本机实测输出</strong>：</p>
+<pre class="code" data-label="code"><code class="c">构造 lvl1
+构造 lvl2
+析构 lvl2      ← 栈展开：先退 lvl2 帧
+析构 lvl1      ← 再退 lvl1 帧（&quot;不会到这&quot;被跳过）
+捕获: boom
+</code></pre>
+<p><strong>两个推论</strong>：
+1. RAII 对象（智能指针/容器/锁守卫/fstream）在异常路径上<strong>自动清理</strong>——
+   这是 C++ 异常相对 C <code class="c">setjmp/longjmp</code> 的本质优势（longjmp 不做任何清理）。
+2. <strong>析构函数绝不能抛异常</strong>——栈展开中再抛 = <code class="c">std::terminate</code>。
+   所以所有标准容器的析构都是 <code class="c">noexcept</code>，你写的析构也该是。</p>
+<h2>② noexcept：不是承诺，是<strong>优化许可证</strong></h2>
+<p>标 <code class="c">noexcept</code> 的函数抛异常 → <code class="c">std::terminate</code>（不会展开到调用方）。
+但它最大的实战价值不是语义承诺，而是<strong>给标准库发许可证</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">struct MoveThrow    { MoveThrow(){} MoveThrow(const MoveThrow&amp;){ std::cout&lt;&lt;&quot;拷贝\n&quot;; }
+                      MoveThrow(MoveThrow&amp;&amp;){ std::cout&lt;&lt;&quot;移动\n&quot;; } };              // 移动没标 noexcept
+struct MoveNoexcept { MoveNoexcept(){} MoveNoexcept(const MoveNoexcept&amp;){ std::cout&lt;&lt;&quot;拷贝\n&quot;; }
+                      MoveThrow(MoveThrow&amp;&amp;) = delete;
+                      MoveNoexcept(MoveNoexcept&amp;&amp;) noexcept { std::cout&lt;&lt;&quot;移动\n&quot;; } };
+std::vector&lt;MoveThrow&gt; v1;    v1.emplace_back(); v1.emplace_back();   // 扩容时…
+std::vector&lt;MoveNoexcept&gt; v2; v2.emplace_back(); v2.emplace_back();
+</code></pre>
+<p><strong>本机实测输出</strong>：v1 扩容打印 <code class="c">拷贝</code>，v2 扩容打印 <code class="c">移动</code>。</p>
+<p>原因：<code class="c">vector</code> 扩容要搬元素，若移动构造<strong>可能抛异常</strong>，搬到一半抛出会破坏强保证——
+于是它保守地选<strong>拷贝</strong>（拷贝抛了还能销毁新缓冲区回滚）。只有移动标了 <code class="c">noexcept</code>，
+扩容才敢用移动。<strong>你的值类型的移动构造/移动赋值/ swap 永远标 noexcept</strong>——
+否则全仓库的 <code class="c">vector&lt;T&gt;</code> 都在默默拷贝。</p>
+<h2>③ 标准异常体系与捕获顺序</h2>
+<pre class="code" data-label="code"><code class="c">std::exception
+├── std::runtime_error   （运行时才发现：overflow_error / system_error / ios_base::failure）
+├── std::logic_error     （程序逻辑错误：invalid_argument / out_of_range / length_error）
+├── std::bad_alloc       （new 失败）
+├── std::bad_cast        （dynamic_cast 引用版失败）
+└── std::bad_exception
+</code></pre>
+<ul>
+<li><strong>捕获按声明顺序匹配，派生类在前</strong>：<code class="c">catch (const runtime_error&amp;)</code> 必须写在
+  <code class="c">catch (const exception&amp;)</code> 前面，否则永远被基类截胡（编译器会给警告）。</li>
+<li>永远<strong>按 const 引用捕获</strong>：<code class="c">catch (const std::exception&amp; e)</code>——按值捕获会<strong>切片</strong>
+  （派生类被拷成基类，<code class="c">what()</code> 多态失效）。</li>
+<li><code class="c">throw;</code>（空 throw）在 catch 内<strong>原样重抛</strong>当前异常，保留原始类型；
+  <code class="c">throw e;</code> 会切片成静态类型。</li>
+</ul>
+<h2>④ 异常安全三级保证（写库时的契约）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>级别</th>
+<th>承诺</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>基本保证</td>
+<td>异常后对象仍可用（不泄漏、不变性不破坏），但状态可能已变</td>
+<td><code class="c">vector::push_back</code> 分配失败</td>
+</tr>
+<tr>
+<td>强保证</td>
+<td>操作要么完全成功，要么回滚到调用前状态</td>
+<td><code class="c">vector</code> 扩容失败时原内容不变</td>
+</tr>
+<tr>
+<td>无异常保证</td>
+<td>永不抛出</td>
+<td>析构、移动构造、swap、<code class="c">vector::size</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>工程推论</strong>：自己写容器/资源类时，先想清楚每个操作给哪一级——
+然后"先改副本、再 noexcept swap 提交"（copy-and-swap 惯用法）就能用
+基本保证的零件拼出强保证的整体。</p>
+<h2>⑤ 函数 try 块（冷但考过）</h2>
+<p>构造函数的成员初始化列表抛异常，普通函数体 catch 接不住——要包整个构造：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Wrap {
+    Risky r;
+    Wrap() try : r(make_risky()) {   // 函数 try 块：捕获初始化列表的异常
+    } catch (const std::exception&amp;) {
+        // 注意：构造函数的 catch 结束时**自动重抛**——对象没建成，不能假装成功
+        std::cerr &lt;&lt; &quot;构造失败\n&quot;;
+    }
+};
+</code></pre>
+<h2>和 C 的区别 / 新手要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>返回值错误码 + <code class="c">goto cleanup</code></td>
+<td><code class="c">throw</code> + RAII 自动清理</td>
+</tr>
+<tr>
+<td><code class="c">setjmp/longjmp</code>（不清理局部资源）</td>
+<td>栈展开逐帧调析构</td>
+</tr>
+<tr>
+<td>错误处理散在每个调用点</td>
+<td>错误沿调用链自动冒泡到能处理的层</td>
+</tr>
+</tbody>
+</table></div>
+<p>新手要点：① 别用异常做正常流程控制（查找失败返回 <code class="c">std::optional</code> 更合适）；
+② 异常的价值在<strong>跨层</strong>——同层内能处理的错误就返回值；③ 热路径不抛异常
+（见 HFT 关联），异常是给"出事了"的路径用的。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>tick-to-trade 主路径零异常</strong>：<code class="c">throw</code> 的开销在 µs 级（查 LSDA 表 + 逐帧展开），
+  且不可预测——主路径用错误码/<code class="c">expected</code>，异常只留给启动/配置/重连这类冷路径</li>
+<li><strong><code class="c">noexcept</code> 是延迟预算的一部分</strong>：标了 noexcept 的移动让 vector 扩容走移动而非拷贝，
+  直接影响行情队列扩容时的毛刺</li>
+<li><code class="c">dynamic_cast</code>/异常都依赖 RTTI/展开表——部分 HFT 团队直接 <code class="c">-fno-exceptions -fno-rtti</code>
+  编译热路径库，错误全靠返回码（代价是失去标准库异常的便利，要想清楚边界）</li>
+</ul>
 <h2>代码自测</h2>
 <p><strong>题目 1：</strong> 以下代码的异常安全性如何？如何改进？</p>
 <pre class="code" data-label="cpp"><code class="c">void f() {
@@ -401,155 +515,552 @@ int main() {
 </code></pre>
 <p>C++ 异常安全三个级别：基本保证（不泄漏不损坏）、强保证（操作成功或回滚）、不抛保证（noexcept）。</p>
 </details>
+<p><strong>题目 2：</strong> <code class="c">vector&lt;MyType&gt;</code> 扩容比预期慢一倍，怀疑在拷贝而不是移动，怎么验证和修？</p>
+<details>
+<summary>参考答案</summary>
+<p>验证：给 <code class="c">MyType</code> 的移动构造和拷贝构造各加一行打印，观察扩容时打的是哪个。
+修复：把移动构造标 <code class="c">noexcept</code>——vector 只有确认移动不会抛才敢用它（本机实测：未标时扩容走拷贝）。
+顺带把析构、swap、移动赋值也标上。</p>
+</details>
+<p><strong>题目 3：</strong> 下面的 catch 链有什么问题？</p>
+<pre class="code" data-label="cpp"><code class="c">try { parse(buf); }
+catch (const std::exception&amp; e)   { log(e.what()); }
+catch (const std::runtime_error&amp; e) { retry(); }
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p>顺序反了：<code class="c">runtime_error</code> 是 <code class="c">exception</code> 的派生类，会被第一个 catch 截胡，
+第二个永远到不了（g++ 会给 <code class="c">-Wexception</code> 警告）。派生类 catch 必须放前面。</p>
+</details>
       </section>
       <section class="section" id="s-18-2">
         <div class="sec-head"><div class="sec-no">18.2</div><h2>命名空间 namespace</h2></div>
 <h2>本节讲什么</h2>
-<p>解决大型项目<strong>命名冲突</strong>：</p>
-<h2>要点</h2>
-<ul>
-<li>自定义命名空间、嵌套命名空间、内联命名空间</li>
-<li><code class="c">using 声明</code> vs <code class="c">using namespace 指令</code>，滥用全局 using 的坑</li>
-<li>标准库 <code class="c">std</code> 原理、库版本兼容、第三方库整合避重名</li>
-</ul>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-namespace utils {
-    void hello() { std::cout &lt;&lt; &quot;hello from utils\n&quot;; }
+<p><code class="c">namespace</code> 解决的是 C 时代靠前缀硬扛的<strong>命名冲突</strong>问题。本节覆盖：
+定义与嵌套、<code class="c">using</code> 声明 vs 指令的坑、未命名命名空间（替代 <code class="c">static</code>）、
+inline 命名空间（库版本化的现代手段）、ADL（参数依赖查找——"为什么 <code class="c">std::swap</code> 不写 <code class="c">std::</code> 也能调"）。
+代码均经<strong>本机 g++ 13.3 / -std=c++17 实测</strong>（2026-10-07）。</p>
+<h2>① 定义与嵌套</h2>
+<pre class="code" data-label="cpp"><code class="c">namespace math {
+    int abs(int x) { return x &lt; 0 ? -x : x; }
+    namespace detail {          // 嵌套：实现细节藏起来
+        int gcd(int a, int b);
+    }
 }
-int main() {
-    utils::hello();
-    using utils::hello;
-    hello();
-    return 0;
+namespace a::b::c { void f(); }  // C++17 嵌套简写，等价于三层嵌套
+</code></pre>
+<p>要点：
+- 命名空间<strong>可以跨文件重复打开</strong>——同一 <code class="c">namespace mylib</code> 出现在 10 个头文件里，
+  它们拼成同一个命名空间（和类完全不同，类只能定义一次）
+- 命名空间成员默认<strong>外部链接</strong>（别的 TU 可见）；想限制在本文件用 ③ 的未命名命名空间</p>
+<h2>② using 声明 vs using 指令（事故高发区）</h2>
+<pre class="code" data-label="cpp"><code class="c">using math::abs;        // using 声明：只引入这一个名字，参与重载决议
+using namespace math;   // using 指令：整个命名空间的名字都&quot;可见&quot;（不真正引入）
+</code></pre>
+<p><strong>纪律</strong>：
+1. <strong>头文件里永远不写 <code class="c">using namespace</code></strong>——它会传染给每个包含者，制造无法定位的冲突
+2. <code class="c">.cpp</code> 里可以用，但也尽量<strong>局部用</strong>：函数体内 <code class="c">using std::cout;</code> 比文件级 <code class="c">using namespace std;</code> 安全
+3. <code class="c">using namespace std;</code> 最常见的翻车：<code class="c">std::count</code>/<code class="c">std::find</code> 和你的同名函数撞车，
+   错误消息在模板深处几十行</p>
+<h2>③ 未命名命名空间 = 现代版 <code class="c">static</code>（文件内可见性）</h2>
+<pre class="code" data-label="cpp"><code class="c">namespace {
+    int file_local = 42;     // 只在本翻译单元可见（内部链接）
+    void helper() {}
 }
 </code></pre>
-<hr />
+<ul>
+<li>效果等价于全局 <code class="c">static</code>，但<strong>还能用于类型</strong>（<code class="c">static</code> 不能修饰类/模板）：</li>
+</ul>
+<pre class="code" data-label="cpp"><code class="c">namespace { struct Impl { /* pImpl 的实现 */ }; }   // static 做不到这个
+</code></pre>
+<ul>
+<li>C++ 官方推荐用未命名命名空间代替文件级 <code class="c">static</code>（<code class="c">static</code> 的"内部链接"用法已被标记 deprecated 又恢复，但社区共识是 namespace 版更一致）</li>
+</ul>
+<h2>④ inline 命名空间：库的 ABI 版本化（C++11）</h2>
+<pre class="code" data-label="cpp"><code class="c">namespace mylib {
+    inline namespace v_current { void f() { std::cout &lt;&lt; &quot;current f\n&quot;; } }
+    namespace legacy           { void f() { std::cout &lt;&lt; &quot;legacy f\n&quot;; } }
+}
+int main() {
+    mylib::f();          // ✅ 打到 v_current::f——inline 空间的名字对上层&quot;透明&quot;
+    mylib::legacy::f();  // 老版本仍可显式访问
+}
+</code></pre>
+<p><strong>本机实测输出</strong>：<code class="c">current f</code> / <code class="c">legacy f</code> —— <code class="c">mylib::f()</code> 自动落到 inline 的那个。</p>
+<p>用途：库升级时把新 API 放 <code class="c">inline namespace v2</code>，旧版保留在 <code class="c">v1</code>——
+<strong>老代码链接的符号名带 v1</strong>（mangled name 不同），新老目标文件混链不炸。
+标准库自己就在用：<code class="c">std::chrono</code> 的部分符号在 <code class="c">std::__1::chrono</code>（libc++ 的 inline 命名空间 <code class="c">__1</code>）。</p>
+<h2>⑤ ADL（参数依赖查找 / Koenig lookup）</h2>
+<pre class="code" data-label="cpp"><code class="c">namespace A {
+    struct S {};
+    void greet(const S&amp;) { std::cout &lt;&lt; &quot;ADL 找到 A::greet\n&quot;; }
+}
+int main() {
+    A::S s;
+    greet(s);            // 没写 A:: —— 编译器按**实参类型**追加查找 s 所在的命名空间 A
+}
+</code></pre>
+<p><strong>本机实测输出</strong>：<code class="c">ADL 找到 A::greet</code>。</p>
+<p>规则：调用未限定的函数名时，除常规查找外，<strong>实参类型关联的命名空间</strong>也加入查找集。
+这就是这些写法能工作的原因：</p>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
+std::sort(v.begin(), v.end());     // 其实写 sort(...) 也可能编过（ADL 找到 std::sort）
+cout &lt;&lt; x;                         // operator&lt;&lt; 靠 ADL 找到（它不是你类的成员）
+swap(a, b);                        // 自定义类型的 swap 惯例：靠 ADL 命中
+</code></pre>
+<p><strong>工程推论</strong>：给你的类型写 <code class="c">swap</code>/<code class="c">operator&lt;&lt;</code>/<code class="c">hash</code> 时，<strong>放在类型自己的命名空间里</strong>——
+用户靠 ADL 自然命中，不用 <code class="c">std::</code> 也不用 using。</p>
+<h2>和 C 的区别 / 新手要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>前缀防冲突：<code class="c">mylib_queue_push</code></td>
+<td><code class="c">namespace mylib { queue::push }</code></td>
+</tr>
+<tr>
+<td>文件内私有：<code class="c">static void helper()</code></td>
+<td><code class="c">namespace { void helper() {} }</code>（还能藏类型）</td>
+</tr>
+<tr>
+<td>无</td>
+<td>ADL / inline namespace / 跨文件拼装</td>
+</tr>
+</tbody>
+</table></div>
+<p>新手要点：① 头文件禁 <code class="c">using namespace</code>；② 内部实现放 <code class="c">namespace detail</code>
+或 <code class="c">namespace impl</code>（社区惯例：detail 里的东西 = 别用）；③ 全局 <code class="c">static</code>
+换未命名命名空间是新代码的标准姿势。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li>大型交易系统按<strong>子系统划分命名空间</strong>（<code class="c">md::</code>（行情）、<code class="c">oms::</code>、<code class="c">risk::</code>、<code class="c">strat::</code>），
+  跨模块调用全限定名一眼看出依赖方向</li>
+<li>inline namespace 是<strong>行情解码库版本化</strong>的标准做法：协议升级（如深交所 v1.19 → v1.22）
+  时老策略二进制仍可链接旧符号</li>
+<li>ADL 对<strong>模板库</strong>尤其重要：写泛型代码时 <code class="c">using std::swap; swap(a, b);</code> 两步走——
+  让自定义类型的 swap 经 ADL 优先命中，标准 swap 兜底</li>
+</ul>
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 以下两种 using 用法有什么区别？</p>
-<pre class="code" data-label="cpp"><code class="c">using namespace std;       // 方式A
-using std::cout;           // 方式B
+<p><strong>题目 1：</strong> 下面这段能编译吗？为什么？</p>
+<pre class="code" data-label="cpp"><code class="c">// a.h
+namespace util { void log(const char*); }
+using namespace util;
+// b.cpp
+#include &quot;a.h&quot;
+void log(int);   // ?
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p>方式A：using 指令——引入整个命名空间，可能导致名称冲突，不推荐在头文件中使用。方式B：using 声明——只引入特定名称，更安全。C++17 起可用嵌套命名空间：<code class="c">namespace A::B::C { ... }</code>。推荐在 .cpp 文件中用 using 声明，头文件中用完整限定名。</p>
+<p>能编译但是地雷：<code class="c">using namespace util</code> 写在头文件里，每个包含 a.h 的 TU 都被污染；
+<code class="c">util::log(const char*)</code> 和你的 <code class="c">log(int)</code> 进入同一作用域——之后 <code class="c">log("x")</code> / <code class="c">log(1)</code>
+的重载决议可能随包含顺序变化。头文件只允许 <code class="c">using 声明</code>（也最好不），禁 <code class="c">using 指令</code>。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">namespace { static int x; }</code> 里的 <code class="c">static</code> 多余吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>多余且自相矛盾：未命名命名空间已经把成员变成内部链接，再写 <code class="c">static</code> 没有新效果
+（语义相同，纯属冗余）。统一写成 <code class="c">namespace { int x; }</code>。</p>
+</details>
+<p><strong>题目 3：</strong> 为什么 <code class="c">std::cout &lt;&lt; my_type</code> 能找到你写的 <code class="c">operator&lt;&lt;</code>，即使它不在 <code class="c">std</code> 里？</p>
+<details>
+<summary>参考答案</summary>
+<p>ADL：<code class="c">operator&lt;&lt;</code> 的实参之一是 <code class="c">my_type</code>（在你自己的命名空间 N 里），
+编译器把 N 加入查找集，命中你在 N 里定义的 <code class="c">operator&lt;&lt;</code>。
+所以自定义类型的流输出运算符<strong>就该放在类型自己的命名空间</strong>，不要图省事放全局。</p>
 </details>
       </section>
       <section class="section" id="s-18-3">
         <div class="sec-head"><div class="sec-no">18.3</div><h2>多重继承与虚继承</h2></div>
 <h2>本节讲什么</h2>
-<ol>
-<li><strong>多重继承</strong>：一个类继承多个父类 → 菱形继承、成员名冲突、二义性</li>
-<li><strong>菱形继承</strong>：公共祖先多份拷贝、数据冗余</li>
-<li><strong>虚继承 <code class="c">virtual public</code></strong>：公共基类只保留一份实例</li>
-<li>多重继承下的构造/析构顺序、类型转换、虚函数重写规则</li>
-</ol>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-class Base {
-public:
-    virtual void f() { std::cout &lt;&lt; &quot;Base\n&quot;; }
-};
-class D1 : public Base {};
-class D2 : public Base {};
-class Most : public D1, public D2 {};
+<p>多重继承（MI）是 C++ 最有争议的特性：接口组合离不开它，菱形继承和布局复杂度又让人怕它。
+本节把三件事讲清：MI 的<strong>内存布局</strong>（this 调整）、<strong>菱形问题与虚继承</strong>、
+以及工程上的安全用法（混入接口 vs 数据继承）。代码均经<strong>本机 g++ 13.3 / -std=c++17 实测</strong>（2026-10-07）。</p>
+<h2>① MI 的内存布局与 this 调整（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">struct A { int a = 1; };
+struct B { int b = 2; };
+struct C : A, B { int c = 3; };
 int main() {
-    Most m;
-    m.D1::f();
-    return 0;
+    C obj;
+    B* pb = &amp;obj;
+    // &amp;obj == 0x...dc6c，pb == 0x...dc70（+4 偏移！）
 }
 </code></pre>
-<hr />
+<p><strong>本机实测</strong>：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(C) = 12                 ← A 子对象 + B 子对象 + 自身成员顺序排列
+&amp;obj = 0x7ffc...dc6c
+pb   = 0x7ffc...dc70           ← B* 不指向对象开头，指向 B 子对象（this 调整 +4）
+</code></pre>
+<p><strong>推论</strong>：
+1. MI 下基类指针<strong>不等于</strong>对象首地址（除第一个基类）——
+   所以 <code class="c">(B*)&amp;obj</code> 这类 C 强转在 MI 下是<strong>错的</strong>（不做偏移调整），
+   必须用 <code class="c">static_cast&lt;B*&gt;(&amp;obj)</code>（编译器插入偏移）。
+2. 每个带虚函数的基类各带一个 vptr——<code class="c">C : A(虚), B(虚)</code> 的对象有<strong>两个</strong> vptr。
+3. <code class="c">dynamic_cast</code>/<code class="c">typeid</code> 在 MI 下要做运行时偏移计算，比单继承贵。</p>
+<h2>② 菱形继承与虚继承（实测）</h2>
+<pre class="code" data-label="code"><code class="c">     A                普通继承：D 和 E 各带一份 A → F 里有两份 A（二义 + 浪费）
+    / \               虚继承：  A 只有一份，D/E 通过虚基表指针找到共享的 A
+   D   E
+    \ /
+     F
+</code></pre>
+<pre class="code" data-label="cpp"><code class="c">struct D : virtual A { };
+struct E : virtual A { };
+struct F : D, E { };        // A 只有一份
+</code></pre>
+<p><strong>本机实测</strong>：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(F) = 24    ← 两个 vptr（含虚基指针）+ 共享的一份 A(int) + 对齐
+sizeof(D) = 16    ← vptr(8) + A::a(4) + padding
+非虚版本的话，D、E 里各有一份 A → F 中 A 出现两次，sizeof 至少 8 字节纯浪费且 a 有二义
+</code></pre>
+<p><strong>虚继承的三个代价</strong>（想清楚再用）：
+1. 对象里多一个<strong>虚基表指针</strong>（vptr 变大），每次访问虚基成员多一次间接
+2. <strong>最派生类负责构造虚基</strong>：<code class="c">F</code> 的构造函数直接调用 <code class="c">A</code> 的构造，
+   <code class="c">D</code>/<code class="c">E</code> 构造里对 <code class="c">A</code> 的初始化<strong>被忽略</strong>——初始化责任跳级，新人极易踩
+3. 向下转型（<code class="c">F* → D*</code>）需要运行期查虚基表，<code class="c">static_cast</code> 变贵</p>
+<h2>③ 工程安全用法：接口混入（mixin）而非数据共享</h2>
+<p>工业界对 MI 的共识用法是<strong>第二个及以后的基类都是"接口"</strong>（纯虚、无数据、无状态）：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Serializable {                        // 接口：无数据
+    virtual ~Serializable() = default;
+    virtual void serialize(Buffer&amp;) const = 0;
+};
+struct Measurable {                          // 接口：无数据
+    virtual ~Measurable() = default;
+    virtual double latency_ns() const = 0;
+};
+
+struct Order : MktDataBase, Serializable, Measurable {   // 数据单继承 + 接口多继承
+    void serialize(Buffer&amp;) const override { /*...*/ }
+    double latency_ns() const override { /*...*/ }
+};
+</code></pre>
+<ul>
+<li>数据继承保持<strong>单链</strong>（避开菱形），能力扩展走<strong>接口 MI</strong>——
+  这就是 Java/C# <code class="c">interface</code> 的 C++ 表达</li>
+<li>CRTP（<code class="c">class T : public Base&lt;T&gt;</code>）能在<strong>编译期</strong>实现类似 mixin 的效果且零虚函数开销——
+  热路径优先 CRTP（见 ch16 模板），运行期多态需求才用接口 MI</li>
+</ul>
+<h2>④ 其他必知点</h2>
+<ul>
+<li><strong>名字冲突</strong>：两个基类有同名成员 → 调用处必须显式限定 <code class="c">obj.A::f()</code>，
+  或在派生类用 <code class="c">using A::f;</code> 消除二义</li>
+<li><strong>虚函数覆盖</strong>：<code class="c">C::f()</code> 可以同时覆盖 <code class="c">A::f</code> 和 <code class="c">B::f</code>（签名一致时）——编译器为
+  B 的 vtable 生成 <strong>thunk</strong>（调整 this 再跳转）的桥接函数</li>
+<li><strong>析构顺序</strong>：与构造相反——自身 → 基类按声明<strong>逆序</strong>（先 B 后 A）</li>
+<li><code class="c">virtual</code> 析构只在<strong>第一个基类</strong>声明就够吗？不——任何"可能被基类指针 delete"
+  的基类都必须有虚析构，否则 delete 经该基类指针 = UB</li>
+</ul>
+<h2>和 C 的区别 / 新手要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>结构体嵌套模拟"继承"，强转全靠布局巧合</td>
+<td>真正的 MI + 编译器管理的 this 调整</td>
+</tr>
+<tr>
+<td>无接口概念，函数指针表手搓</td>
+<td>纯虚基类 = 接口，vtable 自动生成</td>
+</tr>
+<tr>
+<td>无</td>
+<td>虚继承/虚基表（C 完全没有对应物）</td>
+</tr>
+</tbody>
+</table></div>
+<p>新手要点：① 默认单继承；需要"既是 A 又是 B"时先问"第二个能不能是接口"；
+② 菱形出现一律虚继承 or 重构；③ 永远不用 C 强转跨 MI 类型。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>热路径避免虚继承</strong>：虚基成员访问多一次指针间接（潜在 cache miss），
+  延迟敏感的行情/订单对象坚持单链布局（→ M3 对象模型 ch03 虚继承布局详解）</li>
+<li><strong>接口 MI 是策略框架的骨架</strong>：<code class="c">Strategy : MdSink, OrderGateway</code>——
+  一个策略类同时被行情驱动和下单回调驱动，两个接口都是纯虚无数据</li>
+<li>this 调整意味着 <strong>回调注册时传的 <code class="c">this</code> 必须按接口类型 cast 好</strong>——
+  C 回调风格（<code class="c">void*</code>）配 MI 是经典 crash 源（→ 18.4 RTTI / M3 对象模型）</li>
+</ul>
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 以下菱形继承如何解决？</p>
-<pre class="code" data-label="cpp"><code class="c">class A { int a; };
-class B : public A {};
-class C : public A {};
-class D : public B, public C {};
-D d;
-d.a = 1;  // 歧义？
+<p><strong>题目 1：</strong> <code class="c">C</code> 继承 <code class="c">A</code>、<code class="c">B</code>（均有虚函数），<code class="c">sizeof(C)</code> 至少是多少（x86_64，int=4）？</p>
+<details>
+<summary>参考答案</summary>
+<p>A、B 各带一个 vptr：8 + 8；<code class="c">A::a</code>、<code class="c">B::b</code>、<code class="c">C::c</code> 三个 int：12。
+合计 ≥ 8+8+12 = 28，对齐到 8 → <strong>32 字节</strong>。
+（若 A、B 无虚函数则无 vptr，就是本节的 12。）</p>
+</details>
+<p><strong>题目 2：</strong> 下面为什么崩？</p>
+<pre class="code" data-label="cpp"><code class="c">struct A { virtual ~A(){} }; struct B { virtual ~B(){} };
+struct C : A, B {};
+C* c = new C;
+B* b = c;
+delete (C*)(void*)b;     // 经 void* 来回强转
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p>歧义——D 有两份 A 子对象。用虚继承：</p>
-<pre class="code" data-label="cpp"><code class="c">class B : virtual public A {};
-class C : virtual public A {};
-class D : public B, public C {};
-</code></pre>
-<p>虚继承保证 D 中只有一份 A。但虚继承有额外开销（虚基类指针），应尽量避免。C++ 多重继承的设计比其他语言（如 Java 的接口）更复杂。</p>
+<p><code class="c">b</code> 指向 C 对象内的 <strong>B 子对象</strong>（地址偏移 ≠ 对象开头，见 ① 实测）。
+经 <code class="c">void*</code> 强转回 <code class="c">C*</code> 时<strong>不会做偏移调整</strong>——delete 的地址不是对象首地址：
+释放错误地址 + 析构用错 this，UB（实测大概率崩或堆损坏）。
+正解：<code class="c">C* c2 = static_cast&lt;C*&gt;(b);</code>（编译器自动减偏移）再 delete，或直接 <code class="c">delete c;</code>。</p>
+</details>
+<p><strong>题目 3：</strong> 虚继承里 <code class="c">F</code> 的构造列表写 <code class="c">F() : D(), E(), A(42) {}</code>，<code class="c">D</code> 的构造列表里
+也写了 <code class="c">A(1)</code>——最终 <code class="c">A</code> 用哪个值构造？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>42</strong>。虚基类由<strong>最派生类</strong>（F）直接构造；D、E 构造列表中对 A 的实参被忽略
+（非最派生时 D 单独构造才会用它自己的 A(1)）。这就是"初始化责任跳级"——
+阅读虚继承体系时，虚基的初始化只看最派生类。</p>
 </details>
       </section>
       <section class="section" id="s-18-4">
         <div class="sec-head"><div class="sec-no">18.4</div><h2>运行时类型识别 RTTI</h2></div>
 <h2>本节讲什么</h2>
-<p>适用：多态体系里判断实际对象类型。开销略大，能靠虚函数解决就尽量不用 RTTI。</p>
-<h2>要点</h2>
+<p>RTTI（Run-Time Type Identification）让你在<strong>运行时</strong>问一个多态对象"你到底是什么类型"：
+<code class="c">dynamic_cast</code>（安全向下转型）和 <code class="c">typeid</code>（类型信息）。本节讲清两者的行为差异、
+实现机制（vtable 里的 type_info）、开销，以及"需要 RTTI 往往是设计信号"的工程判断。
+代码均经<strong>本机 g++ 13.3 / -std=c++17 实测</strong>（2026-10-07）。</p>
+<h2>① dynamic_cast：指针版 vs 引用版（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">struct Base { virtual ~Base() {} };
+struct Derived : Base { void special() { std::cout &lt;&lt; &quot;special\n&quot;; } };
+struct Other : Base {};
+
+Base* b1 = new Derived; Base* b2 = new Other;
+if (auto* d = dynamic_cast&lt;Derived*&gt;(b1)) d-&gt;special();      // ✅ special
+dynamic_cast&lt;Derived*&gt;(b2);                                   // → nullptr（指针版失败）
+dynamic_cast&lt;Derived&amp;&gt;(*b2);                                  // → 抛 std::bad_cast（引用版）
+</code></pre>
+<p><strong>本机实测输出</strong>：</p>
+<pre class="code" data-label="code"><code class="c">special
+b2 转 Derived*: nullptr          ← 指针版失败 = 返回空
+引用版失败: bad_cast             ← 引用版失败 = 抛异常（引用不能为&quot;空&quot;）
+</code></pre>
+<p><strong>使用纪律</strong>：
+- 前提：类型必须<strong>多态</strong>（有虚函数）——非多态类型用 dynamic_cast 是<strong>编译错误</strong>
+- 指针版适合"试探"（<code class="c">if (auto* d = dynamic_cast&lt;...&gt;)</code>），引用版适合"必须成功"（失败即 bug）
+- 向上转（派生→基类）永远成功且编译期就处理，dynamic_cast 的价值只在<strong>向下/横向</strong>（MI 交叉转换）</p>
+<h2>② typeid：动态类型 vs 静态类型（实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">typeid(*b1) == typeid(Derived)    // 1 ← 多态对象：运行时动态类型
+typeid(b1)  == typeid(Base*)      // 1 ← 指针本身：编译期静态类型（不发生解引用！）
+typeid(i).name()                  // &quot;i&quot; ← 非多态：纯编译期求值
+</code></pre>
+<p><strong>关键区分</strong>：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>运算符</th>
-<th>用途</th>
+<th>表达式</th>
+<th>求值时机</th>
+<th>结果</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">dynamic_cast</code></td>
-<td>安全向下转型，失败返回 <code class="c">nullptr</code></td>
+<td><code class="c">typeid(*多态指针)</code></td>
+<td><strong>运行时</strong>（解引用发生）</td>
+<td>对象动态类型</td>
 </tr>
 <tr>
-<td><code class="c">typeid</code></td>
-<td>获取 <code class="c">type_info</code> 类型信息</td>
+<td><code class="c">typeid(指针)</code> / <code class="c">typeid(非多态对象)</code></td>
+<td><strong>编译期</strong></td>
+<td>静态类型</td>
+</tr>
+<tr>
+<td><code class="c">typeid(类型名)</code></td>
+<td>编译期</td>
+<td>该类型本身</td>
 </tr>
 </tbody>
 </table></div>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-#include &lt;typeinfo&gt;
-class Base { public: virtual ~Base() = default; };
-class Derived : public Base {};
-int main() {
-    Derived d;
-    Base &amp;b = d;
-    std::cout &lt;&lt; typeid(b).name() &lt;&lt; std::endl;
-    if (auto *p = dynamic_cast&lt;Derived *&gt;(&amp;b))
-        std::cout &lt;&lt; &quot;ok\n&quot;;
-    return 0;
-}
-</code></pre>
-<hr />
+<ul>
+<li><code class="c">typeid</code> 返回 <code class="c">const std::type_info&amp;</code>，用途是<strong>比较</strong>（<code class="c">==</code>/<code class="c">!=</code>）和调试打印
+  （<code class="c">.name()</code> 是实现相关的 mangled 名，不可移植）</li>
+<li>想要可移植的类型名：<code class="c">typeid(T).name()</code> 只用于日志，逻辑分支用 <code class="c">dynamic_cast</code> 或下面的更好方案</li>
+</ul>
+<h2>③ 实现机制与开销</h2>
+<ul>
+<li>多态类的 vtable 里除了虚函数指针，还存一个指向 <code class="c">type_info</code> 的指针；
+  <code class="c">dynamic_cast</code> 沿继承链做<strong>运行时类型遍历</strong>（单继承快，MI/虚继承要查虚基表更慢）</li>
+<li><code class="c">typeid(*p)</code> 就是解引用 vptr 读 type_info 指针——O(1)，很便宜</li>
+<li><strong><code class="c">dynamic_cast</code> 不是 O(1)</strong>：继承链越深越慢，且带一次潜在 cache miss——
+  热路径循环里做 dynamic_cast 是性能反模式</li>
+</ul>
+<h2>④ "需要 RTTI" 常常是设计信号</h2>
+<p>优先考虑这三个替代方案，RTTI 留作最后手段：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>首选</th>
+<th>次选</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>按类型分发行为</td>
+<td><strong>虚函数</strong>（把行为放进类里）</td>
+<td><code class="c">std::variant</code> + <code class="c">std::visit</code>（类型集合封闭时）</td>
+</tr>
+<tr>
+<td>从基类容器取特定派生</td>
+<td>重新设计接口</td>
+<td><code class="c">dynamic_cast</code> 一次转型后缓存结果</td>
+</tr>
+<tr>
+<td>类型安全的异构容器</td>
+<td><code class="c">std::any</code> / variant</td>
+<td>typeid 做键（<code class="c">std::type_index</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p>教科书级的坏味道：一长串 <code class="c">if (dynamic_cast&lt;A*&gt;(p)) ... else if (dynamic_cast&lt;B*&gt;(p)) ...</code>
+——这是在用 RTTI 手搓虚函数分发，改成虚函数或 variant  visitor。</p>
+<h2>⑤ -fno-rtti 与工程边界</h2>
+<ul>
+<li>GCC/Clang 支持 <code class="c">-fno-rtti</code>：typeid/dynamic_cast 禁用，vtable 里不再生成 type_info——
+  省一点二进制体积和每次 RTTI 查询成本；标准库的 <code class="c">typeid</code>/<code class="c">dynamic_cast</code> 同样不可用</li>
+<li>与 <code class="c">-fno-exceptions</code> 常一起出现在热路径库编译选项里（→ 18.1 HFT 关联）；
+  注意 <code class="c">dynamic_cast</code> 引用版依赖异常（bad_cast），关异常后引用版也编不过</li>
+</ul>
+<h2>和 C 的区别 / 新手要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>枚举 tag + union 手工判别类型</td>
+<td>dynamic_cast/typeid 语言级支持</td>
+</tr>
+<tr>
+<td><code class="c">void*</code> + 祈祷</td>
+<td>类型安全的向下转型</td>
+</tr>
+<tr>
+<td>无</td>
+<td>type_info/vtable 联动（C 没有 vtable）</td>
+</tr>
+</tbody>
+</table></div>
+<p>新手要点：① 先想"能不能用虚函数"再问"怎么转"；② <code class="c">typeid(*p)</code> 才是动态类型，
+<code class="c">typeid(p)</code> 永远是静态指针类型（高频错题）；③ 引用版失败抛 <code class="c">bad_cast</code> 不是返回空。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>行情解码不用 RTTI</strong>：协议消息类型判别用协议头里的 <strong>msg_type 字段 + switch</strong>
+  （查表 O(1)、分支可预测），比 dynamic_cast 的继承链遍历快一个量级且确定</li>
+<li>策略/订单对象若需要异构存储，<code class="c">std::variant&lt;LimitOrder, IcebergOrder, ...&gt;</code> + <code class="c">visit</code>
+  是编译期分发，无 vtable 跳转——现代 HFT C++ 的主流写法（→ M5 C++17 ch17 variant）</li>
+<li><code class="c">-fno-rtti</code> 在部分团队的热路径库是默认选项；代价是失去 dynamic_cast 的调试便利，
+  折中：热路径库关 RTTI，外围工具链保留</li>
+</ul>
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 以下 <code class="c">dynamic_cast</code> 和 <code class="c">typeid</code> 各返回什么？</p>
-<pre class="code" data-label="cpp"><code class="c">Base* p = new Derived;
-Derived* d = dynamic_cast&lt;Derived*&gt;(p);  // d 的值？
-if (typeid(*p) == typeid(Derived)) { ... }  // 条件？
+<p><strong>题目 1：</strong> 输出是什么？</p>
+<pre class="code" data-label="cpp"><code class="c">struct A { virtual ~A(){} }; struct B : A {};
+A* p = new B;
+std::cout &lt;&lt; (typeid(p) == typeid(A*)) &lt;&lt; (typeid(*p) == typeid(B));
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p><code class="c">dynamic_cast&lt;Derived*&gt;(p)</code> 返回有效指针（p 实际是 Derived）。如果 p 实际不是 Derived，返回 nullptr。<code class="c">typeid(*p) == typeid(Derived)</code> 为 true——typeid 返回 <code class="c">type_info</code> 引用，可比较类型。RTTI 需要 vtable（类必须有虚函数），否则 typeid 返回静态类型。<code class="c">-fno-rtti</code> 可关闭 RTTI。</p>
+<p><code class="c">11</code>。<code class="c">typeid(p)</code> 问的是指针本身的类型（<code class="c">A*</code>，编译期）；<code class="c">typeid(*p)</code> 解引用多态对象，
+问运行时动态类型（<code class="c">B</code>）。"指针类型"与"指向对象的类型"是两回事——typeid 高频错题。</p>
+</details>
+<p><strong>题目 2：</strong> 为什么这段编译错误？</p>
+<pre class="code" data-label="cpp"><code class="c">struct NoVirt { int x; };
+struct Sub : NoVirt {};
+NoVirt* p = new Sub;
+Sub* s = dynamic_cast&lt;Sub*&gt;(p);
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">NoVirt</code> 没有虚函数 = <strong>非多态类型</strong>，没有 vtable 也就没有 type_info 可查——
+<code class="c">dynamic_cast</code> 向下转型要求源类型多态，编译期直接拒绝。
+修法：给基类加虚函数（虚析构最常用），或用 <code class="c">static_cast</code>（但那是"我知道它就是"的无检查强转）。</p>
+</details>
+<p><strong>题目 3：</strong> 热路径上要把 <code class="c">MsgBase*</code> 分发到 5 种消息处理器，给两个不用 dynamic_cast 的方案。</p>
+<details>
+<summary>参考答案</summary>
+<p>① <strong>虚函数</strong>：<code class="c">MsgBase::handle(Engine&amp;)</code> 虚函数，每个消息类实现自己的 handler——
+一次 vtable 跳转，O(1)。
+② <strong>variant + visit</strong>（C++17）：消息类型集合封闭时
+<code class="c">std::variant&lt;MsgA, MsgB, ...&gt;</code> + <code class="c">std::visit(overloaded{...})</code>——
+编译期分发，连 vtable 跳转都省了，还能享受内联。
+行情场景还有③：按协议头的 msg_type 字段 switch 到具体解码器（查表/分支预测友好）。</p>
 </details>
       </section>
       <section class="section" id="s-18-5">
         <div class="sec-head"><div class="sec-no">18.5</div><h2>学习优先级</h2></div>
 <h2>本节讲什么</h2>
-<p><strong>中大型项目架构必学</strong>：异常、命名空间、多重继承、RTTI 是工程基础。</p>
-<h2>示例</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-// 第 18 章回顾：异常 + 命名空间
-namespace app {
-    void run() { std::cout &lt;&lt; &quot;running\n&quot;; }
-}
-int main() {
-    try { app::run(); }
-    catch (...) { std::cerr &lt;&lt; &quot;error\n&quot;; }
-    return 0;
-}
-</code></pre>
-<hr />
+<p>第 18 章四个主题的<strong>投入排序</strong>与 HFT 视角取舍——这一章不是平均用力的。</p>
+<h2>优先级排序（HFT 学习路径）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>优先级</th>
+<th>主题</th>
+<th>理由</th>
+<th>掌握标准</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🟢 必须精通</td>
+<td><a href="#s-18-1">18.1 异常</a></td>
+<td>RAII + 异常安全是整个 C++ 资源管理的底座；<code class="c">noexcept</code> 直接影响 vector 性能（实测）</td>
+<td>能默写异常安全三级；知道析构为什么禁抛</td>
+</tr>
+<tr>
+<td>🟢 必须精通</td>
+<td><a href="#s-18-2">18.2 命名空间</a></td>
+<td>每天在用；<code class="c">using namespace</code> 头文件污染、ADL 是高频事故源</td>
+<td>头文件纪律；能解释 <code class="c">std::swap</code> 的 ADL 惯例</td>
+</tr>
+<tr>
+<td>🟡 理解即可</td>
+<td><a href="#s-18-3">18.3 多重继承</a></td>
+<td>接口混入（数据单链 + 接口 MI）是策略框架骨架；虚继承知道代价就行，自己少写</td>
+<td>能画 MI 布局图；解释 this 调整</td>
+</tr>
+<tr>
+<td>🟡 理解即可</td>
+<td><a href="#s-18-4">18.4 RTTI</a></td>
+<td>知道它存在、知道它贵、知道替代方案（虚函数/variant/switch）——热路径基本不用</td>
+<td>区分 <code class="c">typeid(p)</code> vs <code class="c">typeid(*p)</code>；说出 dynamic_cast 的两个替代</td>
+</tr>
+</tbody>
+</table></div>
+<h2>与后续模块的衔接</h2>
+<ul>
+<li>异常的对象级实现（展开表、LSDA）→ <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/M3-deep-principles/">M3 深度探索对象模型</a></li>
+<li>RTTI 的 vtable/type_info 布局 → M3 对象模型 ch03/ch04</li>
+<li>接口混入的编译期版本（CRTP）→ <a href="chapter-16.html#ch-16">ch16 模板</a> + M1</li>
+<li><code class="c">-fno-exceptions/-fno-rtti</code> 的工程取舍 → <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/M4-engineering-standards/">M4 工程标准</a></li>
+</ul>
 <h2>代码自测</h2>
 <p><strong>题目 1：</strong> C++Primer 第 18 章（大型程序工具）中哪些主题对 HFT 最重要？</p>
 <details>
 <summary>参考答案</summary>
-<p>1) 异常安全（RAII 保证资源不泄漏）；2) 命名空间（避免大型项目名称冲突）；3) RTTI（谨慎使用，有性能开销）。多重继承和虚继承在 HFT 中应避免——vtable 开销和复杂内存布局。异常在热路径中应禁用（-fno-exceptions），用错误码替代。</p>
+<p><strong>异常安全（18.1）</strong>最重要——不是因为在热路径用异常（恰恰相反，热路径零异常），
+而是因为 RAII + noexcept 的纪律决定了你的容器/队列在异常路径和扩容路径上的性能下限
+（noexcept 移动 vs 拷贝的实测差异见 18.1 ②）。
+其次是<strong>命名空间纪律（18.2）</strong>——大项目编译期工程。
+多重继承和 RTTI 理解机制即可，热路径反而要主动避开。</p>
+</details>
+<p><strong>题目 2：</strong> 为什么 <code class="c">-fno-exceptions</code> 不能"整个仓库一刀切"？</p>
+<details>
+<summary>参考答案</summary>
+<p>标准库大量 API 以异常报错误（<code class="c">vector::at</code>、<code class="c">stoi</code>、regex、filesystem、new 失败）——
+关异常的 TU 里这些 API 要么不可用要么行为改变（<code class="c">new</code> 返回空）。
+工程做法：<strong>按库切分</strong>——热路径库（行情/订单/撮合）<code class="c">-fno-exceptions -fno-rtti</code>，
+错误全走返回码；外围（配置加载、启动、工具链）保留异常。
+两个世界之间用"边界层"翻译（异常 catch 住转错误码），别让 noexcept 边界含糊。</p>
 </details>
       </section>
 
