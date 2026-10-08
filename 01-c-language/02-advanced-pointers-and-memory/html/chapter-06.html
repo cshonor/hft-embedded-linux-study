@@ -292,6 +292,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-6-13"><span class="n">6.13</span>指针运算</a>
           <a href="#s-6-13-1"><span class="n">6.13.1</span>指针的算术运算</a>
           <a href="#s-6-13-2"><span class="n">6.13.2</span>指针的关系运算</a>
+          <a href="#s-6-14"><span class="n">6.14</span>空指针判空的硬件路径：ZF 标志、test/cmp 与 0 页保护</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -326,7 +327,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Kenneth Reek《Pointers on C》· 指针与 C 精读</div>
           <h1>第 6 章 指针</h1>
           <div class="meta">
-<span>book <b>01-c-language · 02-advanced-pointers-and-memory</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>17</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>01-c-language · 02-advanced-pointers-and-memory</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>18</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -4130,6 +4131,333 @@ if (p1 &lt; p2) { ... }
 <details>
 <summary>参考答案</summary>
 <p>未定义行为。指针关系运算（&lt;、&gt;、&lt;=、&gt;=）只能在同一个数组内的指针之间使用。比较不同数组的指针是 UB——两个数组在内存中的相对位置取决于编译器实现。== 和 != 可以用于任意指针。</p>
+</details>
+      </section>
+      <section class="section" id="s-6-14">
+        <div class="sec-head"><div class="sec-no">6.14</div><h2>空指针判空的硬件路径：ZF 标志、test/cmp 与 0 页保护</h2></div>
+<h2>本节讲什么</h2>
+<p>6.6 讲了 NULL 的<strong>语言语义</strong>（空指针常量、解引用为什么崩）。本节下沉一层，回答四个硬件问题：</p>
+<ol>
+<li><code class="c">if (p)</code> 到了 CPU 上到底执行什么？</li>
+<li>比较两个指针和比较两个整数，硬件路径有区别吗？</li>
+<li>x86 的 <code class="c">test</code>/<code class="c">cmp</code> + ZF 与 ARM64 的 <code class="c">cmp</code>/<code class="c">cbnz</code> 有何不同？</li>
+<li>"空指针是数值 0"和"第 0 页保护"是什么关系？</li>
+</ol>
+<p>核心结论一句话：<strong>CPU 层面没有"指针"这个概念，只有二进制数。空指针就是数值 0，指针判空和整数判零走完全相同的硬件路径。</strong></p>
+<p>文中所有汇编均为本机实测（clang 23.1.0，macOS arm64；x86-64 为同编译器交叉生成）。</p>
+<h2>要点</h2>
+<pre class="code" data-label="C"><code class="c">int *p = NULL;
+if (p) { /* ... */ }        /* 判空：只动寄存器，不访问内存，安全 */
+if (*p == 0) { /* ... */ }  /* 解引用：访问地址 0 → 0 页无映射 → SIGSEGV */
+</code></pre>
+<ul>
+<li><code class="c">cmp a, b</code> 本质是<strong>做减法 <code class="c">a - b</code></strong>，丢弃结果只留标志位；<strong>ZF=1 ⟺ 差为 0 ⟺ 两数相等</strong></li>
+<li><code class="c">jnz</code> 和 <code class="c">jne</code> 是<strong>同一条指令的两个名字</strong>（同为 opcode <code class="c">75</code> / <code class="c">0F 85</code>）</li>
+<li>指针就是 64 位整数，比较指针 = 比较整数，<strong>无需任何特殊处理</strong></li>
+<li><code class="c">if (p == q)</code> 比的是<strong>地址</strong>（纯寄存器）；<code class="c">if (*p == *q)</code> 比的是<strong>内容</strong>（先 load 再 cmp）</li>
+<li>x86 判空常用 <code class="c">test rdi, rdi</code>（自己 AND 自己），比 <code class="c">cmp rdi, 0</code> 指令更短，ZF 效果一样</li>
+<li>ARM64 <strong>没有 <code class="c">test</code> 指令</strong>；且 <code class="c">cbz/cbnz</code> 比较+跳转一条指令完成，<strong>根本不写标志寄存器</strong></li>
+</ul>
+<h2>实测：四种写法的汇编对照</h2>
+<p>测试源码（<code class="c">int</code> 指针，<code class="c">sizeof(int)=4</code>）：</p>
+<pre class="code" data-label="C"><code class="c">int f_if_p(int *p)            { if (p)        return 1; return 0; }
+int f_p_eq_q(int *p, int *q)  { if (p == q)   return 1; return 0; }
+int f_deref_eq(int *p, int *q){ if (*p == *q) return 1; return 0; }
+int f_ptr_diff(int *a, int *b){ return b - a; }
+</code></pre>
+<h3>x86-64（clang -O1，AT&amp;T 语法）</h3>
+<pre class="code" data-label="asm"><code class="c">f_if_p:                          # if (p)
+    xorl   %eax, %eax
+    testq  %rdi, %rdi            # p AND p → 只设标志：全 0 则 ZF=1
+    setne  %al                   # ZF=0（非空）→ al=1
+    retq
+
+f_p_eq_q:                        # if (p == q)：纯寄存器，不访存
+    xorl   %eax, %eax
+    cmpq   %rsi, %rdi            # p - q → 只留标志
+    sete   %al                   # ZF=1（相等）→ al=1
+    retq
+
+f_deref_eq:                      # if (*p == *q)：先 load 再比
+    movl   (%rdi), %ecx          # *p  → ecx（这里才访问内存！）
+    xorl   %eax, %eax
+    cmpl   (%rsi), %ecx          # *q 与 *p 相减
+    sete   %al
+    retq
+
+f_ptr_diff:                      # b - a：自动除 sizeof(int)=4
+    movq   %rsi, %rax
+    subq   %rdi, %rax            # 字节差
+    shrq   $2, %rax              # ÷4 = 元素个数差
+    retq
+</code></pre>
+<h3>ARM64（clang -O1）</h3>
+<pre class="code" data-label="asm"><code class="c">_f_if_p:                         // if (p)
+    cmp  x0, #0                  // p - 0 → 设 NZCV
+    cset w0, ne                  // Z=0（非空）→ w0=1
+    ret
+
+_f_p_eq_q:                       // if (p == q)
+    cmp  x0, x1
+    cset w0, eq
+    ret
+
+_f_deref_eq:                     // if (*p == *q)
+    ldr  w8, [x0]                // *p
+    ldr  w9, [x1]                // *q
+    cmp  w8, w9
+    cset w0, eq
+    ret
+
+_f_ptr_diff:                     // b - a
+    sub  x8, x1, x0
+    lsr  x0, x8, #2              // ÷4
+    ret
+</code></pre>
+<h3>ARM64 的低优化特例：<code class="c">cbnz</code> 不碰标志位</h3>
+<p><code class="c">-O0</code> 时 <code class="c">if (p)</code> 编成：</p>
+<pre class="code" data-label="asm"><code class="c">    ldr  x8, [sp]
+    cbnz x8, LBB0_1              // compare-and-branch-nonzero：一条指令判零+跳转
+</code></pre>
+<p><strong><code class="c">cbz/cbnz</code> 不写 NZCV 标志寄存器</strong>——ARM64 的"判零跳转"可以不经过标志位，比较与跳转融合在一条指令里。所以"判零 ⟺ 查 ZF"这条因果链是 <strong>x86 世界观</strong>；ARM 上 ZF（Z 标志）只在你显式用 <code class="c">subs</code>/<code class="c">cmp</code> 时才存在。</p>
+<h3>两个 ISA 的机制差异表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>x86-64</th>
+<th>ARM64</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>判空典型指令（-O1）</td>
+<td><code class="c">testq %rdi, %rdi</code></td>
+<td><code class="c">cmp x0, #0</code></td>
+</tr>
+<tr>
+<td><code class="c">test</code>（AND 型判零）</td>
+<td>有</td>
+<td><strong>无此指令</strong></td>
+</tr>
+<tr>
+<td>比较-跳熔合指令</td>
+<td>无（宏融合是 µop 层面）</td>
+<td><code class="c">cbz/cbnz</code>（不写标志）</td>
+</tr>
+<tr>
+<td>标志寄存器</td>
+<td>RFLAGS（ZF 等）</td>
+<td>NZCV（Z 等）</td>
+</tr>
+<tr>
+<td>相等跳转</td>
+<td><code class="c">je</code>/<code class="c">jz</code>（同 opcode）</td>
+<td><code class="c">b.eq</code></td>
+</tr>
+</tbody>
+</table></div>
+<h2>0 页保护：数值 0 与"第 0 页"是一回事</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>视角</th>
+<th>事实</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>数值视角</td>
+<td>空指针的 64 bit 全 0，就是整数 0</td>
+</tr>
+<tr>
+<td>地址视角</td>
+<td>地址 0 落在<strong>第 0 页</strong>（0x0 ~ 0xFFF）</td>
+</tr>
+<tr>
+<td>OS 设计</td>
+<td>故意<strong>不映射</strong>第 0 页 → 解引用空指针立即页错误 → SIGSEGV</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>0 页保护 = 给空指针设的陷阱</strong>：让 bug 在第一次 <code class="c">*p</code> 时立刻暴露，而不是静默读写垃圾数据。</p>
+<p>关键区分：</p>
+<ul>
+<li><strong>比较</strong> <code class="c">if (p)</code>：只动寄存器数值，不访问内存 → 安全</li>
+<li><strong>解引用</strong> <code class="c">*p</code>：访问地址 0 → 第 0 页无映射 → 页错误 → SIGSEGV</li>
+</ul>
+<p>保护范围：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>平台</th>
+<th>低地址保留</th>
+<th>机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux</td>
+<td>默认低 64KB</td>
+<td><code class="c">/proc/sys/vm/mmap_min_addr</code> = 65536</td>
+</tr>
+<tr>
+<td>macOS arm64</td>
+<td>低 <strong>4GB</strong> 全保留</td>
+<td>链接器 <code class="c">__PAGEZERO</code> 段</td>
+</tr>
+</tbody>
+</table></div>
+<p>知识链条总览：</p>
+<pre class="code" data-label="code"><code class="c">if (p)                                    ← C 源码（指针隐式转 bool）
+  ↓ 编译
+test rdi, rdi  /  cmp x0, #0              ← 汇编（AND 或减法）
+  ↓ 执行
+ZF/Z = (p 的 64 bit 是否全 0)              ← CPU 标志位（cbnz 路径无此步）
+  ↓
+je 跳过 if 体（空）/ 顺序执行（非空）         ← 条件跳转
+─────────────────────────────────
+*p（解引用）→ 访问地址 0 → 第 0 页无映射 → 页错误 → SIGSEGV  ← 0 页保护
+</code></pre>
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>热路径判空</td>
+<td><code class="c">if (!pkt) return;</code> 编译后就是一条 test/cmp + 分支，零额外成本——放心写，不用担心"判空浪费指令"</td>
+</tr>
+<tr>
+<td>分支预测</td>
+<td>热路径上指针几乎恒非空，分支预测器直接命中，实际代价≈0；把 <code class="c">if (p)</code> 放冷路径侧（unlikely 分支）即可</td>
+</tr>
+<tr>
+<td>嵌入式裸机</td>
+<td>Cortex-M <strong>没有 MMU</strong>，默认没有 0 页保护：NULL 解引用会真去读/写地址 0（通常是 Flash 起始或向量表），<strong>不崩溃、静默出错</strong>——比段错误更难查</td>
+</tr>
+<tr>
+<td>MPU 兜底</td>
+<td>有 MPU 的 MCU（如 STM32F4/H7）可用 MPU 把 0 地址区设为不可访问，人工实现"0 页保护"</td>
+</tr>
+<tr>
+<td>内核</td>
+<td>内核可用 <code class="c">ioremap</code>/<code class="c">fixmap</code> 让虚拟地址 0 有真映射（见 6.6"内核边界"），此时机器值 0 ≠ 空指针语义</td>
+</tr>
+</tbody>
+</table></div>
+<h2>常见误区</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>误区</th>
+<th>事实</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"判空要'减 0'所以较慢"</td>
+<td>x86 -O1 用 <code class="c">test</code>（AND）一步到位，根本不减；ARM 用 <code class="c">cmp x0, #0</code> 或 <code class="c">cbnz</code></td>
+</tr>
+<tr>
+<td>"所有 CPU 判零都查 ZF"</td>
+<td>x86 特有世界观；ARM64 <code class="c">cbz/cbnz</code> 不写标志寄存器</td>
+</tr>
+<tr>
+<td>"<code class="c">jnz</code> 和 <code class="c">jne</code> 是两条指令"</td>
+<td>同一条指令的两个助记符，机器码完全相同</td>
+</tr>
+<tr>
+<td>"比较指针要特殊指令"</td>
+<td>指针就是 64 位整数，<code class="c">cmp</code> 原样用</td>
+</tr>
+<tr>
+<td>"0 页保护是 CPU 功能"</td>
+<td>是 <strong>OS 的页表设计</strong>——故意不映射低地址；裸机没有这层保护</td>
+</tr>
+<tr>
+<td>"<code class="c">if (p)</code> 会访问 p 指向的内存"</td>
+<td>只读 p 这个变量本身（在寄存器里），不碰 <code class="c">*p</code></td>
+</tr>
+</tbody>
+</table></div>
+<h2>实操</h2>
+<pre class="code" data-label="shell"><code class="c"># 本机（cdev 环境 clang 23.1.0）复现本文全部汇编
+CLANG=/Users/a0000/micromamba/envs/cdev/bin/clang
+
+cat &gt; test.c &lt;&lt;'EOF'
+int f_if_p(int *p)            { if (p)        return 1; return 0; }
+int f_p_eq_q(int *p, int *q)  { if (p == q)   return 1; return 0; }
+int f_deref_eq(int *p, int *q){ if (*p == *q) return 1; return 0; }
+int f_ptr_diff(int *a, int *b){ return b - a; }
+EOF
+
+$CLANG -S -O1 test.c -o -                                   # arm64
+$CLANG -S -O1 -target x86_64-unknown-linux-gnu test.c -o -  # x86-64 交叉
+$CLANG -S -O0 test.c -o -                                   # 看 cbnz
+
+# 实测 NULL 解引用崩溃（macOS arm64：exit=139 = 128+SIGSEGV(11)）
+echo 'int main(void){ int *p=(int*)0; return *p; }' &gt; segv.c
+$CLANG -O0 segv.c -o segv &amp;&amp; ./segv; echo &quot;exit=$?&quot;
+</code></pre>
+<h2>与后续衔接</h2>
+<p><strong>6.6</strong> 讲 NULL 的语言语义（空指针常量、<code class="c">((void*)0)</code>、内核 IS_ERR）；本节讲它的硬件落地。<strong>6.13</strong> 指针运算的 <code class="c">b - a</code> 自动除 <code class="c">sizeof(T)</code> 在本文汇编里能看到实测（<code class="c">shr $2</code>）。TLPI 学到 <strong>mmap / 虚拟内存</strong>章节时，<code class="c">mmap_min_addr</code> 与 <code class="c">__PAGEZERO</code> 会再次出现。</p>
+<h2>自测要点</h2>
+<ol>
+<li><code class="c">cmp a, b</code> 在 CPU 里做了什么运算？ZF=1 说明什么？</li>
+<li>为什么 <code class="c">if (p)</code> 是安全的而 <code class="c">if (*p == 0)</code> 会崩？两者在汇编上差在哪条指令？</li>
+<li>x86 判空为什么常用 <code class="c">test</code> 而不是 <code class="c">cmp</code>？ARM64 为什么没有 <code class="c">test</code>？</li>
+<li>ARM64 的 <code class="c">cbnz</code> 与 x86 的 <code class="c">test + jnz</code> 组合有何本质区别？</li>
+<li><code class="c">b - a</code>（两个 <code class="c">int*</code> 相减）在汇编里为什么有一条 <code class="c">shr $2</code>？</li>
+<li>Linux 和 macOS arm64 的低地址保护范围分别是多少？由什么机制实现？</li>
+<li>为什么裸机 STM32 上 NULL 解引用不崩溃？这比崩溃更危险还是更安全？</li>
+</ol>
+<hr />
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> 下面这段 x86-64 汇编对应哪个 C 函数？为什么能确定不是另外两个？</p>
+<pre class="code" data-label="asm"><code class="c">func:
+    movl   (%rdi), %ecx
+    xorl   %eax, %eax
+    cmpl   (%rsi), %ecx
+    sete   %al
+    retq
+</code></pre>
+<p>候选：A. <code class="c">if (p)</code>  B. <code class="c">if (p == q)</code>  C. <code class="c">if (*p == *q)</code></p>
+<details>
+<summary>参考答案</summary>
+<p><strong>答案：C</strong>。关键证据是两条访存指令 <code class="c">movl (%rdi), %ecx</code> 和 <code class="c">cmpl (%rsi), %ecx</code>——出现了 <code class="c">(%rdi)</code>、<code class="c">(%rsi)</code> 这种<strong>寄存器间接寻址</strong>，说明 CPU 真的去内存里取了 <code class="c">*p</code> 和 <code class="c">*q</code> 的值。</p>
+<ul>
+<li>A（<code class="c">if (p)</code>）只会是 <code class="c">testq %rdi, %rdi</code>，<strong>没有任何括号寻址</strong>——判空不访存。</li>
+<li>B（<code class="c">if (p == q)</code>）是 <code class="c">cmpq %rsi, %rdi</code>，两个寄存器直接比，也不访存。</li>
+<li>C 必须先 load 再 cmp，且比较的是 32 位（<code class="c">movl</code>/<code class="c">cmpl</code>，因为 <code class="c">int</code> 是 4 字节）而不是 64 位指针本身。</li>
+</ul>
+<p><strong>核心判据：有没有 <code class="c">(%rdi)</code> 出现 = 有没有解引用发生。</strong></p>
+</details>
+<p><strong>题目 2：</strong> 同一份 C 代码 <code class="c">if (p) return 1; return 0;</code>，clang -O1 在 x86-64 上生成 <code class="c">testq</code> + <code class="c">setne</code>，在 ARM64 -O0 上却生成 <code class="c">cbnz</code>——两条路径都经过 ZF/Z 标志吗？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>不是。</strong></p>
+<ul>
+<li>x86-64 路径：<code class="c">testq %rdi, %rdi</code> 做按位 AND，结果全 0 则 <strong>ZF=1</strong>，<code class="c">setne</code> 读 ZF 取值——<strong>经过标志寄存器</strong>。</li>
+<li>ARM64 -O0 路径：<code class="c">cbnz x8, target</code> 是一条<strong>比较-分支熔合指令</strong>，硬件内部判 <code class="c">x8 != 0</code> 然后直接决定跳不跳，<strong>不写 NZCV 标志寄存器</strong>——判零这件事发生在指令内部，标志位根本没参与。</li>
+</ul>
+<p>这正是"判零 ⟺ 查 ZF"是 x86 特有世界观的原因。ARM64 上想要标志位，得显式用 <code class="c">cmp x0, #0</code>（即 <code class="c">subs xzr, x0, #0</code>）或 <code class="c">subs</code> 这类带 S 后缀的指令。</p>
+</details>
+<p><strong>题目 3：</strong> 在 Linux 用户态把 <code class="c">/proc/sys/vm/mmap_min_addr</code> 改成 0，然后 <code class="c">mmap</code> 把地址 0 映射成可读写页，再执行 <code class="c">int *p = NULL; *p = 42;</code> 会发生什么？这和 6.6 说的"内核边界"有什么呼应？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>程序不会崩溃，<code class="c">*p = 42</code> 会真的写进地址 0 的那页内存</strong>（需 root 权限才能改 <code class="c">mmap_min_addr</code>）。</p>
+<p>这说明三件事：</p>
+<ol>
+<li><strong>0 页保护不是 CPU 的功劳，是 OS 页表的设计选择</strong>——一旦映射存在，地址 0 和其他地址没有任何区别。</li>
+<li><strong>"空指针 = 数值 0"与"地址 0 不可访问"本来是两回事</strong>，平时它们绑定在一起只是因为 OS 故意不映射。</li>
+<li>这正是 6.6"内核边界"的用户态翻版：内核里 <code class="c">ioremap</code>/<code class="c">fixmap</code> 可以让虚拟地址 0 有真映射，此时机器值为 0 的指针<strong>可以正常解引用</strong>，但它在 C 语义上仍是空指针——<strong>语法语义与机器值脱钩</strong>。</li>
+</ol>
+<p>历史上这也是真实安全漏洞（NULL pointer dereference 提权）的利用前提，所以现代 Linux 默认 <code class="c">mmap_min_addr = 65536</code> 且不允许普通用户降低它。</p>
 </details>
       </section>
 

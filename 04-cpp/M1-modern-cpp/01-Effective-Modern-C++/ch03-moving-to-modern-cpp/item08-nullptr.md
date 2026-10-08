@@ -168,5 +168,6 @@ register_cb(nullptr); // B
 
 ## 参考与延伸
 
+- 配套深挖：[Item 8a nullptr 的硬件路径——判空、重载与 0 页保护（汇编实测）](item08a-nullptr的硬件路径.md)
 - 下一节：[Item 9 using 别名](item09-using.md)
 - 回到：[第 3 章 移步现代 C++](README.md)

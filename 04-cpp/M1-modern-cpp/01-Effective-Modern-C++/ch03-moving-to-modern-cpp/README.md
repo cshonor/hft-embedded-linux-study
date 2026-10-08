@@ -40,6 +40,8 @@ f(nullptr);    // 调 f(Widget*)，正确
 ```
 `nullptr` 的类型是 `std::nullptr_t`，能隐式转任意指针，**不能转整型**——彻底消除指针/整型重载歧义。模板推导里也能正确推导出指针类型。
 
+> 配套深挖：[Item 8a nullptr 的硬件路径](item08a-nullptr的硬件路径.md)——三种判空写法汇编逐字节相同（实测）、`g(NULL)` 在本机直接编译失败、0 页保护对 C/C++ 一视同仁。
+
 ### Item 9：优先 `using` 别名而非 `typedef`
 
 `using` 支持模板化（alias template），`typedef` 不行：
