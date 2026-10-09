@@ -3158,8 +3158,12 @@ int*&amp; rp = p1; // ?
       </section>
       <section class="section" id="s-2-3-1">
         <div class="sec-head"><div class="sec-no">2.3</div><h2>.1 引用</h2></div>
+<blockquote>
+<p><strong>实测环境</strong>：macOS 26.6.2 / Apple Silicon (arm64) · clang 23.1.0 · <code class="c">-std=c++20</code>
+（x64 对照用 <code class="c">-target x86_64-pc-windows-msvc</code> 交叉出目标汇编，不链接）</p>
+</blockquote>
 <h2>本节讲什么</h2>
-<p>为什么需要引用、T&amp; 与 const T&amp;。</p>
+<p>为什么需要引用、<code class="c">T&amp;</code> 与 <code class="c">const T&amp;</code>，以及<strong>引用在编译后到底变成了什么</strong>——后者是面试和读汇编时最容易含糊的一环，本节全部给本机实测。</p>
 <h2>为什么 C++ 还要有引用？</h2>
 <p>已有指针，再引入引用，是为了解决指针在<strong>业务代码</strong>里的常见痛点。</p>
 <h3>指针的缺点</h3>
@@ -3226,6 +3230,163 @@ ref = 20;              // 直接改 a，不用 *
 <li>对象<strong>可能不存在</strong>（可选）</li>
 <li>数组、内核、DPDK 等需要<strong>地址偏移</strong></li>
 </ul>
+<h2>底层实现：引用什么时候等于指针（实测）</h2>
+<p>「引用就是被隐藏的指针」这句话<strong>对一半</strong>。标准原文（cppreference[^refdecl]）：</p>
+<blockquote>
+<p>"References are not objects; they do not necessarily occupy storage, although the compiler may allocate storage if it is necessary to implement the desired semantics (e.g. a non-static data member of reference type usually increases the size of the class by the amount necessary to store a memory address)."</p>
+</blockquote>
+<p>关键词是 <strong>not necessarily</strong>。下面四种场合实测，答案完全不同。</p>
+<h3>实测 1：作为类成员 —— 占一个指针大小</h3>
+<pre class="code" data-label="cpp"><code class="c">struct RefMember { int&amp; r; };
+struct PtrMember { int* p; };
+</code></pre>
+<pre class="code" data-label="code"><code class="c">sizeof(RefMember)=8  sizeof(PtrMember)=8
+</code></pre>
+<p>64 位平台上两者都是 8 字节。这就是上面那句 "usually increases the size ... by the amount necessary to store a memory address" 的实证。</p>
+<blockquote>
+<p>⚠ 常见翻车点：以为「引用不占内存」，结果类里放一个引用成员，<code class="c">sizeof</code> 对不上、序列化错位。</p>
+</blockquote>
+<h3>实测 2：跨函数传参 —— ABI 层就是指针</h3>
+<pre class="code" data-label="cpp"><code class="c">__attribute__((noinline)) void bump_ref(int&amp; v) { ++v; }
+__attribute__((noinline)) void bump_ptr(int* v) { ++(*v); }
+</code></pre>
+<p><code class="c">clang++ -std=c++20 -O0 -S</code>（arm64，<code class="c">x0</code> 是第一个参数寄存器）——两个函数<strong>逐条指令完全相同</strong>：</p>
+<pre class="code" data-label="asm"><code class="c">__Z8bump_refRi:                    ; void bump_ref(int&amp;)
+    sub sp, sp, #16
+    str x0, [sp, #8]
+    ldr x9, [sp, #8]
+    ldr w8, [x9]
+    add w8, w8, #1
+    str w8, [x9]
+    add sp, sp, #16
+    ret
+
+__Z8bump_ptrPi:                    ; void bump_ptr(int*)
+    sub sp, sp, #16
+    str x0, [sp, #8]
+    ldr x9, [sp, #8]
+    ldr w8, [x9]
+    add w8, w8, #1
+    str w8, [x9]
+    add sp, sp, #16
+    ret
+</code></pre>
+<p>x64（<code class="c">-target x86_64-pc-windows-msvc</code>）同样：<code class="c">?bump_ref@@YAXAEAH@Z</code> 与 <code class="c">?bump_ptr@@YAXPEAH@Z</code> 符号名不同（MSVC 把「引用/指针」编进了 mangled name），机器码一致。</p>
+<p><strong>结论</strong>：函数调用边界上，<code class="c">int&amp;</code> 和 <code class="c">int*</code> 走同一条路——寄存器里传一个地址。</p>
+<h3>实测 3：局部引用 —— <code class="c">-O0</code> 占栈槽，<code class="c">-O1</code> 彻底消失</h3>
+<p><code class="c">const int&amp; cr = 42;</code> 在 <code class="c">-O0</code> 下：</p>
+<pre class="code" data-label="asm"><code class="c">sub x8, x29, #44
+mov w9, #42
+stur    w9, [x29, #-44]      ; 42 这个临时量被物化到栈上
+stur    x8, [x29, #-40]      ; 把它的地址存进引用的槽位 ← 这里确实是个指针
+</code></pre>
+<p>同一个函数在 <code class="c">-O1</code> 下：</p>
+<pre class="code" data-label="asm"><code class="c">__Z8bump_refRi:
+    ldr w8, [x0]
+    add w8, w8, #1
+    str w8, [x0]
+    ret
+</code></pre>
+<p>「取地址 → 存栈 → 再读出来」全没了，引用退化成对 <code class="c">x0</code> 的直接访问——<strong>零额外开销</strong>。</p>
+<h3>小结</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场合</th>
+<th>引用 = 指针？</th>
+<th>实测依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类数据成员</td>
+<td><strong>是</strong></td>
+<td><code class="c">sizeof == 8</code></td>
+</tr>
+<tr>
+<td>跨函数传参（ABI 层）</td>
+<td><strong>是</strong></td>
+<td>两个函数汇编逐条相同</td>
+</tr>
+<tr>
+<td>局部引用，<code class="c">-O0</code></td>
+<td><strong>是</strong></td>
+<td>汇编里 <code class="c">str x8,[x29,#-40]</code> 存 <code class="c">&amp;a</code></td>
+</tr>
+<tr>
+<td>局部引用，<code class="c">-O1</code> 及以上</td>
+<td><strong>否</strong>，什么都不剩</td>
+<td>只剩 <code class="c">ldr / add / str</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>所以「引用是指针的语法糖」是<strong>实现层面的常见做法</strong>，不是标准保证；而且它只在 <code class="c">-O0</code> 这个心智模型里成立。</p>
+</blockquote>
+<h2>编译器替你写的那两个符号</h2>
+<p>同一件事写两遍：</p>
+<pre class="code" data-label="C"><code class="c">/* C：&amp; 和 * 全手写 */
+void Increment(int *value) { (*value)++; }
+int a = 5;
+Increment(&amp;a);
+</code></pre>
+<pre class="code" data-label="cpp"><code class="c">// C++：两个符号都交给编译器
+void Increment(int &amp;value) { value++; }
+int a = 5;
+Increment(a);
+</code></pre>
+<p>编译器在<strong>编译期</strong>做两件事：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>你写的</th>
+<th>编译器生成的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调用处</td>
+<td><code class="c">Increment(a)</code></td>
+<td>取 <code class="c">a</code> 的地址，放进参数寄存器</td>
+</tr>
+<tr>
+<td>函数体内</td>
+<td><code class="c">value++</code></td>
+<td><code class="c">(*value)++</code>（通过那个地址读写）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="cpp"><code class="c">void Increment(int&amp; value) { value++; }
+int main() { int a = 5; Increment(a); return a; }
+</code></pre>
+<p>x64（<code class="c">-target x86_64-pc-windows-msvc -O0</code>，VS 同款目标）：</p>
+<pre class="code" data-label="asm"><code class="c">main:
+    movl    $5, 32(%rsp)          ; a = 5
+    leaq    32(%rsp), %rcx        ; ★ 这就是被藏起来的 &amp;a
+    callq   &quot;?Increment@@YAXAEAH@Z&quot;
+    movl    32(%rsp), %eax        ; return a
+</code></pre>
+<p>arm64（本机 <code class="c">-O0</code>）：</p>
+<pre class="code" data-label="asm"><code class="c">    add x0, sp, #8            ; ★ 同一个 &amp;a，但指令名不是 lea
+    mov w8, #5
+    str w8, [sp, #8]          ; a = 5
+    bl  __Z9IncrementRi
+</code></pre>
+<p>函数体内那个「自动解引用」（arm64）：</p>
+<pre class="code" data-label="asm"><code class="c">__Z9IncrementRi:
+    str x0, [sp, #8]          ; 参数：一个地址
+    ldr x9, [sp, #8]
+    ldr w8, [x9]              ; ★ 自动 *value：按地址读
+    add w8, w8, #1
+    str w8, [x9]              ; ★ 写回 *value
+    ret
+</code></pre>
+<blockquote>
+<p>⚠ <strong>一个容易白找的点</strong>：<code class="c">lea</code> 是 <strong>x86 专属</strong>指令。在 Mac（arm64）上跑同一段代码，不会有 <code class="c">lea</code>——是 <code class="c">add xN, sp, #imm</code> / <code class="c">sub xN, x29, #imm</code>。「取地址」两平台都有，只是指令名不同；按记忆去 arm64 汇编里搜 <code class="c">lea</code> 会一无所获。</p>
+</blockquote>
+<p>所以准确说法是：<strong>引用不是「没有」<code class="c">&amp;</code> 和 <code class="c">*</code>，而是编译器替你写了</strong>。</p>
+<p>顺带一个长期收益：把 C++ 代码在脑内「翻译」回 C 的指针形式，正是读内核源码（纯 C，满屏 <code class="c">&amp;</code> 和 <code class="c">*</code>）的必备能力——C 的显式风格让内存操作永远可见。C 的设计哲学是「<strong>发生了什么，代码上就必须看得见</strong>」；引用牺牲了这一点，换来简洁。</p>
 <h2>引用：<code class="c">T&amp;</code> 与 <code class="c">const T&amp;</code></h2>
 <h3>1. 可变引用（可修改原对象）</h3>
 <pre class="code" data-label="cpp"><code class="c">int a = 10;
@@ -3250,7 +3411,7 @@ std::cout &lt;&lt; ref; // ✅ 只读
 <ol>
 <li><strong>必须初始化</strong>，不能空着</li>
 <li><strong>绑定后不能改绑</strong>到其他对象（Rust 的引用可以重新绑定）</li>
-<li>不存在「空引用」</li>
+<li>不存在「空引用」——<strong>语言层面</strong>（见下节实测，物理上能造出来）</li>
 </ol>
 <h3>4. 工程习惯（HFT / 日常 C++）</h3>
 <pre class="code" data-label="cpp"><code class="c">// 传参优先：不拷贝 + 只读
@@ -3281,6 +3442,73 @@ void adjust(int &amp;value);
 </tr>
 </tbody>
 </table></div>
+<h2>「不存在空引用」的真相（实测）</h2>
+<p>语言层面：引用的初始化规则要求必须绑定到有效对象或函数（cppreference[^refdecl]）：</p>
+<blockquote>
+<p>"A reference is required to be initialized to refer to a valid object or function"</p>
+</blockquote>
+<p>但<strong>「语言不允许」不等于「物理上做不到」</strong>。下面这段是 UB，却真的能编过：</p>
+<pre class="code" data-label="cpp"><code class="c">int* p = nullptr;
+int&amp; r = *p;                 // UB：对空指针解引用来形成引用
+</code></pre>
+<p>实测（<code class="c">clang++ -std=c++20 -O0</code>）：</p>
+<pre class="code" data-label="code"><code class="c">&amp;r = 0x0   (是否等于 nullptr: 1)
+
+warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code;
+         comparison may be assumed to always evaluate to false [-Wtautological-undefined-compare]
+</code></pre>
+<p>两点值得注意：</p>
+<ol>
+<li><code class="c">&amp;r</code> 实测就是 <code class="c">0x0</code>——「空引用」在运行时<strong>确实可以存在</strong>；</li>
+<li>clang 的警告是 <code class="c">-Wtautological-undefined-compare</code>，意思是<strong>编译器编译期就知道这个比较恒为假</strong>——因为标准规定这是 UB，编译器有权假设它不发生。</li>
+</ol>
+<p>所以：</p>
+<ul>
+<li>写代码：引用参数<strong>不需要判空</strong>（引用优于指针的真实收益）；</li>
+<li>读代码：看到「解引用结果绑到引用」，要知道这是刀尖上走；</li>
+<li>HFT：省下的是分支预测成本，代价是<strong>上游一旦给空指针就是 UB</strong>，契约必须在上游用断言锁死。</li>
+</ul>
+<h2>临时量生命周期延长：规则与例外</h2>
+<pre class="code" data-label="cpp"><code class="c">const int&amp; r  = 42;   // ✅ 合法：物化一个临时量并延长其生命周期
+int&amp; r2       = 42;   // ❌ 编译错误：非常量引用不能绑临时量
+</code></pre>
+<p>规则原文（cppreference[^refinit]）：</p>
+<blockquote>
+<p>"Whenever a reference is bound to a temporary object or to a subobject thereof, the lifetime of the temporary object is extended to match the lifetime of the reference"</p>
+</blockquote>
+<p><code class="c">-O0</code> 汇编里能看到「物化」确实发生（<code class="c">mov w9, #42</code> → <code class="c">stur w9, [x29,#-44]</code>），运行期 <code class="c">&amp;cr</code> 是个真实栈地址。</p>
+<p><strong>但例外比规则更容易考</strong>——以下情形<strong>不延长</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">return</code> 语句里绑到返回值的临时量</td>
+<td>立即销毁 → 返回悬空引用（C++26 起该写法 ill-formed）</td>
+</tr>
+<tr>
+<td>函数调用的<strong>引用参数</strong>上的临时量</td>
+<td>只活到包含该调用的<strong>完整表达式</strong>结束</td>
+</tr>
+<tr>
+<td><code class="c">new</code> 表达式初始化器里绑定的临时量</td>
+<td>只活到该 <code class="c">new</code> 所在完整表达式结束，<strong>不跟对象同寿</strong></td>
+</tr>
+<tr>
+<td>聚合用<strong>括号</strong>初始化的引用成员（C++20）</td>
+<td>悬空；用<strong>花括号</strong>才延长</td>
+</tr>
+</tbody>
+</table></div>
+<p>还有一条总纲：</p>
+<blockquote>
+<p>"In general, the lifetime of a temporary cannot be further extended by 'passing it on'"</p>
+</blockquote>
+<p>即 <strong>延长不可传递</strong>——从 <code class="c">const&amp;</code> 再初始化一个 <code class="c">const&amp;</code>，不会二次延长。</p>
 <h2>和 C 的区别（重点：引用是 C++ 独有）</h2>
 <p><strong>C 没有引用</strong>——所有间接访问都靠指针。引用是 C++ 给 C 程序员的"安全糖"：</p>
 <div class="tbl-wrap"><table>
@@ -3319,6 +3547,7 @@ void adjust(int &amp;value);
 </tr>
 </tbody>
 </table></div>
+<p>调用方与被调方的写法差异（汇编层面两者等价，见上文 <code class="c">Increment</code> 实测）：</p>
 <pre class="code" data-label="C"><code class="c">/* C：传参要取地址，函数里要解引用 */
 void bump(int *p) { (*p)++; }
 int x = 5;
@@ -3329,11 +3558,33 @@ void bump(int &amp;r) { r++; }
 int x = 5;
 bump(x);           // 调用方不用写 &amp;，更自然
 </code></pre>
-<p><strong>给 C 程序员的关键转变：</strong>
-1. 函数参数优先用 <code class="c">const T&amp;</code>（只读不拷贝），替代 C 的 <code class="c">const T*</code>
-2. 要修改入参用 <code class="c">T&amp;</code>，替代 C 的 <code class="c">T*</code>
-3. 只有"可选/可为空/要改指向/数组"才用指针
-4. C 里 <code class="c">&amp;x</code> 是取地址，C++ 里 <code class="c">int &amp;r = x</code> 是声明引用——同一个 <code class="c">&amp;</code> 符号，<strong>位置决定含义</strong>（声明里 <code class="c">&amp;</code> 在类型后=引用，表达式里 <code class="c">&amp;x</code>=取地址）</p>
+<p><strong>给 C 程序员的关键转变：</strong></p>
+<ol>
+<li>函数参数优先用 <code class="c">const T&amp;</code>（只读不拷贝），替代 C 的 <code class="c">const T*</code></li>
+<li>要修改入参用 <code class="c">T&amp;</code>，替代 C 的 <code class="c">T*</code></li>
+<li>只有"可选/可为空/要改指向/数组"才用指针</li>
+<li>C 里 <code class="c">&amp;x</code> 是取地址，C++ 里 <code class="c">int &amp;r = x</code> 是声明引用——同一个 <code class="c">&amp;</code> 符号，<strong>位置决定含义</strong>（声明里 <code class="c">&amp;</code> 在类型后=引用，表达式里 <code class="c">&amp;x</code>=取地址）</li>
+</ol>
+<h2>零开销？引用并不比指针快（HFT 关联）</h2>
+<p><code class="c">const T&amp;</code> 省下的是<strong>整个对象的拷贝</strong>，这个收益是量级级别的。用拷贝构造函数计数（确定性，不受优化噪声影响）：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Big { char buf[4096]; long long x; /* 自定义拷贝构造，拷贝时 ++copies */ };
+__attribute__((noinline)) long long by_value(Big b)       { return b.x + b.buf[0]; }
+__attribute__((noinline)) long long by_cref(const Big&amp; b) { return b.x + b.buf[0]; }
+</code></pre>
+<p><code class="c">-O2</code>，各调用 1000 次：</p>
+<pre class="code" data-label="code"><code class="c">by_value : 1000 次调用 -&gt; 1000 次拷贝构造 (约 3.9 MB 内存搬运)
+by_cref  : 1000 次调用 -&gt; 0 次拷贝构造
+by_ptr   : 1000 次调用 -&gt; 0 次拷贝构造
+sizeof(Big) = 4104
+</code></pre>
+<p><strong>这就是 HFT 里 <code class="c">const Order&amp;</code> / <code class="c">const OrderBook&amp;</code> 传参的全部动机</strong>：省掉的是整个对象的拷贝。</p>
+<p>但三条必须澄清：</p>
+<ol>
+<li><strong>小标量（<code class="c">int</code> / <code class="c">double</code> / 指针）传值通常比传引用快</strong>——传值走寄存器，传引用要先取地址再解引用，多一层间接。<code class="c">const int&amp;</code> 只在大对象上划算。</li>
+<li><strong>引用并不比指针快</strong>——上文已证 ABI 层两者等价，优化器对两者处理能力也一致。选引用是为了<strong>契约清晰</strong>，不是为了性能。</li>
+<li><strong>引用会带进别名（aliasing）不确定性</strong>——编译器看到 <code class="c">const T&amp;</code> 无法像局部值那样自由重排，某些场合传值反而让优化器更放得开。</li>
+</ol>
+<p>一句话：<strong>引用买的是「安全 + 可读」，性能是「不亏」而不是「更赚」。</strong></p>
 <h2>常见错误</h2>
 <p><strong>1. 引用不初始化</strong></p>
 <pre class="code" data-label="cpp"><code class="c">int &amp;ref;   // 编译错误：引用必须初始化
@@ -3344,7 +3595,8 @@ bump(x);           // 调用方不用写 &amp;，更自然
 int &amp;ref = a;
 ref = b;    // 这不是改绑！是把 b 的值赋给 a（a 变成 2）
 </code></pre>
-<p><code class="c">ref = b</code> 是赋值，不是重新绑定。引用一旦绑定 <code class="c">a</code>，一辈子就是 <code class="c">a</code> 的别名。</p>
+<p><code class="c">ref = b</code> 是赋值，不是重新绑定。引用一旦绑定 <code class="c">a</code>，一辈子就是 <code class="c">a</code> 的别名。
+（实测：<code class="c">after r=b -&gt; a=2 b=2  (&amp;r==&amp;a)=1</code>——<code class="c">&amp;r</code> 依然等于 <code class="c">&amp;a</code>。）</p>
 <p><strong>3. 局部引用返回悬空</strong></p>
 <pre class="code" data-label="cpp"><code class="c">int&amp; bad() {
     int x = 42;
@@ -3352,6 +3604,15 @@ ref = b;    // 这不是改绑！是把 b 的值赋给 a（a 变成 2）
 }
 </code></pre>
 <p>返回引用要确保被引用的对象生命周期够长（如类的成员、静态变量、堆对象）。</p>
+<p><strong>4. 用 UB 制造「空引用」</strong></p>
+<pre class="code" data-label="cpp"><code class="c">int* p = nullptr;
+int&amp; r = *p;     // UB：能编过，&amp;r 实测 == 0x0，但后续使用就是未定义行为
+</code></pre>
+<p>语言不允许空引用，不代表造不出来。引用参数之所以「不用判空」，是<strong>前提</strong>由调用方保证，不是编译器会帮你兜。</p>
+<p><strong>5. 类里放引用成员</strong></p>
+<pre class="code" data-label="cpp"><code class="c">struct S { int&amp; r; };   // sizeof(S) == 8：引用成员占存储
+</code></pre>
+<p>会改变类大小，且该类<strong>不能默认构造、不能赋值</strong>（引用不可改绑），写容器时是常见坑。</p>
 <h2>自测题</h2>
 <p><strong>1（选择）</strong> 下面代码执行后 <code class="c">a</code> 是多少？</p>
 <pre class="code" data-label="cpp"><code class="c">int a = 1, b = 2;
@@ -3370,14 +3631,24 @@ ref = b;
     return local;
 }
 </code></pre>
+<p><strong>4（选择）</strong> 64 位平台上 <code class="c">sizeof(struct { int&amp; r; })</code> 最可能是？
+- A. 0（引用不占存储）
+- B. 4（等于 int）
+- C. 8（等于一个指针）</p>
+<p><strong>5（实战）</strong> <code class="c">struct Order { char payload[256]; };</code>，<code class="c">void send(const Order&amp; o)</code> 与 <code class="c">void send(Order o)</code> 相比，单次调用差多少内存搬运？</p>
 <details>
 <summary>参考答案</summary>
 <ol>
 <li>B。<code class="c">ref = b</code> 是赋值（把 b 的值 2 赋给 ref 引用的 a），不是改绑。引用绑定 a 后不能换，a 变成 2。</li>
-<li>对。<code class="c">const int&amp;</code> 可绑定到字面量（编译器生成临时量）；<code class="c">int&amp;</code> 不能绑字面量（字面量不可寻址、不能改）。这是 <code class="c">const T&amp;</code> 能延长临时量生命周期的特殊规则。</li>
+<li>对。<code class="c">const int&amp;</code> 可绑定到字面量（编译器生成临时量并延长其生命周期）；<code class="c">int&amp;</code> 不能绑字面量（字面量不可寻址、不能改）。注意：这个延长有 4 条例外（<code class="c">return</code> 语句、函数调用的引用参数、<code class="c">new</code> 初始化器、C++20 聚合的括号初始化），别把它当成万能。</li>
 <li>悬空引用。<code class="c">local</code> 是局部变量，函数返回时销毁，返回的引用指向无效内存。调用者用这个引用是 UB。返回引用要保证对象存活（成员、静态、堆）。</li>
+<li><strong>C</strong>。引用成员通常占一个指针大小的存储（本机 clang 23.1.0 实测 <code class="c">sizeof(RefMember) == 8</code>）。cppreference：reference 数据成员 "usually increases the size of the class by the amount necessary to store a memory address"。</li>
+<li>差 <strong>256 字节 / 次</strong>（按值传参每次都完整拷贝一份 <code class="c">payload</code>；<code class="c">const&amp;</code> 不拷贝）。本节的 4104 字节版本实测是 1000 次调用 → 1000 次拷贝构造 ≈ 3.9 MB 搬运，<code class="c">const&amp;</code> 版本为 <strong>0</strong>。真正的判据不是「256 字节看着不大」，而是<strong>调用频次</strong>：HFT 里每秒百万次调用 = 每秒 256 MB 的无谓内存带宽。</li>
 </ol>
 </details>
+<hr />
+<p>[^refdecl]: cppreference · <em>Reference declaration</em> — https://en.cppreference.com/w/cpp/language/reference
+[^refinit]: cppreference · <em>Reference initialization</em> — https://en.cppreference.com/w/cpp/language/reference_initialization</p>
 <hr />
 <p>← <a href="#s-2-3">2.3 复合类型</a> | <a href="chapter-02.html#s-2-3-2">2.3.2 指针与 nullptr →</a></p>
       </section>

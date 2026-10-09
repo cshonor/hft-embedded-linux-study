@@ -91,7 +91,6 @@ BOOKS = [
     _b("10-motion-control", "运动控制", "PID / IMU / 电机 / 飞控调度", "hft"),
     # ---- C++ ----
     _b("04-cpp/M0-entry-syntax/01-C++Primer", "入门 · 语法扫盲字典", "Lippman《C++ Primer 5e》· 新手只读 10 章（ch01–08 + ch12/13）", "cpp"),
-    _b("04-cpp/M0-entry-syntax/02-TheCherno-Cpp", "入门 · C++ 视频课", "The Cherno C++ Series · 视频直觉 + 标准原文 + 本机 clang 实测核对", "cpp"),
     _b("04-cpp/M1-modern-cpp/01-Effective-Modern-C++", "门槛 · 现代 C++ 核心实践", "Meyers《Effective Modern C++》· C++11/14 42 条款 · 硬门槛", "cpp"),
     _b("04-cpp/M2-cpp-network-programming", "实战 · 网络编程", "套接字 / epoll / 序列化 · muduo 预备", "cpp"),
     _b("04-cpp/M3-deep-principles/01-Cpp-Object-Model", "原理 · 对象内存布局", "Lippman《深度探索 C++ 对象模型》· 编译器实现视角 · 硬门槛", "cpp"),
