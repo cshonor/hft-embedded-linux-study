@@ -9,6 +9,7 @@
 | 目录 | 书 | 状态 |
 |------|-----|------|
 | [01-C++Primer](./01-C++Primer/) | C++ Primer 5e | 章节目录已建，笔记待补 |
+| [02-TheCherno-Cpp](./02-TheCherno-Cpp/) | The Cherno C++ Series（YouTube 视频课） | 1 篇：[1.1 引用](./02-TheCherno-Cpp/1.1-引用.md) |
 
 ## 新手只读这些章节
 
