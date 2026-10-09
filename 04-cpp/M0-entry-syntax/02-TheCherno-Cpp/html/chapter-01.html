@@ -599,6 +599,96 @@ void ptr_local() { int a = 5; int* p = &amp;a;  *p  = 20; }
 <li>必须 <strong>Debug</strong> 配置（默认 <code class="c">/Od</code> 不优化）——断点打在 <code class="c">ref = 20;</code>，右键 →「转到反汇编」（Alt+8）；</li>
 <li><strong>Release（/O2）下"定义了 ref 但没用"的代码会整个蒸发</strong>：<code class="c">ref_local</code> 在 <code class="c">-O1</code> 下只剩一条 <code class="c">retq</code>，连 <code class="c">a</code> 都没了。想看 Release 行为，得把 ref / 地址传给一个 <code class="c">noinline</code> 函数或用 <code class="c">volatile</code> 消耗掉。</li>
 </ol>
+<h3>3.5 编译器替你写的那两个符号</h3>
+<p>同一件事写两遍：</p>
+<pre class="code" data-label="C"><code class="c">/* C：&amp; 和 * 全手写 */
+void Increment(int *value) { (*value)++; }
+int a = 5;
+Increment(&amp;a);
+</code></pre>
+<pre class="code" data-label="cpp"><code class="c">// C++：两个符号都交给编译器
+void Increment(int &amp;value) { value++; }
+int a = 5;
+Increment(a);
+</code></pre>
+<p>编译器在<strong>编译期</strong>做两件事：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>你写的</th>
+<th>编译器生成的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调用处</td>
+<td><code class="c">Increment(a)</code></td>
+<td>取 <code class="c">a</code> 的地址，放进参数寄存器</td>
+</tr>
+<tr>
+<td>函数体内</td>
+<td><code class="c">value++</code></td>
+<td><code class="c">(*value)++</code>（通过那个地址读写）</td>
+</tr>
+</tbody>
+</table></div>
+<h4>实测：去汇编里把这两个符号找出来</h4>
+<pre class="code" data-label="cpp"><code class="c">void Increment(int&amp; value) { value++; }
+int main() { int a = 5; Increment(a); return a; }
+</code></pre>
+<p><strong>x64（<code class="c">-target x86_64-pc-windows-msvc -O0</code>，即 VS 同款目标）：</strong></p>
+<pre class="code" data-label="asm"><code class="c">main:
+    movl    $5, 32(%rsp)          ; a = 5
+    leaq    32(%rsp), %rcx        ; ★ 这就是被藏起来的 &amp;a
+    callq   &quot;?Increment@@YAXAEAH@Z&quot;
+    movl    32(%rsp), %eax        ; return a
+</code></pre>
+<p><strong>arm64（本机 <code class="c">-O0</code>）：</strong></p>
+<pre class="code" data-label="asm"><code class="c">    add x0, sp, #8            ; ★ 同一个 &amp;a，但指令名不是 lea
+    mov w8, #5
+    str w8, [sp, #8]          ; a = 5
+    bl  __Z9IncrementRi
+</code></pre>
+<p>函数体内那个「自动解引用」（arm64）：</p>
+<pre class="code" data-label="asm"><code class="c">__Z9IncrementRi:
+    str x0, [sp, #8]          ; 参数：一个地址
+    ldr x9, [sp, #8]
+    ldr w8, [x9]              ; ★ 自动 *value：按地址读
+    add w8, w8, #1
+    str w8, [x9]              ; ★ 写回 *value
+    ret
+</code></pre>
+<blockquote>
+<p>⚠ <strong>一个容易白找的点</strong>：<code class="c">lea</code> 是 <strong>x86 专属</strong>指令。在 Mac（arm64）的 <code class="c">cdev</code> 环境里跑同一段代码，你不会看到 <code class="c">lea</code>——看到的是 <code class="c">add xN, sp, #imm</code> 或 <code class="c">sub xN, x29, #imm</code>。「取地址」这件事两个平台都有，只是指令名不同。按记忆去找 <code class="c">lea</code>，在 arm64 上会一无所获。</p>
+</blockquote>
+<h4>为什么 C 非要你手写</h4>
+<p>C 的哲学是：<strong>发生了什么，代码上就必须看得见</strong>。<code class="c">a</code> 的<strong>值</strong>和 <code class="c">a</code> 的<strong>地址</strong>是两回事，调用方要把地址交出去，就得自己写 <code class="c">&amp;a</code>。</p>
+<p>引用把这两个符号藏起来，换来简洁，代价是<strong>读代码的人必须回翻函数签名，才知道 <code class="c">a</code> 可能被改</strong>——这在 C 程序员眼里是个缺点，不是优点。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>你写什么</th>
+<th>编译器做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>指针</td>
+<td><code class="c">&amp;a</code>、<code class="c">*p</code> 全手写</td>
+<td>原样生成</td>
+</tr>
+<tr>
+<td>引用</td>
+<td>只写 <code class="c">a</code>、<code class="c">value</code></td>
+<td>自动补 <code class="c">&amp;</code> 和 <code class="c">*</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>所以准确说法是：<strong>引用不是「没有」<code class="c">&amp;</code> 和 <code class="c">*</code>，而是编译器替你写了</strong>。</p>
+<p>这也是 §3.3 那半句话的来源。但要记住另一半：<strong>这套「指针 + 自动解引用」的心智模型只在 <code class="c">-O0</code> 成立</strong>；优化之后连这层都不存在（<code class="c">Increment</code> 会被内联、<code class="c">a</code> 会进寄存器，指针和解引用一起消失）。</p>
+<p>顺带一个长期收益：把 C++ 代码在脑内「翻译」回 C 的指针形式，正是读内核源码（纯 C，满屏 <code class="c">&amp;</code> 和 <code class="c">*</code>）的必备能力——C 的显式风格让内存操作永远可见。</p>
 <h2>4. 「不存在空引用」的真相</h2>
 <p>语言层面：引用的初始化规则要求必须绑定到有效对象或函数，cppreference[^refdecl] 原文：</p>
 <blockquote>
