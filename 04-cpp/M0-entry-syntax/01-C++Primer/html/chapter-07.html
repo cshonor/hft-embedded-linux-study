@@ -396,6 +396,41 @@ Sales_data&amp; Sales_data::combine(const Sales_data&amp; rhs) {
 // Sales_data::combine(&amp;total, trans);
 // 函数内 this == &amp;total，*this == total
 </code></pre>
+<h3>从自由函数到成员函数（汇编实测）</h3>
+<p>写游戏代码常先用 C 思维组织——操作写成自由函数，显式传对象：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Player { int x, y; int speed; };
+
+void Move(Player&amp; player, int xa, int ya) {   // 自由函数：显式传 Player&amp;
+    player.x += xa * player.speed;
+    player.y += ya * player.speed;
+}
+// 调用：Move(player, 1, -1);
+</code></pre>
+<p>把它收进类里、去掉第一个参数，就成了成员函数：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Player {
+    int x, y;
+    int speed;
+    void Move(int xa, int ya) {   // 那个 Player&amp; 参数没有消失，变成了隐藏的 this
+        x += xa * speed;          // 编译器眼里：this-&gt;x += xa * this-&gt;speed
+        y += ya * speed;
+    }
+};
+// 调用：player.Move(1, -1);
+</code></pre>
+<p><strong>成员函数 = 自由函数 + 隐藏的 <code class="c">Player* this</code> 参数</strong>。实测（<code class="c">-target x86_64-pc-windows-msvc -O0</code>，MSVC ABI 用 <code class="c">rcx</code>/<code class="c">edx</code>/<code class="c">r8d</code> 传前三个参数）：</p>
+<pre class="code" data-label="asm"><code class="c">&quot;?Move@@YAXAEAUPlayer@@HH@Z&quot;      ; 自由函数版：参数表 (Player&amp;, int, int)
+    movq    %rcx, (%rsp)          ; ← player：显式传的引用（地址）
+    imull   8(%rax), %ecx        ; xa * speed
+    addl    (%rax), %ecx
+    movl    %ecx, (%rax)         ; 存回 x
+
+&quot;?Move@PlayerM@@QEAAXHH@Z&quot;        ; 成员函数版：参数表只有 (int, int)
+    movq    %rcx, (%rsp)          ; ← this：同一个 rcx、同一个地址，但没写进参数表
+    imull   8(%rax), %ecx        ; xa * speed
+    addl    (%rax), %ecx
+    movl    %ecx, (%rax)         ; 存回 x
+</code></pre>
+<p><code class="c">rcx</code> 里都是<strong>同一个地址</strong>——自由函数版是你手写的 <code class="c">Player&amp;</code>，成员函数版是编译器补的 <code class="c">this</code>。mangled name 也印证：自由函数参数表是 <code class="c">AEAUPlayer@@HH</code>（Player&amp;, int, int），成员函数是 <code class="c">HH</code>（int, int）——<strong>this 不占参数表，但真实存在</strong>。</p>
 <h3>const 成员函数</h3>
 <p>参数列表后加 <code class="c">const</code>，表示"该函数不会修改对象"：</p>
 <pre class="code" data-label="cpp"><code class="c">double avg_price() const;   // const 成员函数，this 类型是 const Sales_data*
@@ -468,6 +503,7 @@ total.combine(trans);   // 等价 combine(&amp;total, trans)，但更自然
 <li><strong>const 成员函数里修改成员</strong>：<code class="c">void f() const { x = 1; }</code> —— 编译错误，const 成员函数的 <code class="c">this</code> 是 <code class="c">const T*</code>，不能改成员。<strong>例外</strong>：用 <code class="c">mutable</code> 修饰的成员可在 const 函数中改（见 §7.4）。</li>
 <li><strong>返回 <code class="c">*this</code> 的类型用错</strong>：<code class="c">Sales_data combine(...)</code> 返回值类型会拷贝，无法链式调用 <code class="c">a.combine(b).combine(c)</code>。应返回引用 <code class="c">Sales_data&amp; combine(...)</code> 返回 <code class="c">*this</code>。</li>
 <li><strong>类内初始值用圆括号</strong>：<code class="c">int x(0);</code> 在类内成员声明处非法（会被当成函数声明）。<strong>修正</strong>：用 <code class="c">= 0</code> 或 <code class="c">{0}</code>（C++11 起类内初始值只能用 <code class="c">=</code> 或 <code class="c">{}</code>）。</li>
+<li><strong>成员函数像自由函数那样直接调用</strong>：<code class="c">Move(player, 1, -1);</code> 报 <code class="c">C2065: identifier "Move" is undeclared</code>——<code class="c">Move</code> 是 <code class="c">Player</code> 的成员，<strong>不在全局作用域里</strong>，非静态成员函数必须通过对象调用：<code class="c">player.Move(1, -1)</code>（编译器隐式传 <code class="c">&amp;player</code>）。想保留 <code class="c">Move(player, ...)</code> 的调用形式，就把 <code class="c">Move</code> 移出类，写成自由函数——两种写法编译出的函数体等价（见上文汇编实测）。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：下面关于 <code class="c">this</code> 的说法正确的是？
@@ -519,6 +555,26 @@ std::cout &lt;&lt; c.get();   // 1
 // c.count_ = 10;        // 编译错误：private，封装
 </code></pre>
 <p>对比 C：1) 构造函数替代手动 init，不会忘；2) count_ 私有，外部无法绕过 inc 直接改，保证不变式；3) get() 是 const 成员函数，编译器保证不改对象；4) 调用语法 <code class="c">c.inc()</code> 比 <code class="c">counter_inc(&amp;c)</code> 自然。</p>
+</details>
+<p><strong>5.（踩坑）</strong> 下面代码报 <code class="c">C2065: identifier "Move" is undeclared</code>，给出两种改法：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Player {
+    int x, y;
+    int speed;
+    void Move(int xa, int ya) { x += xa * speed; }
+};
+int main() {
+    Player p{1, 2, 3};
+    Move(p, 1, 1);      // ❌ C2065
+}
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><code class="c">Move</code> 是 <code class="c">Player</code> 的<strong>成员函数</strong>，不在全局作用域里，不能像自由函数那样直接调用。</p>
+<ul>
+<li><strong>改法一（成员函数式）</strong>：<code class="c">p.Move(1, 1);</code>——通过对象调用，编译器隐式传 <code class="c">&amp;p</code> 作 <code class="c">this</code>。</li>
+<li><strong>改法二（自由函数式）</strong>：把 <code class="c">Move</code> 移出类：<code class="c">void Move(Player&amp; player, int xa, int ya) { player.x += xa * player.speed; }</code>，调用 <code class="c">Move(p, 1, 1);</code>——显式传引用。</li>
+</ul>
+<p>两种写法在汇编层面等价：成员函数版只是把第一个参数（对象的地址）藏进了 <code class="c">this</code>。</p>
 </details>
 <h2>可跑的例子</h2>
 <p><strong><code class="c">examples/7.1-abstract-data-type.cpp</code></strong> —— 看 this 指针到底是谁。</p>
