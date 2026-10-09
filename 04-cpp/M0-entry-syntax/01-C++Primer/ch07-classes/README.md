@@ -82,7 +82,7 @@ struct PodAccount {
 <details>
 <summary>答案与复习指引</summary>
 
-**唯一区别：** 默认访问权限——`class` 默认 `private`，`struct` 默认 `public`。其余完全相同（都可以有成员函数、构造/析构、继承等）。
+**唯一区别：** 默认访问级别（**两处**）——成员权限：`class` 默认 `private`、`struct` 默认 `public`；继承方式：`class` 默认 `private` 继承、`struct` 默认 `public` 继承。其余完全相同（都可以有成员函数、构造/析构、继承等）。详见 [7.2 访问控制与封装](./7.2-访问控制与封装.md)。
 
 **实践：** 纯数据聚合用 `struct`（公开数据），有不变式/封装需求用 `class`（私有数据 + 公开接口）。
 
