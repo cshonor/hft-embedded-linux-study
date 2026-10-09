@@ -16,6 +16,7 @@
 - [2.3 复合类型](./2.3-compound-types/2.3-复合类型.md)
   - [2.3.1 引用](./2.3-compound-types/2.3.1-引用.md)
   - [2.3.2 指针与 nullptr](./2.3-compound-types/2.3.2-指针与nullptr.md)
+  - [2.3.3 void 指针与显式转换（C++ 视角）](./2.3-compound-types/2.3.3-void指针与显式转换.md)
 - [2.4 const 限定符](./2.4-const-qualifier/2.4-const限定符.md)
   - [2.4.1 const 基础与 constexpr](./2.4-const-qualifier/2.4.1-const基础与constexpr.md)
   - [2.4.2 const 口诀与声明语法](./2.4-const-qualifier/2.4.2-const口诀与声明语法.md)
