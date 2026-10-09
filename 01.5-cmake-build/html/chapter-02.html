@@ -401,6 +401,75 @@ LDFLAGS = -T stm32.ld --specs=nosys.specs
 </code></pre>
 <p>能工作，但三个老问题原样出现：平台写死、找库靠手拼、换个芯片改一堆。
 CMake 的答案是：<strong>这些信息不属于工程描述，属于"工具链描述"——单独抽成一个文件。</strong></p>
+<h2>产物怎么到板子上：比本机编译多出来的四步</h2>
+<p>"本机编译 → 出二进制 → 弄到板子上跑"这个骨架没错，但板子那一端<strong>不是"传输"，是烧录进一个写死的地址</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>做什么</th>
+<th>工具</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 交叉编译</td>
+<td>出 ELF</td>
+<td><code class="c">arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -ffreestanding -nostdlib -T linker.ld</code>，或 clang 路线（<a href="#s-2-8">2.8</a>）</td>
+</tr>
+<tr>
+<td>② 格式转换</td>
+<td>ELF → 裸二进制</td>
+<td><code class="c">arm-none-eabi-objcopy -O binary firmware.elf firmware.bin</code>（clang 路线用 <code class="c">llvm-objcopy</code>）</td>
+</tr>
+<tr>
+<td>③ 烧录</td>
+<td>物理写入 Flash 的<strong>固定地址</strong></td>
+<td>ST-Link/J-Link 走 SWD（<code class="c">st-flash</code> / OpenOCD），或串口 bootloader</td>
+</tr>
+<tr>
+<td>④ 运行</td>
+<td>复位/上电即开跑</td>
+<td>无工具——<strong>这就是"没有 OS"的含义</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>两个容易想错的地方：</p>
+<ul>
+<li><strong>不是"传过去"</strong>：F103 没有文件系统、没有 OS 接收文件。是链接脚本先把地址钉死（F103C8T6：Flash <code class="c">0x08000000</code> 起 64 K、SRAM <code class="c">0x20000000</code> 起 20 K，见 <a href="../../01-c-language/05-embedded-kernel-practice/html/chapter-06.html#s-6-18">6.18 链接脚本</a>），烧录器只是把 <code class="c">firmware.bin</code> 按这个布局写进 Flash。</li>
+<li><strong>上电后是硬件自己跳</strong>：Cortex-M 复位时从 Flash 首地址取<strong>中断向量表</strong>——第 0 个字装进 SP、第 1 个字装进 PC（跳 <code class="c">Reset_Handler</code>）。所以工程里必须有启动代码（<a href="../../01-c-language/05-embedded-kernel-practice/html/chapter-03.html#s-3-3-4">3.3.4 从复位到 main</a>）。</li>
+</ul>
+<p><strong>本机实测</strong>（<code class="c">demo/cortex-m-clang/</code> 就是一套 F103 最小 freestanding 工程：<code class="c">startup.c</code> + <code class="c">linker.ld</code> + <code class="c">main.c</code>，clang 路线，产物 296 字节）：</p>
+<pre class="code" data-label="text"><code class="c">08000000 &lt;g_vectors&gt;:
+ 8000000: 00 50 00 20   ← 0x20005000 = SRAM 末尾（0x20000000+20K）→ 初始 SP
+ 8000008: 41 00 00 08   ← 0x08000041 = Reset_Handler | 1（Thumb 位）
+</code></pre>
+<p>ELF 头里的 <code class="c">Entry point address: 0x8000041</code> 和上面第 1 个字完全对应——<strong>"入口地址"在裸机里不是 <code class="c">main</code>，是 <code class="c">Reset_Handler</code></strong>。</p>
+<h3>顺带把 <code class="c">arm-none-eabi</code> 这个名字拆开</h3>
+<p>2.2 给过三元组语法 <code class="c">&lt;架构&gt;-&lt;厂商&gt;-&lt;系统&gt;[-&lt;ABI&gt;]</code>。裸机那个 <code class="c">arm-none-eabi</code> 只有三段，<strong><code class="c">none</code> 落在哪一段并不固定</strong>——用 clang 展开看归一化结果（<code class="c">-S -emit-llvm</code> 看 module triple）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>输入 <code class="c">-target</code></th>
+<th>clang 归一化</th>
+<th>各段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">arm-none-eabi</code></td>
+<td><code class="c">armv4t-unknown-none-eabi</code></td>
+<td>arch=armv4t，vendor=unknown，<strong>os=none</strong>，env=eabi</td>
+</tr>
+<tr>
+<td><code class="c">arm-none-linux-gnueabi</code></td>
+<td><code class="c">armv4t-none-linux-gnueabi</code></td>
+<td>arch=armv4t，<strong>vendor=none</strong>，os=linux，env=gnueabi</td>
+</tr>
+</tbody>
+</table></div>
+<p>同样是 <code class="c">none</code>：前一行它落在"系统"段（所以"<code class="c">none</code> = 没有 OS"在裸机名字上确实成立），后一行它跑到"厂商"段去了。靠谱的判据不是 <code class="c">none</code> 这个词，而是<strong>系统段里没有真 OS 名 + 末段是 <code class="c">eabi</code></strong>。</p>
+<p>另外：这台 Mac <strong>没装 <code class="c">arm-none-eabi-gcc</code>，也不需要</strong> —— clang 自带全部 ARM 后端，"交叉"只是一个 <code class="c">--target</code> 参数（<a href="#s-2-8">2.8</a> 有完整实测）；<code class="c">-ffreestanding</code> 到底改了哪些东西、标准保证哪些头文件可用，见 <a href="../../01-c-language/05-embedded-kernel-practice/html/chapter-03.html#s-3-3-0">3.3.0</a>。</p>
       </section>
       <section class="section" id="s-2-2">
         <div class="sec-head"><div class="sec-no">2.2</div><h2>第一性原理：交叉编译只比本机编译多三件事</h2></div>
