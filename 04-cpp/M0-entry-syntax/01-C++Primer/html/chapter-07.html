@@ -643,6 +643,63 @@ Account acc;
 acc.deposit(100);          // OK，public
 // acc.balance_ = 100;     // 错误：private，外部不可访问
 </code></pre>
+<h3>访问说明符可以出现多次：「分区」是风格，但挂着两个硬后果</h3>
+<p><code class="c">public:</code>/<code class="c">private:</code>/<code class="c">protected:</code> 在一个类里可以出现<strong>任意多次</strong>——语法上 member-specification 就是递归产生式（<code class="c">access-specifier : member-specification_opt</code>）。每个说明符对它<strong>之后、下一个说明符之前</strong>的所有声明生效。所以 TheCherno 说的"公共方法放一个区、公共变量放一个区、公共静态变量再放一个区"完全合法：</p>
+<pre class="code" data-label="cpp"><code class="c">class Log {
+public:
+    static int s_InstanceCount;      // 公共静态变量一个区
+public:                              // 同一个说明符写两遍也合法
+    void SetLevel(int level);        // 公共方法一个区
+    void Warn(const char* msg);
+private:
+    int m_LogLevel;
+};
+</code></pre>
+<p>怎么分区对编译器<strong>基本无感</strong>——实测（clang 23.1.0，<code class="c">-std=c++20</code> 与 <code class="c">-std=c++23</code> 结果一致）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>数据成员 a/b/c 的访问级别</th>
+<th><code class="c">sizeof</code></th>
+<th><code class="c">is_standard_layout_v</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全部成员挤一个 <code class="c">public:</code> 区</td>
+<td>全 public</td>
+<td>12</td>
+<td><strong>1</strong></td>
+</tr>
+<tr>
+<td>a/b/c 分在 public/private/public 三个区</td>
+<td><strong>不同</strong></td>
+<td>12</td>
+<td><strong>0</strong> ← 唯一的硬差别</td>
+</tr>
+<tr>
+<td>方法分两个 public 区、数据全 private</td>
+<td>全 private</td>
+<td>12</td>
+<td><strong>1</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>两个关键结论：</p>
+<ol>
+<li><strong>方法随便分区，不影响布局</strong>——布局只由<strong>非静态数据成员</strong>决定，成员函数不占对象存储（见 7.1 的 this 实测）。</li>
+<li><strong>数据成员的访问级别一旦不同，类就丧失 standard-layout 资格</strong>。standard-layout 是"内存布局与 C 兼容"的保证（能安全 <code class="c">memcpy</code>、<code class="c">offsetof</code>、与 C 结构体互操作）。注意 <code class="c">sizeof</code> 一个字节都没变——这个损失是<strong>纯类型系统层面</strong>的，不看 traits 根本发现不了。</li>
+</ol>
+<blockquote>
+<p><strong>HFT 关联</strong>：行情解码里的 wire-format 结构体（要 <code class="c">memcpy</code> 直接落盘/上网络、要跟 C 库共享布局）必须保住 standard-layout——数据成员<strong>全部同一个访问级别</strong>（通常用全 public 的 <code class="c">struct</code>），要分区只能拿方法来分。</p>
+</blockquote>
+<p><strong>布局顺序的标准变迁</strong>（新版标准改了规则，值得记住）：</p>
+<ul>
+<li><strong>C++20 及以前</strong>（N4861 [class.mem] p19，逐字）："Non-static data members of a (non-union) class <strong>with the same access control</strong> and non-zero size ... are allocated so that later members have higher addresses within a class object. <strong>The order of allocation of non-static data members with different access control is unspecified.</strong>" —— 跨访问区的成员顺序，标准不保证（虽然所有主流 ABI 实际都按声明序）。</li>
+<li><strong>C++23 起</strong>（P1847R4 之后，现行草案 [class.mem.general] Note 8）："Non-variant non-static data members of non-zero size are allocated so that later members have higher addresses within a class object." —— 访问级别限定词被删掉，<strong>所有成员一律强制按声明序</strong>。</li>
+</ul>
+<p>但 <strong>standard-layout 的「同一访问级别」要求并没有随 C++23 取消</strong>：实测 <code class="c">-std=c++23</code> 下 <code class="c">is_standard_layout_v&lt;ThreeSections&gt;</code> 仍为 0。C++23 改的是"顺序保证"，没改"standard-layout 资格"。</p>
 <h3>class vs struct：差别只有「默认访问级别」，而且是两处</h3>
 <pre class="code" data-label="cpp"><code class="c">class A { int x; };     // 成员 x 默认 private
 struct B { int x; };    // 成员 x 默认 public
@@ -971,6 +1028,24 @@ private:
 <li>成员加尾随下划线：<code class="c">level_ = level;</code>（Google 风格，本仓库笔记统一用这种）。</li>
 </ol>
 <p>工程兜底：把 <code class="c">-Wshadow</code> 加进编译选项，让编译器替你盯着这类遮蔽。</p>
+</details>
+<p><strong>7. 判断+分析题</strong>：下面两个类，<code class="c">sizeof</code> 一样吗？都是 standard-layout 吗？哪个能安全地 <code class="c">memcpy</code> 与 C 端结构体互操作？</p>
+<pre class="code" data-label="cpp"><code class="c">class A {                              class B {
+public:                                public:
+    char a;                                char a;
+    int  b;                            private:
+    char c;                                int  b;
+    void f() {}                        public:
+};                                         char c;
+                                           void f() {}
+                                       };
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong><code class="c">sizeof</code> 一样</strong>（实测都是 12 字节）——访问分区不改变布局，布局只由非静态数据成员的类型与声明顺序决定。</p>
+<p><strong>standard-layout 不一样</strong>：<code class="c">is_standard_layout_v&lt;A&gt; == 1</code>，<code class="c">is_standard_layout_v&lt;B&gt; == 0</code>。因为 standard-layout 要求<strong>所有非静态数据成员访问级别相同</strong>，B 的 <code class="c">b</code> 是 private、其余 public，资格丧失——尽管 <code class="c">sizeof</code> 没变、成员函数 <code class="c">f()</code> 怎么分区都无所谓。</p>
+<p>能安全 <code class="c">memcpy</code> 与 C 互操作的只有 <strong>A</strong>。B 在主流 ABI 上实际布局也和 A 一样（<code class="c">-std=c++20</code>/<code class="c">-std=c++23</code> 实测一致），但那是实现行为，不是标准给你的保证。</p>
+<p>补充：C++20 及以前，跨访问区的成员分配顺序标准是 <strong>unspecified</strong>（N4861 [class.mem] p19）；C++23 起（P1847R4）所有成员一律强制按声明序——但 standard-layout 的「同一访问级别」要求<strong>没有</strong>取消。</p>
 </details>
 <h2>可跑的例子</h2>
 <p><strong><code class="c">examples/7.2-access-control.cpp</code></strong> —— class 和 struct 的唯一区别，以及封装的运行期成本。</p>
