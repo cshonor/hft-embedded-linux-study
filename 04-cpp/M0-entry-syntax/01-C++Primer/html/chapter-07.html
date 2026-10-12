@@ -1641,6 +1641,78 @@ bl      ___cxa_guard_release      ; 释放，置 guard
 <blockquote>
 <p><strong>HFT 关联</strong>：热路径上的局部 static 有两笔账——<strong>每次调用</strong>都要付一次 acquire 原子读（<code class="c">ldaprb</code>），<strong>首次调用</strong>还可能撞锁。能常量初始化就常量初始化（连 guard 变量都消失）；必须在热路径用动态初始化的，进热循环前先<strong>预热</strong>调一次。单例惯用法 <code class="c">static T instance;</code> 吃的就是这套 guard。</p>
 </blockquote>
+<h3>应用实测：Meyer's Singleton（局部 static 版单例）</h3>
+<p>Cherno 单例集给了两版写法，对比：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>类静态成员指针版</th>
+<th>Meyer's 局部静态版</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>写法</td>
+<td><code class="c">static Singleton* s_Instance;</code>（类内声明）</td>
+<td><code class="c">static Singleton instance;</code>（写在 <code class="c">Get()</code> 函数体内）</td>
+</tr>
+<tr>
+<td>定义/初始化</td>
+<td>类外手动写 <code class="c">Singleton* Singleton::s_Instance = new ...</code></td>
+<td>无——首次调用 <code class="c">Get()</code> 时自动构造（懒加载）</td>
+</tr>
+<tr>
+<td>空指针风险</td>
+<td>有（忘了初始化 / 提前使用就是 nullptr 解引用）</td>
+<td>无（返回引用，不可能为空）</td>
+</tr>
+<tr>
+<td>线程安全</td>
+<td>自己管（双检锁等，易错）</td>
+<td><strong>C++11 起标准保证初始化线程安全</strong>（就是上面那套 guard）</td>
+</tr>
+<tr>
+<td>析构</td>
+<td>自己管（<code class="c">delete</code> 时机是经典难题，常干脆不删）</td>
+<td>自动：退出阶段经 <code class="c">__cxa_atexit</code> 调用</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="cpp"><code class="c">class Singleton {
+public:
+    static Singleton&amp; Get() {
+        static Singleton instance;   // 局部静态：首次调用才构造，之后永远复用同一个
+        return instance;             // 返回引用，不可能为空
+    }
+    void Hello() {}
+};
+// Singleton::Get().Hello() —— Get 是静态成员函数用 :: 调用；返回引用后 . 调用普通成员函数
+</code></pre>
+<p><strong>「不在栈上」实测</strong>（clang 23.1.0，arm64）：</p>
+<pre class="code" data-label="text"><code class="c">main 局部变量(栈)  : 0x16f446628    ← 高地址，栈区
+单例 instance      : 0x1009bc060    ← 低地址，贴着镜像基址
+</code></pre>
+<p><code class="c">nm</code> 确认落在 <strong>data 段</strong>（<code class="c">D</code>），旁边就是它的守卫变量：</p>
+<pre class="code" data-label="text"><code class="c">00000000000004c8 D __ZZN9Singleton3GetEvE8instance      ← instance 本体
+00000000000004d0 D __ZGVZN9Singleton3GetEvE8instance    ← magic statics 守卫
+</code></pre>
+<p><strong>析构顺序灾难（static deinitialization order fiasco）实测</strong>——这版单例的小坑：它的析构发生在程序退出阶段，如果<strong>别的静态对象的析构函数还在用单例</strong>，顺序可能反过来。规则是「<strong>析构 = 构造完成的逆序</strong>」（局部 static 首次构造时经 <code class="c">__cxa_atexit</code> 注册析构，反汇编里能看到调用）；atexit 队列像栈，后注册的先跑：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Logger {
+    ~Logger() { Singleton::Get().Hello(); }  // 析构时还想用单例
+};
+Logger g_logger;   // 启动时构造（main 之前）→ 析构注册得早
+int main() { Singleton::Get().Hello(); }     // instance 首次构造在 main 里 → 注册得晚
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="text"><code class="c">Logger() 构造              ← 启动时
+Singleton() 构造           ← main 里首次 Get()
+main 结束，进入退出阶段
+~Singleton() 析构          ← ★ 单例先死（后构造的先析构）
+~Logger() 析构，此时还想 Singleton::Get().Hello()：
+  Hello() 被调用            ← ★ 在一具&quot;尸体&quot;上调用：UB，这次碰巧没崩
+</code></pre>
+<p>注意最后一行：<code class="c">Hello()</code> <strong>居然正常打印了</strong>——这正是 fiasco 最阴险的地方：UB 不等于必崩，对象内存还没被复用时"碰巧能跑"，换个平台/优化级别/构建顺序就炸。<strong>对策</strong>：静态对象的析构函数里不要用其他单例；日志这类"活到最后一刻"的基础设施要么故意泄漏（<code class="c">new</code> 出来永不 <code class="c">delete</code>，退出时让 OS 回收），要么保证它最后构造（最先析构）。</p>
 <h2>核心用法</h2>
 <h3>静态数据成员</h3>
 <pre class="code" data-label="cpp"><code class="c">class Account {
@@ -1857,6 +1929,22 @@ bar(a) 之后 a.x = 20（按引用传参 A&amp;，真改了）
 <p>要真改调用者的对象，参数必须是 <code class="c">A&amp;</code> 或 <code class="c">A*</code>。</p>
 <p><strong>第三层</strong>（顺带测了）：把 <code class="c">x</code> 改成 private，<code class="c">static void poke(B&amp; b) { b.secret = 99; }</code> 照样能编译——<strong>访问控制是"类级别"不是"对象级别"</strong>：<code class="c">poke</code> 是 <code class="c">B</code> 的成员，对 <code class="c">B</code> 的任何对象（哪怕是参数传进来的）都有 private 访问权。实测 <code class="c">poke(b)</code> 后 <code class="c">b.secret == 99</code>。</p>
 <p>一句话总结：<strong>static 缺的只是 this，不是访问权，也不是"碰不到实例成员"——给它一个对象（引用/指针），它和成员函数一样能干。</strong></p>
+</details>
+<p><strong>7. 分析题</strong>：Meyer's 单例 + 一个全局日志器，退出阶段会发生什么？</p>
+<pre class="code" data-label="cpp"><code class="c">class Singleton {
+public:
+    static Singleton&amp; Get() { static Singleton instance; return instance; }
+    void Hello() {}
+};
+struct Logger { ~Logger() { Singleton::Get().Hello(); } };
+Logger g_logger;
+int main() { Singleton::Get().Hello(); }
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong><code class="c">~Logger</code> 运行时单例已经析构了——UB</strong>。析构顺序 = 构造完成的逆序：<code class="c">g_logger</code> 启动时构造（main 之前），<code class="c">instance</code> 首次 <code class="c">Get()</code> 才构造（main 里，更晚）；所以退出阶段 <code class="c">instance</code> 先析构，<code class="c">g_logger</code> 后析构，它的析构函数在"尸体"上调用 <code class="c">Hello()</code>。</p>
+<p>实测这个程序<strong>没崩</strong>、<code class="c">Hello()</code> 正常打印——UB 不等于必崩，对象内存还没被复用时"碰巧能跑"，这正是 static deinitialization order fiasco 最难排查的原因。对策：静态对象的析构函数不依赖其他单例；必须"活到最后"的基础设施故意泄漏（<code class="c">new</code> 出来永不 <code class="c">delete</code>）。</p>
+<p>机制层面：局部 static 首次构造时编译器调用 <code class="c">__cxa_atexit</code> 注册析构（反汇编可见），atexit 队列后注册先跑——和命名空间静态对象的析构混在同一个逆序队列里。</p>
 </details>
 <h2>可跑的例子</h2>
 <p><strong><code class="c">examples/7.6-static-members.cpp</code></strong> —— 全类共享一份的存活计数器。</p>
