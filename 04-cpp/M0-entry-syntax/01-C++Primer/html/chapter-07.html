@@ -1397,6 +1397,41 @@ private:
 };
 </code></pre>
 <p>初始值列表在<strong>函数体执行前</strong>初始化成员。如果不用初始值列表，成员会先默认构造，再在函数体里赋值——对类类型成员（如 string）是<strong>双重开销</strong>（先默认构造再赋值）。</p>
+<p><strong>汇编层实测</strong>（clang 23，<code class="c">-O0</code>，libc++，m_Name 为 <code class="c">std::string</code>）——两种写法构造函数体内真实的函数调用数：</p>
+<pre class="code" data-label="cpp"><code class="c">class PlayerA { std::string m_Name;
+public: PlayerA(const std::string&amp; name) : m_Name(name) {} };   // 写法A
+class PlayerB { std::string m_Name;
+public: PlayerB(const std::string&amp; name) { m_Name = name; } };  // 写法B
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>构造函数体内的 <code class="c">bl</code>（call）</th>
+<th>符号解读</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A 初始化列表</td>
+<td><strong>1 个</strong>：<code class="c">basic_string::basic_string(const basic_string&amp;)</code></td>
+<td>直接调<strong>拷贝构造</strong>，一步到位</td>
+</tr>
+<tr>
+<td>B 函数体赋值</td>
+<td><strong>2 个</strong>：<code class="c">basic_string::basic_string()</code> + <code class="c">basic_string::operator=(const basic_string&amp;)</code></td>
+<td>先<strong>默认构造</strong>空串，再<strong>赋值</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>mangling 对照：<code class="c">C1ERKS5_</code> = 构造函数（C1），参数 <code class="c">RKS5_</code> = <code class="c">const basic_string&amp;</code> → 拷贝构造；<code class="c">C1B9nqe…Ev</code> = 无参默认构造；<code class="c">aSERKS5_</code> 中的 <code class="c">aS</code> = <code class="c">operator=</code>。A 版就这一个 call，<strong>没有任何临时量构造</strong>——<code class="c">m_Name(name)</code> 是<em>直接初始化</em>：拿 <code class="c">name</code> 直接调 string 的拷贝构造，不是"先造一个 <code class="c">std::string(name)</code> 临时量再拷给 m_Name"（那句常见的"等价写法"是误导，拷贝初始化和直接初始化语义路径不同）。</p>
+<p>对 <code class="c">int</code>/<code class="c">float</code> 这类标量成员，两种写法汇编完全一样（就是一条 str 存值），差别只在类类型成员。</p>
+<p><strong>初始化顺序坑的编译器证据</strong>：成员按<strong>声明顺序</strong>初始化，与列表书写顺序无关。列表写反时 clang 的警告（<code class="c">-Wall</code> 下才报）：</p>
+<pre class="code" data-label="code"><code class="c">warning: field 'm_Age' will be initialized after field 'm_Name' [-Wreorder-ctor]
+    Player(const std::string&amp; name, int age) : m_Age(age), m_Name(name) {}
+                                               ^~~~~~~~~~  ~~~~~~~~~~~~
+</code></pre>
+<p>坑在哪：若 <code class="c">m_Age(age)</code> 的实参依赖 <code class="c">m_Name</code>（比如 <code class="c">: m_Age(m_Name.size()), m_Name(name)</code>），而 <code class="c">m_Name</code> 声明在前，程序会<strong>先执行</strong> <code class="c">m_Name.size()</code>——此时 m_Name 还是默认构造的空串，Age 拿到 0 而不是正确值，且不报错。<strong>规则</strong>：列表书写顺序永远照抄声明顺序，让警告无处可报。</p>
 <h3>委托构造（C++11）</h3>
 <pre class="code" data-label="cpp"><code class="c">class Sales_data {
 public:
