@@ -1417,6 +1417,27 @@ public:
 <li>只有当类<strong>没有声明任何构造函数</strong>时，编译器才自动生成默认构造</li>
 <li>一旦声明了带参构造，默认构造就不会自动生成，需要 <code class="c">= default</code> 或手写</li>
 </ul>
+<p><strong>为什么要写默认构造——垃圾值实测</strong>（Cherno 构造集的 Entity 例子）：栈上创建对象时内存只是"分配"了，没人帮你初始化，成员就是上一位使用者留下的残骸：</p>
+<pre class="code" data-label="cpp"><code class="c">class Entity {
+public:
+    float X, Y;
+    Entity() { X = 0.0f; Y = 0.0f; }            // 默认构造：清零
+    Entity(float x, float y) { X = x; Y = y; }  // 带参构造（重载）
+    void Print() const { std::printf(&quot;%f, %f\n&quot;, X, Y); }
+};
+</code></pre>
+<p>clang 23 <code class="c">-O0</code> 实测（foo/bar 同深度调用、栈帧形状相同，bar 的 <code class="c">r</code> 落在 foo 的 <code class="c">t</code> 的栈槽上）：</p>
+<pre class="code" data-label="cpp"><code class="c">class EntityRaw { public: float X, Y; /* 没写构造函数 */ ... };
+void foo() { EntityRaw t; t.X = 123.25f; t.Y = 456.5f; t.Print(); }
+void bar() { EntityRaw r; r.Print(); }          // r 从未初始化
+</code></pre>
+<pre class="code" data-label="code"><code class="c">123.250000, 456.500000                                    ← foo 的 t（初始化过）
+raw: 212345931268716466679054336.000000, 0.000000         ← bar 的 r：栈残骸
+</code></pre>
+<p><code class="c">r.X</code> 读到的甚至不是 foo 留下的 123.25——中间一次 <code class="c">printf</code> 又把那块栈踩了一遍。这就是"垃圾值"的真实含义：<strong>谁用过这块内存，就是谁的残骸</strong>，不保证任何值。写了 <code class="c">Entity()</code> 的 <code class="c">a</code> 则一定是 <code class="c">0,0</code>，<code class="c">Entity e(10.0f, 5.0f)</code> 一定是 <code class="c">10,5</code>——构造函数的卖点是把"初始化"从"程序员记得做"变成"语言强制做"。</p>
+<blockquote>
+<p>两点注意：① 演示依赖 <code class="c">-O0</code> 和栈帧复用，垃圾值<strong>碰巧是 0 也完全可能</strong>（换了平台/优化级别就不同），所以这类 bug 阴险在"有时能跑"；② 视频里函数体赋值 <code class="c">X = x</code> 对两个 float 无所谓，类类型成员就该用初始值列表（见上文），否则先默认构造再赋值是双重开销。</p>
+</blockquote>
 <h3>explicit 抑制隐式转换</h3>
 <pre class="code" data-label="cpp"><code class="c">class String {
 public:
@@ -1609,7 +1630,12 @@ Vector2D c(5.0);         // (5,5)，需要 explicit 也能用
 </code></pre>
 <p>单参构造 <code class="c">Vector2D(double)</code> 应加 <code class="c">explicit</code>，否则 <code class="c">double</code> 会隐式转成 <code class="c">Vector2D</code>，在数学运算里容易引发意外（如 <code class="c">v + 3.0</code> 你以为加标量，实际加了个 Vector2D(3,3)）。双参和默认构造不需要 explicit（无法隐式转换）。</p>
 </details>
-<p><strong>5. 踩坑题</strong>：<code class="c">class Util { public: static int twice(int n) { return 2*n; } };</code> 有人写了 <code class="c">Util u; int x = u.twice(21);</code>，能编译吗？有什么问题？怎么从类设计上杜绝？</p>
+<p><strong>5. 判断题</strong>：栈上对象 <code class="c">EntityRaw r;</code>（类没写构造函数，成员是 <code class="c">float X, Y;</code>）的 X、Y 初值是 0。</p>
+<details>
+<summary>答案</summary>
+<p>错误。<strong>标量类型成员的默认初始化什么都不做</strong>——内存只是分配，X、Y 是这块栈空间上一位使用者的残骸（实测打出过 <code class="c">2.1e26</code> 这种天文数字，也碰巧可能是 0）。"碰巧是 0 能跑"换平台/优化级别就炸，所以未初始化 bug 极其阴险。<strong>修正</strong>：写默认构造 <code class="c">EntityRaw() : X(0), Y(0) {}</code>，或 C++11 起类内初始值 <code class="c">float X = 0, Y = 0;</code>。</p>
+</details>
+<p><strong>6. 踩坑题</strong>：<code class="c">class Util { public: static int twice(int n) { return 2*n; } };</code> 有人写了 <code class="c">Util u; int x = u.twice(21);</code>，能编译吗？有什么问题？怎么从类设计上杜绝？</p>
 <details>
 <summary>答案</summary>
 <p>能编译——<code class="c">Util</code> 没声明任何构造函数，编译器自动合成默认构造，<code class="c">Util u;</code> 合法；静态成员函数也能通过对象调用（<code class="c">u.twice(21)</code> 等价于 <code class="c">Util::twice(21)</code>，不访问 this）。问题在于 <code class="c">Util</code> 是纯静态工具类，<code class="c">u</code> 是个没有状态的死对象，<code class="c">u.twice()</code> 的写法还会误导读者以为它是普通成员函数。<strong>杜绝</strong>：加 <code class="c">Util() = delete;</code>（或私有默认构造），<code class="c">Util u;</code> 立即编译错误 <code class="c">call to deleted constructor of 'Util'</code>，逼着所有人写 <code class="c">Util::twice(21)</code>。</p>
