@@ -807,6 +807,23 @@ mov  rax, [rax + 0]    ; 取 vtable 第 0 槽（f1 的地址）
 call rax               ; 间接调用
 </code></pre>
 <p>所以虚调用比普通调用多一次内存访问（读 vptr + 读槽位）。现代 CPU 分支预测器对 vtable 间接调用的预测相当好，<strong>绝大多数场景开销可忽略</strong>。</p>
+<p><strong>本机实测</strong>（Cherno 虚函数集的 Entity/Player，clang 23）——三笔可量化的账：</p>
+<p>① <strong>vptr 占对象头 8 字节</strong>：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(EntityNV)=8   ← 无 virtual：只有 float X,Y
+sizeof(Entity)  =16  ← 加一个 virtual GetName()：+8（vptr）
+sizeof(Player)  =16  ← 派生类继承同一份 vptr，不另加
+</code></pre>
+<p>类里有一个虚函数就要付 vptr，再加一百个虚函数也还是 8 字节——代价是<strong>按对象</strong>收的，不是按虚函数个数收的。嵌入式里百万个小对象的类慎加 virtual。</p>
+<p>② <strong>有无 virtual 的行为对照</strong>（同一个 <code class="c">Entity* e = &amp;p; e-&gt;GetName()</code>）：</p>
+<pre class="code" data-label="code"><code class="c">有 virtual : e-&gt;GetName() = Player    ← 动态绑定，看对象真实类型
+无 virtual : e-&gt;GetName() = Entity    ← 静态绑定，静态类型说了算
+</code></pre>
+<p>没有 <code class="c">virtual</code>，派生类的 <code class="c">GetName</code> 只是<strong>隐藏</strong>基类版本（见 15.1 错误 5 的同名机制）；有了 <code class="c">virtual</code> 才是<strong>覆盖</strong>，基类指针才能"穿透"到派生实现。</p>
+<p>③ <strong>虚调用的真实代价：两条指令</strong>（x64 / MSVC ABI，<code class="c">-O2</code>，<code class="c">const char* who(Entity* e) { return e-&gt;GetName(); }</code>）：</p>
+<pre class="code" data-label="asm"><code class="c">movq   (%rcx), %rax      ; rcx = e（this），rax = *e = vptr
+rex64  jmpq *(%rax)      ; 跳到 vtable[0] 存的地址（尾调用）
+</code></pre>
+<p>读 vptr + 间接跳转，这就是全部开销——和上面伪汇编逐条对应（<code class="c">-O2</code> 把 call 优化成了尾调用 jmp）。vtable 本体躺在数据段（每个类一张，同类所有对象共享），<code class="c">-O0</code> 下 <code class="c">nm</code> 能看到 <code class="c">S __ZTV6Entity</code> / <code class="c">S __ZTV6Player</code>（vtable for Entity/Player）符号；<strong><code class="c">-O2</code> 下这些符号可能消失</strong>——编译器若能确定动态类型（devirtualization），直接静态调用，vtable 整个被优化掉。</p>
 <h3>4. override 和 final（C++11）</h3>
 <p><strong><code class="c">override</code></strong>：显式告诉编译器"我要覆盖基类的虚函数"，编译器会检查签名是否匹配。<strong>永远写 <code class="c">override</code></strong>：</p>
 <pre class="code" data-label="cpp"><code class="c">class Base { public: virtual void f(int) const; };
