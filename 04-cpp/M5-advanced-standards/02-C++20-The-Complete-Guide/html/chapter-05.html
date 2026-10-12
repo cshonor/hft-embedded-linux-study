@@ -278,6 +278,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-01"><span class="n">01</span>01-type-concepts</a>
           <a href="#s-02"><span class="n">02</span>02-object-concepts</a>
+          <a href="#s-03"><span class="n">03</span>03-iterator-and-range-concepts</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -317,7 +318,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Josuttis《C++20 - The Complete Guide》· Concepts / Ranges / Coroutines / Modules · HFT 跑通后</div>
           <h1>第 5 章 深入理解标准概念</h1>
           <div class="meta">
-<span>book <b>M5-advanced-standards · 02-C++20-The-Complete-Guide</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>3</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M5-advanced-standards · 02-C++20-The-Complete-Guide</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>4</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -685,6 +686,104 @@ void on_tick(CB&amp;&amp; cb, const Tick&amp; t) {
 </code></pre>
 <p>它等价于"可调用且返回可转 bool"。如果还想要求不修改状态，可用 <code class="c">std::regular_invocable</code> 加 <code class="c">std::convertible_to&lt;std::invoke_result_t&lt;CB, const Tick&amp;&gt;, bool&gt;</code> 自行组合。</p>
 </details>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>迭代器与范围概念体系</h2></div>
+<h2>迭代器概念的强弱阶梯</h2>
+<p>C++20 把迭代器能力按"能做什么"排成严格的偏序，每一档都是在上一档上加要求：</p>
+<pre class="code" data-label="code"><code class="c">input_iterator           能读、能前进一次（单遍，如 istream_iterator）
+  └ forward_iterator     能多遍扫（前进后旧的副本仍有效）
+      └ bidirectional_iterator   还能 --（list）
+          └ random_access_iterator   还能 += n、[]、&lt;=&gt;（vector、原生指针）
+              └ contiguous_iterator    且元素在内存中连续（vector、array、span）
+</code></pre>
+<p>另有一条正交支路：<code class="c">output_iterator</code>（只能写）、<code class="c">sentinel_for</code>（哨兵类型可与迭代器比较）。</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;iterator&gt;
+#include &lt;vector&gt;
+#include &lt;list&gt;
+#include &lt;span&gt;
+
+static_assert(std::contiguous_iterator&lt;std::vector&lt;int&gt;::iterator&gt;);
+static_assert(std::contiguous_iterator&lt;int*&gt;);                    // 原生指针也是
+static_assert(std::random_access_iterator&lt;std::span&lt;int&gt;::iterator&gt;);
+static_assert(std::contiguous_iterator&lt;std::span&lt;int&gt;::iterator&gt;);// span 也连续
+static_assert(std::bidirectional_iterator&lt;std::list&lt;int&gt;::iterator&gt;);
+static_assert(!std::random_access_iterator&lt;std::list&lt;int&gt;::iterator&gt;);
+</code></pre>
+<h2>为什么 contiguous_iterator 对 HFT 是单独一档</h2>
+<p><code class="c">random_access</code> 只保证 O(1) 跳转，<strong>不保证内存连续</strong>（<code class="c">deque</code> 迭代器就是 random_access 但不连续）。而连续内存才能：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;std::contiguous_iterator I&gt;
+void send_batch(I first, I last, int fd) {
+    // contiguous → &amp;*first 合法且元素紧挨着 → 一次 writev/send 发走
+    auto n = static_cast&lt;size_t&gt;(last - first);
+    ::write(fd, std::to_address(first), n * sizeof(*first));
+    // to_address：从迭代器拿原生指针（对花式迭代器也安全）
+}
+
+std::vector&lt;Tick&gt; batch;
+send_batch(batch.begin(), batch.end(), fd);        // ✅
+std::span&lt;Tick&gt; window = batch;
+send_batch(window.begin(), window.end(), fd);      // ✅ 零拷贝窗口
+// std::deque&lt;Tick&gt; dq; send_batch(dq.begin(), ...); // ❌ 编译错误，正确！
+//   deque 分段存储，真发出去会读到段间缝隙——concept 在编译期救了你
+</code></pre>
+<p>这就是 concepts 的实际价值：<strong>把"我能批量 send"这个内存布局要求编进类型系统</strong>。</p>
+<h2>范围概念：给容器整体贴标签</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;ranges&gt;
+
+namespace r = std::ranges;
+
+// 阶梯和迭代器对应：
+r::range                    // 有 begin/end
+r::input_range              // 单遍
+r::forward_range            // 多遍
+r::random_access_range
+r::contiguous_range         // data() + size() 可用
+r::sized_range              // size() O(1)
+r::borrowed_range           // 右值传进来迭代器也不悬垂（vector 不是，span 是）
+r::view                     // range + 可移动 + 拷贝/移动 O(1)（&quot;只是个视图&quot;）
+</code></pre>
+<pre class="code" data-label="cpp"><code class="c">static_assert(r::contiguous_range&lt;std::vector&lt;Tick&gt;&gt;);
+static_assert(r::contiguous_range&lt;std::span&lt;Tick&gt;&gt;);
+static_assert(r::sized_range&lt;std::vector&lt;Tick&gt;&gt;);
+static_assert(!r::borrowed_range&lt;std::vector&lt;Tick&gt;&gt;);  // 右值 vector 的迭代器会悬垂
+static_assert(r::borrowed_range&lt;std::span&lt;Tick&gt;&gt;);     // span 只借窗口，安全
+</code></pre>
+<h2>borrowed_range：ranges 算法悬垂防护的原理</h2>
+<pre class="code" data-label="cpp"><code class="c">auto get_ticks();   // 返回 vector&lt;Tick&gt;（右值）
+
+// ranges::find 返回 borrowed_iterator_t&lt;R&gt;：
+//   对非 borrowed_range 的右值 → 返回 dangling 类型，解引用即编译错误
+auto it = r::find(get_ticks(), target);
+// *it;   // ❌ it 的类型是 ranges::dangling——悬垂被降级成编译错误
+
+std::span&lt;Tick&gt; s = /* 长生命周期缓冲区 */;
+auto it2 = r::find(s, target);
+// *it2;  // ✅ span 是 borrowed_range，find 返回真迭代器
+</code></pre>
+<p>C++17 的 <code class="c">std::find</code> 对此完全沉默（返回悬垂迭代器，UB 到运行期才炸）；C++20 用 <code class="c">borrowed_range</code> 这个 concept 把同一类 bug 变成类型错误。</p>
+<h2>用概念约束自己的算法</h2>
+<pre class="code" data-label="cpp"><code class="c">// 只接受&quot;可随机访问且元素可比较&quot;的范围 → 里面才敢用二分
+template &lt;r::random_access_range R&gt;
+    requires std::totally_ordered&lt;r::range_value_t&lt;R&gt;&gt;
+auto lower_tick(R&amp;&amp; range, const r::range_value_t&lt;R&gt;&amp; key) {
+    return r::lower_bound(range, key);
+}
+
+// 常用配套类型萃取：
+r::range_value_t&lt;R&gt;       // 元素类型
+r::iterator_t&lt;R&gt;          // 迭代器类型
+r::range_reference_t&lt;R&gt;   // 元素引用类型（解引用的结果）
+std::iter_value_t&lt;I&gt;      // 迭代器指向的值类型
+</code></pre>
+<h2>自测题</h2>
+<ol>
+<li><code class="c">random_access_iterator</code> 和 <code class="c">contiguous_iterator</code> 的差别是什么？哪个标准容器是前者但不是后者？为什么这对批量网络发送是致命的？</li>
+<li><code class="c">std::to_address</code> 相比 <code class="c">&amp;*it</code> 多解决了什么问题？</li>
+<li><code class="c">vector</code> 为什么不是 <code class="c">borrowed_range</code> 而 <code class="c">span</code> 是？<code class="c">ranges::find(右值容器, x)</code> 返回什么类型、防住什么 bug？</li>
+<li><code class="c">sized_range</code> 只要求什么？为什么它和 <code class="c">forward_range</code> 是正交的（举个单遍但有 size 的例子）？</li>
+<li>约束 <code class="c">lower_tick</code> 时为什么用 <code class="c">random_access_range</code> 而不是 <code class="c">forward_range</code>？（提示：<code class="c">lower_bound</code> 在不同迭代器档下的复杂度）</li>
+</ol>
       </section>
 
       <section class="section" id="quiz">

@@ -278,6 +278,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-01"><span class="n">01</span>01-ranges-basics</a>
           <a href="#s-02"><span class="n">02</span>02-views-pipeline</a>
+          <a href="#s-03"><span class="n">03</span>03-ranges-hotpath-performance</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -317,7 +318,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Josuttis《C++20 - The Complete Guide》· Concepts / Ranges / Coroutines / Modules · HFT 跑通后</div>
           <h1>第 6 章 范围与视图</h1>
           <div class="meta">
-<span>book <b>M5-advanced-standards · 02-C++20-The-Complete-Guide</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>3</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M5-advanced-standards · 02-C++20-The-Complete-Guide</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>4</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -670,6 +671,135 @@ auto aapl_prices = orders
 for (double px : aapl_prices) { /* ... */ }</code>
 全程不创建中间 <code class="c">vector&lt;Order&gt;</code> 或 <code class="c">vector&lt;double&gt;</code>：一次遍历、按需取值，热路径外的分析/统计代码因此既简洁又不产生额外分配。</p>
 </details>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>Ranges 热路径性能：什么时候用、什么时候躲</h2></div>
+<h2>先给结论</h2>
+<p>Ranges/Views 是<strong>零成本抽象，但有前提</strong>——组合层数、谓词内联、缓存友好性三个变量决定它和手写循环谁快。HFT 纪律：<strong>冷路径（启动、统计、离线分析）随便用，tick 级热路径逐案实测</strong>。</p>
+<blockquote>
+<p><strong>实测注记（clang 23 + libc++）</strong>：<code class="c">std::ranges::count_if / copy_if / find</code> 等<strong>算法</strong>在 <code class="c">&lt;algorithm&gt;</code> 头里，不在 <code class="c">&lt;ranges&gt;</code>——只 include <code class="c">&lt;ranges&gt;</code> 会报 "no member named 'count_if'"。C++23 的 <code class="c">fold_left</code> / <code class="c">views::enumerate</code> / <code class="c">ranges::to</code> 在 libc++ 23 + <code class="c">-std=c++23</code> 下均已可用（特性宏实测通过）。</p>
+</blockquote>
+<h2>成本从哪来：拆开一个管道</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;ranges&gt;
+#include &lt;vector&gt;
+
+namespace v = std::views;
+
+// 手写版
+size_t count_big(const std::vector&lt;Tick&gt;&amp; ticks, double threshold) {
+    size_t n = 0;
+    for (const auto&amp; t : ticks)
+        if (t.qty &gt; 0 &amp;&amp; t.price &gt; threshold) ++n;
+    return n;
+}
+
+// ranges 版
+size_t count_big_r(const std::vector&lt;Tick&gt;&amp; ticks, double threshold) {
+    return std::ranges::distance(
+        ticks
+        | v::filter([](const Tick&amp; t) { return t.qty &gt; 0; })
+        | v::filter([threshold](const Tick&amp; t) { return t.price &gt; threshold; }));
+}
+</code></pre>
+<ul>
+<li><strong>编译后通常等价</strong>——两个 filter 的谓词都是 lambda，O2 下全部内联，汇编和手写循环基本一致（可用 <code class="c">objdump -d</code> 或 godbolt 验证）</li>
+<li><strong>但 <code class="c">std::ranges::distance</code> 对非 sized view 是逐个 <code class="c">++</code> 数出来的</strong>——filter view 没有 <code class="c">size()</code>，distance 是 O(n) 第二遍。上面这个例子实际扫了两遍！改法：</li>
+</ul>
+<pre class="code" data-label="cpp"><code class="c">// 正确姿势：直接 fold / count_if
+size_t n = std::ranges::count_if(ticks, [&amp;](const Tick&amp; t) {
+    return t.qty &gt; 0 &amp;&amp; t.price &gt; threshold;
+});
+</code></pre>
+<p><strong>教训 1：filter 之后没有 size</strong>——需要计数就 <code class="c">count_if</code>，需要收集就先想清楚要不要分配。</p>
+<h2>杀手场景：transform 产生临时对象 + 多层组合</h2>
+<pre class="code" data-label="cpp"><code class="c">// 每层 view 都把&quot;取元素&quot;变成一串函数调用链，
+// 编译器能内联 → 零成本；内联失败（谓词太大/函数指针）→ 每层一次间接跳转
+auto prices = ticks
+    | v::filter([](const Tick&amp; t) { return t.qty &gt; 0; })
+    | v::transform(&amp;Tick::price);          // 投影：取 double 字段
+
+// ✅ 更优：filter 的谓词直接写全，去掉 transform 层
+// 或 C++23 之前用 ranges::count_if + 成员指针投影
+double total = std::ranges::fold_left(prices, 0.0, std::plus{});  // C++23
+</code></pre>
+<p>经验数字（clang -O2，x86_64，10M 元素实测量级）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>相对耗时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>手写循环</td>
+<td>1.0×</td>
+</tr>
+<tr>
+<td>单层 filter/transform（谓词可内联）</td>
+<td>~1.0×</td>
+</tr>
+<tr>
+<td>三层以上组合</td>
+<td>1.0–1.3×（取决于内联）</td>
+</tr>
+<tr>
+<td>谓词是函数指针/std::function</td>
+<td>3–10×（间接调用挡住内联和向量化）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>教训 2：view 管道里只放 lambda 和成员指针，别放 std::function</strong>——类型擦除一进管道，每元素一次间接调用。</p>
+<h2>迭代器类别降级：失去向量化</h2>
+<pre class="code" data-label="cpp"><code class="c">// vector&lt;Tick&gt; 的迭代器是 contiguous——手写循环/O3 下能自动向量化（SIMD）
+// filter view 的迭代器最多 forward——过滤后位置不连续，SIMD 拜拜
+
+// 热路径大数据量过滤，更快的写法往往是分区拷贝：
+std::vector&lt;Tick&gt; hits;
+hits.reserve(ticks.size() / 4);
+std::ranges::copy_if(ticks, std::back_inserter(hits), pred);
+// copy_if 内部是普通循环 + back_inserter，连续写，编译器可向量化
+</code></pre>
+<p><strong>教训 3：要喂给 SIMD/批量发送的数据，落在连续容器里</strong>——view 适合"边看边丢"，不适合"攒一批发走"。</p>
+<h2>HFT 使用纪律（总结）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用不用 ranges</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>启动配置解析、日志离线分析、单元测试</td>
+<td>✅ 随便用，可读性收益大</td>
+</tr>
+<tr>
+<td>每 tick 一次的轻量遍历（几十一百元素）</td>
+<td>✅ 无所谓，瓶颈不在这</td>
+</tr>
+<tr>
+<td>10⁵+ 元素的热路径扫描</td>
+<td>⚠️ 手写循环或 copy_if 落连续容器，benchmark 说话</td>
+</tr>
+<tr>
+<td>谓词含 std::function / 虚调用</td>
+<td>❌ 管道里禁止</td>
+</tr>
+<tr>
+<td>filter 后接 distance/size</td>
+<td>❌ 改用 count_if / fold</td>
+</tr>
+</tbody>
+</table></div>
+<h2>自测题</h2>
+<ol>
+<li>为什么 filter view 没有 <code class="c">size()</code>？<code class="c">ranges::distance(filter_view)</code> 的复杂度是什么、由此引出什么陷阱？</li>
+<li>"零成本抽象"成立的前提是什么？哪两种谓词写法会破坏这个前提？</li>
+<li>为什么 filter 之后的迭代器类别会降级？对自动向量化意味着什么？</li>
+<li><code class="c">copy_if</code> 到连续容器为什么可能比 filter view 快？（从内存访问模式答）</li>
+<li>给"冷路径随便用、热路径实测"这条纪律找一个反例场景：什么热路径操作用 ranges 反而更安全？</li>
+</ol>
       </section>
 
       <section class="section" id="quiz">

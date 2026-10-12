@@ -277,6 +277,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-01"><span class="n">01</span>01-range-adaptors</a>
+          <a href="#s-02"><span class="n">02</span>02-range-factories</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -316,7 +317,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Josuttis《C++20 - The Complete Guide》· Concepts / Ranges / Coroutines / Modules · HFT 跑通后</div>
           <h1>第 7 章 范围与视图的实用工具</h1>
           <div class="meta">
-<span>book <b>M5-advanced-standards · 02-C++20-The-Complete-Guide</b></span><span>chapter <b>Ch 7</b></span><span>sections <b>2</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M5-advanced-standards · 02-C++20-The-Complete-Guide</b></span><span>chapter <b>Ch 7</b></span><span>sections <b>3</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -517,6 +518,114 @@ void f(R&amp;&amp; r) { auto n = std::ranges::size(r); /* O(1) */ }
 </code></pre>
 <p><code class="c">std::vector</code> 满足 <code class="c">sized_range</code>，<code class="c">std::forward_list</code> 不满足（求 size 是 O(n)），<code class="c">iota_view</code> 通常满足（长度可算）。拿到它就意味着可以安全地预分配、做并行分块等优化。</p>
 </details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>范围工厂：iota / counted / all / owning_view</h2></div>
+<h2>views::iota——不分配内存的"虚拟容器"</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;ranges&gt;
+
+namespace v = std::views;
+
+// iota(begin)：无限序列 0,1,2,...
+// iota(begin, end)：有限序列 [begin, end)
+for (int lane : v::iota(0, 64)) {
+    pin_to_cpu(lane);   // 绑核循环：没有 vector{0..63}，一个数都不存
+}
+
+// 配合 take：无限序列截前 N 个
+auto first_100 = v::iota(1) | v::take(100);
+
+// 边界值是类型级的：iota&lt;uint8_t&gt;(0, 300) 编译期报错（300 超出 uint8_t）
+</code></pre>
+<p><strong>本质</strong>：<code class="c">iota_view</code> 的迭代器就是一个整数本身，<code class="c">sizeof</code> = 一个值。替代"先造 vector<int> 再循环"的写法，零分配零内存流量。</p>
+<pre class="code" data-label="cpp"><code class="c">// 实战：生成测试行情序列，不落盘
+for (auto [i, t] : v::iota(0, 1000)
+                  | v::transform([](int i) { return make_tick(i, 100.0 + i * 0.01); })
+                  | v::enumerate)          // C++23：带下标
+{
+    feed.push(t);
+    assert(t.seq == i);
+}
+</code></pre>
+<h2>views::counted——指针 + 长度的轻量包装</h2>
+<pre class="code" data-label="cpp"><code class="c">Tick buf[4096];
+size_t n = receive_into(buf);   // 运行期才知道收了多少
+
+// counted(指针迭代器, 个数)：把 (ptr, n) 变成一个 range
+auto batch = v::counted(buf, n);
+
+std::ranges::for_each(batch, &amp;FeedHandler::on_tick);
+// 等价于 span{buf, n}，但起点可以是任何迭代器而不只是连续内存
+</code></pre>
+<p><code class="c">counted</code> vs <code class="c">span</code>：counted 接受<strong>任意迭代器</strong>（list 的也行，当然那就失去连续性）；span 仅限连续内存但带静态 extent 和边界信息。连续内存场景优先 span（见 ch09），花式迭代器场景用 counted。</p>
+<h2>views::all——统一"把容器变成 view"的入口</h2>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;Tick&gt; ticks = load();
+std::span&lt;Tick&gt;   window = ticks;
+
+auto a = v::all(ticks);    // ref_view&lt;vector&lt;Tick&gt;&gt;：借一个引用，不拷贝
+auto b = v::all(window);   // span 本身已是 view → 原样返回（decay-copy）
+
+// 管道里写容器名时编译器隐式干的就是 v::all：
+ticks | v::filter(pred)    // ≡ v::all(ticks) | v::filter(pred)
+</code></pre>
+<p><strong>左值 → ref_view（借引用）；右值 → owning_view（接管所有权）</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">auto make() { return std::vector&lt;Tick&gt;{/*...*/}; }
+
+// 右值容器进管道：owning_view 把它 move 进来持有，管道结束才析构
+auto big = make() | v::filter([](const Tick&amp; t) { return t.qty &gt; 100; });
+// ✅ 安全——没有 owning_view 的话右值 vector 在分号处析构，view 全悬垂
+</code></pre>
+<p>这就是"右值容器可以直接进管道"的原理——不是 ranges 宽容，是 <code class="c">all</code> 悄悄把所有权接走了。</p>
+<h2>owning_view vs 拷贝：所有权语义对照</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>发生什么</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">v::all(lvalue)</code></td>
+<td>ref_view，借引用</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code class="c">v::all(view)</code></td>
+<td>原样返回</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code class="c">v::all(rvalue容器)</code></td>
+<td>owning_view，move 接管</td>
+<td>一次 move（容器本身 O(1)）</td>
+</tr>
+<tr>
+<td><code class="c">r::to&lt;vector&gt;(view)</code>（C++23）</td>
+<td>物化成新 vector</td>
+<td>O(n) 分配+拷贝</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="cpp"><code class="c">// C++23 ranges::to：把 view 的结果&quot;落&quot;成容器——显式的物化点
+auto hits = ticks
+          | v::filter([](const Tick&amp; t) { return t.qty &gt; 100; })
+          | std::ranges::to&lt;std::vector&gt;();   // 在这里才分配
+
+// C++20 没有 ranges::to 时：
+std::vector&lt;Tick&gt; hits;
+std::ranges::copy(ticks | v::filter(pred), std::back_inserter(hits));
+</code></pre>
+<p>纪律：<strong>物化（to/copy）只在需要"攒一批"时做</strong>——能流式消费（for_each/fold）就别落成容器，省一次分配一次拷贝。</p>
+<h2>自测题</h2>
+<ol>
+<li><code class="c">iota_view</code> 的 <code class="c">sizeof</code> 大约是多少？为什么它生成百万个"元素"没有内存流量？</li>
+<li><code class="c">views::counted</code> 和 <code class="c">span</code> 的使用场景怎么分？各自对迭代器类别有什么要求？</li>
+<li>左值 vector、右值 vector、已有 view 分别被 <code class="c">views::all</code> 变成什么？为什么右值容器进管道是安全的？</li>
+<li><code class="c">owning_view</code> 的存在让哪种 C++17 里必然悬垂的写法变合法了？</li>
+<li>"物化点"指什么？为什么 <code class="c">ranges::to</code> 应该尽量少用？</li>
+</ol>
       </section>
 
       <section class="section" id="quiz">

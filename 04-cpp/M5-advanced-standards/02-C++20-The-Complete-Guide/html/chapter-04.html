@@ -278,6 +278,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-01"><span class="n">01</span>01-requires-expression</a>
           <a href="#s-02"><span class="n">02</span>02-constraint-subsumption</a>
+          <a href="#s-03"><span class="n">03</span>03-ad-hoc-constraints-and-requires-clauses</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -317,7 +318,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Josuttis《C++20 - The Complete Guide》· Concepts / Ranges / Coroutines / Modules · HFT 跑通后</div>
           <h1>第 4 章 深入理解概念、要求与约束</h1>
           <div class="meta">
-<span>book <b>M5-advanced-standards · 02-C++20-The-Complete-Guide</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>3</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M5-advanced-standards · 02-C++20-The-Complete-Guide</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>4</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -652,6 +653,117 @@ void process(RandomAccessRange auto&amp; r)  { /* 随机访问，最快 */ }
 </code></pre>
 <p>要点：每一层都<strong>引用</strong>上一层（<code class="c">Range&lt;T&gt; &amp;&amp; ...</code>）而不是把条件重新抄一遍，否则 subsumption 不成立、重载会二义。</p>
 </details>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>即席约束与 requires 子句进阶</h2></div>
+<h2>不定义 concept 也能约束：即席 requires</h2>
+<p>不是每个约束都值得起名字。一次性约束直接写在 <code class="c">requires</code> 子句里：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;concepts&gt;
+
+// 1. 直接用类型特征（不用包装成 concept）
+template &lt;typename T&gt;
+    requires std::is_trivially_copyable_v&lt;T&gt;
+void send_raw(const T&amp; msg, int fd);
+
+// 2. 即席 requires 表达式：约束体当场写
+template &lt;typename T&gt;
+    requires requires(T t) {
+        t.on_tick();                    // 要求有 on_tick()
+        { t.id() } -&gt; std::convertible_to&lt;int&gt;;
+    }
+void register_strategy(T&amp; strat);
+
+// 3. 组合：&amp;&amp; / || / !
+template &lt;typename T&gt;
+    requires (std::integral&lt;T&gt; &amp;&amp; !std::same_as&lt;T, bool&gt;)
+void push_field(T value);   // 整数但不要 bool（bool 进位段太容易写错）
+</code></pre>
+<p><strong>纪律</strong>：同一个约束写第二遍时，就提命名 concept——<code class="c">requires requires</code> 两层嵌套可读性掉得很快。</p>
+<h2>requires 子句可以放哪（比想象中多）</h2>
+<pre class="code" data-label="cpp"><code class="c">// 1. 函数模板声明后（最常见）
+template &lt;typename T&gt; requires std::integral&lt;T&gt;
+T saturating_add(T a, T b);
+
+// 2. 模板参数列表前（少见但合法）
+template &lt;typename T&gt;
+    requires std::integral&lt;T&gt;
+struct RingBuffer;
+
+// 3. 非模板函数也能加！——约束它所属类的模板参数
+template &lt;typename T&gt;
+struct OrderBook {
+    // 只有 T 是双精度时才提供 vwap()——成员按需存在
+    double vwap() const
+        requires std::floating_point&lt;T&gt;;
+};
+
+// 4. lambda 的模板参数
+auto cmp = []&lt;std::totally_ordered T&gt;(const T&amp; a, const T&amp; b) {
+    return a &lt; b;
+};
+
+// 5. 约束模板的模板参数（template template parameter）
+template &lt;template &lt;typename&gt; typename C&gt;
+    requires requires(C&lt;int&gt; c) { c.push_back(1); }
+struct Wraps;
+</code></pre>
+<p>第 3 点是写库的关键手法：<strong>成员函数按约束"按需实例化"</strong>——<code class="c">OrderBook&lt;Price&gt;</code> 有 <code class="c">vwap()</code>，<code class="c">OrderBook&lt;RawMsg&gt;</code> 没有，而且不叫 SFINAE、不影响类其余成员。</p>
+<h2>否定约束 ! 与"这个重载不许选"</h2>
+<pre class="code" data-label="cpp"><code class="c">// 常见坑：转发引用吃掉拷贝构造
+template &lt;typename T&gt;
+struct Wrapper {
+    Wrapper(const Wrapper&amp;) = default;
+
+    // 完美转发构造——不加约束会把 Wrapper&amp; 也匹配走
+    template &lt;typename U&gt;
+        requires (!std::same_as&lt;std::remove_cvref_t&lt;U&gt;, Wrapper&gt;)
+    Wrapper(U&amp;&amp; u) : val(std::forward&lt;U&gt;(u)) {}
+
+    T val;
+};
+</code></pre>
+<p><code class="c">std::remove_cvref_t</code> 是 C++20 专门为此加的——剥掉 <code class="c">&amp;</code>/<code class="c">const</code>/<code class="c">volatile</code> 再比类型。<strong>写转发构造函数，这个否定约束是标配</strong>，否则 <code class="c">Wrapper w2(w1)</code> 会走转发模板（U 推导成 Wrapper&amp;）而不是拷贝构造。</p>
+<h2>requires 表达式里的四种要求</h2>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T, typename U&gt;
+concept FeedParser = requires(const T&amp; parser, const U&amp; raw) {
+    // 1. 简单要求：表达式合法
+    parser.parse(raw);
+
+    // 2. 类型要求：这个嵌套类型存在
+    typename T::result_type;
+
+    // 3. 复合要求：合法 + 结果类型约束 + noexcept
+    { parser.parse(raw) } -&gt; std::convertible_to&lt;typename T::result_type&gt;;
+    { parser.reset() } noexcept;
+
+    // 4. 嵌套要求：里面再套一层 requires 子句
+    requires std::default_initializable&lt;typename T::result_type&gt;;
+};
+</code></pre>
+<p><code class="c">{ ... } noexcept</code> 在 HFT 里有实际用途：<strong>约束 swap/比较必须 noexcept</strong>，否则编译期拒绝——异常规格直接编进接口。</p>
+<h2>实战：约束热的还是约束冷的？</h2>
+<p>编译期约束没有运行开销，但有<strong>编译时间</strong>和<strong>接口稳定性</strong>成本：</p>
+<pre class="code" data-label="cpp"><code class="c">// ✅ 值得约束：接口边界——错误信息在调用点就清晰
+template &lt;std::integral T&gt;
+struct alignas(64) SeqCounter { /* ... */ };
+
+// ❌ 过度约束：内部实现细节全写成 concept，改一处连锁改十处
+//    内部模板用 static_assert 反而更直接：
+template &lt;typename T&gt;
+struct internal_pool {
+    static_assert(std::is_trivially_destructible_v&lt;T&gt;,
+                  &quot;pool 只放平凡类型&quot;);   // 约束失败一样是编译错误
+};
+</code></pre>
+<p>经验法则：<strong>头文件暴露给别人的模板用 concepts，.cpp 内部用 static_assert</strong>。前者是文档+重载分派工具，后者是断言。</p>
+<h2>自测题</h2>
+<ol>
+<li><code class="c">requires requires</code> 两层分别是什么？为什么一次性约束可以这么写、复用约束不该这么写？</li>
+<li>非模板成员函数加 requires 子句约束的是什么？<code class="c">OrderBook&lt;T&gt;::vwap</code> 例子的实例化行为？</li>
+<li>转发构造函数为什么必须配 <code class="c">!std::same_as&lt;std::remove_cvref_t&lt;U&gt;, Wrapper&gt;</code> 否定约束？不配会发生什么？</li>
+<li>复合要求 <code class="c">{ x } noexcept</code> 把什么编进了接口？对 swap 场景的意义？</li>
+<li>"头文件用 concepts、内部用 static_assert" 的理由是什么？两者编译错误信息出现的位置有何不同？</li>
+</ol>
       </section>
 
       <section class="section" id="quiz">
