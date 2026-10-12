@@ -278,6 +278,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-01"><span class="n">01</span>01-latch-barrier</a>
           <a href="#s-02"><span class="n">02</span>02-semaphore</a>
+          <a href="#s-03"><span class="n">03</span>03-atomic-ref</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -317,7 +318,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Josuttis《C++20 - The Complete Guide》· Concepts / Ranges / Coroutines / Modules · HFT 跑通后</div>
           <h1>第 13 章 并发特性</h1>
           <div class="meta">
-<span>book <b>M5-advanced-standards · 02-C++20-The-Complete-Guide</b></span><span>chapter <b>Ch 13</b></span><span>sections <b>3</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M5-advanced-standards · 02-C++20-The-Complete-Guide</b></span><span>chapter <b>Ch 13</b></span><span>sections <b>4</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -698,6 +699,177 @@ void place_order() {
 </code></pre>
 <p>模板参数 <code class="c">100</code> 是编译期上限（可选更大的最小类型以省空间），构造参数 <code class="c">100</code> 是初始可用名额。这样就能在<strong>不引入复杂排队逻辑</strong>的前提下硬性限制在途订单数，作为风控/流量闸门。</p>
 </details>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>atomic_ref 与 atomic&lt;shared_ptr&gt;</h2></div>
+<h2>atomic_ref：给已有对象"贴上"原子操作</h2>
+<p>C++17 及以前，<code class="c">std::atomic&lt;T&gt;</code> 必须<strong>拥有</strong>它包装的对象——对象是 atomic 的成员。这带来一个结构性限制：内存布局已经定死的场景（共享内存、内存映射文件、网络包缓冲区、定死的 ABI 结构体）没法事后把某个字段变成 atomic。</p>
+<p>C++20 <code class="c">std::atomic_ref&lt;T&gt;</code> 解决了这件事：<strong>不拥有对象，只提供对既有对象的原子视图</strong>。</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;atomic&gt;
+
+struct alignas(8) ShmHeader {    // 共享内存里的头部，布局不能动
+    std::uint64_t write_seq;     // 生产者写的序号
+    std::uint64_t read_seq;      // 消费者读的序号
+    std::uint64_t padding[6];
+};
+
+// C++17：做不到——不能把 shm-&gt;write_seq 变成 atomic 又不改布局
+// C++20：
+void producer_write(ShmHeader* shm) {
+    std::atomic_ref seq{shm-&gt;write_seq};     // 原子视图贴在已有对象上
+    seq.store(42, std::memory_order_release);
+}
+
+void consumer_read(ShmHeader* shm) {
+    std::atomic_ref seq{shm-&gt;write_seq};
+    auto v = seq.load(std::memory_order_acquire);
+}
+</code></pre>
+<p>同一进程内不同线程、甚至<strong>不同进程</strong>映射到同一物理页时，都能各自构造 <code class="c">atomic_ref</code> 访问同一对象——这正是共享内存队列（进程间 SPSC ring）的写法。</p>
+<h2>atomic_ref 的三条军规</h2>
+<pre class="code" data-label="cpp"><code class="c">// 军规 1：对齐必须满足 atomic_ref 的要求（可能比对 T 本身更严格）
+static_assert(alignof(std::atomic_ref&lt;std::uint64_t&gt;) &lt;= alignof(ShmHeader));
+// 实践：字段显式对齐到 8 字节，或整个 struct alignas(8)
+
+// 军规 2：对象生命周期必须覆盖 atomic_ref 的使用期
+std::atomic_ref&lt;int&gt;* dangling;
+{
+    int x = 0;
+    dangling = new std::atomic_ref&lt;int&gt;(x);
+}   // x 死了
+// dangling-&gt;load();  // UB
+
+// 军规 3：同一对象要么全程 atomic_ref 访问，要么全程普通访问
+// 混用 = data race（编译器对普通访问的优化假设不再成立）
+int x = 0;
+std::atomic_ref&lt;int&gt; ax(x);
+ax.store(1);
+// int y = x;  // ❌ 普通读和原子写混用，UB
+</code></pre>
+<h2>atomic_ref vs atomic：接口差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th><code class="c">std::atomic&lt;T&gt;</code></th>
+<th><code class="c">std::atomic_ref&lt;T&gt;</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>拥有对象</td>
+<td>✅ 成员</td>
+<td>❌ 引用既有对象</td>
+</tr>
+<tr>
+<td>可拷贝</td>
+<td>❌</td>
+<td>❌（但可默认构造空壳再赋）</td>
+</tr>
+<tr>
+<td>默认构造值</td>
+<td>未初始化（C++20 前）/ T{}</td>
+<td>不存在（必须绑定对象）</td>
+</tr>
+<tr>
+<td><code class="c">is_always_lock_free</code></td>
+<td>有</td>
+<td>有（<strong>逐类型</strong>查询）</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>普通共享变量</td>
+<td>共享内存 / 定死布局 / 容器元素</td>
+</tr>
+</tbody>
+</table></div>
+<p>容器场景也常用：</p>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;std::uint64_t&gt; counters(64);   // 布局连续，不想包一层 atomic
+
+void bump(size_t lane) {
+    std::atomic_ref c{counters[lane]};     // 对容器元素原子++
+    c.fetch_add(1, std::memory_order_relaxed);
+}
+// atomic&lt;uint64_t&gt; 数组会改变 sizeof 和布局；atomic_ref 不动 vector 本身
+</code></pre>
+<h2>atomic<shared_ptr>：无锁发布大对象</h2>
+<p>C++20 前，<code class="c">shared_ptr</code> 的引用计数是原子的，但<strong>指向同一对象的两个 shared_ptr 实例本身</strong>不是——多个线程同时读写<strong>同一个</strong> <code class="c">shared_ptr</code> 变量是 data race。要么上锁，要么用 <code class="c">atomic_load(&amp;p)</code>/<code class="c">atomic_store(&amp;p, q)</code> 自由函数（容易写错、被吐槽十年）。</p>
+<p>C++20 把这套自由函数收进 <code class="c">std::atomic&lt;std::shared_ptr&lt;T&gt;&gt;</code> 特化：</p>
+<blockquote>
+<p><strong>⚠ 实现现状实测（2026-10，本机 clang 23.1.0 + libc++）</strong>：<code class="c">__cpp_lib_atomic_shared_ptr</code> 宏<strong>未定义</strong>，<code class="c">std::atomic&lt;std::shared_ptr&lt;T&gt;&gt;</code> 在 libc++ 下<strong>编译失败</strong>（static_assert 要求 trivially copyable）。libstdc++（gcc 12+）已完整实现。Mac/clang 工具链下用下文的<strong>自由函数版</strong>（C++11 就有，实测可用）；上 Linux/gcc 环境才能用类模板版。</p>
+</blockquote>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;memory&gt;
+#include &lt;atomic&gt;
+
+// 典型场景：配置/符号表的热路径读 + 低频更新（RCU 模式）
+struct SymbolTable { /* 大对象，构造昂贵 */ };
+
+std::atomic&lt;std::shared_ptr&lt;const SymbolTable&gt;&gt; g_table;
+
+// 热路径读者（每 tick 都跑）：
+void on_tick() {
+    std::shared_ptr&lt;const SymbolTable&gt; tbl = g_table.load(std::memory_order_acquire);
+    // tbl 拷贝 → 引用计数 +1，保证使用期间对象不死
+    use(*tbl);
+}
+
+// 低频写者（symbol 上线时）：
+void reload_table() {
+    auto fresh = std::make_shared&lt;SymbolTable&gt;(build_from_file());
+    g_table.store(std::move(fresh), std::memory_order_release);
+    // 旧表在最后一位读者离开后才析构——读多写少的 RCU 语义
+}
+</code></pre>
+<p>⚠️ 三点诚实标注：</p>
+<ol>
+<li><strong>标准不保证 lock-free</strong>——<code class="c">atomic&lt;shared_ptr&gt;</code> 允许内部带锁。<code class="c">g_table.is_lock_free()</code> 可以查，但主流实现都是带锁的。它的价值是<strong>接口正确性</strong>（不再手写自由函数），不是性能魔法。真无锁 RCU 得自己写双指针切换或 hazard pointer。</li>
+<li>每次 <code class="c">load()</code> 拷贝 shared_ptr 有<strong>引用计数原子加</strong>的开销（~20ns 级）。tick 级热路径上如果在意，改为"线程启动时 load 一次存线程本地、靠 epoch 定期刷新"。</li>
+<li><strong>libc++ 未实现时的替代（Mac/clang 实测可用）</strong>——继续用 C++11 自由函数，语义完全等价：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">// 自由函数版（libc++ 可用，clang23 实测通过）
+std::shared_ptr&lt;const SymbolTable&gt; g_table;   // 普通变量
+
+// 读者：
+auto tbl = std::atomic_load(&amp;g_table);
+// 写者：
+std::atomic_store(&amp;g_table, std::make_shared&lt;const SymbolTable&gt;(build_from_file()));
+</code></pre>
+<p>和自由函数版相比，类模板版唯一的改进是"不能忘了用原子访问"（类型强制）——语义、性能完全一样。</p>
+<h2>实战：进程间 SPSC 序号同步</h2>
+<pre class="code" data-label="cpp"><code class="c">// shm_layout.h —— 两个进程共享的内存布局（定死，不能加成员）
+struct ShmRing {
+    alignas(64) std::uint64_t head;   // 生产者推进
+    alignas(64) std::uint64_t tail;   // 消费者推进
+    std::byte slots[4096];
+};
+
+// producer.cpp
+ShmRing* ring = static_cast&lt;ShmRing*&gt;(shm_mmap(&quot;/hft_ring&quot;));
+std::atomic_ref head{ring-&gt;head};
+
+void publish(size_t n_bytes) {
+    head.fetch_add(n_bytes, std::memory_order_release);
+    // release：先写完 slots 数据，再推进 head，消费者 acquire 读 head 后看到完整数据
+}
+
+// consumer.cpp
+std::atomic_ref tail{ring-&gt;tail};
+std::atomic_ref head_ro{ring-&gt;head};
+
+size_t available() {
+    return head_ro.load(std::memory_order_acquire)
+         - tail.load(std::memory_order_relaxed);
+}
+</code></pre>
+<p>这个模式和 LMAX Disruptor / DPDK ring 的序号机制是同构的——<code class="c">atomic_ref</code> 让你在不改共享布局的前提下拿到标准语义（内存序明确、TSan 能查），而不是手写 <code class="c">volatile</code> + 内存屏障的黑魔法。</p>
+<h2>自测题</h2>
+<ol>
+<li><code class="c">atomic_ref</code> 解决了 <code class="c">atomic&lt;T&gt;</code> 的什么结构性限制？举两个非它不可的场景。</li>
+<li>三条军规分别对应什么 UB？为什么"混用普通访问和 atomic_ref"在编译器层面就错了？</li>
+<li>为什么 <code class="c">atomic_ref</code> 可以用于跨进程同步？依赖操作系统的什么保证？</li>
+<li><code class="c">atomic&lt;shared_ptr&gt;</code> 相比旧的 <code class="c">atomic_load(&amp;p)</code> 自由函数改进了什么？它保证 lock-free 吗？</li>
+<li>共享内存 ring 里 head 用 release 推进、消费者 acquire 读取，这对内存序保证的具体内容是什么？（写清楚"先写什么、后看见什么"）</li>
+</ol>
       </section>
 
       <section class="section" id="quiz">
