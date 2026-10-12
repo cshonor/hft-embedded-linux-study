@@ -562,6 +562,41 @@ handlers[typeid(TradeMsg)] = [](const MsgBase* m) { on_trade(static_cast&lt;cons
 </code></pre>
 <p>冷路径（启动注册/插件加载）这么写没问题；热路径还是查表/switch（→ 18.4 HFT 关联）。</p>
 <h2>② enum class：把 C 的枚举病一次治完（实测）</h2>
+<h3>先认清病人：旧式 enum 是什么（接 TheCherno 枚举集）</h3>
+<p>Cherno 枚举集（播放列表第 23 集）的原版代码——给一组整数起名字，提高可读性：</p>
+<pre class="code" data-label="cpp"><code class="c">enum Example : unsigned char   // 显式指定底层类型：8 位够用了
+{
+    A = 5, B, C                // B、C 不写值 → 在前一个基础上自动 +1
+};
+
+int main() {
+    Example value = B;
+    if (value == 1) { /* ... */ }   // 旧式 enum 隐式转 int，直接和整数比较
+}
+</code></pre>
+<p>clang 23.1.0 本机实测（<code class="c">-std=c++20</code>）：</p>
+<pre class="code" data-label="text"><code class="c">A=5 B=6 C=7（B/C 没写值，自动 +1）
+sizeof(Example : unsigned char) = 1
+sizeof(Plain 不指定)            = 4（clang 默认 int）
+sizeof(A) 枚举值本身            = 1（枚举值的类型就是枚举类型）
+value(6) != 1 —— 比较合法，只是不成立
+int n = A → 5
+</code></pre>
+<p>视频里那句"不能指定 float 作底层类型，因为它必须是整数"，让编译器自己说：</p>
+<pre class="code" data-label="text"><code class="c">enum Bad : float { P, Q };
+error: non-integral type 'float' is an invalid underlying type
+</code></pre>
+<p>标准原文（C++ draft [dcl.enum] 逐字）：</p>
+<blockquote>
+<p><strong>p5</strong>：The type-specifier-seq of an enum-base shall name an <strong>integral type</strong>.
+<strong>p5</strong>：For a <strong>scoped</strong> enumeration type, the underlying type is <strong>int</strong> if it is not explicitly specified.
+<strong>p7</strong>：For an enumeration whose underlying type is <strong>not fixed</strong>, ... It is <strong>implementation-defined</strong> which integral type is used as the underlying type except that the underlying type <strong>shall not be larger than int</strong> unless the value of an enumerator cannot fit in an int or unsigned int.</p>
+</blockquote>
+<p>⚠ <strong>由此纠正视频的一个不精确处</strong>：Cherno 说"旧式 enum 默认是 int（32 位）"——<strong>只有 <code class="c">enum class</code> 的默认 int 是标准保证的</strong>（p5）。旧式 enum 不指定底层类型时（p7），标准只说"实现自选、但不大于 int（除非值装不下）"——clang/gcc 实际都选 int，所以本机 <code class="c">sizeof(Plain)==4</code>，但<strong>这不是可移植保证</strong>（嵌入式编译器可能选更小的类型省空间，GCC 甚至有 <code class="c">-fshort-enums</code> 选项专门干这个）。协议/布局相关的枚举必须显式写 <code class="c">: uint8_t</code> 之类钉死——这正是下面"协议场景硬要求"的标准依据。</p>
+<blockquote>
+<p>C 侧对照：C 的枚举连"指定底层类型"都没有（C23 才引入），本质就是 int 常量——见 <a href="../../../../01-c-language/05-embedded-kernel-practice/html/chapter-91.html#s-5-6">5.6-枚举类型</a> 与 <a href="../../../../01-c-language/05-embedded-kernel-practice/html/chapter-91.html#s-5-6-2">5.6.2-枚举的本质</a>。</p>
+</blockquote>
+<h3>三宗罪与解药</h3>
 <p>旧式 <code class="c">enum</code> 的三宗罪，<code class="c">enum class</code>（C++11）逐个治：</p>
 <pre class="code" data-label="cpp"><code class="c">enum OldStyle { Red, Green };              // 罪1：枚举值泄进外层作用域（Red 直接可用，易撞名）
 enum class Side : uint8_t { Buy = 1, Sell = 2 };
@@ -677,6 +712,35 @@ sizeof(Side) == 1               // 罪3 治疗：可指定底层类型（uint8_t
 ② 协议版本协商/拒绝未知 msg_type（运行期，防"版本没对齐"）；
 ③ golden-packet 回放测试（发版前，防"新老不兼容"）。
 enum class 解决的是语言层问题，协议演进是工程层问题，各管一段。</p>
+</details>
+<p><strong>题目 4：</strong> <code class="c">enum E { A, B, C };</code> 的 <code class="c">sizeof(E)</code> 是多少？这个值可移植吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>本机（clang 23.1.0 / gcc）是 <strong>4</strong>（实现选了 int），但<strong>不可移植</strong>——旧式 enum 不指定底层类型时，标准是 implementation-defined：实现可以选任何能装下所有枚举值的整数类型，只要求"不大于 int（除非装不下）"（[dcl.enum] p7）。嵌入式编译器可能选 1~2 字节类型省空间（GCC 的 <code class="c">-fshort-enums</code> 就是强制这么做）。</p>
+<p>三种情况的确定性：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>sizeof 确定吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">enum E { A, B };</code></td>
+<td>❌ 实现自选（本机 4）</td>
+</tr>
+<tr>
+<td><code class="c">enum E : uint8_t { A, B };</code></td>
+<td>✅ 1，标准保证</td>
+</tr>
+<tr>
+<td><code class="c">enum class E { A, B };</code></td>
+<td>✅ 4（scoped 默认 int，[dcl.enum] p5 标准保证）</td>
+</tr>
+</tbody>
+</table></div>
+<p>协议/跨平台布局相关的枚举，必须显式指定底层类型。</p>
 </details>
       </section>
       <section class="section" id="s-19-3">
