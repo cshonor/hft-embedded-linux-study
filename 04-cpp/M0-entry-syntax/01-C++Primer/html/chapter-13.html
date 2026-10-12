@@ -395,6 +395,91 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
+<h3>析构函数：何时被调用</h3>
+<p>Cherno 析构函数集一句话："<strong>任何时候对象被销毁，析构函数都会被调用</strong>"。关键是"销毁"到底发生在哪些时刻——用打印实测（clang 23，<code class="c">-O0</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">class Entity {
+public:
+    Entity(const char* name) : name_(name) {
+        arr_ = new int[50];                 // 构造里拿资源
+        std::printf(&quot;ctor  %s\n&quot;, name_);
+    }
+    ~Entity() {                             // 销毁时释放
+        std::printf(&quot;dtor  %s\n&quot;, name_);
+        delete[] arr_;
+    }
+private:
+    const char* name_;
+    int* arr_;
+};
+
+void by_value(Entity e) { (void)e; }
+
+int main() {
+    Entity outer(&quot;outer&quot;);                  // ① main 栈对象
+    {
+        Entity inner(&quot;inner&quot;);              // ② 内层作用域
+    }                                       // ← inner 死在这行
+    Entity* heap = new Entity(&quot;heap&quot;);      // ③ 堆对象：不会自动死
+    delete heap;                            // ← 显式 delete 才调析构
+    by_value(Entity(&quot;temp&quot;));               // ④ 临时对象
+    std::printf(&quot;main ends\n&quot;);
+    return 0;
+}                                           // ← outer 死在 main 收尾
+</code></pre>
+<p>真实输出：</p>
+<pre class="code" data-label="code"><code class="c">ctor  outer
+ctor  inner
+dtor  inner        ← ② 出内层作用域立刻析构，不等 main 结束
+ctor  heap
+dtor  heap         ← ③ delete 那一刻才析构；不 delete 就永不调用（泄漏）
+ctor  temp
+dtor  temp         ← ④ C++17 拷贝省略：临时量直接构造进形参，返回时析构
+main ends
+dtor  outer        ← ① 栈对象死在所属作用域的右大括号
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>析构时机</th>
+<th>C 程序员的对应直觉</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>栈对象</td>
+<td><strong>出作用域</strong>（逆声明序）</td>
+<td>没有对应物——C 没有自动清理</td>
+</tr>
+<tr>
+<td>堆对象</td>
+<td>只有 <code class="c">delete</code> 时</td>
+<td><code class="c">free</code> 的时刻，但 C++ 是 <code class="c">delete</code> 先调析构再还内存</td>
+</tr>
+<tr>
+<td>临时对象/按值形参</td>
+<td>所在全表达式结束 / 函数返回</td>
+<td>无</td>
+</tr>
+<tr>
+<td>静态/全局对象</td>
+<td><code class="c">main</code> 返回后（<code class="c">__cxa_atexit</code> 逆序，见 7.6 fiasco 实测）</td>
+<td>无</td>
+</tr>
+<tr>
+<td>异常栈展开</td>
+<td>展开路径上每个已构造对象</td>
+<td>C 的 <code class="c">longjmp</code> 不做任何清理</td>
+</tr>
+</tbody>
+</table></div>
+<p>C 程序员最容易带过来的坏习惯是第 ③ 行：<code class="c">new</code> 出来的对象<strong>不会</strong>像栈对象那样自动析构，<code class="c">delete</code> 漏了析构就永远不执行——这是"构造函数自动、析构函数也自动"说法的唯一例外，自动的是栈对象。</p>
+<p><strong>手动调析构是合法语法，但几乎总是错</strong>（Cherno 也提醒"极少需要"）：</p>
+<pre class="code" data-label="cpp"><code class="c">Entity e;
+e.~Entity();        // 编译通过！但作用域结束时还会再析构一次
+</code></pre>
+<p>实测下场：<code class="c">dtor</code> 打印两次，然后 <code class="c">malloc: Double free of object 0x...</code>，进程被 SIGABRT（exit 134）——同一指针 <code class="c">delete[]</code> 两次。手动调析构的唯一正常用途是配合 <strong>placement new</strong>（对象躺在自己管理的内存池里，不会自动析构，必须手动 <code class="c">p-&gt;~T()</code>），嵌入式写 slab/pool 分配器时会遇到。</p>
+<p>构造拿资源、析构释放资源，这个配对就是 <strong>RAII</strong> 的雏形——把资源生命周期绑在对象生命周期上，后面的 <a href="#s-13-2">13.2</a> 会展开。</p>
 <h3>经典例子：含指针的类</h3>
 <pre class="code" data-label="cpp"><code class="c">class HasPtr {
 public:
@@ -475,6 +560,8 @@ HasPtr b = a;    // 自动调拷贝构造，深拷贝，安全
 <li><strong>浅拷贝导致双 delete</strong>：类含指针但没自定义拷贝控制，默认浅拷贝 → 双 free。<strong>修正</strong>：自定义拷贝构造/赋值做深拷贝，或用智能指针/值语义避免。</li>
 <li><strong>拷贝赋值不处理自赋值</strong>：<code class="c">a = a</code> 时，若先 <code class="c">delete ps</code> 再用 <code class="c">rhs.ps</code>，rhs 就是 <em>this，已 delete → UB。</em><em>修正</em>*：先 new 新的再 delete 旧的（上例写法），或检查自赋值。</li>
 <li><strong>拷贝赋值不异常安全</strong>：<code class="c">delete ps; ps = new string(*rhs.ps);</code> —— 若 new 抛异常，ps 已 delete，对象处于无效状态。<strong>修正</strong>：先 new 成功再 delete 旧（上例写法）。</li>
+<li><strong>手动调析构</strong>：<code class="c">e.~Entity();</code> 是合法语法，但栈对象出作用域时会<strong>再析构一次</strong> → 析构体内的 <code class="c">delete[]</code> 执行两次 → double free（实测 SIGABRT）。<strong>规则</strong>：栈/堆对象永远让编译器调析构；只有 placement new 出来的对象才手动 <code class="c">p-&gt;~T()</code>。</li>
+<li><strong>new 了忘 delete，以为析构会自动来</strong>：堆对象不会自动析构——<code class="c">new Entity</code> 后没有 <code class="c">delete</code>，析构函数永远不会执行（实测输出里 heap 的 dtor 只在 delete 那一刻出现）。<strong>修正</strong>：配对的 new/delete，或直接用 <code class="c">std::unique_ptr</code> 把 delete 也交给 RAII。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：下面类没定义拷贝控制成员，<code class="c">HasPtr b = a;</code> 后会发生什么？</p>
@@ -536,6 +623,30 @@ private:
 <pre class="code" data-label="cpp"><code class="c">class HasPtr { std::string ps; /* 默认拷贝控制即可，深拷贝 */ };
 </code></pre>
 <p><strong>教训</strong>：优先用值成员或智能指针，让编译器生成的默认拷贝控制正确工作，避免手写易错的拷贝控制。</p>
+</details>
+<p><strong>5. 输出题</strong>：写出下面程序的完整输出（<code class="c">Entity</code> 构造/析构各打印一行 <code class="c">ctor &lt;name&gt;</code> / <code class="c">dtor &lt;name&gt;</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">int main() {
+    Entity a(&quot;a&quot;);
+    {
+        Entity b(&quot;b&quot;);
+        Entity* c = new Entity(&quot;c&quot;);
+    }
+    Entity* d = new Entity(&quot;d&quot;);
+    delete d;
+    return 0;
+}
+</code></pre>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="code"><code class="c">ctor a
+ctor b
+ctor c
+dtor b        ← 内层作用域结束，只有栈对象 b 析构
+ctor d
+dtor d        ← delete 的那一刻
+dtor a        ← main 收尾
+</code></pre>
+<p>两个关键：① <code class="c">c</code> 的析构<strong>永远不会打印</strong>——它是堆对象，出了作用域只是指针变量没了，对象本体没人 <code class="c">delete</code>，泄漏；② 栈对象析构严格逆声明序（b 先于 a），且发生在所属作用域的右大括号，不是 main 末尾统一处理。</p>
 </details>
 <h2>可跑的例子</h2>
 <p><strong><code class="c">examples/13.1-copy-control-members.cpp</code></strong> —— 给每个特殊成员函数装一个计数器。</p>
