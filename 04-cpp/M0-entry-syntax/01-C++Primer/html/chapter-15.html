@@ -1175,6 +1175,40 @@ private:
 <blockquote>
 <p><strong>设计意图</strong>：抽象基类表达"是什么能力"（Comparable、Drawable、Serializable），而非"是什么东西"。这与 Java 的 <code class="c">interface</code> 思路一致，但 C++ 的抽象类可以含数据成员和非纯虚函数（更灵活）。</p>
 </blockquote>
+<h4>逗号混入接口 = 多重继承（Cherno 28 集实测）</h4>
+<p>Cherno 的演示：主类已经有了 <code class="c">Entity</code> 基类，"想实现接口？加一个逗号就行"——</p>
+<pre class="code" data-label="cpp"><code class="c">class Printable {                       // 纯接口：只含纯虚函数
+public:
+    virtual std::string GetClassName() const = 0;
+    virtual ~Printable() = default;
+};
+class Entity : public Printable {       // 不实现 GetClassName → Entity 也是抽象类
+public:
+    virtual std::string GetName() const { return &quot;Entity&quot;; }
+};
+class Player : public Entity, Printable {   // ← 加逗号，混入第二个基类
+public:
+    std::string GetClassName() const override { return &quot;Player&quot;; }
+    std::string GetName() const override { return &quot;Player&quot;; }
+};
+</code></pre>
+<p>这句话成立，但下面三笔底层账和<strong>一个 Cherno 没点破的坑</strong>值得记（全部 clang 23 实测）：</p>
+<p><strong>① 每个直接基类 = 一份带 vptr 的子对象</strong>。<code class="c">Player</code> 没有数据成员，<code class="c">sizeof(Player)</code> 却是 <strong>16</strong>——两个 vptr：Entity 子对象的（偏移 0）+ 直接 Printable 子对象的（偏移 8）。<code class="c">&amp;p</code> 与 <code class="c">(Entity*)&amp;p</code> 同地址，多基下只有<strong>主基</strong>在偏移 0。</p>
+<p><strong>② 一个 override 填满两段 vtable，次段走 thunk</strong>。<code class="c">llvm-objdump -r</code> 看 Player 的 vtable 重定位：</p>
+<pre class="code" data-label="code"><code class="c">0000000000000010 ARM64_RELOC_UNSIGNED  __ZNK6Player12GetClassNameEv     ← 主段：真函数
+0000000000000040 ARM64_RELOC_UNSIGNED  __ZThn8_NK6Player12GetClassNameEv ← 次段：thunk！
+</code></pre>
+<p>主段（Entity 子对象那份）填真函数；次段（偏移 8 的 Printable 子对象那份）填的是 <code class="c">ZThn8_</code> 前缀的 <strong>non-virtual thunk</strong>——一个跳板：先把 <code class="c">this</code> 减 8（从子对象地址修正回完整对象地址），再跳真函数。这是多基虚调用比单继承多的一步，纯虚函数"子类只写一遍，两个接口都满足"就是这样实现的。</p>
+<p><strong>③ 顺手验证抽象传染</strong>：Entity 的 vtable 里 GetClassName 槽还是 <code class="c">___cxa_pure_virtual</code>（Entity 没实现 → 仍是抽象类，呼应上文规则）。</p>
+<p><strong>④ 坑：这其实是菱形继承</strong>。<code class="c">Printable</code> 经 <code class="c">Entity</code> 和直接继承<strong>两条路径</strong>进入 Player——编译器在类声明处就警告：</p>
+<pre class="code" data-label="code"><code class="c">warning: direct base 'Printable' is inaccessible due to ambiguity:
+    class Player -&gt; Entity -&gt; Printable
+    class Player -&gt; Printable [-Winaccessible-base]     ← 默认就开
+</code></pre>
+<p>后果：<code class="c">Player</code> 里<strong>有两份独立的 Printable 子对象</strong>，转成接口指针直接报硬错误：</p>
+<pre class="code" data-label="code"><code class="c">error: ambiguous conversion from derived class 'Player' to base class 'Printable'
+</code></pre>
+<p>Cherno 的代码能跑通只是因为演示里没做 <code class="c">Printable* pp = &amp;p;</code> 这种转换。<strong>正解</strong>：接口只经一条路径引入——要么 <code class="c">Entity</code> 实现 <code class="c">GetClassName</code>（Player 只继承 Entity），要么用 <code class="c">virtual</code> 继承让两条路径共享一份子对象（虚拟继承是 Primer 18.3 的主题）。规则一句话：<strong>逗号混入的接口，必须是对象里全新的、此前从未间接继承过的基类</strong>。</p>
 <h3>3. 派生类必须实现所有纯虚函数</h3>
 <pre class="code" data-label="cpp"><code class="c">class Shape {
 public:
