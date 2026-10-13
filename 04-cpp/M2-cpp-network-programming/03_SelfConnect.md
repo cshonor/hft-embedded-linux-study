@@ -43,6 +43,22 @@ SYN 发给自己，自己回 SYN+ACK 给自己，三次握手"自言自语"完�
 
 概率很低（单次连接万分之一量级），但两类系统会真实踩中：**压测工具疯狂建连**（端口穷尽后重用）和 **重启后立即连固定端口的服务**。
 
+**确定性复现（不用撞概率）+ 平台对照**：不监听，直接 bind 一个固定端口再 connect 自己：
+
+```c
+int fd = socket(AF_INET, SOCK_STREAM, 0);
+setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+bind(fd, {127.0.0.1, 54321});      /* 绑定后不 listen */
+connect(fd, {127.0.0.1, 54321});   /* 直接连自己 */
+```
+
+| 平台 | 结果 |
+|------|------|
+| Linux 6.18.39（Pi 5, gcc 14.2 实测） | **connect 成功**——`getsockname`/`getpeername` 都是 54321（localhost:54321 <-> localhost:54321），`send("hi")` 后自己能 `recv` 到 "hi"，一个 socket 首尾相接 |
+| macOS 26（clang 23 实测） | `connect 失败: Invalid argument`（EINVAL，BSD 系内核直接拒绝） |
+
+成因：Linux 的 TCP 走**同时打开（simultaneous open）**路径，SYN 与 SYN+ACK 交叉后握手合流，连接两端是同一个 socket。跨平台代码不能依赖此行为。这正是陈硕第 0 讲列的新手坑 #5（课件端口就是 54321）。
+
 ### 3. `listenfd` vs `connfd`：谁是谁
 
 ```

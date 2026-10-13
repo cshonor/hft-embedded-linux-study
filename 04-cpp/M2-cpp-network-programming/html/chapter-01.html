@@ -683,6 +683,12 @@ int main(int argc, char** argv) {
 <li><strong>接收端</strong>：应用读得太慢，数据在接收缓冲里排队，下次 <code class="c">read</code> 一锅端</li>
 </ul>
 <p>结论：<strong>定界是协议设计的事，不是 TCP 的事。</strong></p>
+<p><strong>本机实测（clang 23，macOS 26 回环，单进程服务端线程 + 客户端）</strong>：</p>
+<pre class="code" data-label="code"><code class="c">[client] 已发送 200000 字节
+[server] 客户端 send() 了 200000 字节，一次 recv() 只拿到 65328 字节   ← 半包
+[client] 服务端发了两次(&quot;abc&quot;+&quot;def&quot;)，一次 recv 拿到 6 字节: &quot;abcdef&quot;  ← 粘包
+</code></pre>
+<p>两个方向各占一边：<code class="c">send</code> 一次 200KB，对端一次 <code class="c">recv</code> 只能拿到回环缓冲允许的量（65328）；两次 <code class="c">send("abc")</code> <code class="c">send("def")</code> 却被一次 <code class="c">recv</code> 合成 "abcdef"。<strong>recv 的边界与 send 的次数、大小毫无对应关系</strong>——这就是陈硕第 0 讲新手坑 #2/#3 的现场。</p>
 <h3>2. 三种定界方案对比</h3>
 <div class="tbl-wrap"><table>
 <thead>
@@ -904,6 +910,31 @@ void onMessage(Buffer* buf) {
 <li>客户端 <code class="c">getsockname()</code> == <code class="c">getpeername()</code>（源=目的）</li>
 </ul>
 <p>概率很低（单次连接万分之一量级），但两类系统会真实踩中：<strong>压测工具疯狂建连</strong>（端口穷尽后重用）和 <strong>重启后立即连固定端口的服务</strong>。</p>
+<p><strong>确定性复现（不用撞概率）+ 平台对照</strong>：不监听，直接 bind 一个固定端口再 connect 自己：</p>
+<pre class="code" data-label="C"><code class="c">int fd = socket(AF_INET, SOCK_STREAM, 0);
+setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &amp;one, sizeof(one));
+bind(fd, {127.0.0.1, 54321});      /* 绑定后不 listen */
+connect(fd, {127.0.0.1, 54321});   /* 直接连自己 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>平台</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux 6.18.39（Pi 5, gcc 14.2 实测）</td>
+<td><strong>connect 成功</strong>——<code class="c">getsockname</code>/<code class="c">getpeername</code> 都是 54321（localhost:54321 &lt;-&gt; localhost:54321），<code class="c">send("hi")</code> 后自己能 <code class="c">recv</code> 到 "hi"，一个 socket 首尾相接</td>
+</tr>
+<tr>
+<td>macOS 26（clang 23 实测）</td>
+<td><code class="c">connect 失败: Invalid argument</code>（EINVAL，BSD 系内核直接拒绝）</td>
+</tr>
+</tbody>
+</table></div>
+<p>成因：Linux 的 TCP 走<strong>同时打开（simultaneous open）</strong>路径，SYN 与 SYN+ACK 交叉后握手合流，连接两端是同一个 socket。跨平台代码不能依赖此行为。这正是陈硕第 0 讲列的新手坑 #5（课件端口就是 54321）。</p>
 <h3>3. <code class="c">listenfd</code> vs <code class="c">connfd</code>：谁是谁</h3>
 <pre class="code" data-label="code"><code class="c">listenfd ──accept()──&gt; connfd（新 fd，代表某个具体客户端）
 </code></pre>
@@ -2268,6 +2299,15 @@ int main() {
 <h2>概念详解</h2>
 <h3>1. 为什么结构体不能直接 <code class="c">memcpy</code> 上线</h3>
 <p>把内存里的 <code class="c">struct</code> 原样发送，四个独立炸点：</p>
+<p><strong>本机实测（clang 23，arm64）——"改全局对齐设置 → 第三方库 core dump"现场</strong>（陈硕第 0 讲新手坑 #4 原话"Modify the global align setting causes core dump in 3rd party library"）：公共头文件定义 <code class="c">struct Pkt { uint8_t type; uint32_t seq; };</code>，第三方库 <code class="c">lib.c</code> 正常编译，<code class="c">main.c</code> 用 <code class="c">-fpack-struct</code> 全局改对齐（等价于 <code class="c">#pragma pack(1)</code> 泄漏到整个 TU）：</p>
+<pre class="code" data-label="code"><code class="c">正常（两边都不 pack）：
+  [main] sizeof(Pkt)=8 offsetof(seq)=4 seq=0xAABBCCDD
+  [lib]  sizeof(Pkt)=8 offsetof(seq)=4 seq=2864434397   ← 0xAABBCCDD，一致
+main 加了全局 -fpack-struct：
+  [main] sizeof(Pkt)=5 offsetof(seq)=1 seq=0xAABBCCDD
+  [lib]  sizeof(Pkt)=8 offsetof(seq)=4 seq=6062250      ← 垃圾！
+</code></pre>
+<p>同一块内存，main 按偏移 1 写 <code class="c">seq</code>，lib 按偏移 4 读——<strong>pack 是编译单元级的，ABI 契约却是链接级的</strong>。本例只是读到垃圾值；结构体若含指针/函数指针，读错位 = 野指针 = core dump。所以头文件里 <code class="c">#pragma pack</code> 必须 <code class="c">push</code>/<code class="c">pop</code> 配对，绝不能泄漏（见下方 §"正确的二进制纪律"和 C++ 示例的 pack(push,1) 写法）。</p>
 <pre class="code" data-label="cpp"><code class="c">struct Order {
     int32_t  id;        // 8B 处还轮不到它——看 padding
     int64_t  price;     // 8 字节成员要求 8 字节对齐 → id 后面垫 4 字节

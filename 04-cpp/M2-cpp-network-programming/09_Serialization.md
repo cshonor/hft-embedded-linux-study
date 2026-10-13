@@ -20,6 +20,19 @@
 
 把内存里的 `struct` 原样发送，四个独立炸点：
 
+**本机实测（clang 23，arm64）——"改全局对齐设置 → 第三方库 core dump"现场**（陈硕第 0 讲新手坑 #4 原话"Modify the global align setting causes core dump in 3rd party library"）：公共头文件定义 `struct Pkt { uint8_t type; uint32_t seq; };`，第三方库 `lib.c` 正常编译，`main.c` 用 `-fpack-struct` 全局改对齐（等价于 `#pragma pack(1)` 泄漏到整个 TU）：
+
+```
+正常（两边都不 pack）：
+  [main] sizeof(Pkt)=8 offsetof(seq)=4 seq=0xAABBCCDD
+  [lib]  sizeof(Pkt)=8 offsetof(seq)=4 seq=2864434397   ← 0xAABBCCDD，一致
+main 加了全局 -fpack-struct：
+  [main] sizeof(Pkt)=5 offsetof(seq)=1 seq=0xAABBCCDD
+  [lib]  sizeof(Pkt)=8 offsetof(seq)=4 seq=6062250      ← 垃圾！
+```
+
+同一块内存，main 按偏移 1 写 `seq`，lib 按偏移 4 读——**pack 是编译单元级的，ABI 契约却是链接级的**。本例只是读到垃圾值；结构体若含指针/函数指针，读错位 = 野指针 = core dump。所以头文件里 `#pragma pack` 必须 `push`/`pop` 配对，绝不能泄漏（见下方 §"正确的二进制纪律"和 C++ 示例的 pack(push,1) 写法）。
+
 ```cpp
 struct Order {
     int32_t  id;        // 8B 处还轮不到它——看 padding
