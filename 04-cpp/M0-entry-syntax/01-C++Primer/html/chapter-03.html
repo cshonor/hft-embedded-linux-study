@@ -3677,6 +3677,51 @@ char c3[] = {'a', 'b', 'c', '\0'};  // 等价 c1
 // b = a;          // ❌ 非法：不能整体赋值
 </code></pre>
 <p>只能<strong>逐元素</strong>循环拷贝；这也是传参易丢长度、应优先 <code class="c">vector</code> 的原因之一。</p>
+<h2>栈数组 vs 堆数组（Cherno 数组集）</h2>
+<p>Cherno 数组集的核心对照：</p>
+<pre class="code" data-label="cpp"><code class="c">int example[5];                      // 栈数组：元素跟着作用域活
+int* another = new int[5];           // 堆数组：new 返回的是指针，不是数组
+// ...
+delete[] another;                    // 手动归还；example 出作用域自动死
+</code></pre>
+<p>本机实测（clang 23, <code class="c">-O0</code>）三笔账：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>账</th>
+<th>实测结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① sizeof</td>
+<td><code class="c">sizeof(example)=20</code>（类型自带长度）；<code class="c">sizeof(another)=8</code>——<strong>堆数组不记长度</strong>，拿到的只是首元素指针</td>
+</tr>
+<tr>
+<td>② 地址分区</td>
+<td><code class="c">example=0x16b6865e4</code>（栈，高地址）；<code class="c">another=0x123e04210</code>（堆）；<code class="c">&amp;another=0x16b6865d0</code>——指针本身也在栈上，栈堆分工一目了然</td>
+</tr>
+<tr>
+<td>③ 生命周期</td>
+<td><code class="c">example</code> 出作用域自动死（free 都轮不到你）；<code class="c">another</code> 必须 <code class="c">delete[]</code>，忘了就泄漏</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>什么时候必须上堆</strong>：数组要活得比创建它的作用域久（典型：从函数返回给调用者）。栈数组返回即悬垂——</p>
+<pre class="code" data-label="cpp"><code class="c">int* make_stack_arr() {
+    int local[5] = {1,2,3,4,5};
+    return local;         // warning: address of stack memory associated
+                          // with local variable 'local' returned
+                          // [-Wreturn-stack-address]（默认就开）
+}
+</code></pre>
+<p>运行实测两连：刚返回立刻读，<strong>碰巧打出正确值</strong>（栈没被覆盖——悬垂指针最阴险的形态）；中间插一个 <code class="c">smash()</code> 函数调用占掉那块栈帧，再读就是 <code class="c">-7 41435136</code> 垃圾值。这类 bug 能"时好时坏"地潜伏很久。</p>
+<p><strong><code class="c">delete</code> 与 <code class="c">new[]</code> 配对</strong>：<code class="c">new[]</code> 出来的必须 <code class="c">delete[]</code>。写漏 <code class="c">[]</code>（<code class="c">delete a;</code>）是 UB——clang <code class="c">-Wall</code> 下默认就警告：</p>
+<pre class="code" data-label="code"><code class="c">warning: 'delete' applied to a pointer that was allocated with
+'new[]'; did you mean 'delete[]'? [-Wmismatched-new-delete]
+</code></pre>
+<p>为什么必须配 <code class="c">[]</code>：<code class="c">delete[]</code> 要先逐个析构每个元素再整块归还，析构多少个需要编译器在分配时偷偷记的<strong>元素计数</strong>（对 non-trivial 类型存在指针前面的 cookie 里）；不带 <code class="c">[]</code> 的 <code class="c">delete</code> 只析构一个元素、还按另一套布局归还内存。int 这种平凡类型多数实现"碰巧"不崩，但行为未定义——标准不兜底。</p>
+<p><strong>工程建议</strong>（Cherno 也这么收尾）：需要堆数组的场景，现代 C++ 直接 <code class="c">std::vector</code>（要扩容）或 <code class="c">std::unique_ptr&lt;int[]&gt;</code>（确定不扩容但要堆生存期）；裸 <code class="c">new[]</code>/<code class="c">delete[]</code> 配对自己记，错一次就是泄漏或 UB。</p>
 <h2>和 C 的区别（内置数组：C/C++ 语法几乎一致，细节有差异）</h2>
 <p>内置数组是 C 和 C++ <strong>共享</strong>的语法，大部分行为一致，但 C++ 有几个细节不同：</p>
 <div class="tbl-wrap"><table>
@@ -3756,6 +3801,11 @@ int arr[n];   // ❌ C++ 标准不允许 VLA（GCC 扩展能过，移植性差�
 <details>
 <summary>答案</summary>
 <p><strong>错</strong>。列表初始化时，<strong>未显式给初值的元素会值初始化为 0</strong>。<code class="c">arr</code> = <code class="c">{1, 2, 0, 0, 0}</code>。这是 C 和 C++ 共有的规则。但如果是 <code class="c">int arr[5];</code>（不初始化），局部数组才是垃圾值。</p>
+</details>
+<p><strong>2.5 判断题</strong>　函数里 <code class="c">int* make() { int a[5] = {1,2,3,4,5}; return a; }</code> 返回后立刻打印 <code class="c">p[0]</code>，结果是 1，所以这个写法没问题。</p>
+<details>
+<summary>答案</summary>
+<p><strong>错</strong>。这是悬垂指针的经典陷阱：返回的 <code class="c">p</code> 指向已死亡的栈数组，<strong>立刻读碰巧拿到正确值</strong>只是因为没人踩过那块栈帧。实测：中间插一个别的函数调用再读，就是垃圾值（<code class="c">-7 41435136</code>）。clang <code class="c">-Wreturn-stack-address</code> 默认就警告。想跨作用域携带数组，用堆数组（<code class="c">new int[5]</code> + <code class="c">delete[]</code>）、<code class="c">std::vector</code> 或 <code class="c">std::array</code>（返回时是值拷贝）。</p>
 </details>
 <p><strong>3. 踩坑题</strong>　下面这段 C 风格代码迁移到 C++，有什么问题？</p>
 <pre class="code" data-label="cpp"><code class="c">#define N 100
