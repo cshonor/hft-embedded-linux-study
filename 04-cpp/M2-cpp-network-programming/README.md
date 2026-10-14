@@ -9,7 +9,9 @@
 **实验笔记来源：** 早期 Windows 权威仓库的 **复制**（`NN_主题.md`，目录名已改 ASCII）；
 当前权威版本即本仓——Linux 环境下直接在本模块演进，不再回同步。
 
-## 实验笔记（9 个，扁平结构）
+## 实验笔记（13 个，扁平结构）
+
+### A · Stevens/UNP 实验面（1–9）
 
 | 笔记 | 主题 | UNP 对照 |
 |------|------|----------|
@@ -22,6 +24,18 @@
 | [`07_IO_epoll.md`](./07_IO_epoll.md) | select/poll/epoll | Ch6、Ch16 |
 | [`08_UDP_Multicast.md`](./08_UDP_Multicast.md) | UDP、组播 | Ch8、Ch21–22 |
 | [`09_Serialization.md`](./09_Serialization.md) | Protobuf 对齐、版本 | PNP 独有 |
+
+### B · muduo 三条主线（10–13）
+
+> 补于 2026-10-14：1–9 是 UNP 的实验笔记，此前**没有任何一篇落到 muduo 的核心设计**，
+> 而 muduo 真正值钱的是下面这四篇。每篇都对照 `github.com/chenshuo/muduo` master 分支源码核过。
+
+| 笔记 | 主题 | 原书对照 |
+|------|------|----------|
+| [`10_MuduoBuffer.md`](./10_MuduoBuffer.md) | `readv` + 64 KB 栈缓冲、三索引布局、`makeSpace` | 本书第 7 章 |
+| [`11_EventLoopThreading.md`](./11_EventLoopThreading.md) | one loop per thread、`eventfd` 唤醒、`runInLoop`/`queueInLoop`、`swap` 缩临界区 | 本书第 2、4 章 |
+| [`12_TcpConnectionLifetime.md`](./12_TcpConnectionLifetime.md) | `tie`/`shared_from_this`、`handleClose` 保命 fd、跨线程销毁 | 本书第 1、8 章 |
+| [`13_AsyncLogging.md`](./13_AsyncLogging.md) | 四 buffer 异步日志、前台 memcpy / 后台 `swap` 写盘、丢弃策略 | 本书第 5 章 |
 
 ## 其他文件
 
