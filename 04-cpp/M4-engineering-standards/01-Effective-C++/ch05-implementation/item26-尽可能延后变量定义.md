@@ -7,7 +7,7 @@
 **异常路径浪费 → 循环内 vs 循环外 → 默认构造的陷阱**。这条与 item04（初始化）
 一体两面：不仅要初始化，还要**在正确的时机**初始化。
 
-← 上一条 [item25 不抛异常的 swap](../ch04-designs-and-declarations/item25-考虑提供不抛异常的swap重载.md)；
+← 上一条 [item25 不抛异常的 swap](../ch04-design-declaration/item25-考虑提供不抛异常的swap重载.md)；
 下一条 [item27 减少类型转型](./item27-尽量减少类型转型（cast）.md)。
 
 ---
