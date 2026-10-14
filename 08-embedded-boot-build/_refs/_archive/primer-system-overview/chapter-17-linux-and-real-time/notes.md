@@ -5,7 +5,7 @@
 > 大纲：OUTLINE（归档书无目录页）
 
 **优先级**：见 OUTLINE 标签（软/硬实时、PREEMPT_RT、测量 **精读**）  
-**前置选型语境：** [Ch1 · Linux vs RTOS](../chapter-01-introduction/1.1-linux-vs-rtos.md)（何时 Linux / RTOS / 异构混合）  
+**前置选型语境：** [Ch1 · Linux vs RTOS](../../../../../08-embedded-boot-build/01-orientation/1.1-linux-vs-rtos.md)（何时 Linux / RTOS / 异构混合）  
 **后置**：同模块 [MELP](../../build-toolchain-yocto/)（实操落地）
 
 ---
@@ -21,4 +21,4 @@
 ## 参考
 
 - Hallinan, *Embedded Linux Primer*, 2nd ed, Chapter 17
-- 选型边界：[../chapter-01-introduction/1.1-linux-vs-rtos.md](../chapter-01-introduction/1.1-linux-vs-rtos.md)
+- 选型边界：[../../../../../08-embedded-boot-build/01-orientation/1.1-linux-vs-rtos.md](../../../../../08-embedded-boot-build/01-orientation/1.1-linux-vs-rtos.md)

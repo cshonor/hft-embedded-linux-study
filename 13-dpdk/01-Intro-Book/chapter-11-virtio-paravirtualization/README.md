@@ -36,7 +36,7 @@ guest 发一个包 → virtqueue 放描述符 → kick（写 MMIO）→ VM-exit
 - **生产行情/订单路径**：不接受 virtio。云厂商的"增强网络"大多是 virtio 变体，先问清
 - **必须 VM**：走 [Ch10](../chapter-10-x86-io-virtualization/) 的 SR-IOV 透传，跳过整个 virtio 层
 - **开发/回测环境**：virtio 随便用——功能正确性测试不吃尾延迟
-- 本章真正值得带走的是 **virtqueue 的环设计**：它和 [Ch6 DMA 描述符环](../../chapter-06-pcie-packet-io/) 同源，
+- 本章真正值得带走的是 **virtqueue 的环设计**：它和 [Ch6 DMA 描述符环](../chapter-06-pcie-packet-io/) 同源，
   是理解 [Ch12 vhost](../chapter-12-vhost-optimization/) 如何把后端搬进用户态的钥匙
 
 ---

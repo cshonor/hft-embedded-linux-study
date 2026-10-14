@@ -15,8 +15,8 @@
 |------|------|
 | **[ch03](../92-ref-arm-asm)** | ARM 汇编、`stmfd`/`ldmfd`、栈 |
 | **[ch05](../91-ref-memory)** | 任务栈、栈溢出、canary |
-| **[ch08](../05-ch5-portable-modular/oop-in-c)** | TCB 结构体、ops/vtable |
-| **[ch09](../05-ch5-portable-modular/modular-c)** | 分层目录、Makefile、回调解耦 |
+| **[ch08]../05-ch5-portable-modular/5.14-oop-in-c/** | TCB 结构体、ops/vtable |
+| **[ch09]../05-ch5-portable-modular/5.19-modular-c/** | 分层目录、Makefile、回调解耦 |
 
 ## 环境
 

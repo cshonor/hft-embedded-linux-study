@@ -148,7 +148,7 @@ static int tx_stage(void *arg)
 2. **每对相邻 stage 一个 ring**（SP/SC 时无锁）；扇出是 N 个 ring，不是"一个 ring 大家抢"——
    多消费者抢同一 ring 会重新引入争用，违背拆 stage 的初衷。
 3. **延迟是加性的**：每个 stage 的队头等待（见
-   [chapter-03-PMD §二](../../../notes/chapter-03-PMD与轮询模式.md)）逐级累加，
+   [chapter-03-PMD §二(../../notes/chapter-03-PMD与轮询模式.md)）逐级累加，
    这就是选型表里"多 stage 增加排队延迟"的具体来源——tick-to-trade 主路径别拆超过 2 级。
 
 ---

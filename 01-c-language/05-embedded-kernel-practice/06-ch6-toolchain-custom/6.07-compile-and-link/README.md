@@ -12,7 +12,7 @@
 
 | 章节 | 内容 |
 |------|------|
-| **[ch01](../toolchain)** | `gcc`、`make`、`gdb`、`objdump` |
+| **[ch01](../6.01-toolchain/)** | `gcc`、`make`、`gdb`、`objdump` |
 | ~~ch02 体系结构~~ | 🗑️ 已删，见 [主线二 3.1](../../03-ch3-embedded-driver/3.1-register/3.1-寄存器操作.md) |
 | **[ch03](../../92-ref-arm-asm)** | 汇编、`.section`、AAPCS、`objdump -dS` |
 

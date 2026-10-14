@@ -5,7 +5,7 @@
 ## 本节讲什么
 
 两件事：① `dmesg` 是什么、内核日志怎么分级；② 内核崩的时候刷出来的一整屏
-**Oops** 长什么样——不逐字段精读（那是 [Ch7](../chapter-07-oops/) 的活），
+**Oops** 长什么样——不逐字段精读（那是 [Ch7](../../chapter-07-oops/) 的活），
 只学会认出它的**骨架**：哪一行是「死在哪」、哪一段是「怎么死的」。
 
 > ⚠ 诚实标注：本节的 Oops 样例是**示意文本**（按原书 Ch7 的典型格式手工整理），
@@ -77,7 +77,7 @@ Call Trace:                                                          ← ④ 怎
 
 ## 3. Oops 之后系统死了吗？——Oops vs panic
 
-新手最容易混的一对词（精读在 [Ch7 的 07.1](../chapter-07-oops/notes/01-oops-vs-panic.md)）：
+新手最容易混的一对词（精读在 [Ch7 的 07.1](../../chapter-07-oops/notes/01-oops-vs-panic.md)）：
 
 | | Oops | panic |
 |---|------|-------|
@@ -100,6 +100,6 @@ task 干掉继续跑）；但对「内核自身核心数据结构不一致」没
 
 ## 与后续衔接
 
-- RIP 那行 `+0x1e/0x40` 的偏移怎么换算回源码行 → [Ch7](../chapter-07-oops/) 的 07.4 addr2line / 07.5 objdump
-- printk 全家（级别、动态调试、`/proc/dynamic_debug`）→ [Ch3](../chapter-03-printk/)
+- RIP 那行 `+0x1e/0x40` 的偏移怎么换算回源码行 → [Ch7](../../chapter-07-oops/) 的 07.4 addr2line / 07.5 objdump
+- printk 全家（级别、动态调试、`/proc/dynamic_debug`）→ [Ch3](../../chapter-03-printk/)
 - 下一节 [0.3](./02-glossary-path.md)：术语速查 + 12 章怎么啃

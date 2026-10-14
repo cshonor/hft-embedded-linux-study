@@ -12,7 +12,7 @@
 |------|------|
 | **[ch05](../../91-ref-memory)** | 堆/栈、`malloc`/`free`、对象生命周期 |
 | **[ch06](../../01-ch1-gnu-c-basics)** | `container_of`、`weak`/`alias`、指定初始化 |
-| **[ch07](../data-and-pointers)** | 结构体指针、`typedef`、**5.12 函数指针** |
+| **[ch07](../5.01-data-and-pointers/)** | 结构体指针、`typedef`、**5.12 函数指针** |
 
 ## 环境
 

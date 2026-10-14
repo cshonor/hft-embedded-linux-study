@@ -12,7 +12,7 @@
 
 | 章节 | 内容 |
 |------|------|
-| **[ch04](../../06-ch6-toolchain-custom/compile-and-link)** | 编译链接、ELF 段、符号、`readelf`/`nm` |
+| **[ch04](../../06-ch6-toolchain-custom/6.07-compile-and-link/)** | 编译链接、ELF 段、符号、`readelf`/`nm` |
 | **[ch05](../../91-ref-memory)** | 栈/堆、`malloc`、对象生命周期 |
 | **[ch06](../../01-ch1-gnu-c-basics)** | `packed`/`aligned`、`offsetof`、`container_of`、FAM |
 

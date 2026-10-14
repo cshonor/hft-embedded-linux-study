@@ -75,7 +75,7 @@ DMA = **硬件自己搬运内存数据，CPU 不亲自拷贝**。本章是低延
 | 思想源头 | [LDD3 Ch15 Memory Mapping and DMA](../../classic-driver-theory/chapter-15-memory-mapping-and-dma/notes.md)（2.6.10 老 API，思想精读） |
 | 中断侧 | [LDD3 Ch10 Interrupt Handling](../../classic-driver-theory/chapter-10-interrupt-handling/notes.md)（DMA 完成中断的上/下半部） |
 | `copy_from_user` | [Ch4 字符设备驱动](../chapter-04-character-device-drivers/notes.md) |
-| HFT 落地 | [13-dpdk](../../../13-dpdk/01-Intro-Book/)（DMA + 内核旁路的工程化） |
+| HFT 落地 | [13-dpdk](../../../../../13-dpdk/01-Intro-Book/)（DMA + 内核旁路的工程化） |
 
 ---
 

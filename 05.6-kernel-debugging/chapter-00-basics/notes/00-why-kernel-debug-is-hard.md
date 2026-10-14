@@ -12,12 +12,12 @@
 
 | 你想干什么 | 用户态怎么做 | 内核态为什么不能照搬 | 内核态的姿势（本模块哪章） |
 |-----------|--------------|----------------------|---------------------------|
-| 打印调试信息 | `printf`（走 libc，最终 syscall write） | 内核里没有 libc，`printf` 会链接失败；内核自己向终端打印的机制是 **printk** | [Ch3](../chapter-03-printk/) |
-| 单步调试 | `gdb ./a.out` 直接跑 | 用户态 gdb 靠 ptrace 系统调用「附着」进程——ptrace 不能附着内核；内核是「别的进程的地基」 | [Ch11 KGDB](../chapter-11-kgdb/)（要第二台机器+串口/网线） |
-| 崩溃后看现场 | coredump 落盘 → 事后 gdb 尸检 | 内核崩 = 全系统死，**没人负责写盘**；现场只能当场打印（Oops）或靠 kdump 抓快照 | [Ch7 Oops](../chapter-07-oops/) / [Ch10 panic](../chapter-10-panic-lockup/) |
-| 查内存越界 | valgrind / ASan，程序照跑 | valgrind 是用户态虚拟机方案，进不了内核；内核要在**编译时插桩**（KASAN），且必须重编内核 | [Ch5 内存调试](../chapter-05-memory-debug-1/) |
-| 查竞态/死锁 | TSan / gdb 看线程栈 | 同样要内核内建检查器：LOCKDEP（锁规则）、KCSAN（数据竞争），同样要重编内核 | [Ch8 锁调试](../chapter-08-lock-debug/) |
-| 看函数调用流程 | ltrace / perf | 内核函数不经过 PLT，ltrace 看不见；用 **ftrace**（内核自带）或 kprobes 动态插桩 | [Ch9 ftrace](../chapter-09-ftrace/) / [Ch4 kprobes](../chapter-04-kprobes/) |
+| 打印调试信息 | `printf`（走 libc，最终 syscall write） | 内核里没有 libc，`printf` 会链接失败；内核自己向终端打印的机制是 **printk** | [Ch3](../../chapter-03-printk/) |
+| 单步调试 | `gdb ./a.out` 直接跑 | 用户态 gdb 靠 ptrace 系统调用「附着」进程——ptrace 不能附着内核；内核是「别的进程的地基」 | [Ch11 KGDB](../../chapter-11-kgdb/)（要第二台机器+串口/网线） |
+| 崩溃后看现场 | coredump 落盘 → 事后 gdb 尸检 | 内核崩 = 全系统死，**没人负责写盘**；现场只能当场打印（Oops）或靠 kdump 抓快照 | [Ch7 Oops](../../chapter-07-oops/) / [Ch10 panic](../../chapter-10-panic-lockup/) |
+| 查内存越界 | valgrind / ASan，程序照跑 | valgrind 是用户态虚拟机方案，进不了内核；内核要在**编译时插桩**（KASAN），且必须重编内核 | [Ch5 内存调试](../../chapter-05-memory-debug-1/) |
+| 查竞态/死锁 | TSan / gdb 看线程栈 | 同样要内核内建检查器：LOCKDEP（锁规则）、KCSAN（数据竞争），同样要重编内核 | [Ch8 锁调试](../../chapter-08-lock-debug/) |
+| 看函数调用流程 | ltrace / perf | 内核函数不经过 PLT，ltrace 看不见；用 **ftrace**（内核自带）或 kprobes 动态插桩 | [Ch9 ftrace](../../chapter-09-ftrace/) / [Ch4 kprobes](../../chapter-04-kprobes/) |
 
 ## 六个「为什么」，每个一句话
 

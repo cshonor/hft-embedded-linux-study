@@ -26,7 +26,7 @@
 
 | 章节 | 内容 |
 |------|------|
-| **[ch01](../06-ch6-toolchain-custom/toolchain)** | `gcc`、`gdb`、`objdump`、`make`、交叉编译概念 |
+| **[ch01]../06-ch6-toolchain-custom/6.01-toolchain/** | `gcc`、`gdb`、`objdump`、`make`、交叉编译概念 |
 | **[3.1 嵌入式 C 开门](../03-ch3-embedded-driver/3.1-register/3.1-寄存器操作.md)** | 读得懂 MMIO 的 C 表达；原 ch02 硬件内容已删 |
 
 ## 环境
@@ -58,7 +58,7 @@ make clean
 | 模块 | 目录 | 为什么留 |
 |------|------|------|
 | **混合编程** | 2.6 | `__asm__ __volatile__` 是 **GNU C 扩展**，不是硬件课 |
-| **GNU 语法** | 3.7 | `.section` 直接对应 [ch04 链接脚本](../06-ch6-toolchain-custom/compile-and-link)；读懂 `objdump -dS` 是验证 C 优化的刚需 |
+| **GNU 语法** | 3.7 | `.section` 直接对应 [ch04 链接脚本]../06-ch6-toolchain-custom/6.07-compile-and-link/；读懂 `objdump -dS` 是验证 C 优化的刚需 |
 | **AArch64** | 3.8 | 选读：X0–X30、无 Thumb；与 [递归栈帧实测](../../02-advanced-pointers-and-memory/ch07-functions/7.5-recursion/7.5-递归.md) 里的 AArch64 对照 |
 
 ## Demo 清单
@@ -75,7 +75,7 @@ make clean
 2. 写一段 **`asm volatile`** 并说明 `volatile` 与 clobber（`"memory"` 为什么能阻止死存储消除）  
 3. 用 **objdump -dS** 指出参数寄存器与返回寄存器  
 4. 简述 **AArch64 X0–X30** 与 ARM32 差异  
-5. `.section` 伪操作与链接脚本里的段如何对应（→ [ch04](../06-ch6-toolchain-custom/compile-and-link)）
+5. `.section` 伪操作与链接脚本里的段如何对应（→ [ch04]../06-ch6-toolchain-custom/6.07-compile-and-link/）
 
 ## 前后章节
 

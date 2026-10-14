@@ -10,11 +10,11 @@
 
 | 章节 | 内容 |
 |------|------|
-| **[ch01](../../06-ch6-toolchain-custom/toolchain)** | Makefile、CMake、Git |
-| **[ch04](../../06-ch6-toolchain-custom/compile-and-link)** | 静/动态库、链接、符号 |
+| **[ch01](../../06-ch6-toolchain-custom/6.01-toolchain/)** | Makefile、CMake、Git |
+| **[ch04](../../06-ch6-toolchain-custom/6.07-compile-and-link/)** | 静/动态库、链接、符号 |
 | **[ch06](../../01-ch1-gnu-c-basics)** | **`weak`/`alias`**、宏 |
-| **[ch07](../data-and-pointers)** | 结构体、指针 |
-| **[ch08](../oop-in-c)** | 不透明类型、**ops/vtable**、分层 |
+| **[ch07](../5.01-data-and-pointers/)** | 结构体、指针 |
+| **[ch08](../5.14-oop-in-c/)** | 不透明类型、**ops/vtable**、分层 |
 
 ## 环境
 
