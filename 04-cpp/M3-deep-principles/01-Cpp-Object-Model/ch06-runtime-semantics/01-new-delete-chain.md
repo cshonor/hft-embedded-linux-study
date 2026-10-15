@@ -4,7 +4,7 @@
 
 ## 这节讲什么
 
-`new[]` 在头部存元素数（额外开销），`delete[]` 据此逐个析构。`operator new` 可重载接 mempool。理解完整链路才能正确重载和优化。
+`new[]` 在头部存元素数（仅**析构非平凡**的类型才有，本机 arm64 + libc++ 实测 16B），`delete[]` 据此逐个析构。`operator new` 可重载接 mempool。理解完整链路才能正确重载和优化。
 
 ---
 
@@ -23,8 +23,9 @@ C++ 的 `new[]` 更复杂——它需要记录元素数量，以便 `delete[]` �
 
 ```cpp
 Widget* arr = new Widget[10];
-// 内存布局：[元素数(8B)] [Widget 0] [Widget 1] ... [Widget 9]
-// 头部 8 字节存元素数（cookie），delete[] 据此逐个析构
+// 内存布局：[元素数(16B)] [Widget 0] [Widget 1] ... [Widget 9]
+// 头部 16 字节存元素数（cookie），delete[] 据此逐个析构
+// 注意前提：只有析构非平凡的类型才需要它——int 这类平凡类型连头部都省掉
 delete[] arr;  // 正确：读 cookie → 逐个析构 → 释放
 delete arr;    // UB！不知道有几个元素，只析构第一个
 ```
@@ -37,10 +38,10 @@ delete arr;    // UB！不知道有几个元素，只析构第一个
 
 ```cpp
 Widget* arr = new Widget[10];
-// 1. operator new * 10 + cookie_size)  // 分配内存 + cookie
-//    cookie_size 通常 = 8（存元素数）
+// 1. operator new(sizeof(Widget) * 10 + cookie_size)  // 分配内存 + cookie
+//    cookie_size 在本机实测 = 16（arm64 + libc++，clang 23.1.0，2026-10-15 验证）
 // 2. 逐个 placement new 构造：new(mem + i) Widget()
-// 内存布局：[count=10 (8B)] [Widget 0] [Widget 1] ... [Widget 9]
+// 内存布局：[count=10 (16B)] [Widget 0] [Widget 1] ... [Widget 9]
 ```
 
 ### delete[] 的展开
@@ -98,10 +99,12 @@ delete arr;  // UB！只析构第一个，其余 9 个不析构
 
 ```cpp
 // 预分配内存 + placement new[]
-char buf[sizeof(Widget) * 10 + 8];  // 需要 +8 给 cookie
+char buf[sizeof(Widget) * 10 + 16];  // 需要 +16 给 cookie（本机 arm64 + libc++ 实测，不是 +8）
 Widget* arr = new (buf) Widget[10]; // placement new[]
 // 但 placement new[] 的 cookie 处理因编译器而异——避免手动做
 ```
+
+> 前提提醒：cookie 只在**析构非平凡**的类型上才有。对 `int` 这类平凡析构类型，`delete[]` 不需要逐个析构，编译器连元素个数都不记——`new int[n]` 实际申请的正好就是 `n * sizeof(int)`，头部为 0（本机实测）。
 
 ### 错误 3：重载 operator new 忘了对应 delete
 
@@ -124,7 +127,7 @@ public:
 | 构造/析构 | 无 | 自动逐个调 |
 | 配对错误 | 无（free 就是 free） | **UB**（new[]/delete 不配对） |
 | 自定义分配 | N/A | 重载 operator new |
-| cookie 开销 | 无 | new[] 有 8B cookie |
+| cookie 开销 | 无 | new[] 有 16B cookie（仅非平凡析构类型；平凡类型为 0） |
 
 ---
 
@@ -149,7 +152,7 @@ Widget* arr = new Widget[5];
 <details>
 <summary>答案与复习指引</summary>
 
-布局：`[count=5 (8B)] [Widget 0] [Widget 1] ... [Widget 4]`。`arr` 指向 Widget 0 的位置（cookie 在 arr 之前）。`arr - 8` 处存着元素数 5。`delete[]` 读取这个 cookie 知道要析构 5 个。
+布局：`[count=5 (16B)] [Widget 0] [Widget 1] ... [Widget 4]`。`arr` 指向 Widget 0 的位置（cookie 在 arr 之前）。`arr - 16` 处存着元素数 5。`delete[]` 读取这个 cookie 知道要析构 5 个。（cookie 大小实现相关，本机 arm64 + libc++ 实测 16B；Widget 有显式析构所以才有 cookie——平凡析构类型连它都省掉，见 [C++Primer 12.2](../../../M0-entry-syntax/01-C++Primer/ch12-dynamic-memory/12.2-直接内存管理.md)「new[] 多出来的那 16 个字节」。）
 
 **复习：** → [6.1 new/delete 完整链路](./01-new-delete-chain.md)
 </details>
