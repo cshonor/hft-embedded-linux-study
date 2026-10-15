@@ -408,7 +408,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <p><strong>C 字符串</strong>的定义只有一个约定：一段连续的 <code class="c">char</code>，以 <strong><code class="c">'\0'</code></strong>（值为 0 的字节）作为<strong>唯一</strong>结束标志。这个看似简单的约定是整个 <code class="c">&lt;string.h&gt;</code> API 族的根基，也是 HFT/网络报文场景<strong>无数漏洞的源头</strong>——因为真实报文里 0x00 是合法数据字节，不是终止符。</p>
 <p><strong>二进制字节流</strong>则相反：边界由<strong>显式长度</strong> <code class="c">pkt_len</code> 决定，0x00 可以出现在任意位置。这两种数据模型<strong>互不兼容</strong>，混用即 UB。本章的核心主线就是划清这条界线。</p>
 <h3>历史背景</h3>
-<p>C 字符串约定继承自 1969 年 B 语言（Dennis Ritchie 在 PDP-7 上设计）。当时内存以字节编址、CPU 慢、无专门字符串指令，<strong>用 0 作为哨兵</strong>让扫描循环只需一条 <code class="c">cmpb $0,(%rax)</code> 即可判定结束，无需维护长度字段。这个取舍在 1970s 合理，但在 2020s 的二进制协议场景成了<strong>系统性风险</strong>——Heartbleed（CVE-2014-0160）、 countless buffer overflows 都源于把 C 字符串 API 套到二进制数据上。</p>
+<p>C 字符串约定继承自 1969 年 B 语言（Dennis Ritchie 在 PDP-7 上设计）。当时内存以字节编址、CPU 慢、无专门字符串指令，<strong>用 0 作为哨兵</strong>让扫描循环只需一条 <code class="c">cmpb $0,(%rax)</code> 即可判定结束，无需维护长度字段。这个取舍在 1970s 合理，但在 2020s 成了<strong>系统性风险</strong>——<code class="c">gets</code>/<code class="c">strcpy</code> 一族的缓冲区溢出（Morris 蠕虫、无数栈溢出 CVE）都源于把 C 字符串 API 套到不受控输入上。</p>
+<blockquote>
+<p>⚠ 归因要分清：<strong>Heartbleed（CVE-2014-0160）不是 C 字符串模型的锅</strong>——心跳报文本来就是"显式长度"的二进制协议，漏洞是 OpenSSL 信任了报文里的 2 字节 <code class="c">payload_length</code> 却没校验它 ≤ 实际收到的字节数，一次 <code class="c">memcpy</code> 越读 64KB。它的教训恰好相反：<strong>显式长度模型必须校验长度</strong>（信任输入的长度字段 = 信任攻击者）。别把两个模型的坑记混。</p>
+</blockquote>
 <h2>要点</h2>
 <h3>内存布局</h3>
 <pre class="code" data-label="C"><code class="c">char str[] = &quot;quote&quot;;   /* 'q''u''o''t''e''\0' → 6 字节 */
@@ -440,21 +443,24 @@ const char *proto = &quot;heartbeat&quot;;  /* 指针，指向 .rodata 字面量
 <tbody>
 <tr>
 <td><code class="c">char arr[] = "..."</code></td>
-<td>栈/堆（拷贝）</td>
+<td>函数内：栈拷贝；全局/静态：<code class="c">.data</code> 初始化拷贝</td>
 <td><strong>可写</strong></td>
 <td>正常</td>
 </tr>
 <tr>
 <td><code class="c">const char *p = "..."</code></td>
-<td><code class="c">.rodata</code> 段</td>
+<td>字面量在只读段</td>
 <td><strong>不可写</strong></td>
-<td><strong>SIGSEGV</strong>（或 UB）</td>
+<td>Linux：<strong>SIGSEGV</strong>；macOS 实测：<strong>SIGBUS</strong>（exit 138）；裸机：<strong>静默踩踏</strong></td>
 </tr>
 </tbody>
 </table></div>
-<p>字面量 <code class="c">"heartbeat"</code> 存放在 <code class="c">.rodata</code> 段，由编译器<strong>合并相同字面量</strong>以节省空间（<code class="c">-fmerge-constants</code>，默认开启）。修改字面量在带 NX 页保护的系统上触发段错误，在不带保护的嵌入式系统上是<strong>静默踩踏</strong>其他字面量。</p>
-<pre class="code" data-label="shell"><code class="c">$ gcc -O2 strlit.c -o strlit
-$ objdump -s -j .rodata strlit   # 可见 &quot;heartbeat&quot; 仅一份
+<p>字面量 <code class="c">"heartbeat"</code> 存放在只读段——<strong>ELF 是 <code class="c">.rodata</code>，Mach-O（macOS）是 <code class="c">__TEXT,__cstring</code></strong>（名字不同，别在 macOS 上 objdump <code class="c">.rodata</code> 扑空）。相同字面量由编译器合并以节省空间（<code class="c">-fmerge-constants</code>，优化开启时默认启用）。实测（clang 23, macOS arm64）：两处 <code class="c">"heartbeat"</code> 字面量地址相同（合并为一份）；<code class="c">p[0]='H'</code> 写字面量当场 SIGBUS。</p>
+<pre class="code" data-label="shell"><code class="c"># Linux/ELF：
+$ gcc -O2 strlit.c -o strlit
+$ objdump -s -j .rodata strlit        # 可见 &quot;heartbeat&quot; 仅一份
+# macOS/Mach-O：
+$ otool -l strlit | grep -A2 __cstring   # 字面量在 __TEXT,__cstring
 </code></pre>
 <h3>C 字符串 vs 二进制字节流</h3>
 <div class="tbl-wrap"><table>
