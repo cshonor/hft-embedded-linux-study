@@ -593,6 +593,71 @@ int* p = new (buf) int(42);   // 在 buf 处构造 int，不分配
 // ... 用 ...
 p-&gt;~int();                     // 手动析构（不释放内存）
 </code></pre>
+<h3>delete 到底比 free 多做了什么</h3>
+<p>一句话答案：<strong><code class="c">delete</code> 不是另一套内存回收机制，它就是 <code class="c">free</code> 外面包了一层析构。</strong></p>
+<p>把全局变量 <code class="c">operator new</code>/<code class="c">operator delete</code> 替换掉打印之后，实测链路（<code class="c">clang++ -std=c++17</code>，例子见文末）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>编译器实际展开</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">new T(args)</code></td>
+<td><code class="c">void* m = operator new(sizeof(T));</code> → 在 m 上构造</td>
+</tr>
+<tr>
+<td><code class="c">delete p</code></td>
+<td><code class="c">p-&gt;~T();</code> → <code class="c">operator delete(p);</code></td>
+</tr>
+<tr>
+<td><code class="c">operator new</code> 的默认实现</td>
+<td>内部就是 <code class="c">malloc</code>（拿不到内存时转去调 <code class="c">new_handler</code>）</td>
+</tr>
+<tr>
+<td><code class="c">operator delete</code> 的默认实现</td>
+<td>内部就是 <code class="c">free</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>所以同一次运行里 <code class="c">malloc(8)</code> 和 <code class="c">new Tracked(2)</code> 拿到的地址只相差几百字节——<strong>它们是同一个堆 arena</strong>。</p>
+<p>正因为底层是同一个东西，「混用是 UB」通常<strong>不会当场崩溃</strong>，而是静默地少干一半活：</p>
+<pre class="code" data-label="cpp"><code class="c">Widget* p = new Widget();
+free(p);      // 内存确实归还了，但 ~Widget() 一次都没跑
+              // → Widget 持有的那块资源泄漏，而 valgrind/ASan 未必报警
+</code></pre>
+<blockquote>
+<p>实测补充（2026-10-15，macOS + clang 23.1.0 + libc++）：<code class="c">-fsanitize=address</code> <strong>抓不到</strong> <code class="c">new</code>+<code class="c">free</code> 这种混用。因为 ASan 拦截的是 <code class="c">malloc</code>/<code class="c">free</code>，而默认的 <code class="c">operator new</code> 内部就是 <code class="c">malloc</code>，在它眼里两边完全匹配，不报 <code class="c">alloc-dealloc-mismatch</code>。别指望 sanitizer 替你兜这个底。（换平台/换 runtime 可能不同。）</p>
+</blockquote>
+<h3>delete nullptr 是安全的</h3>
+<pre class="code" data-label="cpp"><code class="c">Widget* p = nullptr;
+delete p;         // 合法：标准保证什么也不做
+free(nullptr);    // 同理，C 的 free(NULL) 也是 no-op
+</code></pre>
+<p>不需要写 <code class="c">if (p) delete p;</code> 这种保护——标准规定 <code class="c">operator delete</code> 收到空指针时必须什么都不做。C 程序员从 <code class="c">free</code> 迁过来常顺手加上，属于多余代码。</p>
+<h3>sized delete：delete 比 free 多知道一件事</h3>
+<p><code class="c">free</code> 只拿到一个地址，块多大得去 malloc 头部查。<code class="c">delete</code> 不一样——<strong>编译器在 delete 点静态就知道 <code class="c">sizeof(T)</code></strong>，C++14 起会优先把它传进去：</p>
+<pre class="code" data-label="cpp"><code class="c">void operator delete(void* p) noexcept;              // 无 size 版
+void operator delete(void* p, std::size_t n) noexcept;  // sized 版（C++14 起）
+</code></pre>
+<p>同一份代码换标准编译，实测选择的版本不同：</p>
+<pre class="code" data-label="code"><code class="c">-std=c++17  →  [op del]  0x146e04a10 size=4   &lt;- sized delete
+-std=c++11  →  [op del]  0x136804640          &lt;- 无 size 版本
+</code></pre>
+<p>自己写内存池重载 <code class="c">operator delete</code> 时，这个 <code class="c">n</code> 是白捡的信息：省掉一次从 malloc 头部反查块大小的动作，也能直接用来决定该把这块内存还给哪个 size class 的空闲链表。</p>
+<h3>new[] 多出来的那 16 个字节</h3>
+<p><code class="c">delete[]</code> 得知道要析构几个元素，所以 <code class="c">new[]</code> 要在分配块头部塞一个计数字段（俗称 cookie）。实测（arm64 + libc++）：</p>
+<pre class="code" data-label="code"><code class="c">new Tracked[3]   sizeof*3 = 12 字节，实际申请 28 字节，用户指针比起点后移 16 字节
+new int[3]       sizeof*3 = 12 字节，实际申请 12 字节，偏移 0 字节
+</code></pre>
+<p>两个结论，都容易记错：</p>
+<ol>
+<li><strong>头部是 16 字节，不是 8。</strong> 它要对齐到最大对齐要求，跟 <code class="c">sizeof(T)</code> 无关（<code class="c">sizeof</code> 为 4 / 7 / 8 的类型实测都是 16）。</li>
+<li><strong>只有析构非平凡的类型才需要它。</strong> <code class="c">int</code> 这类平凡类型 <code class="c">delete[]</code> 不必逐个析构，就不用记元素数——<strong>连头部都省掉了</strong>。</li>
+</ol>
+<p>算内存池容量时若把这块漏了，池子会算少；按 8 字节算也会算少。</p>
 <h2>和 C 的区别</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -636,7 +701,22 @@ p-&gt;~int();                     // 手动析构（不释放内存）
 <tr>
 <td>数组</td>
 <td><code class="c">malloc(n*sizeof(T))</code></td>
-<td><code class="c">new T[n]</code></td>
+<td><code class="c">new T[n]</code>（多了个 16B 头部，见上文）</td>
+</tr>
+<tr>
+<td>底层实现</td>
+<td><code class="c">free</code> 直接进 libc</td>
+<td><code class="c">operator delete</code> 默认就是 <code class="c">free</code></td>
+</tr>
+<tr>
+<td>传 nullptr</td>
+<td>安全，no-op</td>
+<td>安全，no-op</td>
+</tr>
+<tr>
+<td>能否替换</td>
+<td>只能换整个分配器（<code class="c">LD_PRELOAD</code>）</td>
+<td>可重载，且 C++14 起还有带 size 版本</td>
 </tr>
 </tbody>
 </table></div>
@@ -698,6 +778,20 @@ std::shared_ptr&lt;int&gt; q(raw);         // 用裸指针构造另一个
 <p>建议用智能指针的原因：1) RAII 自动释放，几乎消灭泄漏；2) 异常安全；3) 所有权明确（unique 独占/shared 共享）。裸 new/delete 的问题：忘了 delete 泄漏、重复 delete UB、异常路径泄漏、悬垂指针。</p>
 <p>仍需裸 new 的场景：1) 实现智能指针/容器底层（要手动管理）；2) placement new（在预分配内存上构造，如内存池）；3) 与 C 接口互操作（C 要裸指针）；4) 自定义内存分配器。这些是底层库的活，应用层代码应尽量用智能指针。原则：能用 <code class="c">make_unique</code>/<code class="c">make_shared</code> 就别裸 new。</p>
 </details>
+<p><strong>5. 判断题</strong>：<code class="c">Widget* p = new Widget(); free(p);</code> 会立刻崩溃。</p>
+<details>
+<summary>答案</summary>
+<p>不会崩溃（通常），但这是 UB，而且<strong>比崩溃更危险</strong>。<code class="c">free</code> 能正确把内存还回去（因为默认 <code class="c">operator new</code> 底层就是 <code class="c">malloc</code>），但 <code class="c">~Widget()</code> <strong>一次都没有被调用</strong>——Widget 内部持有的文件句柄、子堆内存全部泄漏。</p>
+<p>更麻烦的是工具不一定报警：macOS + clang + libc++ 下实测 <code class="c">-fsanitize=address</code> 不报 <code class="c">alloc-dealloc-mismatch</code>，因为 ASan 眼里 <code class="c">operator new</code>→<code class="c">malloc</code>、<code class="c">free</code>→<code class="c">free</code> 是一对匹配的调用。所以这条只能靠自己配对：new 配 delete，malloc 配 free。</p>
+</details>
+<p><strong>6. 算账题</strong>：<code class="c">struct Data { char buf[24]; ~Data(){} };</code>（非平凡析构），<code class="c">new Data[100]</code> 实际向 <code class="c">operator new[]</code> 申请了多少字节？如果把析构函数删掉呢？</p>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="cpp"><code class="c">new Data[100]  // 100 * 24 = 2400 字节数据 + 16 字节头部 = 2416 字节
+</code></pre>
+<p>删掉 <code class="c">~Data()</code> 后变成平凡析构类型，<code class="c">delete[]</code> 不必逐个析构，就不需要记元素个数——<strong>连 16 字节头部都省了</strong>，只申请 <strong>2400 字节</strong>。</p>
+<p>给内存池算容量时踩的两个坑：① 忘了头部 → 池子算小了；② 以为头部是 8 字节 → 还是算小了（arm64 + libc++ 实测是 16）。</p>
+</details>
 <h2>可跑的例子</h2>
 <p><strong><code class="c">examples/12.2-placement-new.cpp</code></strong> —— 亲手看 placement new 到底干了什么。</p>
 <pre class="code" data-label="shell"><code class="c">clang++ -std=c++20 12.2-placement-new.cpp -o /tmp/demo &amp;&amp; /tmp/demo
@@ -743,17 +837,49 @@ std::shared_ptr&lt;int&gt; q(raw);         // 用裸指针构造另一个
 <td style="text-align: center;">❌</td>
 <td style="text-align: center;">✅ 析构</td>
 </tr>
+<tr>
+<td><code class="c">free(p)</code></td>
+<td style="text-align: center;">✅ 归还</td>
+<td style="text-align: center;">❌ 不析构</td>
+</tr>
+<tr>
+<td><code class="c">delete p</code></td>
+<td style="text-align: center;">✅ 归还</td>
+<td style="text-align: center;">✅ 析构</td>
+</tr>
 </tbody>
 </table></div>
 <p><strong>为什么内存池离不开它</strong>：池子在启动时一次性拿一大块内存，之后每次"分配"只是在某个偏移上跑一次 placement new——<strong>零次 malloc</strong>。释放也不是 free，而是手动调析构 + 把块还回 free list。</p>
 <blockquote>
 <p>这正是你第一步写的那个 C 版池子，加上"对象构造"之后的样子。</p>
 </blockquote>
+<p><strong><code class="c">examples/12.2-delete-vs-free.cpp</code></strong> —— 这里讲的 delete/free 关系、nullptr、sized delete、数组头部，全部可以直接跑出来看。</p>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -O0 12.2-delete-vs-free.cpp -o /tmp/demo17 &amp;&amp; /tmp/demo17
+clang++ -std=c++11 -O0 12.2-delete-vs-free.cpp -o /tmp/demo11 &amp;&amp; /tmp/demo11   # 对照组
+</code></pre>
+<p>真实输出（节选，两个并排=换标准后 eligible 版本变了）：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(Tracked) = 4
+
+========== 实验 1：new / delete 的完整链路 ==========
+    [op new]  请求 4 字节 -&gt; malloc -&gt; 0x146e04a10
+    [构造] Tracked(1)
+    [析构] Tracked(1)
+    [op del]  0x146e04a10 size=4  &lt;- sized delete -&gt; free      ← -std=c++17
+    [op del]  0x136804640         &lt;- 无 size 版本 -&gt; free      ← -std=c++11
+
+========== 实验 3：new[] 的头部(cookie) ==========
+    sizeof(Tracked)*3 = 12 字节，但 operator new[] 申请了 28 字节
+    用户拿到的指针比起点往后挪了 16 字节（挪过去的就是头部）
+    int[3]：sizeof*3 = 12 字节，申请了 12 字节，偏移 0 字节
+</code></pre>
+<p><strong>两条最值得记的数字</strong>：有析构的类型每次 <code class="c">new[]</code> 额外付 <strong>16 字节</strong>；<code class="c">int</code> 这类平凡类型<strong>一分钱都不付</strong>。我一直以为头部是 8 字节，跑完才发现不是。</p>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §12.2：动态数组与 new/delete</li>
 <li>下一节：§12.3 动态数组与 allocator</li>
 <li>C 程序员迁移：<code class="c">malloc/free</code> → <code class="c">new/delete</code>（带构造/析构），更推荐 → 智能指针</li>
+<li>深入看完整链路：→ ../../../M3-deep-principles/01-Cpp-Object-Model/ch06-runtime-semantics/01-new-delete-chain.md
+  （注意：那篇里写的 cookie 是 8 字节，与本文实测的 16 字节不一致，以本文实测为准）</li>
 </ul>
       </section>
       <section class="section" id="s-12-3">
