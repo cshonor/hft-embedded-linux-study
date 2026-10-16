@@ -491,6 +491,121 @@ t.join();  // 错误！join 后不再 joinable，再次 join 是 UB
 // join() 前应检查 joinable()
 </code></pre>
 <p><strong>修复</strong>：<code class="c">if (t.joinable()) t.join();</code></p>
+<h2>实测记录：亲手做坏这四次（2026-10-16 双平台真跑）</h2>
+<blockquote>
+<p><strong>两台机器都跑过，不是纸上推演：</strong>
+- macOS arm64 · Apple Silicon · clang 23.1.0 · libc++
+- Raspberry Pi 5 · Debian 13（kernel 6.18.39）· aarch64 · g++ 14.2.0 · libstdc++</p>
+<p>编译：<code class="c">g++ -std=c++17 -pthread -o hello hello.cpp</code></p>
+<p><strong>结论先说</strong>：terminate 那条两个平台完全一致；detach 那条<strong>两边结果相反</strong>
+——而「两边结果相反」本身就是 detach 不可靠的最好证据。</p>
+</blockquote>
+<h3>基线（正常 join）：连输出顺序都不能信</h3>
+<p>macOS 上连跑 3 次：</p>
+<pre class="code" data-label="code"><code class="c">第 1 次: t1:Hello Concurrent World / t2:Hello Concurrent World
+第 2 次: t2:Hello Concurrent World / t1:Hello Concurrent World   ← t2 抢到了前面
+第 3 次: t1:Hello Concurrent World / t2:Hello Concurrent World
+</code></pre>
+<p>同一个程序、同一台机器，输出顺序都会变。这是并发的第一课：<strong>没有同步就没有顺序保证</strong>。</p>
+<h3>实验 1：不 join / 不 detach</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>macOS（libc++）</th>
+<th>Linux（libstdc++）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>退出码</td>
+<td>134</td>
+<td>134</td>
+</tr>
+<tr>
+<td>stderr</td>
+<td><code class="c">libc++abi: terminating</code></td>
+<td><code class="c">terminate called without an active exception</code></td>
+</tr>
+<tr>
+<td>hello 输出</td>
+<td>无</td>
+<td>无</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong>别因为措辞不同就以为不是同一个错。</strong> 134 = 128 + SIGABRT(6)，两边都是 abort。
+查资料时常见的「terminate called without an active exception」是 Linux 的说法，
+在 Mac 上你会看到 <code class="c">libc++abi: terminating</code>，是同一件事。</p>
+<h3>实验 1b：不 join，但 sleep 保证子线程跑完 ← 这一组里最值钱的</h3>
+<pre class="code" data-label="cpp"><code class="c">std::thread t1(hello, &quot;t1&quot;);
+std::thread t2(hello, &quot;t2&quot;);
+std::this_thread::sleep_for(std::chrono::seconds(1));  // 子线程肯定跑完
+std::cout &lt;&lt; &quot;子线程应该已经结束了\n&quot;;
+return 0;  // 仍然不 join
+</code></pre>
+<p>实测输出（两个平台一致）：</p>
+<pre class="code" data-label="code"><code class="c">t1:Hello Concurrent World
+t2:Hello Concurrent World
+子线程应该已经结束了        ← 子线程明明已经退出了
+退出码: 134                ← 照样崩
+</code></pre>
+<p><strong>这推翻一个极常见的误解：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>❌ 误解</td>
+<td>「线程都跑完了，就不用 join 了」</td>
+</tr>
+<tr>
+<td>✅ 实测</td>
+<td>跑没跑完<strong>根本不影响</strong>。<code class="c">joinable()</code> 问的是「这个 thread 对象还关联着一个<strong>从未 join/detach 过</strong>的线程吗」，跟线程函数是否已经 return 无关</td>
+</tr>
+</tbody>
+</table></div>
+<p>标准里 <code class="c">joinable()</code> 等价于 <code class="c">get_id() != std::thread::id()</code>；线程函数返回<strong>不会</strong>自动把 id 清空。
+所以只要没 join/detach，析构照样 <code class="c">terminate</code>——哪怕线程早就退出了。</p>
+<h3>实验 2：detach —— 两边结果完全相反</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>macOS</th>
+<th>Linux（Pi 5）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>连跑 5 次</td>
+<td><strong>5 次输出全空</strong></td>
+<td><strong>5 次两行全出</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>这不是「一个对一个错」，而是<strong>两边都在赌</strong>：
+主线程 <code class="c">return</code> 之后进程开始收尾，detach 出去的线程能不能抢到 CPU 把 <code class="c">cout</code> 刷出去，取决于调度时机。
+Mac 上主线程收得快（全丢），这台 Pi 上 detach 的线程先跑完了（全出）。</p>
+<blockquote>
+<p><strong>结论：detach 之后的输出一个字都不能信。</strong> 需要结果就别用 detach，改用 <code class="c">join</code> 或 <code class="c">future</code>。</p>
+</blockquote>
+<p>诚实标注：5 次是小样本，换机器、换负载结果可能又不一样——但<strong>「结果会随平台变」这件事本身</strong>，
+已经足够说明它不可靠，不需要更多样本。</p>
+<h3>实验 3：输出交错 —— 这就是第 3 章的全部动机</h3>
+<p>把 <code class="c">hello</code> 改成循环 60 次输出，两个平台都出现穿插。Linux 实测片段：</p>
+<pre class="code" data-label="code"><code class="c">t1:t2:00 t2:1 t1: 1 t1:t22:2 t2:3  t1t2::3 t14 t2::5 ...
+</code></pre>
+<p><code class="c">t1:t2:00</code> 这种「半个输出插在另一个输出中间」，说明了一件事：</p>
+<pre class="code" data-label="cpp"><code class="c">std::cout &lt;&lt; str &lt;&lt; &quot;:&quot; &lt;&lt; i &lt;&lt; &quot; &quot;;   // 这是三次独立的 operator&lt;&lt; 调用
+</code></pre>
+<p>标准保证单次 <code class="c">operator&lt;&lt;</code> 内部不撕裂，但<strong>三次之间别的线程可以插进来</strong>。
+所以不是「cout 不安全」，而是<strong>一次逻辑输出被拆成了多次物理调用</strong>。</p>
+<p>→ 下一章「共享数据要保护」的全部动机就在这：需要的是「这一整行一起出去」的原子性。</p>
 <h2>和 C 的区别</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -670,6 +785,24 @@ void read(const std::string&amp; s);
 std::thread t2(read, std::cref(str));
 </code></pre>
 <p><strong>关键</strong>：<code class="c">std::ref</code> 返回一个 <code class="c">std::reference_wrapper</code>，线程内部解包成引用。不写 <code class="c">std::ref</code> 则按值拷贝。</p>
+<h4>实测：不写 std::ref 会怎样（2026-10-16 双平台）</h4>
+<p>把参数改成引用却直接传，编译器<strong>直接拒绝</strong>，不是警告：</p>
+<pre class="code" data-label="cpp"><code class="c">void hello(std::string&amp; str) { str += &quot;!&quot;; }
+std::string s = &quot;t1&quot;;
+std::thread t1(hello, s);   // 少了 std::ref
+</code></pre>
+<p>Linux（g++ 14.2 / libstdc++）实测报错：</p>
+<pre class="code" data-label="code"><code class="c">error: static assertion failed:
+       std::thread arguments must be invocable after conversion to rvalues
+</code></pre>
+<p>macOS（clang 23.1 / libc++）实测报错：</p>
+<pre class="code" data-label="code"><code class="c">static_assert failed due to requirement
+'__is_invocable_v&lt;void (*)(std::string &amp;), std::string&gt;'
+</code></pre>
+<p><strong>GCC 这句报错把原理直接说出来了</strong>：参数会先「转换成右值」再调用，
+<code class="c">std::string</code> 的右值绑不到 <code class="c">std::string&amp;</code> 上，所以不可调用。
+这正是 decay-copy 的含义——去掉引用和 cv 限定，按值拷一份进线程内部存储。</p>
+<p>加上 <code class="c">std::ref(s)</code> 后两台机器都编译通过，实测 <code class="c">s</code> 从 <code class="c">"t1"</code> 变成 <code class="c">"t1!"</code>，证明引用真的传进去了（不是副本）。</p>
 <h3>方式 3：传指针</h3>
 <pre class="code" data-label="cpp"><code class="c">void worker(int* data, size_t n) {
     for (size_t i = 0; i &lt; n; i++)

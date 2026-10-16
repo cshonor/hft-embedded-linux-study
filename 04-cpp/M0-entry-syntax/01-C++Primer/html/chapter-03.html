@@ -645,6 +645,54 @@ std::string s2 = s1;          /* 深拷贝，安全 */
 size_t len = s2.size();       /* 直接拿，不扫 \0 */
 /* 离开作用域析构自动释放 */
 </code></pre>
+<h2>同一行 <code class="c">name[2] = 'a'</code>：string 合法、<code class="c">char*</code> 崩（实测）</h2>
+<p>TheCherno Strings 一集里的关键切换——把 <code class="c">char* name = "Cherno"</code> 换成 <code class="c">std::string name = "Cherno"</code>，同一行 <code class="c">name[2] = 'a';</code> 从<strong>当场崩溃</strong>变成<strong>合法</strong>。原因就是上表那句"从 C 风格字面量<strong>拷贝</strong>内容"：字面量本体仍在只读段没人碰，string 构造时把字符抄进了<strong>自己的可写缓冲</strong>。</p>
+<p>实测（clang 23.1.0，macOS arm64，libc++，2026-10-16）：</p>
+<pre class="code" data-label="code"><code class="c">字面量 &quot;Cherno&quot;      = 0x102197dac  (__TEXT 只读段)
+&amp;name（string 对象）  = 0x16dc66f78  (栈)
+name.data()           = 0x16dc66f78  &lt;- 短串 SSO：缓冲就在对象内部
+long_s.data()         = 0x12d604920  &lt;- 长串（100 字符）：堆上另分配
+sizeof(std::string)   = 24
+name.capacity()       = 22           (SSO 容量)
+name 改后             = Charno
+字面量本体            = Cherno       &lt;- 不受影响
+</code></pre>
+<p>三个观察：</p>
+<ol>
+<li><strong><code class="c">name.data() == &amp;name</code></strong>——短串（≤ 22 字节，libc++ arm64）的缓冲直接嵌在 string 对象内部，<strong>零堆分配</strong>（SSO，短字符串优化）。改 <code class="c">name[2]</code> 改的是栈上对象里的字节。</li>
+<li><strong>长串才上堆</strong>——100 个字符的 <code class="c">long_s</code>，<code class="c">data()</code> 落在堆区（0x12d6…），是 <code class="c">operator new</code> 另分配的一块（→ <a href="chapter-12.html#s-12-2">12.2 直接内存管理</a>）。</li>
+<li><strong>字面量本体没被碰</strong>——改完 <code class="c">name</code>，<code class="c">lit</code> 仍输出 <code class="c">Cherno</code>。</li>
+</ol>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th style="text-align: center;"><code class="c">name[2]='a'</code></th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">char* name = "Cherno"</code></td>
+<td style="text-align: center;">❌ SIGBUS（exit 138）</td>
+<td>指针<strong>指向</strong>字面量本体，在 <code class="c">__TEXT</code> 只读段（→ <a href="chapter-02.html#s-2-1-1">2.1.1 §6</a>）</td>
+</tr>
+<tr>
+<td><code class="c">char name[] = "Cherno"</code></td>
+<td style="text-align: center;">✅</td>
+<td>数组是栈上<strong>拷贝</strong></td>
+</tr>
+<tr>
+<td><code class="c">std::string name = "Cherno"</code></td>
+<td style="text-align: center;">✅</td>
+<td>构造时<strong>拷贝</strong>进 string 自己的缓冲</td>
+</tr>
+</tbody>
+</table></div>
+<p>记忆法：<strong>指针是"指过去"，数组和 string 都是"拷过来"——只有拷过来的才能改。</strong></p>
+<blockquote>
+<p>HFT 视角：SSO 让 ≤ 22 字节的串<strong>完全没有堆分配</strong>——合约码、短字段白嫖这个优化；一旦超过容量就有一次 <code class="c">operator new</code>，热路径上这就是要警惕的抖动来源（对应 <a href="chapter-03.html#s-3-2-4">3.2.4</a> 的固定缓冲折中）。</p>
+</blockquote>
 <h2>常见错误</h2>
 <p><strong>1. 以为 <code class="c">string s2 = s1</code> 是浅拷贝</strong>
 C 里 <code class="c">char* p = s</code> 是指针复制（两个指针指向同一块）；C++ 的 <code class="c">string s2 = s1</code> 是深拷贝（独立内存）。改 <code class="c">s2</code> 不影响 <code class="c">s1</code>。</p>
@@ -659,12 +707,14 @@ std::string s = &quot;c&quot;;   // ✅ 字符串字面量
 - B. 不变（深拷贝）</p>
 <p><strong>2（判断）</strong> C++ 的 <code class="c">string</code> 需要手动管理 <code class="c">\0</code> 结束符。</p>
 <p><strong>3（应用）</strong> 用 C++ string 实现：创建一个 20 个 <code class="c">'-'</code> 的字符串（分割线）。</p>
+<p><strong>4（内存）</strong> <code class="c">std::string a = "xy";</code> 和 <code class="c">std::string b(100, 'x');</code> 各自发生了几次堆分配？为什么 <code class="c">a[0] = 'X'</code> 合法而 <code class="c">char* p = "xy"; p[0] = 'X';</code> 会崩？</p>
 <details>
 <summary>参考答案</summary>
 <ol>
 <li>B。<code class="c">string</code> 的拷贝是深拷贝，<code class="c">s2</code> 有独立内存，改 <code class="c">s2</code> 不影响 <code class="c">s1</code>。C 里 <code class="c">char* p = s</code> 才是浅拷贝（指针复制）。</li>
 <li>错。<code class="c">string</code> 内部维护长度和结束符，你不用管 <code class="c">\0</code>。<code class="c">size()</code> 返回字符数，不含 <code class="c">\0</code>。只有调 <code class="c">c_str()</code> 和 C 接口互操作时才关心 <code class="c">\0</code>。</li>
 <li><code class="c">std::string line(20, '-');</code> —— 第一个参数是数量，第二个是字符。</li>
+<li><code class="c">a</code> <strong>0 次</strong>、<strong><code class="c">b</code> 1 次</strong>。libc++（arm64）SSO 容量 22 字节，"xy" 直接放进对象内部的缓冲（实测 <code class="c">a.data() == &amp;a</code>）；100 个字符超过容量，才 <code class="c">operator new</code> 一块堆内存。<code class="c">a[0]='X'</code> 合法是因为构造时字面量已<strong>拷贝</strong>进 string 自己的可写缓冲；<code class="c">p[0]='X'</code> 崩是因为 <code class="c">p</code> 指向字面量本体，躺在 <code class="c">__TEXT</code> 只读段（macOS arm64 实测 SIGBUS，exit 138）。记忆法：指针是"指过去"，数组和 string 是"拷过来"——只有拷过来的才能改。</li>
 </ol>
 </details>
 <h2>延伸</h2>
