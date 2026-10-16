@@ -1347,6 +1347,21 @@ strcpy(buf, &quot;1234567890&quot;);   // 越界！
 const char* p = s;         // ❌ 不能隐式转！要 s.c_str()
 </code></pre>
 <p><code class="c">const char*</code> → <code class="c">string</code> 能隐式（构造函数），<code class="c">string</code> → <code class="c">const char*</code> 必须显式 <code class="c">c_str()</code>。</p>
+<p><strong>4. <code class="c">string</code> 存中间 <code class="c">\0</code>：构造时就丢了，不是 <code class="c">size()</code> 的问题（实测）</strong></p>
+<p><code class="c">std::string</code> 内部显式记录长度，<strong>不依赖 <code class="c">\0</code></strong>——这句结论对，但有个易错的入口：</p>
+<pre class="code" data-label="cpp"><code class="c">std::string s = &quot;hel\0lo&quot;;
+</code></pre>
+<p>直觉是「string 不靠 <code class="c">\0</code>，所以 size() = 5」。<strong>实测（clang 23.1.0 libc++，2026-10-16）：size() = 3。</strong></p>
+<p>原因：这里走的是 <code class="c">string(const char*)</code> 构造器——它的参数类型是 <code class="c">const char*</code>，<strong>和 <code class="c">strlen</code> 一样靠扫 <code class="c">\0</code> 定长</strong>，在第一个 <code class="c">\0</code> 处就停了。<code class="c">"hel\0lo"</code> 字面量本身确实是 7 字节（<code class="c">const char[7]</code>），但一衰变成 <code class="c">const char*</code> 传进构造器，长度信息就没了——和 <a href="#s-3-5">3.5.3</a> 的数组退化是同一件事。</p>
+<p>想真正把中间的 <code class="c">\0</code> 存进去，必须<strong>显式给长度</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">std::string s2(&quot;hel\0lo&quot;, 6);       // size() == 6：h e l \0 l o
+// 或 string_view 路线（长度自带）：
+std::string s3{std::string_view(&quot;hel\0lo&quot;, 6)};
+</code></pre>
+<p>再纠正一个连带误解：「<code class="c">cout &lt;&lt; s</code> 遇到 <code class="c">\0</code> 会截断」——<strong>对 C 字符串是对的，对 string 是错的</strong>。<code class="c">operator&lt;&lt;(ostream&amp;, const string&amp;)</code> 写的是 <code class="c">size()</code> 个字节，不扫 <code class="c">\0</code>；实测 <code class="c">cout &lt;&lt; s2</code> 把 <code class="c">hel?lo</code>（<code class="c">\0</code> 位置）整个写出来了。会截断的是 <code class="c">cout &lt;&lt; s2.c_str()</code>——那条通道才扫 <code class="c">\0</code>。</p>
+<blockquote>
+<p>一句话：<strong>string 不靠 <code class="c">\0</code>，但 <code class="c">const char*</code> 这条进/出通道靠。</strong> 进（构造）走 <code class="c">const char*</code> 会在第一个 <code class="c">\0</code> 截断；出（<code class="c">c_str()</code> / <code class="c">cout &lt;&lt; const char*</code>）同样。只有全程走 <code class="c">size()</code> 显式长度的接口，中间 <code class="c">\0</code> 才保得住。</p>
+</blockquote>
 <h2>自测题</h2>
 <p><strong>1（选择）</strong> 下面代码哪里危险？</p>
 <pre class="code" data-label="cpp"><code class="c">std::string s = &quot;FIX&quot;;
@@ -1360,6 +1375,7 @@ std::cout &lt;&lt; p;
 </ul>
 <p><strong>2（判断）</strong> HFT 热路径上，用 <code class="c">char[16]</code> 固定缓冲比 <code class="c">std::string</code> 更合适（如果长度有上界）。</p>
 <p><strong>3（应用）</strong> 一个 C 网关返回 <code class="c">const char* get_symbol()</code>，你要在 C++ 里安全使用，怎么写？</p>
+<p><strong>4（判断 + 改错）</strong> <code class="c">std::string str = "hi\0there"; std::cout &lt;&lt; str.size();</code> 输出 8，因为 string 不依赖 <code class="c">\0</code> 定长。对还是错？如果想让 size 真的是 8，怎么写？</p>
 <details>
 <summary>参考答案</summary>
 <ol>
@@ -1371,6 +1387,9 @@ std::cout &lt;&lt; p;
 std::string symbol(raw);   // 拷贝一份，之后安全持有
 // 即使 raw 指向的 C 缓冲后续被释放，symbol 仍有独立副本
 </code></pre>
+<ol start="4">
+<li><strong>错</strong>。输出 <strong>2</strong>（实测）。<code class="c">string(const char*)</code> 构造器靠扫 <code class="c">\0</code> 定长，在 <code class="c">"hi\0there"</code> 的第一个 <code class="c">\0</code> 处就停了——「string 不依赖 <code class="c">\0</code>」说的是它内部存了显式长度，但 <code class="c">const char*</code> 这条<strong>入口通道</strong>还是会截断。想让 size 是 8：<code class="c">std::string str("hi\0there", 8);</code> 显式给长度。</li>
+</ol>
 </details>
 <hr />
 <p>← <a href="#s-3-2">3.2 string</a> | <a href="chapter-03.html#s-3-2-3">← 3.2.3 拼接与内存优化</a> | <a href="chapter-03.html#s-3-2-5">3.2.5 cctype 字符校验 →</a></p>
