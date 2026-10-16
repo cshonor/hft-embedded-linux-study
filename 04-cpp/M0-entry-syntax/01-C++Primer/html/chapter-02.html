@@ -1452,6 +1452,55 @@ char *s2 = &quot;abc&quot;;
 printf(&quot;%d\n&quot;, s1 == s2);   /* 实测输出 1 —— 同一地址 */
 </code></pre>
 <p>编译器做<strong>字面量合并</strong>（<code class="c">-fmerge-constants</code>，默认开），两个指针指向同一块只读内存。所以写 <code class="c">s1[0]</code> 会<strong>连带改掉 <code class="c">s2</code></strong>。反过来，用 <code class="c">==</code> 比较字符串内容永远是错的——比的是地址。</p>
+<h4>聚合初始化的补零与 <code class="c">'\0'</code> 的位置（TheCherno Strings 一集的另一半）</h4>
+<p>TheCherno Strings 一集里还有一行没展开的代码：</p>
+<pre class="code" data-label="cpp"><code class="c">char name2[6] = { 'C', };   // 数组，只写 1 个初始化器
+</code></pre>
+<p>两个实测结论（clang 23.1.0，macOS arm64，2026-10-16）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">char a[6] = { 'C' };</code></td>
+<td>其余 5 个元素<strong>自动填 0</strong>（聚合初始化补零）——碰巧有了 <code class="c">'\0'</code>，<code class="c">printf("%s", a)</code> 安全</td>
+</tr>
+<tr>
+<td><code class="c">char b[6] = { 'C','h','e','r','n','o' };</code></td>
+<td>6 个槽位全填满，<strong>没有 <code class="c">'\0'</code> 的位置</strong>——它不是 C 字符串，<code class="c">printf("%s", b)</code> 越过数组尾继续读，UB</td>
+</tr>
+</tbody>
+</table></div>
+<p>补零是聚合初始化的通用规则（<code class="c">int x[100] = {1};</code> 其余 99 个同样是 0），不是字符数组的特例。视频里 <code class="c">name2</code> 能正常打印，<strong>不是</strong>"数组自动带终止符"，而是<strong>没写满的槽位被填了 0</strong>——写满的那天就是它变成定时炸弹的那天。</p>
+<p><strong>C 与 C++ 在字符串初始化上还有一条分叉</strong>：</p>
+<pre class="code" data-label="C"><code class="c">char e[5] = &quot;hello&quot;;   // 数组装不下 '\0'（&quot;hello&quot; 含终止符共 6 字节）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>语言</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>C</strong>（<code class="c">-std=c11 -Wall</code> 实测）</td>
+<td>✅ <strong>静默通过，零警告</strong>——<code class="c">'\0'</code> 被悄悄丢掉，<code class="c">e</code> 不是字符串</td>
+</tr>
+<tr>
+<td><strong>C++</strong>（<code class="c">-std=c++17</code> 实测）</td>
+<td>❌ <code class="c">error: initializer-string for char array is too long, array size is 5 but initializer has size 6 (including the null terminating character)</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>C++ 把"装不下终止符"直接判为编译错误；C 容忍它，于是 <code class="c">e</code> 成了 5 字节裸数据——后续 <code class="c">strlen(e)</code> / <code class="c">strcpy(dst, e)</code> 全是越界 UB。C 侧防御写法：<code class="c">char e[] = "hello";</code>（让编译器自己数，推荐）或显式 <code class="c">char e[6]</code>。</p>
+<blockquote>
+<p>和上面"分道扬镳"那张表是同一条规律的两端：C++ 在<strong>类型层面</strong>封死了改字面量的通道，又在<strong>初始化层面</strong>封死了丢终止符的通道；C 两边都为了兼容留着口子，只能靠自己写 <code class="c">const char *</code>、开 <code class="c">-Wwrite-strings</code>、用 <code class="c">char e[]</code> 来堵。</p>
+</blockquote>
 <h3>7. C++20 的 <code class="c">char8_t</code> 断裂与迁移</h3>
 <p>这是 C++20 最痛的一处<strong>静默 breaking change</strong>，本机实测三个断点：</p>
 <p><strong>断点 1：赋值给 <code class="c">const char*</code> 失败</strong></p>
@@ -1764,6 +1813,7 @@ LOG &lt;&lt; &quot;qty=&quot; &lt;&lt; static_cast&lt;int&gt;(qty);   // ✅ 显
 std::cout &lt;&lt; c &lt;&lt; &quot; &quot; &lt;&lt; s &lt;&lt; &quot; &quot; &lt;&lt; uc &lt;&lt; &quot; &quot; &lt;&lt; u8 &lt;&lt; &quot;\n&quot;;
 </code></pre>
 <p><strong>9（工程）</strong> 日志里 <code class="c">LOG &lt;&lt; "qty=" &lt;&lt; qty</code> 打印出了 <code class="c">qty=È</code> 而不是 <code class="c">qty=200</code>。<code class="c">qty</code> 是什么类型？给出两种修法。</p>
+<p><strong>10（终止符）</strong> <code class="c">char a[6] = { 'C' };</code> 和 <code class="c">char b[6] = { 'C','h','e','r','n','o' };</code> 分别能不能安全地 <code class="c">printf("%s", ...)</code>？为什么？<code class="c">char e[5] = "hello";</code> 在 C 和 C++ 下分别什么结果？</p>
 <details>
 <summary>参考答案</summary>
 <p><strong>1.</strong>
@@ -1800,6 +1850,10 @@ const char *b = reinterpret_cast&lt;const char *&gt;(u8&quot;abc&quot;);  // ③
 LOG &lt;&lt; &quot;qty=&quot; &lt;&lt; static_cast&lt;int&gt;(qty);   // ② 显式转换
 LOG &lt;&lt; &quot;qty=&quot; &lt;&lt; unsigned(qty);           // ③ unsigned() 同样可以
 </code></pre>
+<p><strong>10.</strong>
+- <code class="c">a</code> <strong>能</strong>：聚合初始化没写满的槽位自动填 0（实测后 5 字节全为 0），碰巧构成了 <code class="c">'\0'</code> 终止——这是补零规则的副产品，不是"数组自动带终止符"。
+- <code class="c">b</code> <strong>不能</strong>：6 个槽位全满，没有终止符，<code class="c">%s</code> 会越过数组尾继续读，UB。
+- <code class="c">char e[5] = "hello";</code>：<strong>C 静默通过</strong>（<code class="c">'\0'</code> 被丢弃，<code class="c">e</code> 是 5 字节裸数据，<code class="c">-Wall</code> 零警告）；<strong>C++ 编译报错</strong> <code class="c">initializer-string for char array is too long</code>。C 侧应写 <code class="c">char e[] = "hello";</code> 或显式 <code class="c">char e[6]</code>。</p>
 </details>
 <h2>延伸</h2>
 <p>← <a href="#s-2-1">2.1 基本内置类型</a> | <a href="#s-2-2">2.2 变量 →</a></p>
