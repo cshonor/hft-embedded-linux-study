@@ -36,7 +36,7 @@
 | 优先级 | 目录 | 说明 |
 |--------|------|------|
 | **必学** | 00-Linux-Kernel-DPDK-Network-C | C 数据面核心 |
-| 高 | [2-Cpp-Concurrency](./M3-deep-principles/02-Cpp-Concurrency/) | 多线程、锁、内存序 |
+| 高 | [M2.5-Cpp-Concurrency](./M2.5-concurrency/01-Cpp-Concurrency/) | 多线程、锁、内存序 |
 | 中 | [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | 现代 C++，写策略/业务时补 |
 | 按需 | `13-Modern-C++-Performance-Engineering` | 低延迟、无锁、CPU 亲和（见下方可选拓展） |
 
@@ -52,8 +52,8 @@
 | 4 | [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | 《Effective Modern C++》 | 移动语义、lambda、类型推导等现代特性 |
 | 5 | [3-Effective-STL](./M4-engineering-standards/03-Effective-STL/) | 《Effective STL》 | STL 最佳实践 |
 | 6 | [3-STL-Source-Analysis](./M4-engineering-standards/04-STL-Source-Analysis/) | 《STL源码剖析》 | STL 底层原理 |
-| 7 | [2-Cpp-Object-Model](./M3-deep-principles/01-Cpp-Object-Model/) | 《深度探索C++对象模型》 | 对象内存布局、多态底层 |
-| 8 | [2-Cpp-Concurrency](./M3-deep-principles/02-Cpp-Concurrency/) | 《C++并发编程实战》 | 线程、同步、内存模型 |
+| 7 | [M2-Cpp-Object-Model](./M2-object-model/01-Cpp-Object-Model/) | 《深度探索C++对象模型》 | 对象内存布局、多态底层 |
+| 8 | [M2.5-Cpp-Concurrency](./M2.5-concurrency/01-Cpp-Concurrency/) | 《C++并发编程实战》 | 线程、同步、内存模型 |
 | 9 | [4-C++17-The-Complete-Guide](./M5-advanced-standards/01-C++17-The-Complete-Guide/) | 《C++17 - The Complete Guide》（Josuttis） | 结构化绑定、折叠表达式、并行 STL、`string_view` 等 C++17 过渡特性 |
 | 10 | [4-C++20-The-Complete-Guide](./M5-advanced-standards/02-C++20-The-Complete-Guide/) | 《C++20 - The Complete Guide》（Josuttis） | Concepts、Modules、Coroutines、Ranges 等 C++20 标准 |
 

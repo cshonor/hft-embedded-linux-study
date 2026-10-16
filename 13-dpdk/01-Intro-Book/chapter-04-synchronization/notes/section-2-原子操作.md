@@ -99,7 +99,7 @@ uint64_t total = rte_atomic64_read(&rx_total);
 
 - 内核侧同类原语 → [ULK Ch5 §3 基础同步原语](../../../../16-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-3-基础同步原语.md)
 - 内存序 / 屏障 → [02-CSAPP](../../../../02-computer-systems/) · [Ch2 Cache 一致性](../../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md)
-- C++ 内存模型 → [04-cpp M3 并发](../../../../04-cpp/M3-deep-principles/)
+- C++ 内存模型 → [04-cpp M2.5 并发](../../../../04-cpp/M2.5-concurrency/01-Cpp-Concurrency/ch05-memory-model-atomics/)
 
 ---
 

@@ -230,7 +230,7 @@ std::vector<Trade> add_fok_order(Order order) {
 |---------|--------|
 | 无锁 ring buffer | P2.5 交付物 3（你写的代码！）|
 | 无锁原理 | [HFT ch07](../../14-hft-engineering/chapter-07-lockless-data-structures-memory-layout/README.md) |
-| memory order | [C++ Concurrency ch05](../../04-cpp/M3-deep-principles/02-Cpp-Concurrency/ch05-memory-model-atomics/) |
+| memory order | [C++ Concurrency ch05](../../04-cpp/M2.5-concurrency/01-Cpp-Concurrency/ch05-memory-model-atomics/) |
 
 ---
 

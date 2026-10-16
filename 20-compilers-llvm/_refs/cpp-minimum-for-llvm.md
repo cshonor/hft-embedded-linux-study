@@ -32,7 +32,7 @@
 |:--:|------|----------|--------|
 | 11 | 顺序容器 | [`M0/ch09-sequential-containers`](../../04-cpp/M0-entry-syntax/01-C%2B%2BPrimer/ch09-sequential-containers/) | 对照 LLVM `SmallVector` 看差异（小容量栈上、无异常） |
 | 12 | 关联容器 | [`M0/ch11-associative-containers`](../../04-cpp/M0-entry-syntax/01-C%2B%2BPrimer/ch11-associative-containers/) | 对照 LLVM `DenseMap`（开放寻址，非红黑树） |
-| 13 | 对象模型 · 虚函数布局 | [`M3/01-Cpp-Object-Model`](../../04-cpp/M3-deep-principles/01-Cpp-Object-Model/) | **LLVM 禁用 RTTI 自己造**，必须真懂 vtable 布局 |
+| 13 | 对象模型 · 虚函数布局 | [`M2/01-Cpp-Object-Model`](../../04-cpp/M2-object-model/01-Cpp-Object-Model/) | **LLVM 禁用 RTTI 自己造**，必须真懂 vtable 布局 |
 
 ---
 

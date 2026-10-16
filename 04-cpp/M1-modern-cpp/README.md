@@ -1,7 +1,7 @@
 # M1 · Modern C++（现代 C++ 门槛）
 
 > **里程碑定位：** 🔴 硬门槛 · 全书精读
-> **学习顺序：** M0 之后（03 TLPI 之后、M2 PNP 之前）
+> **学习顺序：** M0 之后（03 TLPI 之后、M2 对象模型之前）
 > **难度：** ⭐⭐⭐⭐
 
 ## 包含的书
@@ -16,7 +16,7 @@ C++11/14 是分水岭，老 C++ 和现代 C++ 是两种写法。这 42 条不过
 
 ## 验收
 
-能读 muduo 里 `shared_ptr`/回调/移动语义不懵 → 再开 [M2 PNP](../M2-cpp-network-programming/)。
+能读 muduo 里 `shared_ptr`/回调/移动语义不懵 → 再开 [M2 对象模型](../M2-object-model/01-Cpp-Object-Model/)（→ M2.5 并发 → M3 PNP/muduo）。
 
 ## 跨模块回读
 
@@ -55,4 +55,4 @@ C++11/14 是分水岭，老 C++ 和现代 C++ 是两种写法。这 42 条不过
 
 ---
 
-← [学习路线](../LEARNING-PATH.md) · [上一站 M0](../M0-entry-syntax/) · [下一站 M4 穿插](../M4-engineering-standards/)
+← [学习路线](../LEARNING-PATH.md) · [上一站 M0](../M0-entry-syntax/) · [下一站 M2 对象模型](../M2-object-model/)

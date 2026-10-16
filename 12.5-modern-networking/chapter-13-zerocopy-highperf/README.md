@@ -35,4 +35,4 @@
 - `12.5-modern-networking/chapter-03-tx-path-skbbuff/`：发包路径与零拷贝
 - `12.5-modern-networking/chapter-06-af-xdp/`：AF_XDP 零拷贝收包
 - `12.5-modern-networking/chapter-12-io-uring-net/`：SEND_ZC（同一 uarg 机制的异步化）
-- `04-cpp/M2-cpp-network-programming/`：SO_REUSEPORT 基础
+- `04-cpp/M3-cpp-network-programming/`：SO_REUSEPORT 基础

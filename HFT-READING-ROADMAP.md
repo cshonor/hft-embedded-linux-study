@@ -86,7 +86,7 @@
 **嵌入式支线：** `07 → 08 → 09`（`10` 业余；板级实战 = [P5](./projects/P5-raspberry-pi-embedded/)）· 建议 Phase4（`05`/`06`）后再开
 
 > **C：** [01-c-language/](./01-c-language/) — Phase2 第一课。  
-> **C++：** [04-cpp/](./04-cpp/) — Phase3 穿插；进 [04/M2](./04-cpp/M2-cpp-network-programming/) sockets 前至少 Modern C++。
+> **C++：** [04-cpp/](./04-cpp/) — Phase3 穿插；进 [04/M2](./04-cpp/M3-cpp-network-programming/) sockets 前至少 Modern C++。
 > **板块：** `00`–`19` 技术模块；跨模块对照 → [README.md](./README.md)
 
 ---
@@ -392,7 +392,7 @@
 | C / 指针 / 结构体 | [01](./01-c-language/) · [02](./02-computer-systems/) · [04](./03-linux-userspace-api/) |
 | 进程 / VM / 中断 / 同步 | [07](./05-linux-kernel/) · [09](./06-linux-mm/) |
 | 性能 / 绑核 / BPF | [06.6](./06.6.5-systems-performance/) · [06.7](./06.7-bpf-observability/) · [14](./14-hft-engineering/) |
-| 网络 / 零拷贝思想 | [04/M2](./04-cpp/M2-cpp-network-programming/) · [12](./12-kernel-networking/) · [13](./13-dpdk/) |
+| 网络 / 零拷贝思想 | [04/M2](./04-cpp/M3-cpp-network-programming/) · [12](./12-kernel-networking/) · [13](./13-dpdk/) |
 
 ### 岗位定位（支线完成后）
 

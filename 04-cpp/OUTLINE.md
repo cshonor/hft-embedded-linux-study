@@ -1,7 +1,7 @@
 # C++ 学习链 · 里程碑与 HFT 插入顺序
 
-> **笔记正文：** 本目录 M0–M5 六个模块（M0、M1、M3–M5 自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制；M2 = C++ 网络编程 muduo/PNP）  
-> **HFT 读序 = 模块编号 M0→M5** — 实际顺序 M0→M1→M2→M3→M4（穿插），M5 可选，以本表里程碑为准。
+> **笔记正文：** 本目录 M0–M5 七个模块（M0、M1、M2、M2.5、M4、M5 自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制；M3 = C++ 网络编程 muduo/PNP）  
+> **HFT 读序 = 模块编号** — 实际顺序 M0→M1→M2 对象模型→M2.5 并发→M3 网络编程→M4（穿插），M5 可选，以本表里程碑为准。
 
 ---
 
@@ -10,8 +10,8 @@
 | 原则 | 说明 |
 |------|------|
 | **C 先于 C++** | [02 CSAPP](../02-computer-systems/) + [01 C](../01-c-language/) — C++ 是「带 RAII 的 C++」 |
-| **Modern 先于 muduo** | [M2 PNP](./M2-cpp-network-programming/) 是 C++ 工程；**`01-Effective-Modern-C++` 是硬门槛** |
-| **并发先于 HFT 引擎** | [14 HFT](../14-hft-engineering/)；**`02-Cpp-Concurrency` 必过** |
+| **Modern 先于 muduo** | [M3 PNP](./M3-cpp-network-programming/) 是 C++ 工程；**`01-Effective-Modern-C++` 是硬门槛** |
+| **原理先于网络、并发先于 muduo** | M2 对象模型 → M2.5 并发 → 再开 M3 PNP；[14 HFT](../14-hft-engineering/) 前 `01-Cpp-Concurrency` 必过 |
 | **原理 > 语法版本** | Effective + Modern C++11/14 打底，再 17/20 |
 
 ---
@@ -28,36 +28,55 @@
 
 ---
 
-### M1 · 开 PNP 前必达 🔴
+### M1 · 现代 C++ 门槛 🔴
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | Effective Modern C++ | **03 TLPI 之后、M2 PNP 之前** |
+| [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | Effective Modern C++ | **03 TLPI 之后、M2 对象模型之前** |
 
 **必会：** RAII、智能指针、`move`/完美转发、lambda、`=delete`/`=default`、`constexpr` 直觉。
 
-**验收：** 能读 muduo 里 `shared_ptr` / 回调 / 移动语义不懵 → 再开 [M2 PNP](./M2-cpp-network-programming/)。
+**验收：** 能读 muduo 里 `shared_ptr` / 回调 / 移动语义不懵 → 再开 M2 对象模型。
 
 ---
 
-### M3 · 开 HFT 引擎前 🔴
+### M2 · 对象模型 🔴
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [2-Cpp-Concurrency](./M3-deep-principles/02-Cpp-Concurrency/) | C++ 并发编程实战 | **03.5–12 网络栈进行中或之后、14 HFT 之前** |
-| [2-Cpp-Object-Model](./M3-deep-principles/01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | 与 Concurrency **并行或略前** |
+| [M2-Cpp-Object-Model](./M2-object-model/01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | **M1 之后、M2.5 并发之前** |
 
-**验收：** 能写 mutex/condition_variable、理解 data race；能解释类大小、对齐、继承布局。
+**验收：** 能解释类大小、对齐、继承布局、虚函数代价、placement new。
 
 ---
 
-### M4 · STL 与规范（PNP 期间穿插）🟡
+### M2.5 · 并发编程 🔴
+
+| 目录 | 书目 | 何时 |
+|------|------|------|
+| [2.5-Cpp-Concurrency](./M2.5-concurrency/01-Cpp-Concurrency/) | C++ 并发编程实战 | **M2 对象模型之后、M3 PNP 之前**（muduo 是 one loop per thread，先懂线程再读） |
+
+**验收：** 能写 mutex/condition_variable、理解 data race、能解释 6 种内存序。
+
+---
+
+### M3 · C++ 网络编程（muduo / PNP）🔴
+
+| 目录 | 书目 | 何时 |
+|------|------|------|
+| [M3-cpp-network-programming](./M3-cpp-network-programming/) | 陈硕《Linux 多线程服务端编程》 | **M2.5 并发之后**；C 侧对照 03.5 UNP |
+
+**验收：** 能手写 epoll Reactor、讲清 muduo Buffer/TcpConnection 生命周期、异步日志。
+
+---
+
+### M4 · STL 与规范（M3 PNP 期间穿插）🟡
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
 | [3-Effective-C++](./M4-engineering-standards/01-Effective-C++/) | Effective C++ | M1 之后按需 |
 | [3-More-Effective-C++](./M4-engineering-standards/02-More-Effective-C++/) | More Effective C++ | 同上 |
-| [3-Effective-STL](./M4-engineering-standards/03-Effective-STL/) | Effective STL | **M2 PNP** 写缓冲区 / 容器时 |
+| [3-Effective-STL](./M4-engineering-standards/03-Effective-STL/) | Effective STL | **M3 PNP** 写缓冲区 / 容器时（亦可与 M1 EMC++ 配对读） |
 | [3-STL-Source-Analysis](./M4-engineering-standards/04-STL-Source-Analysis/) | STL 源码剖析 | 时间紧可后补 |
 
 ---
@@ -80,9 +99,11 @@
                 ↓                     │
            【04 · M1 Modern C++】◄────┘
                 ↓
-           M2 PNP → 11 TCP/IP → 12 内核网络 → 13 DPDK → 14 HFT
+           【04 · M2 对象模型】
                 ↓
-           【04 · M3 并发 + 对象模型】
+           【04 · M2.5 并发编程】
+                ↓
+           M3 PNP/muduo → 11 TCP/IP → 12 内核网络 → 13 DPDK
                 ↓
            14 HFT（C++ 引擎）
                 ↓
@@ -94,8 +115,8 @@
 ## 最短路径（时间紧）
 
 1. **`01-Effective-Modern-C++`**（全书）
-2. **`02-Cpp-Concurrency`**（线程 + 同步 + 内存模型章）
-3. **`01-Cpp-Object-Model`**（选章：对象布局、继承、虚函数）
+2. **`01-Cpp-Object-Model`**（选章：对象布局、继承、虚函数）
+3. **`01-Cpp-Concurrency`**（线程 + 同步 + 内存模型章）
 
 其余 Effective / STL / C++17/20 **边做 14 HFT 边补**。
 

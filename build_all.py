@@ -92,9 +92,9 @@ BOOKS = [
     # ---- C++ ----
     _b("04-cpp/M0-entry-syntax/01-C++Primer", "入门 · 语法扫盲字典", "Lippman《C++ Primer 5e》· 新手只读 10 章（ch01–08 + ch12/13）", "cpp"),
     _b("04-cpp/M1-modern-cpp/01-Effective-Modern-C++", "门槛 · 现代 C++ 核心实践", "Meyers《Effective Modern C++》· C++11/14 42 条款 · 硬门槛", "cpp"),
-    _b("04-cpp/M2-cpp-network-programming", "实战 · 网络编程", "套接字 / epoll / 序列化 · muduo 预备", "cpp"),
-    _b("04-cpp/M3-deep-principles/01-Cpp-Object-Model", "原理 · 对象内存布局", "Lippman《深度探索 C++ 对象模型》· 编译器实现视角 · 硬门槛", "cpp"),
-    _b("04-cpp/M3-deep-principles/02-Cpp-Concurrency", "原理 · 并发与内存模型", "Williams《C++ 并发编程实战》· Ch7 无锁结构 HFT 必读 · 硬门槛", "cpp"),
+    _b("04-cpp/M2-object-model/01-Cpp-Object-Model", "原理 · 对象内存布局", "Lippman《深度探索 C++ 对象模型》· 编译器实现视角 · 硬门槛", "cpp"),
+    _b("04-cpp/M2.5-concurrency/01-Cpp-Concurrency", "原理 · 并发与内存模型", "Williams《C++ 并发编程实战》· Ch7 无锁结构 HFT 必读 · 硬门槛", "cpp"),
+    _b("04-cpp/M3-cpp-network-programming", "实战 · 网络编程", "套接字 / epoll / 序列化 · muduo 预备", "cpp"),
     _b("04-cpp/M4-engineering-standards/01-Effective-C++", "规范 · 经典 55 条", "Meyers《Effective C++》· pre-C++11 · 按需查", "cpp"),
     _b("04-cpp/M4-engineering-standards/02-More-Effective-C++", "规范 · 经典 35 条补遗", "Meyers《More Effective C++》· 按需查", "cpp"),
     _b("04-cpp/M4-engineering-standards/03-Effective-STL", "规范 · STL 用法 50 条", "Meyers《Effective STL》· 写容器/缓冲区时查", "cpp"),
