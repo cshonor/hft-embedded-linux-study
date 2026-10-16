@@ -140,6 +140,104 @@ t.join();  // 错误！join 后不再 joinable，再次 join 是 UB
 
 **修复**：`if (t.joinable()) t.join();`
 
+## 实测记录：亲手做坏这四次（2026-10-16 双平台真跑）
+
+> **两台机器都跑过，不是纸上推演：**
+> - macOS arm64 · Apple Silicon · clang 23.1.0 · libc++
+> - Raspberry Pi 5 · Debian 13（kernel 6.18.39）· aarch64 · g++ 14.2.0 · libstdc++
+>
+> 编译：`g++ -std=c++17 -pthread -o hello hello.cpp`
+>
+> **结论先说**：terminate 那条两个平台完全一致；detach 那条**两边结果相反**
+> ——而「两边结果相反」本身就是 detach 不可靠的最好证据。
+
+### 基线（正常 join）：连输出顺序都不能信
+
+macOS 上连跑 3 次：
+
+```
+第 1 次: t1:Hello Concurrent World / t2:Hello Concurrent World
+第 2 次: t2:Hello Concurrent World / t1:Hello Concurrent World   ← t2 抢到了前面
+第 3 次: t1:Hello Concurrent World / t2:Hello Concurrent World
+```
+
+同一个程序、同一台机器，输出顺序都会变。这是并发的第一课：**没有同步就没有顺序保证**。
+
+### 实验 1：不 join / 不 detach
+
+| | macOS（libc++） | Linux（libstdc++） |
+|---|---|---|
+| 退出码 | 134 | 134 |
+| stderr | `libc++abi: terminating` | `terminate called without an active exception` |
+| hello 输出 | 无 | 无 |
+
+⚠️ **别因为措辞不同就以为不是同一个错。** 134 = 128 + SIGABRT(6)，两边都是 abort。
+查资料时常见的「terminate called without an active exception」是 Linux 的说法，
+在 Mac 上你会看到 `libc++abi: terminating`，是同一件事。
+
+### 实验 1b：不 join，但 sleep 保证子线程跑完 ← 这一组里最值钱的
+
+```cpp
+std::thread t1(hello, "t1");
+std::thread t2(hello, "t2");
+std::this_thread::sleep_for(std::chrono::seconds(1));  // 子线程肯定跑完
+std::cout << "子线程应该已经结束了\n";
+return 0;  // 仍然不 join
+```
+
+实测输出（两个平台一致）：
+
+```
+t1:Hello Concurrent World
+t2:Hello Concurrent World
+子线程应该已经结束了        ← 子线程明明已经退出了
+退出码: 134                ← 照样崩
+```
+
+**这推翻一个极常见的误解：**
+
+| | |
+|---|---|
+| ❌ 误解 | 「线程都跑完了，就不用 join 了」 |
+| ✅ 实测 | 跑没跑完**根本不影响**。`joinable()` 问的是「这个 thread 对象还关联着一个**从未 join/detach 过**的线程吗」，跟线程函数是否已经 return 无关 |
+
+标准里 `joinable()` 等价于 `get_id() != std::thread::id()`；线程函数返回**不会**自动把 id 清空。
+所以只要没 join/detach，析构照样 `terminate`——哪怕线程早就退出了。
+
+### 实验 2：detach —— 两边结果完全相反
+
+| | macOS | Linux（Pi 5） |
+|---|---|---|
+| 连跑 5 次 | **5 次输出全空** | **5 次两行全出** |
+
+这不是「一个对一个错」，而是**两边都在赌**：
+主线程 `return` 之后进程开始收尾，detach 出去的线程能不能抢到 CPU 把 `cout` 刷出去，取决于调度时机。
+Mac 上主线程收得快（全丢），这台 Pi 上 detach 的线程先跑完了（全出）。
+
+> **结论：detach 之后的输出一个字都不能信。** 需要结果就别用 detach，改用 `join` 或 `future`。
+
+诚实标注：5 次是小样本，换机器、换负载结果可能又不一样——但**「结果会随平台变」这件事本身**，
+已经足够说明它不可靠，不需要更多样本。
+
+### 实验 3：输出交错 —— 这就是第 3 章的全部动机
+
+把 `hello` 改成循环 60 次输出，两个平台都出现穿插。Linux 实测片段：
+
+```
+t1:t2:00 t2:1 t1: 1 t1:t22:2 t2:3  t1t2::3 t14 t2::5 ...
+```
+
+`t1:t2:00` 这种「半个输出插在另一个输出中间」，说明了一件事：
+
+```cpp
+std::cout << str << ":" << i << " ";   // 这是三次独立的 operator<< 调用
+```
+
+标准保证单次 `operator<<` 内部不撕裂，但**三次之间别的线程可以插进来**。
+所以不是「cout 不安全」，而是**一次逻辑输出被拆成了多次物理调用**。
+
+→ 下一章「共享数据要保护」的全部动机就在这：需要的是「这一整行一起出去」的原子性。
+
 ## 和 C 的区别
 
 | 特性 | C (pthread) | C++ (std::thread) |

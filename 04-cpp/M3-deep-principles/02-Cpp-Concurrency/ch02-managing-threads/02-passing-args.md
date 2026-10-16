@@ -68,6 +68,36 @@ std::thread t2(read, std::cref(str));
 
 **关键**：`std::ref` 返回一个 `std::reference_wrapper`，线程内部解包成引用。不写 `std::ref` 则按值拷贝。
 
+#### 实测：不写 std::ref 会怎样（2026-10-16 双平台）
+
+把参数改成引用却直接传，编译器**直接拒绝**，不是警告：
+
+```cpp
+void hello(std::string& str) { str += "!"; }
+std::string s = "t1";
+std::thread t1(hello, s);   // 少了 std::ref
+```
+
+Linux（g++ 14.2 / libstdc++）实测报错：
+
+```
+error: static assertion failed:
+       std::thread arguments must be invocable after conversion to rvalues
+```
+
+macOS（clang 23.1 / libc++）实测报错：
+
+```
+static_assert failed due to requirement
+'__is_invocable_v<void (*)(std::string &), std::string>'
+```
+
+**GCC 这句报错把原理直接说出来了**：参数会先「转换成右值」再调用，
+`std::string` 的右值绑不到 `std::string&` 上，所以不可调用。
+这正是 decay-copy 的含义——去掉引用和 cv 限定，按值拷一份进线程内部存储。
+
+加上 `std::ref(s)` 后两台机器都编译通过，实测 `s` 从 `"t1"` 变成 `"t1!"`，证明引用真的传进去了（不是副本）。
+
 ### 方式 3：传指针
 
 ```cpp
