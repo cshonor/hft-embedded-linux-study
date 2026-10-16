@@ -1985,8 +1985,49 @@ void Account::rate(double r) { interest_rate = r; }
 <ul>
 <li>静态数据成员<strong>不属于任何对象</strong>，所有对象共享一份</li>
 <li>必须在<strong>类外定义</strong>（分配存储），定义只能一次</li>
-<li>例外：<code class="c">constexpr</code> 静态成员可类内初始化（C++17 起更宽松）</li>
+<li>例外：<code class="c">constexpr</code> 静态成员可类内初始化（C++17 起更宽松）——见下面这一节</li>
 </ul>
+<h4>实测：<code class="c">static const</code> 整型成员能当数组大小，非 static 一个都别想</h4>
+<p>TheCherno 视频里那段 <code class="c">Entity</code> 代码看着平平无奇，其实同时踩住了两个边界：</p>
+<pre class="code" data-label="cpp"><code class="c">class Entity {
+public:
+    static const int size = 5;   // ① 全类一份  ② 编译期常量表达式
+    int example[size];           // ← 只有同时满足①②才能这么写
+    Entity() { for (int i = 0; i &lt; size; i++) example[i] = 2; }
+};
+</code></pre>
+<p><strong>为什么合法</strong>：数组维度要求<strong>编译期常量表达式</strong>。<code class="c">static const</code> 整型成员就地初始化后恰好满足——它既是常量，又不依赖任何对象（<code class="c">static</code> 保证不进对象存储）。本机实测输出：</p>
+<pre class="code" data-label="code"><code class="c">Entity::size      = 5
+sizeof(Entity)    = 20 字节 —— 就是 5 个 int
+example[0..4]     = 2 2 2 2 2
+&amp;e.size  == &amp;e2.size ? 是（两个对象访问的是同一个实体）
+</code></pre>
+<p><strong>删掉 <code class="c">static</code> 立刻炸</strong>（clang 23.1.0 实测）：</p>
+<pre class="code" data-label="cpp"><code class="c">class Entity {
+public:
+    const int size = 5;      // 非静态成员
+    int example[size];       // ❌
+};
+</code></pre>
+<pre class="code" data-label="code"><code class="c">error: invalid use of non-static data member 'size'
+    4 |     int example[size];
+      |                 ^~~~
+</code></pre>
+<p>注意报错理由<strong>不是</strong>「值不是常量」，而是「非静态数据成员」——类体还在定义时对象尚未存在，非静态成员连被引用做维度都不配。C 程序员的直觉（「我给了它初值 5 啊」）在这里完全不适用。</p>
+<p><strong>第二个坑：值有了，存储不一定有。</strong> 就地初始化只给了值，一旦有人取它的地址就发生 odr-use：</p>
+<pre class="code" data-label="cpp"><code class="c">const int* p = &amp;Entity::size;   // C++17 前：链接期 undefined reference
+</code></pre>
+<pre class="code" data-label="code"><code class="c">Undefined symbols for architecture arm64:
+  &quot;Entity::size&quot;, referenced from:
+      _main in odr-xxxxx.o
+ld: symbol(s) not found for architecture arm64
+</code></pre>
+<p>在 <code class="c">.cpp</code> 里补一句 <code class="c">const int Entity::size;</code> 即可（<strong>不能重复写初值</strong>）——这就是本节开头「必须在类外定义」那条规则的适用场景，只是它躲在「用着没事、一取地址就崩」的阴影里。</p>
+<p>更省事的是直接换 <code class="c">static constexpr</code>：C++17 起它是 <strong>inline 变量</strong>，上面同样的取地址代码链接通过（实测 <code class="c">&amp;size = 0x102e1ffb4</code>）。</p>
+<blockquote>
+<p><strong>结论</strong>：想拿静态成员当编译期常量用（数组维度、<code class="c">switch case</code>、模板非类型参数），一律写 <strong><code class="c">static constexpr</code></strong>。它隐含 inline，免掉类外定义，语义也更强——<code class="c">constexpr</code> 强制初始值必须是编译期常量。<code class="c">static const int</code> 是 C++11 时代的写法，能用但别默认用。</p>
+</blockquote>
+<p><strong>顺带把主线串起来</strong>：这里的 <code class="c">example</code> 是<strong>对象内嵌数组</strong>，跟着对象走，<code class="c">sizeof(Entity)</code> 就是实打实的 20 字节——<strong>它不需要 <code class="c">new</code>，也不需要 <code class="c">delete</code></strong>。对照 <a href="chapter-12.html#s-12-2">12.2 直接内存管理</a>：只有 <code class="c">new int[size]</code> 出来的才需要手动释放，也才是 HFT 里要消灭的东西。</p>
 <h3>静态成员函数</h3>
 <pre class="code" data-label="cpp"><code class="c">// 静态成员函数
 Account::rate();        // 通过类名调用（推荐）
@@ -2185,6 +2226,24 @@ bar(a) 之后 a.x = 20（按引用传参 A&amp;，真改了）
 <p><strong>第三层</strong>（顺带测了）：把 <code class="c">x</code> 改成 private，<code class="c">static void poke(B&amp; b) { b.secret = 99; }</code> 照样能编译——<strong>访问控制是"类级别"不是"对象级别"</strong>：<code class="c">poke</code> 是 <code class="c">B</code> 的成员，对 <code class="c">B</code> 的任何对象（哪怕是参数传进来的）都有 private 访问权。实测 <code class="c">poke(b)</code> 后 <code class="c">b.secret == 99</code>。</p>
 <p>一句话总结：<strong>static 缺的只是 this，不是访问权，也不是"碰不到实例成员"——给它一个对象（引用/指针），它和成员函数一样能干。</strong></p>
 </details>
+<p><strong>8. 陷阱题</strong>：下面五条分别能不能通过？重点是④和⑤的"会不会编过"与"会不会链接过"不是一回事。</p>
+<pre class="code" data-label="cpp"><code class="c">struct A { static const int size = 5;      int arr[size]; };   // ①
+struct B { const int size = 5;             int arr[size]; };   // ②
+struct C { static constexpr int size = 5;  int arr[size]; };   // ③
+const int* pa = &amp;A::size;    // ④
+const int* pc = &amp;C::size;    // ⑤
+</code></pre>
+<details>
+<summary>答案</summary>
+<ul>
+<li><strong>① 能通过</strong>。<code class="c">static const</code> 整型就地初始化 = 编译期常量表达式，可作数组维度；<code class="c">size</code> 不占对象存储，<code class="c">sizeof(A) = 20</code>。</li>
+<li><strong>② 编译错误</strong>：<code class="c">error: invalid use of non-static data member 'size'</code>。理由不是"值不是常量"，是非静态成员在类定义期根本没有实体——初值写 5 也没用。</li>
+<li><strong>③ 能通过，且比 ① 更好</strong>：C++17 起 <code class="c">constexpr</code> 静态成员隐含 inline。</li>
+<li><strong>④ 编译能过，链接崩</strong>：<code class="c">Undefined symbols for architecture arm64: "A::size"</code>。就地初始化只给值不给存储，取地址构成 odr-use，必须在 <code class="c">.cpp</code> 补 <code class="c">const int A::size;</code>（<strong>不能再写初值</strong>）。补完就正常。（注意这是 C++17 前的写法结论；编译器对新标准下的 ODR 处理会放宽，但保留类外定义永远安全。）</li>
+<li><strong>⑤ 能通过</strong>：<code class="c">static constexpr</code> 是 inline 变量，无需类外定义（实测 <code class="c">&amp;C::size = 0x102e1ffb4</code>）。</li>
+</ul>
+<p>一句话：<strong>要么别取地址（那就怎么写都行），要么写 <code class="c">static constexpr</code>。</strong></p>
+</details>
 <p><strong>7. 分析题</strong>：Meyer's 单例 + 一个全局日志器，退出阶段会发生什么？</p>
 <pre class="code" data-label="cpp"><code class="c">class Singleton {
 public:
@@ -2216,11 +2275,32 @@ sizeof(Order) = 8 字节 —— 只有 id_，不含静态成员
 <blockquote>
 <p>这就是对象池/订单管理器核心状态的实现方式：静态计数 + 对象构造析构自动增减。</p>
 </blockquote>
+<p><strong><code class="c">examples/7.6-static-const-array.cpp</code></strong> —— <code class="c">static const</code> 当数组大小 vs <code class="c">static constexpr</code>。</p>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++20 -Wall examples/7.6-static-const-array.cpp -o /tmp/demo &amp;&amp; /tmp/demo
+</code></pre>
+<p>真实输出：</p>
+<pre class="code" data-label="code"><code class="c">--- Entity（static const）---
+Entity::size      = 5
+sizeof(Entity)    = 20 字节 —— 就是 5 个 int
+example[0..4]     = 2 2 2 2 2
+&amp;e.size  == &amp;e2.size ? 是（两个对象访问的是同一个实体）
+
+--- Entity2（static constexpr，C++17 推荐）---
+Entity2::size     = 5
+sizeof(Entity2)   = 20 字节
+example[0..4]     = 3 3 3 3 3
+</code></pre>
+<p><strong>看出什么了？</strong> 两个对象访问到的 <code class="c">size</code> 是同一个实体，而 <code class="c">sizeof</code> 里只有那 5 个 int——这跟上一个例子里 <code class="c">sizeof(Order)</code> 不含静态成员是同一件事，只是这次 <code class="c">size</code> 反过来决定了对象的大小。</p>
+<blockquote>
+<p>HFT 视角：这种「编译期定长、对象内嵌」的数组正是热路径想要的东西——<strong>连续内存、cache 友好、零次 malloc</strong>。换成 <code class="c">std::vector</code> 就有堆分配，换成 <code class="c">new int[size]</code> 还要手动 <code class="c">delete[]</code> 并额外付 16 字节头部（→ <a href="chapter-12.html#s-12-2">12.2</a>）。</p>
+</blockquote>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §7.6：类的静态成员</li>
 <li>下一章：§8 IO 库</li>
-<li>C 程序员对照：文件级 static 变量 → 类的 static 成员；C++17 <code class="c">inline static</code> 简化定义</li>
+<li>C 程序员对照：文件级 static 变量 → 类的 static 成员；C++17 <code class="c">inline static</code> / <code class="c">constexpr</code> 简化定义</li>
+<li>TheCherno C++ 系列 Static 一集中的 <code class="c">Entity</code> 例子，见上文「<code class="c">static const</code> 整型成员能当数组大小」一节</li>
+<li>编译期常量的更多用法 → <a href="chapter-10.html#ch-10">C++17 ch10 constexpr if</a></li>
 </ul>
       </section>
 
