@@ -137,7 +137,7 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19
 | | 用途 |
 |---|------|
 | [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) | C / C++ 详细笔记与代码（`01` · `04`） |
-| [Computer-Networking](https://github.com/cshonor/Computer-Networking) | Socket / UNP / TCP/IP 实战代码（`03.5` · `04/M2`） |
+| [Computer-Networking](https://github.com/cshonor/Computer-Networking) | Socket / UNP / TCP/IP 实战代码（`03.5` · `04/M4`） |
 | [READING-LIST.md](./READING-LIST.md) | **某本书具体读哪几章**（精读 / 选读 / 跳过标签） |
 | [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md) | 分书小节指引 · HFT 不漏项检查清单 · 嵌入式支线 |
 | [CTA 支线书单](https://github.com/cshonor/Quant-AI-Foundations/blob/main/MidLow_Freq/1_CTA_Futures/CTA-READING-LIST.md) | **已迁移** → Quant-AI-Foundations `MidLow_Freq/1_CTA_Futures/`（趋势跟踪海龟/Clenow 读序 + 回测纪律，与理论轨同仓对照） |

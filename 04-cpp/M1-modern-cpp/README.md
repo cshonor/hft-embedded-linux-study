@@ -16,7 +16,7 @@ C++11/14 是分水岭，老 C++ 和现代 C++ 是两种写法。这 42 条不过
 
 ## 验收
 
-能读 muduo 里 `shared_ptr`/回调/移动语义不懵 → 再开 [M2 对象模型](../M2-object-model/01-Cpp-Object-Model/)（→ M2.5 并发 → M3 PNP/muduo）。
+能读 muduo 里 `shared_ptr`/回调/移动语义不懵 → 再开 [M2 对象模型](../M2-object-model/01-Cpp-Object-Model/)（→ M3 并发 → M4 PNP/muduo）。
 
 ## 跨模块回读
 

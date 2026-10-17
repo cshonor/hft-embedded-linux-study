@@ -2,8 +2,8 @@
 
 **文件夹 `04`** · [OUTLINE](./OUTLINE.md) · [README](../README.md)
 
-> **定位：** 本仓库 **M3 PNP / muduo**（C++ 网络编程）、**[14 HFT](../14-hft-engineering/)** 的 C++ 前置。  
-> **笔记正文已在本目录：** 自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制，按 M0–M5 六个模块组织（每个模块内部书从 01 开始编号）。  
+> **定位：** 本仓库 **M4 PNP / muduo**（C++ 网络编程）、**[14 HFT](../14-hft-engineering/)** 的 C++ 前置。  
+> **笔记正文已在本目录：** 自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制，按 M0–M7 六个模块组织（每个模块内部书从 01 开始编号）。  
 > **C 语言** 在本仓 [01-c-language](../01-c-language/)（不要在这里重复啃 K&R）。
 
 上游全书目录备份 → [README.external.md](./README.external.md)
@@ -17,14 +17,14 @@
 | M0 入门语法 | [0-C++Primer](./M0-entry-syntax/01-C++Primer/) | C++ Primer 5e |
 | M1 现代 C++ 🔴 | [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | Effective Modern C++ |
 | M2 对象模型 🔴 | [M2-Cpp-Object-Model](./M2-object-model/01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 |
-| M2.5 并发编程 🔴 | [2.5-Cpp-Concurrency](./M2.5-concurrency/01-Cpp-Concurrency/) | C++ 并发编程实战 |
-| **M3 C++ 网络编程** 🔴 | [M3-cpp-network-programming](./M3-cpp-network-programming/) | 陈硕《Linux 多线程服务端编程》（UNP 实验 ×9 + muduo 主线 ×4，共 13 篇） |
-| M4.0 STL 🟡 | [4.0-Effective-STL](./M4.0-STL/01-Effective-STL/) | Effective STL |
-|  | [4.0-STL-Source-Analysis](./M4.0-STL/02-STL-Source-Analysis/) | STL 源码剖析 |
-| M4.5 经典规范 🟡 | [4.5-Effective-C++](./M4.5-Classic-Effective/01-Effective-C++/) | Effective C++ |
-|  | [4.5-More-Effective-C++](./M4.5-Classic-Effective/02-More-Effective-C++/) | More Effective C++ |
-| M5 进阶标准 ⚪ | [4-C++17-The-Complete-Guide](./M5-advanced-standards/01-C++17-The-Complete-Guide/) | C++17 Complete Guide |
-|  | [4-C++20-The-Complete-Guide](./M5-advanced-standards/02-C++20-The-Complete-Guide/) | C++20 Complete Guide |
+| M3 并发编程 🔴 | [3-Cpp-Concurrency](./M3-concurrency/01-Cpp-Concurrency/) | C++ 并发编程实战 |
+| **M4 C++ 网络编程** 🔴 | [M4-cpp-network-programming](./M4-cpp-network-programming/) | 陈硕《Linux 多线程服务端编程》（UNP 实验 ×9 + muduo 主线 ×4，共 13 篇） |
+| M5 STL 🟡 | [4.0-Effective-STL](./M5-STL/01-Effective-STL/) | Effective STL |
+|  | [4.0-STL-Source-Analysis](./M5-STL/02-STL-Source-Analysis/) | STL 源码剖析 |
+| M6 经典规范 🟡 | [4.5-Effective-C++](./M6-Classic-Effective/01-Effective-C++/) | Effective C++ |
+|  | [4.5-More-Effective-C++](./M6-Classic-Effective/02-More-Effective-C++/) | More Effective C++ |
+| M7 进阶标准 ⚪ | [4-C++17-The-Complete-Guide](./M7-advanced-standards/01-C++17-The-Complete-Guide/) | C++17 Complete Guide |
+|  | [4-C++20-The-Complete-Guide](./M7-advanced-standards/02-C++20-The-Complete-Guide/) | C++20 Complete Guide |
 
 ---
 
@@ -33,17 +33,17 @@
 ```
 … → 03 TLPI → 03.5 UNP socket（C）
          ↓
-    【04 C++ · 本目录】M1 Modern C++ → M2 对象模型 → M2.5 并发
+    【04 C++ · 本目录】M1 Modern C++ → M2 对象模型 → M3 并发
          ↓
-    M3 PNP/muduo（本目录）→ … → 14 HFT（C++ 引擎）→ 18 Rust
+    M4 PNP/muduo（本目录）→ … → 14 HFT（C++ 引擎）→ 18 Rust
 ```
 
 | 阶段 | 本仓库模块 | 本目录要读到哪 |
 |------|------------|----------------|
 | 打底 | **02 CSAPP** | 可选：[0-C++Primer](./M0-entry-syntax/01-C++Primer/) Part I |
-| **开写 C++ 网络前** | → **M3 PNP**（本目录） | 🔴 [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) + M2 对象模型 + M2.5 并发 |
-| **开 HFT 引擎前** | → **14 HFT** | 🔴 [M2.5-Cpp-Concurrency](./M2.5-concurrency/01-Cpp-Concurrency/) + 🟡 [M2-Cpp-Object-Model](./M2-object-model/01-Cpp-Object-Model/) |
-| 进阶 | 17 之后 / 与 Rust 对照 | [4-C++17](./M5-advanced-standards/01-C++17-The-Complete-Guide/) · [4-C++20](./M5-advanced-standards/02-C++20-The-Complete-Guide/) |
+| **开写 C++ 网络前** | → **M4 PNP**（本目录） | 🔴 [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) + M2 对象模型 + M3 并发 |
+| **开 HFT 引擎前** | → **14 HFT** | 🔴 [M3-Cpp-Concurrency](./M3-concurrency/01-Cpp-Concurrency/) + 🟡 [M2-Cpp-Object-Model](./M2-object-model/01-Cpp-Object-Model/) |
+| 进阶 | 17 之后 / 与 Rust 对照 | [4-C++17](./M7-advanced-standards/01-C++17-The-Complete-Guide/) · [4-C++20](./M7-advanced-standards/02-C++20-The-Complete-Guide/) |
 
 完整里程碑 → [OUTLINE.md](./OUTLINE.md)
 
@@ -54,7 +54,7 @@
 | 你的状态 | 建议 |
 |----------|------|
 | CSAPP 还没过完 | **先 02**，C++ 只开 Primer 语法扫盲 |
-| CSAPP + TLPI 已有体感 | **集中刷 `01-Effective-Modern-C++`**，再按 **M2 对象模型 → M2.5 并发 → M3 PNP** |
+| CSAPP + TLPI 已有体感 | **集中刷 `01-Effective-Modern-C++`**，再按 **M2 对象模型 → M3 并发 → M4 PNP** |
 | 想直接碰 muduo / HFT | **停** — 先 Modern C++ + 并发 |
 
 **一句话：** C++ 在会 C + 会 Linux 用户态（TLPI）之后、写 muduo 之前上最省时间。
@@ -65,9 +65,9 @@
 
 | 本仓库 | 本目录 |
 |--------|--------|
-| [02 CSAPP](../02-computer-systems/) Ch12 并发 | → [M2.5-Cpp-Concurrency](./M2.5-concurrency/01-Cpp-Concurrency/) |
+| [02 CSAPP](../02-computer-systems/) Ch12 并发 | → [M3-Cpp-Concurrency](./M3-concurrency/01-Cpp-Concurrency/) |
 | [02 CSAPP](../02-computer-systems/) Ch6 缓存 | → [M2-Cpp-Object-Model](./M2-object-model/01-Cpp-Object-Model/) |
-| [M3 PNP / muduo](./M3-cpp-network-programming/) | 前置 [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) + M2 + M2.5；C 侧对照 [03.5 UNP](../03.5-unix-network-api/) |
+| [M4 PNP / muduo](./M4-cpp-network-programming/) | 前置 [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) + M2 + M3；C 侧对照 [03.5 UNP](../03.5-unix-network-api/) |
 | [14 HFT](../14-hft-engineering/) | 前置 Modern + Concurrency + Object Model |
 | [01 C](../01-c-language/) | C 数据面；与 C++ **分工不重复** |
 

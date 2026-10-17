@@ -3,7 +3,7 @@
 > 来源：[cshonor/cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)  
 > 本仓入口以 [README.md](./README.md) 为准；下方为上游原文备份（路径按上游根目录）。
 >
-> **编号说明：** 上游原文用全局 `01`–`07` 编号；本仓已重组为 M0–M5 模块，每个模块内部书从 `01` 起重新编号。下方正文保留上游原貌，链接已指向本仓新位置。
+> **编号说明：** 上游原文用全局 `01`–`07` 编号；本仓已重组为 M0–M7 模块，每个模块内部书从 `01` 起重新编号。下方正文保留上游原貌，链接已指向本仓新位置。
 
 ---
 
@@ -36,7 +36,7 @@
 | 优先级 | 目录 | 说明 |
 |--------|------|------|
 | **必学** | 00-Linux-Kernel-DPDK-Network-C | C 数据面核心 |
-| 高 | [M2.5-Cpp-Concurrency](./M2.5-concurrency/01-Cpp-Concurrency/) | 多线程、锁、内存序 |
+| 高 | [M3-Cpp-Concurrency](./M3-concurrency/01-Cpp-Concurrency/) | 多线程、锁、内存序 |
 | 中 | [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | 现代 C++，写策略/业务时补 |
 | 按需 | `13-Modern-C++-Performance-Engineering` | 低延迟、无锁、CPU 亲和（见下方可选拓展） |
 
@@ -47,15 +47,15 @@
 | 顺序 | 目录 | 书籍 | 侧重 |
 |------|------|------|------|
 | 1 | [0-C++Primer](./M0-entry-syntax/01-C++Primer/) | 《C++ Primer 第5版》 | 语法、标准库基础 |
-| 2 | [4.5-Effective-C++](./M4.5-Classic-Effective/01-Effective-C++/) | 《Effective C++ 第三版》 | 基础编码规范 |
-| 3 | [4.5-More-Effective-C++](./M4.5-Classic-Effective/02-More-Effective-C++/) | 《More Effective C++》 | 进阶语法、设计技巧 |
+| 2 | [4.5-Effective-C++](./M6-Classic-Effective/01-Effective-C++/) | 《Effective C++ 第三版》 | 基础编码规范 |
+| 3 | [4.5-More-Effective-C++](./M6-Classic-Effective/02-More-Effective-C++/) | 《More Effective C++》 | 进阶语法、设计技巧 |
 | 4 | [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | 《Effective Modern C++》 | 移动语义、lambda、类型推导等现代特性 |
-| 5 | [4.0-Effective-STL](./M4.0-STL/01-Effective-STL/) | 《Effective STL》 | STL 最佳实践 |
-| 6 | [4.0-STL-Source-Analysis](./M4.0-STL/02-STL-Source-Analysis/) | 《STL源码剖析》 | STL 底层原理 |
+| 5 | [4.0-Effective-STL](./M5-STL/01-Effective-STL/) | 《Effective STL》 | STL 最佳实践 |
+| 6 | [4.0-STL-Source-Analysis](./M5-STL/02-STL-Source-Analysis/) | 《STL源码剖析》 | STL 底层原理 |
 | 7 | [M2-Cpp-Object-Model](./M2-object-model/01-Cpp-Object-Model/) | 《深度探索C++对象模型》 | 对象内存布局、多态底层 |
-| 8 | [M2.5-Cpp-Concurrency](./M2.5-concurrency/01-Cpp-Concurrency/) | 《C++并发编程实战》 | 线程、同步、内存模型 |
-| 9 | [4-C++17-The-Complete-Guide](./M5-advanced-standards/01-C++17-The-Complete-Guide/) | 《C++17 - The Complete Guide》（Josuttis） | 结构化绑定、折叠表达式、并行 STL、`string_view` 等 C++17 过渡特性 |
-| 10 | [4-C++20-The-Complete-Guide](./M5-advanced-standards/02-C++20-The-Complete-Guide/) | 《C++20 - The Complete Guide》（Josuttis） | Concepts、Modules、Coroutines、Ranges 等 C++20 标准 |
+| 8 | [M3-Cpp-Concurrency](./M3-concurrency/01-Cpp-Concurrency/) | 《C++并发编程实战》 | 线程、同步、内存模型 |
+| 9 | [4-C++17-The-Complete-Guide](./M7-advanced-standards/01-C++17-The-Complete-Guide/) | 《C++17 - The Complete Guide》（Josuttis） | 结构化绑定、折叠表达式、并行 STL、`string_view` 等 C++17 过渡特性 |
+| 10 | [4-C++20-The-Complete-Guide](./M7-advanced-standards/02-C++20-The-Complete-Guide/) | 《C++20 - The Complete Guide》（Josuttis） | Concepts、Modules、Coroutines、Ranges 等 C++20 标准 |
 
 ## C 语言学习顺序
 

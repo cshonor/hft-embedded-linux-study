@@ -130,7 +130,7 @@
 ### ③ Low-Latency C++ Programming — Antony Williams
 
 > ⚠️ **目录未核对**（未检索到官方 TOC），下表按**主题**给，不按章号。
-> 作者 = *C++ Concurrency in Action* 作者（本仓库 [04/M2.5 C++ 并发](../04-cpp/M2.5-concurrency/01-Cpp-Concurrency) 同一人）。
+> 作者 = *C++ Concurrency in Action* 作者（本仓库 [04/M3 C++ 并发](../04-cpp/M3-concurrency/01-Cpp-Concurrency) 同一人）。
 
 | 主题 | 标签 | 嵌入级别 |
 |------|------|---------|
@@ -182,6 +182,6 @@
 ## 交叉阅读
 
 - **动手路线（L0–L5 工程阶梯 + 验收指标）** → [HFT-ENGINEERING-LADDER.md](./HFT-ENGINEERING-LADDER.md)
-- [03-linux-userspace-api](../03-linux-userspace-api/) · [04/M2 C++ 网络编程](../04-cpp/M3-cpp-network-programming/)
+- [03-linux-userspace-api](../03-linux-userspace-api/) · [04/M4 C++ 网络编程](../04-cpp/M4-cpp-network-programming/)
 - [13-DPDK](../13-dpdk/) · [19-markets-microstructure](../19-markets-microstructure/)
 - [18-Rust 量化](../18-rust-quant/) · [projects/P8 撮合引擎](../projects/P8-matching-engine/) · [projects/P10 HFT 原型](../projects/P10-hft-prototype/)

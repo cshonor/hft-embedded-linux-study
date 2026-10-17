@@ -40,14 +40,14 @@
 
 | 内容 | 跳过理由 |
 |------|----------|
-| `M4.0/01-Effective-STL` | LLVM 热路径用自研 ADT，不用 `std::` 容器 |
-| `M4.0/02-STL-Source-Analysis` | 同上；啃下来对读 LLVM 代码帮助有限 |
+| `M5/01-Effective-STL` | LLVM 热路径用自研 ADT，不用 `std::` 容器 |
+| `M5/02-STL-Source-Analysis` | 同上；啃下来对读 LLVM 代码帮助有限 |
 | `M5` C++17 / C++20 | LLVM 17 要求 C++17，**够用**；C++20 特性用不上 |
 | `M3/02-Cpp-Concurrency` | 编译器前端不需要并发（那是 `14-hft-engineering` 的事） |
 | `M0/ch08` iostream · ch17/18/19 特殊工具 | 与编译器工程无关 |
-| `M4.5/01-Effective-C++` 大部分条款 | 可缓；P0 覆盖后已能读 LLVM 代码，遇坑再查 |
+| `M6/01-Effective-C++` 大部分条款 | 可缓；P0 覆盖后已能读 LLVM 代码，遇坑再查 |
 
-> `M4.5/01-Effective-C++` 里**资源管理**相关条款（三/五法则那几条）已在 P0 #3 覆盖。
+> `M6/01-Effective-C++` 里**资源管理**相关条款（三/五法则那几条）已在 P0 #3 覆盖。
 
 ---
 

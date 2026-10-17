@@ -1,7 +1,7 @@
 # C++ 学习链 · 里程碑与 HFT 插入顺序
 
-> **笔记正文：** 本目录 M0–M5 七个模块（M0、M1、M2、M2.5、M4、M5 自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制；M3 = C++ 网络编程 muduo/PNP）  
-> **HFT 读序 = 模块编号** — 实际顺序 M0→M1→M2 对象模型→M2.5 并发→M3 网络编程→M4（穿插），M5 可选，以本表里程碑为准。
+> **笔记正文：** 本目录 M0–M7 八个模块（M0、M1、M2、M3、M5、M6、M7 自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制；M4 = C++ 网络编程 muduo/PNP）  
+> **HFT 读序 = 模块编号** — 实际顺序 M0→M1→M2 对象模型→M3 并发→M4 网络编程→M5/M6（穿插），M7 可选，以本表里程碑为准。
 
 ---
 
@@ -10,8 +10,8 @@
 | 原则 | 说明 |
 |------|------|
 | **C 先于 C++** | [02 CSAPP](../02-computer-systems/) + [01 C](../01-c-language/) — C++ 是「带 RAII 的 C++」 |
-| **Modern 先于 muduo** | [M3 PNP](./M3-cpp-network-programming/) 是 C++ 工程；**`01-Effective-Modern-C++` 是硬门槛** |
-| **原理先于网络、并发先于 muduo** | M2 对象模型 → M2.5 并发 → 再开 M3 PNP；[14 HFT](../14-hft-engineering/) 前 `01-Cpp-Concurrency` 必过 |
+| **Modern 先于 muduo** | [M4 PNP](./M4-cpp-network-programming/) 是 C++ 工程；**`01-Effective-Modern-C++` 是硬门槛** |
+| **原理先于网络、并发先于 muduo** | M2 对象模型 → M3 并发 → 再开 M4 PNP；[14 HFT](../14-hft-engineering/) 前 `01-Cpp-Concurrency` 必过 |
 | **原理 > 语法版本** | Effective + Modern C++11/14 打底，再 17/20 |
 
 ---
@@ -44,49 +44,49 @@
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [M2-Cpp-Object-Model](./M2-object-model/01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | **M1 之后、M2.5 并发之前** |
+| [M2-Cpp-Object-Model](./M2-object-model/01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | **M1 之后、M3 并发之前** |
 
 **验收：** 能解释类大小、对齐、继承布局、虚函数代价、placement new。
 
 ---
 
-### M2.5 · 并发编程 🔴
+### M3 · 并发编程 🔴
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [2.5-Cpp-Concurrency](./M2.5-concurrency/01-Cpp-Concurrency/) | C++ 并发编程实战 | **M2 对象模型之后、M3 PNP 之前**（muduo 是 one loop per thread，先懂线程再读） |
+| [3-Cpp-Concurrency](./M3-concurrency/01-Cpp-Concurrency/) | C++ 并发编程实战 | **M2 对象模型之后、M4 PNP 之前**（muduo 是 one loop per thread，先懂线程再读） |
 
 **验收：** 能写 mutex/condition_variable、理解 data race、能解释 6 种内存序。
 
 ---
 
-### M3 · C++ 网络编程（muduo / PNP）🔴
+### M4 · C++ 网络编程（muduo / PNP）🔴
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [M3-cpp-network-programming](./M3-cpp-network-programming/) | 陈硕《Linux 多线程服务端编程》 | **M2.5 并发之后**；C 侧对照 03.5 UNP |
+| [M4-cpp-network-programming](./M4-cpp-network-programming/) | 陈硕《Linux 多线程服务端编程》 | **M3 并发之后**；C 侧对照 03.5 UNP |
 
 **验收：** 能手写 epoll Reactor、讲清 muduo Buffer/TcpConnection 生命周期、异步日志。
 
 ---
 
-### M4.0 / M4.5 · STL 与规范（M3 PNP 期间穿插）🟡
+### M5 / M6 · STL 与规范（M4 PNP 期间穿插）🟡
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [4.0-Effective-STL](./M4.0-STL/01-Effective-STL/) | Effective STL | **M3 PNP** 写缓冲区 / 容器时（亦可与 M1 EMC++ 配对读） |
-| [4.0-STL-Source-Analysis](./M4.0-STL/02-STL-Source-Analysis/) | STL 源码剖析 | 时间紧可后补 |
-| [4.5-Effective-C++](./M4.5-Classic-Effective/01-Effective-C++/) | Effective C++ | M1 之后按需 |
-| [4.5-More-Effective-C++](./M4.5-Classic-Effective/02-More-Effective-C++/) | More Effective C++ | 同上 |
+| [4.0-Effective-STL](./M5-STL/01-Effective-STL/) | Effective STL | **M4 PNP** 写缓冲区 / 容器时（亦可与 M1 EMC++ 配对读） |
+| [4.0-STL-Source-Analysis](./M5-STL/02-STL-Source-Analysis/) | STL 源码剖析 | 时间紧可后补 |
+| [4.5-Effective-C++](./M6-Classic-Effective/01-Effective-C++/) | Effective C++ | M1 之后按需 |
+| [4.5-More-Effective-C++](./M6-Classic-Effective/02-More-Effective-C++/) | More Effective C++ | 同上 |
 
 ---
 
-### M5 · C++17 / C++20（17 之后 / 与 Rust 对照）⚪
+### M7 · C++17 / C++20（17 之后 / 与 Rust 对照）⚪
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [4-C++17-The-Complete-Guide](./M5-advanced-standards/01-C++17-The-Complete-Guide/) | C++17 | HFT 主线进行中可穿插 |
-| [4-C++20-The-Complete-Guide](./M5-advanced-standards/02-C++20-The-Complete-Guide/) | C++20 | **14 HFT 主线跑通后**；Concepts / Coroutines / Modules |
+| [4-C++17-The-Complete-Guide](./M7-advanced-standards/01-C++17-The-Complete-Guide/) | C++17 | HFT 主线进行中可穿插 |
+| [4-C++20-The-Complete-Guide](./M7-advanced-standards/02-C++20-The-Complete-Guide/) | C++20 | **14 HFT 主线跑通后**；Concepts / Coroutines / Modules |
 
 ---
 
@@ -101,13 +101,13 @@
                 ↓
            【04 · M2 对象模型】
                 ↓
-           【04 · M2.5 并发编程】
+           【04 · M3 并发编程】
                 ↓
-           M3 PNP/muduo → 11 TCP/IP → 12 内核网络 → 13 DPDK
+           M4 PNP/muduo → 11 TCP/IP → 12 内核网络 → 13 DPDK
                 ↓
            14 HFT（C++ 引擎）
                 ↓
-           18 Rust + 【04 · M5 C++17/20 可选】
+           18 Rust + 【04 · M7 C++17/20 可选】
 ```
 
 ---
