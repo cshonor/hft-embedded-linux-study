@@ -47,11 +47,11 @@
 | 顺序 | 目录 | 书籍 | 侧重 |
 |------|------|------|------|
 | 1 | [0-C++Primer](./M0-entry-syntax/01-C++Primer/) | 《C++ Primer 第5版》 | 语法、标准库基础 |
-| 2 | [3-Effective-C++](./M4-engineering-standards/01-Effective-C++/) | 《Effective C++ 第三版》 | 基础编码规范 |
-| 3 | [3-More-Effective-C++](./M4-engineering-standards/02-More-Effective-C++/) | 《More Effective C++》 | 进阶语法、设计技巧 |
+| 2 | [4.5-Effective-C++](./M4.5-Classic-Effective/01-Effective-C++/) | 《Effective C++ 第三版》 | 基础编码规范 |
+| 3 | [4.5-More-Effective-C++](./M4.5-Classic-Effective/02-More-Effective-C++/) | 《More Effective C++》 | 进阶语法、设计技巧 |
 | 4 | [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | 《Effective Modern C++》 | 移动语义、lambda、类型推导等现代特性 |
-| 5 | [3-Effective-STL](./M4-engineering-standards/03-Effective-STL/) | 《Effective STL》 | STL 最佳实践 |
-| 6 | [3-STL-Source-Analysis](./M4-engineering-standards/04-STL-Source-Analysis/) | 《STL源码剖析》 | STL 底层原理 |
+| 5 | [4.0-Effective-STL](./M4.0-STL/01-Effective-STL/) | 《Effective STL》 | STL 最佳实践 |
+| 6 | [4.0-STL-Source-Analysis](./M4.0-STL/02-STL-Source-Analysis/) | 《STL源码剖析》 | STL 底层原理 |
 | 7 | [M2-Cpp-Object-Model](./M2-object-model/01-Cpp-Object-Model/) | 《深度探索C++对象模型》 | 对象内存布局、多态底层 |
 | 8 | [M2.5-Cpp-Concurrency](./M2.5-concurrency/01-Cpp-Concurrency/) | 《C++并发编程实战》 | 线程、同步、内存模型 |
 | 9 | [4-C++17-The-Complete-Guide](./M5-advanced-standards/01-C++17-The-Complete-Guide/) | 《C++17 - The Complete Guide》（Josuttis） | 结构化绑定、折叠表达式、并行 STL、`string_view` 等 C++17 过渡特性 |

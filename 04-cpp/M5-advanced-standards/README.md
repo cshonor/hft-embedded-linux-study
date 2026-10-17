@@ -49,8 +49,8 @@ C++20 很多特性在 C++17 基础上完善：先吃透 17 再读 20 更顺。
 
 ## 跨模块参考
 
-- **04 STL 源码剖析** 物理上在 [M3](../M4-engineering-standards/04-STL-Source-Analysis/)（和 03 Effective STL 一起作工具书）。LEARNING-PATH 提到"如 M4 未读可放 M3"——指的是阅读时机可后移到 M3 阶段，书的物理位置不动。
+- **STL 源码剖析** 物理上在 [M4.0](../M4.0-STL/02-STL-Source-Analysis/)（和 01 Effective STL 一起作工具书）。LEARNING-PATH 提到"如未读可放 M5"——指的是阅读时机可后移到 M5 阶段，书的物理位置不动。
 
 ---
 
-← [学习路线](../LEARNING-PATH.md) · [上一站 M4 穿插](../M4-engineering-standards/)
+← [学习路线](../LEARNING-PATH.md) · [上一站 M4.5 穿插](../M4.5-Classic-Effective/)

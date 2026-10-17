@@ -19,10 +19,10 @@
 | M2 对象模型 🔴 | [M2-Cpp-Object-Model](./M2-object-model/01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 |
 | M2.5 并发编程 🔴 | [2.5-Cpp-Concurrency](./M2.5-concurrency/01-Cpp-Concurrency/) | C++ 并发编程实战 |
 | **M3 C++ 网络编程** 🔴 | [M3-cpp-network-programming](./M3-cpp-network-programming/) | 陈硕《Linux 多线程服务端编程》（UNP 实验 ×9 + muduo 主线 ×4，共 13 篇） |
-| M4 工程规范 🟡 | [3-Effective-C++](./M4-engineering-standards/01-Effective-C++/) | Effective C++ |
-|  | [3-More-Effective-C++](./M4-engineering-standards/02-More-Effective-C++/) | More Effective C++ |
-|  | [3-Effective-STL](./M4-engineering-standards/03-Effective-STL/) | Effective STL |
-|  | [3-STL-Source-Analysis](./M4-engineering-standards/04-STL-Source-Analysis/) | STL 源码剖析 |
+| M4.0 STL 🟡 | [4.0-Effective-STL](./M4.0-STL/01-Effective-STL/) | Effective STL |
+|  | [4.0-STL-Source-Analysis](./M4.0-STL/02-STL-Source-Analysis/) | STL 源码剖析 |
+| M4.5 经典规范 🟡 | [4.5-Effective-C++](./M4.5-Classic-Effective/01-Effective-C++/) | Effective C++ |
+|  | [4.5-More-Effective-C++](./M4.5-Classic-Effective/02-More-Effective-C++/) | More Effective C++ |
 | M5 进阶标准 ⚪ | [4-C++17-The-Complete-Guide](./M5-advanced-standards/01-C++17-The-Complete-Guide/) | C++17 Complete Guide |
 |  | [4-C++20-The-Complete-Guide](./M5-advanced-standards/02-C++20-The-Complete-Guide/) | C++20 Complete Guide |
 

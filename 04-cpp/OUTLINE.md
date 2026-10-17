@@ -70,14 +70,14 @@
 
 ---
 
-### M4 · STL 与规范（M3 PNP 期间穿插）🟡
+### M4.0 / M4.5 · STL 与规范（M3 PNP 期间穿插）🟡
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [3-Effective-C++](./M4-engineering-standards/01-Effective-C++/) | Effective C++ | M1 之后按需 |
-| [3-More-Effective-C++](./M4-engineering-standards/02-More-Effective-C++/) | More Effective C++ | 同上 |
-| [3-Effective-STL](./M4-engineering-standards/03-Effective-STL/) | Effective STL | **M3 PNP** 写缓冲区 / 容器时（亦可与 M1 EMC++ 配对读） |
-| [3-STL-Source-Analysis](./M4-engineering-standards/04-STL-Source-Analysis/) | STL 源码剖析 | 时间紧可后补 |
+| [4.0-Effective-STL](./M4.0-STL/01-Effective-STL/) | Effective STL | **M3 PNP** 写缓冲区 / 容器时（亦可与 M1 EMC++ 配对读） |
+| [4.0-STL-Source-Analysis](./M4.0-STL/02-STL-Source-Analysis/) | STL 源码剖析 | 时间紧可后补 |
+| [4.5-Effective-C++](./M4.5-Classic-Effective/01-Effective-C++/) | Effective C++ | M1 之后按需 |
+| [4.5-More-Effective-C++](./M4.5-Classic-Effective/02-More-Effective-C++/) | More Effective C++ | 同上 |
 
 ---
 
