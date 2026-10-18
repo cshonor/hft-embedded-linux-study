@@ -1498,15 +1498,39 @@ void f(T) { std::cout &lt;&lt; &quot;template\n&quot;; }       // 通用模板
 void f(int) { std::cout &lt;&lt; &quot;int\n&quot;; }          // 非模板重载
 void f(double) { std::cout &lt;&lt; &quot;double\n&quot;; }    // 另一个非模板重载
 
-f(42);        // int（非模板精确匹配优先于模板）
-f(3.14);      // double（非模板）
-f(&quot;hi&quot;);      // template（无非模板匹配，用模板 T=const char*）
-f('a');       // template（char 无非模板匹配，T=char）
+f(42);        // int（非模板精确匹配，与模板 T=int 打平 → 平手时非模板赢）
+f(3.14);      // double（同上）
+f(&quot;hi&quot;);      // template（int/double 接不住 const char*，只剩模板可行）
+f('a');       // template（模板 T=char 精确匹配，赢过 int/double 需要的类型提升）
 </code></pre>
-<p>重载选择规则（简化）：
-1. 候选集：所有可见的函数和模板实例
-2. 对每个候选做参数匹配，能匹配的进入"可行函数集"
-3. 优先级：精确匹配的非模板 &gt; 特化的模板 &gt; 通用模板</p>
+<p><strong>⚠️ 一个流传很广的错误说法</strong>："优先选普通函数；普通函数匹配不上，才去尝试实例化模板。"——<strong>顺序说反了</strong>。真实规则是两步（实测 clang 23.1.0）：</p>
+<ol>
+<li><strong>先比匹配好坏</strong>：非模板和所有模板实例<strong>一起进候选集</strong>，比的是谁的实参转换更少（精确 &gt; 提升 &gt; 标准转换 &gt; 自定义转换）。</li>
+<li><strong>打平了才偏袒非模板</strong>：转换序列相同的情况下，非模板胜出。</li>
+</ol>
+<p>所以模板完全可能<strong>赢过</strong>存在的非模板函数：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt; void foo(T x) { /* ... */ }
+void foo(double x) { /* ... */ }
+
+foo(5.5);     // 普通 double —— 两边都是精确匹配，打平，非模板赢
+foo(5.5f);    // 模板 T=float —— 精确匹配，赢过 float→double 的转换！
+foo(5);       // 模板 T=int   —— 同上
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">foo(5.5)   → 普通  double
+foo(5.5f)  → 模板  T=void foo(T) [T = float]
+foo(5)     → 模板  T=void foo(T) [T = int]
+</code></pre>
+<p>想<strong>强制</strong>走模板（哪怕有非模板精确匹配），用尖括号显式实例化：<code class="c">print&lt;int&gt;(100)</code>——一旦写了 <code class="c">&lt;...&gt;</code>，编译器只在模板里挑，非模板直接出局（实测 <code class="c">print(100)</code> 走非模板、<code class="c">print&lt;int&gt;(100)</code> 走模板）。</p>
+<p><strong>顺带一条名词边界的实测</strong>：非模板 class 和同名函数可以共存（C 遗留的 tag 命名空间，POSIX 的 <code class="c">struct stat</code> + <code class="c">stat()</code> 就是这么工作的）：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Thing { int v; };
+void Thing() {}                 // ✅ 合法；引用类要写 struct Thing
+</code></pre>
+<p>但<strong>类模板</strong>不行：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt; struct Thing { T v; };
+void Thing() {}                 // ❌ error: redefinition of 'Thing' as different kind of symbol
+</code></pre>
+<p>「模板重载」只发生在<strong>函数</strong>模板之间（以及函数模板与非模板函数之间）；类模板靠特化定制，不参与重载。</p>
 <h3>2. 可变参数模板</h3>
 <p>C++11 起，模板可接受<strong>参数包</strong>（parameter pack）——零个或多个参数：</p>
 <pre class="code" data-label="cpp"><code class="c">template &lt;typename... Args&gt;           // Args 是类型参数包
@@ -1800,6 +1824,20 @@ int main() {
 }
 </code></pre>
 <p>要点：递归版需要基础情形 <code class="c">max_of(const T&amp;)</code> 终止；折叠版用逗号折叠逐个更新最大值。两者都要求参数类型相同（隐式转换到 <code class="c">T</code>）。</p>
+</details>
+<p><strong>5. 判断题</strong>：已知</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt; void foo(T x) { std::cout &lt;&lt; &quot;模板\n&quot;; }
+void foo(double x)                { std::cout &lt;&lt; &quot;普通\n&quot;; }
+</code></pre>
+<p><code class="c">foo(5.5)</code>、<code class="c">foo(5.5f)</code>、<code class="c">foo(5)</code> 分别走哪一个？"优先选普通函数，普通函数匹配不上才用模板"这个说法对吗？</p>
+<details>
+<summary>答案</summary>
+<ul>
+<li><code class="c">foo(5.5)</code>（<code class="c">double</code>）→ <strong>普通函数</strong>：模板 <code class="c">T=double</code> 也是精确匹配，两边打平，<strong>平手时非模板赢</strong>。</li>
+<li><code class="c">foo(5.5f)</code>（<code class="c">float</code>）→ <strong>模板</strong>：<code class="c">T=float</code> 是精确匹配，普通 <code class="c">foo(double)</code> 需要 <code class="c">float→double</code> 转换，<strong>匹配好坏优先</strong>，模板赢。</li>
+<li><code class="c">foo(5)</code>（<code class="c">int</code>）→ <strong>模板</strong>：同理，<code class="c">T=int</code> 精确匹配赢过 <code class="c">int→double</code> 转换。</li>
+</ul>
+<p>那个说法<strong>不对</strong>——顺序说反了。不是"先看普通函数、不行再看模板"，而是<strong>两者一起进候选集比转换序列，打平才偏袒非模板</strong>。只要模板的匹配更好（更少转换），模板就赢。想强制走模板：<code class="c">foo&lt;int&gt;(5)</code> 显式实例化，非模板出局。</p>
 </details>
 <h2>可跑的例子</h2>
 <p><strong><code class="c">examples/16.4-advanced.cpp</code></strong> —— 特化分岔 + 参数包一口吞下任意个参数。</p>
