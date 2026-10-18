@@ -707,44 +707,103 @@ sp-&gt;do_work();
 <blockquote>
 <p>第 6 章 · Item 33 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item32-init-capture.md">Item 32 初始化捕获</a></p>
 </blockquote>
-<h2>这节讲什么</h2>
-<p>C++14 泛型 lambda 用 <code class="c">auto&amp;&amp;</code> 参数实现完美转发——让 lambda 能当泛型转发器用。</p>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p>函数模板的完美转发你已经会了：<code class="c">template&lt;class T&gt; void f(T&amp;&amp; x) { g(std::forward&lt;T&gt;(x)); }</code>。C++14 把泛型能力给了 lambda（参数可以写 <code class="c">auto</code>），问题随之而来：<strong>lambda 没有你能写的模板参数名 <code class="c">T</code></strong>——<code class="c">forward</code> 需要显式模板实参，<code class="c">forward&lt;???&gt;(x)</code> 里填什么？</p>
+<p>Meyers 的答案：<code class="c">decltype(x)</code>。形参 <code class="c">x</code> 的声明类型里带着推导出的引用性，<code class="c">decltype</code> 原样取出（Item 3 的规则在这里派上用场），交给 <code class="c">forward</code> 正好够用。这是第 1 章（decltype）、第 5 章（万能引用 + forward）两条线在 lambda 里的合流点。</p>
 <hr />
-<h2>核心用法</h2>
-<pre class="code" data-label="cpp"><code class="c">auto f = [](auto&amp;&amp; x){
+<h2>这节讲什么</h2>
+<ol>
+<li>泛型 lambda 完美转发的标准写法与实测（左值/右值各走各的重载）；</li>
+<li>为什么必须用 <code class="c">decltype(x)</code>、为什么 <code class="c">std::move</code> 是错的（实测对照）；</li>
+<li>C++20 的显式模板参数 lambda（终于能写出 <code class="c">T</code> 了）。</li>
+</ol>
+<hr />
+<h2>核心用法与实测</h2>
+<pre class="code" data-label="cpp"><code class="c">auto fwd = [](auto&amp;&amp; x){
     func(std::forward&lt;decltype(x)&gt;(x));
 };
 </code></pre>
-<p><code class="c">auto&amp;&amp;</code> 是万能引用（有 <code class="c">auto</code> 推导）。<code class="c">decltype(x)</code> 对 <code class="c">auto&amp;&amp;</code> 参数保留左右值性：
-- 左值实参 → <code class="c">decltype(x)</code> = <code class="c">T&amp;</code> → <code class="c">forward&lt;T&amp;&gt;</code> 保留左值
-- 右值实参 → <code class="c">decltype(x)</code> = <code class="c">T&amp;&amp;</code> → <code class="c">forward&lt;T&amp;&amp;&gt;</code> 转为右值</p>
+<p><code class="c">auto&amp;&amp;</code> 是万能引用（有 <code class="c">auto</code> 推导，<a href="chapter-05.html#ch-5">Item 24</a>）：左值实参 → <code class="c">auto</code> 推为 <code class="c">T&amp;</code>（形参折叠成 <code class="c">T&amp;</code>）；右值实参 → <code class="c">auto</code> 推为 <code class="c">T</code>（形参为 <code class="c">T&amp;&amp;</code>）。<code class="c">decltype(x)</code> 取形参的<strong>声明类型</strong>——左值实参时是 <code class="c">T&amp;</code>，右值实参时是 <code class="c">T&amp;&amp;</code>——正是 <code class="c">forward</code> 需要的输入。</p>
+<p>clang 23.1.0 实测（重载分辨值类别）：</p>
+<pre class="code" data-label="cpp"><code class="c">void func(std::string&amp; s)  { std::cout &lt;&lt; &quot;左值重载: &quot; &lt;&lt; s &lt;&lt; &quot;\n&quot;; }
+void func(std::string&amp;&amp; s) { std::cout &lt;&lt; &quot;右值重载: &quot; &lt;&lt; s &lt;&lt; &quot;\n&quot;; }
+
+auto fwd = [](auto&amp;&amp; x){ func(std::forward&lt;decltype(x)&gt;(x)); };
+std::string s = &quot;tick&quot;;
+fwd(s);                    // 左值重载: tick   ← 左值保持左值
+fwd(std::string(&quot;新生&quot;));   // 右值重载: 新生   ← 右值保持右值
+</code></pre>
+<p>两个重载各走各的，转发是完美的。</p>
+<h2>反面教材：用 std::move 代替 forward</h2>
+<pre class="code" data-label="cpp"><code class="c">auto bad = [](auto&amp;&amp; x){ func(std::move(x)); };
+bad(s);                    // 右值重载: tick   ← 左值被强制转成右值！
+</code></pre>
+<p><code class="c">std::move</code> 是<strong>无条件</strong>转右值——左值实参也被强行移动，调用方的对象在不知情中被"允许掏空"。实测里 <code class="c">bad(s)</code> 走了右值重载，证明 <code class="c">s</code> 被当右值处理了。</p>
+<p>附带一个诚实的实测细节：打印 <code class="c">bad</code> 之后的 <code class="c">s</code>，本机（libc++ SSO）仍显示 <code class="c">"tick"</code>——move 后源对象是<strong>有效但未指定</strong>状态，libc++ 的短字符串优化恰好没清它。<strong>"看起来没被掏空"不是安全的证据</strong>——换长字符串（堆分配）或别的实现就清空了。正确性不能赌实现细节。</p>
+<h2>为什么不能写 forward&lt;T&gt;</h2>
+<p>lambda 的闭包类型里 <code class="c">operator()</code> 确实是模板，但那个模板参数<strong>没有你能写的名字</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">// 闭包类型大致长这样（编译器合成）：
+class Closure {
+public:
+    template&lt;typename __T&gt;
+    auto operator()(__T&amp;&amp; x) const { ... }
+};
+</code></pre>
+<p><code class="c">__T</code> 是编译器的内部名，你的 lambda 体里够不着它。<code class="c">decltype(x)</code> 是唯一能合法拿到这个类型的途径。</p>
+<h2>C++20：终于能写 T 了</h2>
+<p>C++20 允许 lambda 带显式模板参数列表（clang 23.1.0 + <code class="c">-std=c++20</code> 实测）：</p>
+<pre class="code" data-label="cpp"><code class="c">auto f = []&lt;typename T&gt;(T&amp;&amp; x){
+    func(std::forward&lt;T&gt;(x));   // T 有名字了，forward&lt;T&gt; 直写
+};
+</code></pre>
+<p>实测推导与模板一致：左值实参 <code class="c">[T = int &amp;]</code>、右值实参 <code class="c">[T = int]</code>。C++20 项目里这是更直白的写法；C++14/17 代码库里 <code class="c">decltype(x)</code> 写法仍是标准答案。</p>
+<hr />
+<h2>常见错误（新手踩坑）</h2>
+<ol>
+<li><strong>泛型 lambda 里用 <code class="c">std::move</code></strong>。如实测：左值也被转右值，调用方对象被掏空（而且 SSO 下可能"看起来没事"，bug 会潜伏到换数据/换平台才爆）。</li>
+<li><strong>试图 <code class="c">forward&lt;auto&gt;(x)</code></strong>——<code class="c">auto</code> 不是类型，不能当模板实参。<code class="c">decltype(x)</code> 是唯一通道（C++20 前）。</li>
+<li><strong><code class="c">decltype((x))</code> 加括号</strong>。Item 3 的括号陷阱在这里同样存在：<code class="c">decltype((x))</code> 对左值形参给 <code class="c">T&amp;</code>……和 <code class="c">decltype(x)</code> 恰好相同？不——<code class="c">x</code> 是<strong>变量名</strong>，<code class="c">decltype(x)</code> 给声明类型（含推导出的引用性）；<code class="c">(x)</code> 是表达式，左值表达式恒给 <code class="c">T&amp;</code>——右值实参的 <code class="c">x</code>（声明类型 <code class="c">T&amp;&amp;</code>）经 <code class="c">(x)</code> 只剩 <code class="c">T&amp;</code>，右值性丢了。转发里永远写 <code class="c">decltype(x)</code>，不多不少。</li>
+<li><strong>普通 lambda 过度泛化</strong>。参数类型明明确定（只接 <code class="c">const Tick&amp;</code>），就别写 <code class="c">auto&amp;&amp;</code>——泛型接口的接受面越大，误用面越大。</li>
+</ol>
 <hr />
 <h2>新手要点</h2>
 <ul>
-<li><strong>C++14 独有</strong>：C++11 的 lambda 参数必须显式写类型，不能 <code class="c">auto</code>。C++14 起支持泛型 lambda。</li>
-<li><strong>什么时候用</strong>：写泛型转发 lambda 时。普通 lambda 不需要。</li>
+<li><strong>版本线</strong>：C++11 lambda 参数必须显式类型；C++14 起支持 <code class="c">auto</code>（泛型 lambda）；C++20 起支持显式模板参数列表 <code class="c">[]&lt;class T&gt;(T&amp;&amp; x)</code>。</li>
+<li><strong>记忆钩子</strong>：lambda 里没有 <code class="c">T</code>，有 <code class="c">x</code>——<code class="c">forward&lt;decltype(x)&gt;(x)</code>，<code class="c">decltype</code> 就是你的 <code class="c">T</code>。</li>
+<li><strong>什么时候用</strong>：写"把实参原样递给下一层"的转发 lambda（回调适配、异步包装）。普通 lambda 不需要这套。</li>
+</ul>
+<hr />
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>回调适配层</strong>：策略引擎里把用户 lambda 包一层再接进事件循环（记日志、计时、异常吞掉）——包装层必须完美转发，否则 tick 对象在每一跳被多拷一次。<code class="c">[](auto&amp;&amp; tick){ timer.scoped([&amp;]{ user_cb(std::forward&lt;decltype(tick)&gt;(tick)); }); }</code> 是标准件。</li>
+<li><strong>decltype 全家桶的汇合点</strong>：Item 3 的 <code class="c">decltype</code> 规则 + Item 24 的万能引用 + Item 25 的 forward，在泛型 lambda 这一个语法点上全部用上——它是检验前三章是否真懂的试金石。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
 <ol>
-<li>泛型 lambda 的 <code class="c">auto&amp;&amp;</code> 参数如何配合 <code class="c">std::forward</code> 实现完美转发？</li>
-<li><code class="c">decltype(x)</code> 在 <code class="c">auto&amp;&amp;</code> 参数上保留什么信息？</li>
-<li>C++11 和 C++14 的 lambda 参数有什么区别？</li>
+<li>泛型 lambda 的 <code class="c">auto&amp;&amp;</code> 参数如何配合 <code class="c">std::forward</code> 实现完美转发？为什么不能写 <code class="c">forward&lt;T&gt;</code>？</li>
+<li><code class="c">decltype(x)</code> 在 <code class="c">auto&amp;&amp;</code> 形参上拿到什么？左值实参和右值实参时分别是什么？</li>
+<li>用 <code class="c">std::move</code> 代替 <code class="c">forward&lt;decltype(x)&gt;</code> 会发生什么？实测里有什么容易误导读者的细节？</li>
+<li><code class="c">decltype(x)</code> 和 <code class="c">decltype((x))</code> 在转发语境下有何区别？哪个对？</li>
+<li>C++20 给泛型 lambda 加了什么新写法？</li>
 </ol>
 <details>
 <summary>参考答案</summary>
 <ol>
-<li>泛型 lambda 的形参写成 <code class="c">auto&amp;&amp; x</code>，<code class="c">auto&amp;&amp;</code> 因为有推导所以是<strong>万能引用</strong>：传左值时 <code class="c">auto</code> 推为 <code class="c">T&amp;</code>（形参折叠成 <code class="c">T&amp;</code>），传右值时 <code class="c">auto</code> 推为 <code class="c">T</code>（形参是 <code class="c">T&amp;&amp;</code>）。转发时用 <code class="c">std::forward&lt;decltype(x)&gt;(x)</code>：<code class="c">decltype(x)</code> 拿到形参的<strong>确切类型</strong>（含引用性），交给 <code class="c">forward</code> 后，左值实参保持左值、右值实参保持右值，从而实现完美转发：</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">auto f = [](auto&amp;&amp; x){ func(std::forward&lt;decltype(x)&gt;(x)); };
-</code></pre>
-<p>注意不能用 <code class="c">std::forward&lt;T&gt;</code>——lambda 没有可写的模板参数 <code class="c">T</code>，只能靠 <code class="c">decltype(x)</code> 取类型；也不能用 <code class="c">std::move(x)</code>，那会把左值也变成右值，掏空调用方的对象。</p>
-<ol start="2">
 <li>
-<p><code class="c">decltype(x)</code> 返回形参 <code class="c">x</code> 的声明类型，<strong>完整保留引用性与 cv 限定</strong>：左值实参时 <code class="c">auto&amp;&amp;</code> 被推成 <code class="c">T&amp;</code>，<code class="c">decltype(x)</code> 就是 <code class="c">T&amp;</code>；右值实参时是 <code class="c">T&amp;&amp;</code>。也就是说它保留的是"原始实参的值类别信息"，这正是 <code class="c">std::forward</code> 判断"要不要转成右值"所需要的输入。注意它不像 <code class="c">auto</code> 那样退化。</p>
+<p><code class="c">auto&amp;&amp;</code> 是万能引用：左值实参使 <code class="c">auto</code> 推为 <code class="c">T&amp;</code>（形参折叠成 <code class="c">T&amp;</code>），右值实参推为 <code class="c">T</code>（形参 <code class="c">T&amp;&amp;</code>）。<code class="c">decltype(x)</code> 取出形参的声明类型——左值时是 <code class="c">T&amp;</code>、右值时是 <code class="c">T&amp;&amp;</code>——交给 <code class="c">std::forward&lt;decltype(x)&gt;(x)</code> 即可还原值类别（实测：左值走左值重载、右值走右值重载）。不能写 <code class="c">forward&lt;T&gt;</code> 是因为 lambda 的模板参数是编译器合成的内部名，源码里没有可写的 <code class="c">T</code>。</p>
 </li>
 <li>
-<p>C++11 的 lambda 形参<strong>必须写具体类型</strong>（<code class="c">[](int x){}</code>），不支持 <code class="c">auto</code>，因此无法写泛型 lambda；C++14 起允许形参用 <code class="c">auto</code>（以及 <code class="c">auto&amp;&amp;</code>、<code class="c">auto*</code> 等），编译器把闭包类型变成带模板 <code class="c">operator()</code> 的类型，每次调用按实参推导。此外 C++14 还放宽了 lambda 的 <code class="c">constexpr</code>／返回类型推导，并引入初始化捕获（Item 32）；C++20 进一步支持显式模板参数列表（<code class="c">[]&lt;class T&gt;(T x){}</code>）。</p>
+<p>拿到形参 <code class="c">x</code> 的声明类型，完整保留引用性与 cv：左值实参时是 <code class="c">T&amp;</code>，右值实参时是 <code class="c">T&amp;&amp;</code>。它不像 <code class="c">auto</code> 那样剥引用——这正是 Item 3 的 <code class="c">decltype</code> 分支一规则（变量名 → 声明类型）在起作用。</p>
+</li>
+<li>
+<p>左值实参也被强制转右值：<code class="c">bad(s)</code>（<code class="c">s</code> 是左值）实测走了右值重载，<code class="c">s</code> 被"允许掏空"。误导细节：移动后打印 <code class="c">s</code> 在本机仍显示 <code class="c">"tick"</code>——libc++ 的 SSO 短字符串移动后保留了内容，但标准只保证"有效未指定"；换长字符串（堆分配）或换实现就清空。"没看到破坏"不等于"没有破坏"。</p>
+</li>
+<li>
+<p><code class="c">decltype(x)</code> 取变量名的声明类型（<code class="c">T&amp;</code> 或 <code class="c">T&amp;&amp;</code>，含推导出的引用性）——正确；<code class="c">decltype((x))</code> 把 <code class="c">(x)</code> 当表达式，左值表达式恒给 <code class="c">T&amp;</code>，右值实参的 <code class="c">T&amp;&amp;</code> 被压成 <code class="c">T&amp;</code>，右值性丢失、forward 退化成左值转发。转发语境永远写 <code class="c">decltype(x)</code>，不多不少。</p>
+</li>
+<li>
+<p>显式模板参数列表：<code class="c">[]&lt;typename T&gt;(T&amp;&amp; x){ func(std::forward&lt;T&gt;(x)); }</code>——模板参数终于有了可写的名字，<code class="c">forward&lt;T&gt;</code> 直写，与函数模板写法完全对齐（clang 23.1.0 + <code class="c">-std=c++20</code> 实测通过，推导结果与 <code class="c">auto&amp;&amp;</code> 版一致）。</p>
 </li>
 </ol>
 </details>

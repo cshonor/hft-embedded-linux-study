@@ -372,58 +372,124 @@ public:
 <blockquote>
 <p>第 4 章 智能指针 · Item 18 · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item19-shared-ptr.md">Item 19 shared_ptr</a></p>
 </blockquote>
-<h2>这节讲什么</h2>
-<p><code class="c">unique_ptr</code> 是<strong>零开销抽象</strong>——大小 = 裸指针（默认），开销 = 裸指针。它表达"唯一所有权"，不可拷贝、只能移动。这是 Modern C++ 管理资源的首选工具。</p>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p>C 里管理堆资源靠纪律：<code class="c">malloc</code> 之后配对 <code class="c">free</code>，中间有 <code class="c">goto cleanup</code>、有异常路径、有早退 <code class="c">return</code>——每一条路都得记得释放，漏一条就是泄漏。<code class="c">unique_ptr</code> 把这条纪律变成了<strong>类型系统强制的规则</strong>：资源包进对象，对象出作用域自动释放，所有权唯一、拷贝直接被编译器拒绝。</p>
+<p>更关键的是 Meyers 强调的卖点：<strong>零开销</strong>。<code class="c">unique_ptr</code> 不是"方便但慢一点"的妥协——默认配置下它和裸指针一样大、一样快，是"不用白不用"的纯收益抽象。这一节用实测把这个"零开销"拆开看清楚，包括它在什么情况下<strong>不再零开销</strong>（有状态删除器）。</p>
 <hr />
-<h2>核心用法</h2>
-<pre class="code" data-label="cpp"><code class="c">std::unique_ptr&lt;Widget&gt; make() { return std::make_unique&lt;Widget&gt;(); }
-// 离开作用域自动 delete，无需手写
+<h2>这节讲什么</h2>
+<ol>
+<li>零开销的实测证据：<code class="c">sizeof</code> 对比、移动语义、拷贝被删的报错原文；</li>
+<li>自定义删除器：类型成为 <code class="c">unique_ptr</code> 一部分的含义，以及删除器对<strong>体积</strong>的影响（EBO）；</li>
+<li>与 C API 互操作：<code class="c">.get()</code> / <code class="c">.release()</code> / <code class="c">.reset()</code> 的所有权语义；</li>
+<li>数组特化 <code class="c">unique_ptr&lt;T[]&gt;</code> 与 <code class="c">make_unique</code>。</li>
+</ol>
+<hr />
+<h2>核心用法与零开销实测</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;memory&gt;
+
+std::unique_ptr&lt;Widget&gt; make() {
+    return std::make_unique&lt;Widget&gt;();   // 工厂返回 unique_ptr：所有权随返回值移交
+}
+// 离开作用域自动 delete，异常路径也释放——RAII
 </code></pre>
-<h3>自定义删除器</h3>
+<p>clang 23.1.0（arm64）实测尺寸：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(unique_ptr&lt;int&gt;)                    = 8     ← 和裸指针完全一样
+sizeof(unique_ptr&lt;FILE, decltype(&amp;fclose)&gt;)= 16    ← 函数指针删除器：+8
+sizeof(unique_ptr&lt;int, 无捕获lambda&gt;)       = 8     ← 无状态删除器：EBO 压掉了
+sizeof(unique_ptr&lt;int, 有捕获lambda&gt;)       = 16    ← 有状态删除器：要存状态
+</code></pre>
+<p>两个要点直接写在数字里：</p>
+<ul>
+<li><strong>默认删除器（<code class="c">delete</code>）零成本</strong>：8 字节 = 一个裸指针。解引用就是指针解引用，析构就是内联 <code class="c">delete</code>，无任何计数、无任何间接层。</li>
+<li><strong>删除器占不占空间取决于它有没有状态</strong>：无捕获 lambda / 空函数对象是"无状态删除器"，靠空基类优化（EBO）压成 0 字节；函数指针（<code class="c">&amp;fclose</code>）和有捕获 lambda 要把删除器<strong>存进对象</strong>，所以 +8 字节。</li>
+</ul>
+<h3>移动可以，拷贝不行</h3>
+<pre class="code" data-label="cpp"><code class="c">auto p1 = std::make_unique&lt;int&gt;(42);
+auto p2 = std::move(p1);
+// 实测：p1 == nullptr 为 true，*p2 == 42 —— 所有权是&quot;移交&quot;不是&quot;共享&quot;
+
+auto p3 = p1;   // 编译失败
+</code></pre>
+<p>clang 报错原文：</p>
+<pre class="code" data-label="code"><code class="c">error: call to implicitly-deleted copy constructor of 'unique_ptr&lt;int&gt;'
+</code></pre>
+<p>拷贝构造被显式 <code class="c">= delete</code>——"唯一所有权"不是约定，是编译期强制。想转移就 <code class="c">std::move</code>，意图明明白白写在代码里。</p>
+<hr />
+<h2>自定义删除器：类型的一部分</h2>
 <pre class="code" data-label="cpp"><code class="c">std::unique_ptr&lt;FILE, decltype(&amp;fclose)&gt; fp(fopen(&quot;f.txt&quot;, &quot;r&quot;), &amp;fclose);
 // 离开作用域自动 fclose
 </code></pre>
-<p><strong>删除器类型是 <code class="c">unique_ptr</code> 类型的一部分</strong>——不同删除器 = 不同类型。</p>
-<h3>与 C API 互操作</h3>
-<pre class="code" data-label="cpp"><code class="c">unique_ptr&lt;Widget&gt; up = ...;
-raw_call(up.get());      // 取裸指针传给 C 接口（不转移所有权）
-Widget* p = up.release(); // 放弃所有权，交还给 C 管理
+<p><strong>删除器类型是 <code class="c">unique_ptr</code> 类型的第二个模板参数</strong>——<code class="c">unique_ptr&lt;T, D1&gt;</code> 和 <code class="c">unique_ptr&lt;T, D2&gt;</code> 是不同类型，不能互相赋值、不能放进同一个容器。推论：</p>
+<ul>
+<li>函数指针删除器：<code class="c">unique_ptr&lt;T, void(*)(T*)&gt;</code>，16 字节；</li>
+<li>lambda 删除器：每个 lambda 都是独一无二的匿名类型，写进函数签名要靠 <code class="c">auto</code>/模板/<code class="c">decltype</code>；</li>
+<li>管 C 资源的标准手法：<code class="c">fclose</code> 管 <code class="c">FILE*</code>、<code class="c">close</code> 管 fd、库自带的 <code class="c">xxx_free</code> 管库句柄。</li>
+</ul>
+<h3>与 C API 互操作的所有权三件套</h3>
+<pre class="code" data-label="cpp"><code class="c">std::unique_ptr&lt;Widget&gt; up = std::make_unique&lt;Widget&gt;();
+
+raw_observe(up.get());        // 借出裸指针：所有权不动，up 还负责释放
+Widget* p = up.release();     // 交出所有权：up 置空，p 归你管（忘了 delete 就泄漏）
+up.reset(new Widget);         // 先释放当前对象，再接管新对象
 </code></pre>
+<p>一句话：<code class="c">.get()</code> 是<strong>借</strong>，<code class="c">.release()</code> 是<strong>给</strong>，<code class="c">.reset()</code> 是<strong>换</strong>。传给只读接口用 <code class="c">.get()</code>；传给"之后归 C 库管"的接口用 <code class="c">.release()</code>。</p>
+<h3>数组特化</h3>
+<pre class="code" data-label="cpp"><code class="c">auto arr = std::make_unique&lt;int[]&gt;(1024);   // unique_ptr&lt;int[]&gt;，析构调 delete[]
+arr[0] = 1;                                 // 有 operator[]，无 operator*/-&gt;
+</code></pre>
+<p><code class="c">unique_ptr&lt;T[]&gt;</code> 自动配对 <code class="c">delete[]</code>，避免 <code class="c">new[]</code>/<code class="c">delete</code> 错配。但能用它的地方先想想 <code class="c">std::vector</code>——vector 有尺寸、有迭代器、能进算法，<code class="c">unique_ptr&lt;T[]&gt;</code> 只在"必须对接要裸数组所有权的 C API"时有存在价值。</p>
+<hr />
+<h2>常见错误（新手踩坑）</h2>
+<ol>
+<li><strong>用裸 <code class="c">new</code> 构造而不是 <code class="c">make_unique</code></strong>。<code class="c">unique_ptr&lt;Widget&gt; up(new Widget);</code> 能编过，但 <code class="c">make_unique</code> 更短、且避免"<code class="c">new</code> 表达式求值与 <code class="c">unique_ptr</code> 构造之间抛异常导致泄漏"的经典窗口（C++14 起有 <code class="c">make_unique</code>，没有理由不用）。</li>
+<li><strong>同一裸指针构造两个 <code class="c">unique_ptr</code></strong>：<code class="c">Widget* p = new Widget; unique_ptr&lt;Widget&gt; a(p), b(p);</code> → 双重释放。规则：<strong>裸指针交给智能指针后，立刻忘掉这个裸指针</strong>。</li>
+<li><strong>移动后还使用源指针</strong>。<code class="c">std::move</code> 之后源 <code class="c">unique_ptr</code> 是 <code class="c">nullptr</code>（实测确认），解引用即崩溃。<code class="c">move</code> 过的指针只剩两种合法操作：重新赋值、析构。</li>
+<li><strong>以为函数指针删除器也零开销</strong>。实测 16 字节——要省体积，把删除器写成无捕获 lambda 或空函数对象。</li>
+</ol>
 <hr />
 <h2>新手要点（和 C 的区别）</h2>
 <ul>
-<li><strong>C 用 malloc/free + 手动管理</strong>：C 程序员习惯 <code class="c">Widget* p = malloc(...); ... free(p);</code>，忘了 free 就泄漏。C++ 的 <code class="c">unique_ptr</code> 自动释放——RAII（资源获取即初始化）。</li>
-<li><strong>零开销</strong>：<code class="c">unique_ptr</code> 和裸指针一样大（1 个指针），析构时内联调用 <code class="c">delete</code>——没有运行时额外开销。</li>
-<li><strong>不可拷贝</strong>：<code class="c">unique_ptr</code> 只能 <code class="c">std::move</code>，不能 <code class="c">=</code>。这强制了"唯一所有权"的语义。</li>
+<li><strong>C 用 malloc/free + goto cleanup</strong>：释放靠人肉，<code class="c">return</code> 早退、<code class="c">longjmp</code>、错误分支每条都要记得清理。<code class="c">unique_ptr</code> 把释放绑在栈对象生命周期上，任何退出路径都自动执行——这是 RAII，也是 C++ 相对 C 在资源管理上最实质的升级。</li>
+<li><strong>零开销不是口号</strong>：默认 <code class="c">unique_ptr</code> 与裸指针同大同快（实测 8 字节），优化后汇编通常与手写 <code class="c">new/delete</code> 逐指令一致。"抽象不交税"是它成为默认选择的原因。</li>
+<li><strong>不可拷贝是特性不是缺陷</strong>：拷贝被 <code class="c">= delete</code>，强制单一所有权；要共享请显式换 <code class="c">shared_ptr</code> 并付引用计数的税（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item19-shared-ptr.md">Item 19</a>）。</li>
 </ul>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>管 mbuf / fd</strong>：自定义删除器让 <code class="c">unique_ptr</code> 管 DPDK <code class="c">rte_mbuf*</code>（删除器调 <code class="c">rte_pktmbuf_free</code>）或 POSIX <code class="c">fd</code>（删除器调 <code class="c">close</code>）。RAII 保证异常路径也不泄漏。</li>
-<li><strong>替代 C 的 goto cleanup</strong>：C 用 <code class="c">goto cleanup</code> 管理资源释放，C++ 用 <code class="c">unique_ptr</code> 更安全且零开销。</li>
+<li><strong>管 mbuf / fd / 库句柄</strong>：自定义删除器让 <code class="c">unique_ptr</code> 管 DPDK <code class="c">rte_mbuf*</code>（删除器调 <code class="c">rte_pktmbuf_free</code>）、POSIX fd（删除器调 <code class="c">close</code>）、库句柄。RAII 保证异常路径、早退路径都不泄漏——比 <code class="c">goto cleanup</code> 干净，还零开销。</li>
+<li><strong>热路径资源的安全网</strong>：热路径上传递所有权用 <code class="c">unique_ptr</code> + <code class="c">std::move</code>，无引用计数、无原子操作——这点和 <code class="c">shared_ptr</code> 形成决定性对比。</li>
+<li><strong>工厂函数返回 <code class="c">unique_ptr</code></strong>：<code class="c">std::unique_ptr&lt;Strategy&gt; make_strategy(Config)</code> 是策略对象创建的标准签名——调用方拿到独占所有权，接口语义自文档化。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
 <ol>
-<li><code class="c">unique_ptr</code> 的大小是多少？为什么说是"零开销"？</li>
-<li>自定义删除器对 <code class="c">unique_ptr</code> 的类型有什么影响？</li>
-<li><code class="c">.get()</code> 和 <code class="c">.release()</code> 有什么区别？</li>
-<li>为什么 <code class="c">unique_ptr</code> 不可拷贝但可移动？</li>
+<li>默认 <code class="c">unique_ptr&lt;int&gt;</code> 多大？凭什么说"零开销"？什么情况下它会变成 16 字节？</li>
+<li><code class="c">unique_ptr&lt;FILE, decltype(&amp;fclose)&gt;</code> 和 <code class="c">unique_ptr&lt;FILE, 某lambda类型&gt;</code> 是同一类型吗？能放进同一个 vector 吗？</li>
+<li><code class="c">.get()</code> / <code class="c">.release()</code> / <code class="c">.reset()</code> 各是什么所有权语义？</li>
+<li>为什么 <code class="c">unique_ptr</code> 不可拷贝但可移动？移动后源对象处于什么状态？</li>
+<li><code class="c">Widget* p = new Widget; unique_ptr&lt;Widget&gt; a(p), b(p);</code> 会发生什么？根因是什么？</li>
+<li><code class="c">unique_ptr&lt;T[]&gt;</code> 和 <code class="c">std::vector&lt;T&gt;</code> 怎么选？</li>
 </ol>
 <details>
 <summary>参考答案</summary>
 <ol>
 <li>
-<p>无自定义删除器（默认 <code class="c">delete</code>）时，<code class="c">std::unique_ptr&lt;T&gt;</code> 的大小通常<strong>等于一个裸指针</strong>（64 位平台 8 字节），运行时开销也为零：<code class="c">*</code>/<code class="c">-&gt;</code> 就是指针解引用，析构就是一次 <code class="c">delete</code>。说它"零开销"是指与手写 <code class="c">new</code>/<code class="c">delete</code> 相比，它不引入额外的内存或时间成本——独占所有权完全靠<strong>类型系统</strong>（删除拷贝）在编译期表达，不需要引用计数，也不需要原子操作。</p>
+<p>8 字节（64 位，实测）。"零开销"指与手写 <code class="c">new</code>/<code class="c">delete</code> 相比不引入额外内存或时间成本：无引用计数、无控制块、解引用与析构都是内联的指针操作，独占所有权完全靠类型系统（删除拷贝）在编译期表达。变成 16 字节的两种情况：删除器是函数指针（要存指针），或删除器是有捕获 lambda / 有状态函数对象（要存状态）。无捕获 lambda 靠 EBO 仍是 8 字节。</p>
 </li>
 <li>
-<p>删除器类型是 <code class="c">unique_ptr</code> 类型的一部分：<code class="c">unique_ptr&lt;T, D&gt;</code> 有两个模板参数。因此不同删除器的 <code class="c">unique_ptr</code> 是<strong>不同类型</strong>，不能互相赋值或放入同一容器。另一个影响是大小：无状态删除器（空类、捕获为空的 lambda）通过空基类优化/压缩不会增加体积，<code class="c">unique_ptr</code> 仍是一个指针大小；而有状态的删除器（如捕获了变量的函数对象、函数指针）会使对象变大（函数指针删除器通常是两个指针大小，即 16 字节）。</p>
+<p>不是同一类型——删除器类型是第二个模板参数，删除器不同则 <code class="c">unique_ptr</code> 类型不同，不能互相赋值，也不能进同一个 <code class="c">vector&lt;unique_ptr&lt;T, D&gt;&gt;</code>。两个不同的 lambda 类型也互不相同（每个 lambda 都是唯一匿名类型）。</p>
 </li>
 <li>
-<p><code class="c">.get()</code> 返回所管理的裸指针，<strong>不改变所有权</strong>，对象仍由 <code class="c">unique_ptr</code> 负责释放，适合传给只需要观察/借用指针的接口。<code class="c">.release()</code> <strong>放弃所有权</strong>：返回裸指针并把 <code class="c">unique_ptr</code> 置空，此后释放责任转移给调用者（必须自己 <code class="c">delete</code> 或交给别的 RAII 对象，否则泄漏）。另还有 <code class="c">.reset(p)</code>：先释放当前对象再接管 <code class="c">p</code>。</p>
+<p><code class="c">.get()</code> 借出裸指针，所有权不动（智能指针仍负责释放），适合传给只观察的接口；<code class="c">.release()</code> 交出所有权并置空自身，释放责任转给接收方，忘了 <code class="c">delete</code> 就泄漏；<code class="c">.reset(p)</code> 先释放当前持有的对象再接管 <code class="c">p</code>。记忆法：借 / 给 / 换。</p>
 </li>
 <li>
-<p>因为它的语义是<strong>独占所有权</strong>（exclusive ownership）：同一时刻只能有一个 <code class="c">unique_ptr</code> 拥有该对象，这样析构时才能确定地释放一次。拷贝会立刻产生两个拥有同一对象的智能指针，导致双重释放，所以拷贝构造与拷贝赋值被显式 <code class="c">delete</code>（在编译期就禁止）。移动是安全的：源对象把指针移交后自身置空，所有权发生<strong>转移</strong>而非共享，因此 <code class="c">std::move</code> 可用——这也是它能作为容器元素、作为工厂函数返回值的原因。如需共享所有权应改用 <code class="c">shared_ptr</code>。</p>
+<p>语义是独占所有权：拷贝会产生两个"唯一"拥有者，析构时双重释放，所以拷贝构造/拷贝赋值被 <code class="c">= delete</code>（实测报错 <code class="c">call to implicitly-deleted copy constructor</code>）。移动是所有权转移：源对象把指针交出后置空（实测 <code class="c">p1 == nullptr</code> 为 true），全程只有一个拥有者。移动后的源对象处于"合法但未指定"状态，只剩重新赋值和析构两种安全操作。</p>
+</li>
+<li>
+<p>双重释放（UB）。两个 <code class="c">unique_ptr</code> 各自以为独占 <code class="c">p</code>，析构时各 <code class="c">delete</code> 一次。根因是裸指针没有所有权信息，构造 <code class="c">unique_ptr</code> 时编译器无法知道这个裸指针已经被别的智能指针持有。纪律：裸指针一交给智能指针就不再使用；优先 <code class="c">make_unique</code>，让裸指针根本没有具名存在的机会。</p>
+</li>
+<li>
+<p>默认 <code class="c">std::vector&lt;T&gt;</code>：有尺寸、有迭代器、能进标准算法、会自己扩容。<code class="c">unique_ptr&lt;T[]&gt;</code> 只在需要"拥有并移交一块裸数组的所有权"时考虑（对接 C API、手写内存池），它无尺寸信息、只能下标访问，是更接近裸 <code class="c">new[]</code> 的薄封装。</p>
 </li>
 </ol>
 </details>
@@ -439,77 +505,126 @@ Widget* p = up.release(); // 放弃所有权，交还给 C 管理
 <blockquote>
 <p>第 4 章 智能指针 · Item 19 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item18-unique-ptr.md">Item 18 unique_ptr</a></p>
 </blockquote>
-<h2>这节讲什么</h2>
-<p><code class="c">shared_ptr</code> 用<strong>引用计数</strong>实现共享。代价：大小 = 2 个指针（对象 + 控制块），拷贝/析构有<strong>原子操作</strong>开销。理解控制块是安全使用 <code class="c">shared_ptr</code> 的关键。</p>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p><code class="c">unique_ptr</code> 覆盖"一个资源一个主人"的场景，但现实里总有"多个对象都要用、谁也不知道谁最后用完"的时候——共享配置、共享连接、缓存里的条目。手写所有权协议（"最后离开的人关灯"）在多线程下几乎是必错的，<code class="c">shared_ptr</code> 用引用计数把这盏灯自动化了。</p>
+<p>但 <code class="c">shared_ptr</code> 不是 <code class="c">unique_ptr</code> 的"升级版"，是<strong>另一种价格的工具</strong>：体积翻倍、每次拷贝/析构都要原子操作、对象旁边还多一块控制块。这一节的任务就是搞清楚这份价格单的每一项——以及什么时候根本不该付。</p>
 <hr />
-<h2>核心机制</h2>
-<p>控制块（control block）含：强引用计数 + 弱引用计数 + 删除器 + 分配器。</p>
-<pre class="code" data-label="cpp"><code class="c">auto sp = std::make_shared&lt;Widget&gt;();  // sp 引用计数 = 1
-auto sp2 = sp;                          // 拷贝，计数 = 2（原子 ++）
-// sp2 销毁 → 计数 = 1
-// sp 销毁 → 计数 = 0 → delete Widget
-</code></pre>
-<h3>控制块创建时机（只创建一次）</h3>
+<h2>这节讲什么</h2>
 <ol>
-<li><code class="c">make_shared</code>（推荐）—— 单次分配</li>
-<li>从 <code class="c">unique_ptr</code> 构造</li>
-<li>用裸指针 <code class="c">new</code> 构造 <code class="c">shared_ptr</code></li>
+<li>价格单实测：<code class="c">sizeof</code>、分配次数（<code class="c">make_shared</code> vs <code class="c">new</code>+<code class="c">shared_ptr</code>）、原子计数开销；</li>
+<li>控制块（control block）里有什么、什么时候创建；</li>
+<li>最致命的用法错误：同一裸指针构造两个 <code class="c">shared_ptr</code>（含 ASan 抓包现场）；</li>
+<li><code class="c">enable_shared_from_this</code> 解决什么、为什么 <code class="c">shared_ptr&lt;T&gt;(this)</code> 是灾难。</li>
 </ol>
-<p><strong>致命错误</strong>：两次 <code class="c">new</code> 同一裸指针构造两个 <code class="c">shared_ptr</code> → 两个控制块 → <strong>double free</strong>：</p>
-<pre class="code" data-label="cpp"><code class="c">Widget* p = new Widget;
-auto sp1 = shared_ptr&lt;Widget&gt;(p);
-auto sp2 = shared_ptr&lt;Widget&gt;(p);  // double free！
+<hr />
+<h2>核心机制：控制块</h2>
+<p><code class="c">shared_ptr</code> 的共享靠一块<strong>控制块</strong>（control block）实现，里面装着：</p>
+<ul>
+<li><strong>强引用计数</strong>（有几个 <code class="c">shared_ptr</code> 指着对象）</li>
+<li><strong>弱引用计数</strong>（<code class="c">weak_ptr</code> 数量，见 Item 20）</li>
+<li><strong>删除器与分配器</strong>（类型擦除存放——这是 <code class="c">shared_ptr</code> 删除器不进类型的原因，与 <code class="c">unique_ptr</code> 相反）</li>
+<li>对象指针（或对象本身，<code class="c">make_shared</code> 时）</li>
+</ul>
+<pre class="code" data-label="cpp"><code class="c">auto sp = std::make_shared&lt;Widget&gt;();  // 强计数 = 1
+auto sp2 = sp;                          // 拷贝 → 强计数 = 2（原子 ++）
+// sp2 析构 → 强计数 = 1（原子 --）
+// sp 析构  → 强计数 = 0 → 销毁 Widget → 弱计数归零后释放控制块
 </code></pre>
-<h3>enable_shared_from_this</h3>
-<p>对象需要在成员函数里返回自身的 <code class="c">shared_ptr</code> 时：</p>
+<p>最后一个 <code class="c">shared_ptr</code> 析构时对象被销毁——"最后离开的人关灯"，自动且线程安全（<strong>计数本身</strong>线程安全；指向的对象不自动线程安全，别混淆）。</p>
+<h2>价格单实测（clang 23.1.0，arm64）</h2>
+<pre class="code" data-label="code"><code class="c">sizeof(shared_ptr&lt;Widget&gt;) = 16    ← 两个指针：对象 + 控制块
+sizeof(unique_ptr&lt;Widget&gt;) = 8     ← 对照：裸指针尺寸
+</code></pre>
+<p>分配次数（重载全局 <code class="c">operator new</code> 计数实测）：</p>
+<pre class="code" data-label="code"><code class="c">make_shared 分配次数: 1        ← 对象 + 控制块一次分配
+new + shared_ptr 分配次数: 2   ← 对象一次、控制块一次
+</code></pre>
+<p><code class="c">make_shared</code> 把对象和控制块放进<strong>同一块内存</strong>：少一次堆分配、对象与控制块同 cache 行附近、少一次指针跳转。这是"优先 <code class="c">make_shared</code>"的实质理由，不只是风格建议。</p>
+<p><strong><code class="c">shared_ptr</code> 三份成本，按频率排序：</strong></p>
+<ol>
+<li><strong>每次拷贝/析构的原子 RMW</strong>：引用计数必须原子增减（多线程共享），一次原子加在竞争下比一个普通 store 慢一个数量级；</li>
+<li><strong>cache 行乒乓</strong>：多个核上的 <code class="c">shared_ptr</code> 副本共享同一控制块，计数所在的 cache 行在核间来回失效（false sharing 的教科书案例）；</li>
+<li><strong>体积与间接</strong>：16 字节/指针 + 控制块另算 + 访问对象要两次解引用。</li>
+</ol>
+<h2>致命错误：一个裸指针，两个控制块</h2>
+<pre class="code" data-label="cpp"><code class="c">Widget* p = new Widget;
+auto sp1 = std::shared_ptr&lt;Widget&gt;(p);
+auto sp2 = std::shared_ptr&lt;Widget&gt;(p);   // 第二个控制块！
+</code></pre>
+<p><code class="c">sp1</code> 和 <code class="c">sp2</code> 各自创建控制块、各自计数为 1、互不知情。任一归零就 <code class="c">delete p</code>，另一个变悬垂，随后 double free。ASan 抓包现场（clang 23.1.0 + <code class="c">-fsanitize=address</code>）：</p>
+<pre class="code" data-label="code"><code class="c">==82166==ERROR: AddressSanitizer: attempting double-free
+on 0x614000000040 in thread T0:
+</code></pre>
+<p>规则：<strong>裸指针一旦交给 <code class="c">shared_ptr</code>，立刻忘掉它</strong>；其余副本永远从已有 <code class="c">shared_ptr</code> 拷贝（共享同一控制块）。用 <code class="c">make_shared</code> 让裸指针根本没机会具名存在。</p>
+<h2>enable_shared_from_this：从对象内部交出自己</h2>
+<p>场景：对象的成员函数需要返回"指向自己的 <code class="c">shared_ptr</code>"（注册回调、投递异步任务）。直接写 <code class="c">shared_ptr&lt;Widget&gt;(this)</code> 会<strong>新建控制块</strong>——和外面已有的 <code class="c">shared_ptr</code> 互不知情，又是 double free；对象若在栈上则更糟（<code class="c">delete</code> 非堆对象）。</p>
+<p>正解是继承 <code class="c">enable_shared_from_this</code>：</p>
 <pre class="code" data-label="cpp"><code class="c">class Widget : public std::enable_shared_from_this&lt;Widget&gt; {
 public:
     std::shared_ptr&lt;Widget&gt; getPtr() { return shared_from_this(); }
+    // 内部存了一个 weak_ptr，shared_from_this() 从已有控制块复制
 };
-// 直接 shared_ptr&lt;Widget&gt;(this) 会创建新控制块 → double free
+
+// 前提：对象必须已经由 shared_ptr 管理
+auto sp = std::make_shared&lt;Widget&gt;();
+auto sp2 = sp-&gt;getPtr();   // OK：与 sp 共享控制块
+
+Widget w;
+// w.getPtr();            // 抛 std::bad_weak_ptr：没有控制块可共享
 </code></pre>
+<p>机制：<code class="c">enable_shared_from_this</code> 在对象里埋一个 <code class="c">weak_ptr</code>，第一个 <code class="c">shared_ptr</code> 接管对象时初始化它；<code class="c">shared_from_this()</code> 从这个 <code class="c">weak_ptr</code> <code class="c">lock()</code> 出共享同一控制块的 <code class="c">shared_ptr</code>。所以它<strong>不是凭空造计数</strong>，而是找到已有的计数——前提是已经有一个。</p>
 <hr />
-<h2>新手要点（和 C 的区别）</h2>
+<h2>常见错误（新手踩坑）</h2>
+<ol>
+<li><strong>同一裸指针构造两个 <code class="c">shared_ptr</code></strong>。如上，ASan 实锤 double-free。最常见的变体：<code class="c">shared_ptr&lt;T&gt;(this)</code> 和从 <code class="c">get()</code> 拿回来的裸指针再包一层——<code class="c">shared_ptr&lt;T&gt;(sp.get())</code> 同样造第二个控制块。</li>
+<li><strong>在热路径拷贝 <code class="c">shared_ptr</code></strong>。每次拷贝都是原子 RMW + 潜在 cache 乒乓。热路径传引用或裸指针，只在生命周期边界拷贝。</li>
+<li><strong>以为 <code class="c">shared_ptr</code> 让对象线程安全</strong>。线程安全的只是引用计数本身；两个线程同时写 <code class="c">*sp</code> 指向的对象照样数据竞争。</li>
+<li><strong>循环引用泄漏</strong>。A 持 B、B 持 A，计数永远到不了 0，双方都不释放——打破循环用 <code class="c">weak_ptr</code>（Item 20）。</li>
+</ol>
+<hr />
+<h2>新手要点（和 C 的区别)</h2>
 <ul>
-<li><strong>C 没有引用计数智能指针</strong>：C 需要手动管理引用计数（如 Linux 内核的 <code class="c">kref</code>）。C++ 的 <code class="c">shared_ptr</code> 自动管理。</li>
-<li><strong>代价</strong>：<code class="c">shared_ptr</code> 拷贝/析构有原子操作开销（比裸指针慢一个数量级）。别在热路径用。</li>
-<li><strong><code class="c">make_shared</code> 优先</strong>：一次分配（对象 + 控制块），比 <code class="c">shared_ptr&lt;T&gt;(new T)</code> 的两次分配更省且 cache 友好。</li>
+<li><strong>C 没有引用计数智能指针</strong>。C 里要共享就手写计数协议（Linux 内核的 <code class="c">kref</code>、<code class="c">refcount_t</code> 就是这套的手写版——<code class="c">shared_ptr</code> 本质是把 kref 包进了类型系统）。</li>
+<li><strong><code class="c">make_shared</code> 优先</strong>：一次分配（实测 1 vs 2）、cache 友好、还顺带消灭"裸指针对外交"的窗口。</li>
+<li><strong>代价意识</strong>：<code class="c">shared_ptr</code> 拷贝/析构带原子操作，比裸指针慢一个数量级。"能用 unique_ptr 就不用 shared_ptr"是 Meyers 的原话立场。</li>
 </ul>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>热路径绝不用</strong>：<code class="c">shared_ptr</code> 的原子计数在多核间引发 cache 行同步，每 tick 路径上拷贝 <code class="c">shared_ptr</code> 是性能灾难。</li>
-<li><strong>对象池/策略共享</strong>：非热路径（对象池、策略对象生命周期管理）可以用，但在线程入口一次性拷贝，热循环内用裸引用。</li>
+<li><strong>热路径绝不用 <code class="c">shared_ptr</code></strong>：原子计数 + 控制块 cache 行在多核间乒乓，是每 tick 路径上的延迟尖峰发生器。模式：线程入口拷贝一次拿到对象（或干脆裸指针/引用），热循环内零计数操作，生命周期由外层 scope 保证。</li>
+<li><strong>非热路径的合理用途</strong>：对象池条目、策略配置快照、跨线程异步任务句柄——低频路径上 <code class="c">shared_ptr</code> 换来的安全收益远大于微秒级成本。</li>
+<li><strong><code class="c">make_shared</code> 的副作用要知情</strong>：对象和控制块同块内存，意味着只要还有 <code class="c">weak_ptr</code> 活着，<strong>对象占的内存也不能释放</strong>（控制块要等弱计数归零）。大对象 + 长命 <code class="c">weak_ptr</code> = 内存滞留，容量敏感场景要评估。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
 <ol>
-<li><code class="c">shared_ptr</code> 的大小是多少？为什么比 <code class="c">unique_ptr</code> 大？</li>
-<li>用裸指针 <code class="c">new</code> 构造两个 <code class="c">shared_ptr</code> 会发生什么？</li>
-<li><code class="c">enable_shared_from_this</code> 解决什么问题？为什么不能直接 <code class="c">shared_ptr&lt;T&gt;(this)</code>？</li>
-<li><code class="c">shared_ptr</code> 拷贝的开销是什么？为什么 HFT 热路径不用它？</li>
+<li><code class="c">shared_ptr</code> 多大？为什么比 <code class="c">unique_ptr</code> 大一倍？控制块里有什么？</li>
+<li>实测 <code class="c">make_shared</code> 和 <code class="c">new</code>+<code class="c">shared_ptr</code> 各分配几次堆内存？差别带来什么好处？</li>
+<li>同一裸指针构造两个 <code class="c">shared_ptr</code> 会发生什么？ASan 报什么？</li>
+<li><code class="c">enable_shared_from_this</code> 解决什么问题？为什么 <code class="c">shared_ptr&lt;T&gt;(this)</code> 不行？调用 <code class="c">shared_from_this()</code> 的前提是什么？</li>
+<li><code class="c">shared_ptr</code> 拷贝的开销由哪几部分组成？为什么多核下更糟？</li>
+<li>"shared_ptr 是线程安全的"这句话准确吗？</li>
 </ol>
 <details>
 <summary>参考答案</summary>
 <ol>
 <li>
-<p>通常是<strong>两个指针</strong>的大小（64 位平台 16 字节）：一个指向所管理的对象，一个指向<strong>控制块</strong>（control block）。它比 <code class="c">unique_ptr</code> 大，是因为引用计数、弱计数、删除器、分配器等元信息必须存在对象之外、被所有 <code class="c">shared_ptr</code> 副本共享，所以每个 <code class="c">shared_ptr</code> 都要额外携带控制块指针。（控制块里通常还包含指向对象的指针，因此间接层也多一级。）</p>
+<p>16 字节（64 位实测）：一个指针指向对象，一个指向控制块。控制块含强引用计数、弱引用计数、类型擦除的删除器与分配器，以及对象指针（或内嵌对象）。这些元信息必须被所有副本共享，所以每个 <code class="c">shared_ptr</code> 都要多背一个控制块指针。</p>
 </li>
 <li>
-<p>会形成两个<strong>独立的控制块</strong>，各自认为引用计数为 1，共同拥有同一个裸对象：</p>
-</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">Widget* w = new Widget;
-std::shared_ptr&lt;Widget&gt; p1(w);
-std::shared_ptr&lt;Widget&gt; p2(w);   // 灾难：第二个控制块
-</code></pre>
-<p>任一计数归零就会 <code class="c">delete w</code>，另一个变成悬垂指针，随后二次释放（double free），属于未定义行为。正确做法是直接用 <code class="c">make_shared</code>，或只在<strong>一处</strong>用裸指针构造后，其余副本都从已有的 <code class="c">shared_ptr</code> 拷贝。</p>
-<ol start="3">
-<li>
-<p><code class="c">enable_shared_from_this&lt;T&gt;</code> 让对象内部能安全地产生一个<strong>与已有 <code class="c">shared_ptr</code> 共享同一控制块</strong>的 <code class="c">shared_ptr</code>（调用 <code class="c">shared_from_this()</code>），常用于"把自身注册为回调/异步任务"的场景。不能直接 <code class="c">shared_ptr&lt;T&gt;(this)</code>：那会为同一个 <code class="c">this</code> 新建一个控制块，与外面已有的 <code class="c">shared_ptr</code> 计数互不知情，同样导致双重释放；而且如果对象根本不是由 <code class="c">shared_ptr</code> 管理的（栈上对象），这样构造出的 <code class="c">shared_ptr</code> 析构时会去 <code class="c">delete</code> 一个非堆对象。使用前必须保证对象已被 <code class="c">shared_ptr</code> 持有，否则 <code class="c">shared_from_this()</code> 抛 <code class="c">bad_weak_ptr</code>。</p>
+<p><code class="c">make_shared</code> 1 次，<code class="c">new</code>+<code class="c">shared_ptr</code> 2 次（重载全局 <code class="c">operator new</code> 计数实测）。好处：少一次堆分配的系统调用/锁竞争；对象与控制块同块内存、局部性好，访问计数和访问对象大概率同 cache 行；还消灭了裸指针外泄的窗口。</p>
 </li>
 <li>
-<p>开销有三部分：①每次拷贝/析构都要对引用计数做<strong>原子</strong>增减（跨核的原子 RMW 与内存屏障，比指针赋值慢一个数量级）；②计数与其他 <code class="c">shared_ptr</code> 共享同一 cache 行，多线程频繁拷贝会引发 <strong>cache 行在核间来回失效</strong>（false sharing / cache line ping-pong）；③对象与控制块是间接访问，多一次指针跳转。HFT 每 tick 路径对延迟极度敏感，这类不可预测的原子+cache 同步开销会造成延迟尖峰，所以热路径上不用 <code class="c">shared_ptr</code>：只在线程入口拷贝一次拿到对象，热循环内改用裸指针或引用，生命周期由外层保证。</p>
+<p>形成两个互不知情的控制块，各自计数为 1；任一归零就 <code class="c">delete</code> 对象，另一个悬垂，随后双重释放。ASan 实测报 <code class="c">attempting double-free</code>。对策：副本永远从已有 <code class="c">shared_ptr</code> 拷贝；优先 <code class="c">make_shared</code> 让裸指针不具名。</p>
+</li>
+<li>
+<p>解决"对象成员函数里要交出指向自身的 <code class="c">shared_ptr</code>"的问题（注册回调、异步任务）。<code class="c">shared_ptr&lt;T&gt;(this)</code> 会为同一对象新建控制块，与外部已有的 <code class="c">shared_ptr</code> 计数互相不知道，双重释放；对象在栈上时还会 <code class="c">delete</code> 非堆内存。<code class="c">enable_shared_from_this</code> 在对象内埋一个 <code class="c">weak_ptr</code>，<code class="c">shared_from_this()</code> 从它 lock 出共享已有控制块的 <code class="c">shared_ptr</code>。前提：对象已被 <code class="c">shared_ptr</code> 管理，否则抛 <code class="c">std::bad_weak_ptr</code>。</p>
+</li>
+<li>
+<p>三部分：①拷贝/析构时对计数的原子 RMW（原子加在竞争下比普通 store 慢一个数量级）；②多核下计数所在 cache 行在核间来回失效（控制块被所有副本共享，典型 false sharing）；③16 字节体积 + 访问对象需两次解引用。核越多、拷贝越频繁，cache 乒乓越严重——开销随核数和拷贝频率放大，不是固定成本。</p>
+</li>
+<li>
+<p>不准确。线程安全的只有<strong>引用计数的增减</strong>：多个线程同时拷贝/析构各自持有的 <code class="c">shared_ptr</code> 副本是安全的。但指向的对象没有任何保护——两线程同时写 <code class="c">*sp</code> 照样数据竞争；同一个 <code class="c">shared_ptr</code> 实例本身被两线程一读一写（如一个 <code class="c">reset</code> 一个拷贝）也是竞争。准确说法：控制块线程安全，对象和指针实例不线程安全。</p>
 </li>
 </ol>
 </details>
@@ -890,64 +1005,169 @@ sp.reset();  // HugeBuffer 析构了，但 10MB 内存没释放！
 <blockquote>
 <p>第 4 章 智能指针 · Item 22 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item21-make-functions.md">Item 21 make 函数</a></p>
 </blockquote>
-<h2>这节讲什么</h2>
-<p>Pimpl（Pointer to Implementation）把实现细节藏到 <code class="c">.cpp</code>，头文件只留一个 <code class="c">unique_ptr&lt;Impl&gt;</code>——降低编译依赖，加速增量编译。</p>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p>C++ 的编译模型有个结构性痛点：头文件里类的<strong>私有成员</strong>也是类定义的一部分——你改一行私有实现（加个 <code class="c">vector</code> 成员、换个第三方库），所有包含这个头文件的翻译单元全部重编译。大项目里改一个核心头文件触发几百个 TU 重编，"喝杯咖啡等编译"就是这么来的。</p>
+<p>Pimpl（Pointer to Implementation）的思路釜底抽薪：头文件里只留一个指向实现结构的指针，实现整体挪进 <code class="c">.cpp</code>。私有成员随便改，只有那一个 <code class="c">.cpp</code> 重编译。代价是多一次间接和多一次堆分配——所以它是<strong>接口类的工具</strong>，不是热路径数据结构的工具。</p>
 <hr />
-<h2>核心结构</h2>
-<pre class="code" data-label="cpp"><code class="c">// widget.h
+<h2>这节讲什么</h2>
+<ol>
+<li>Pimpl 的标准结构（头文件 + <code class="c">.cpp</code> 两侧完整代码，实测可编译）；</li>
+<li>核心规则：<strong>析构为什么必须在 <code class="c">.cpp</code> 定义</strong>（含报错原文）；</li>
+<li><code class="c">unique_ptr</code> vs <code class="c">shared_ptr</code> 做 Pimpl 的区别；</li>
+<li>成本核算：收益（编译防火墙、ABI 稳定）与代价（间接、堆分配）。</li>
+</ol>
+<hr />
+<h2>核心结构（完整可编译）</h2>
+<pre class="code" data-label="cpp"><code class="c">// ============ widget.h ============
+#pragma once
+#include &lt;memory&gt;
+
 class Widget {
-    struct Impl;                    // 前向声明，不需要完整定义
-    std::unique_ptr&lt;Impl&gt; pImpl;    // 只需要 Impl 的指针
+    struct Impl;                    // 只有前向声明：调用方看不见实现
+    std::unique_ptr&lt;Impl&gt; pImpl;    // 不完整类型可以做 unique_ptr 成员
 public:
     Widget();
-    ~Widget();   // 必须在 .cpp 定义（unique_ptr 析构需要完整类型）
-    Widget(Widget&amp;&amp;) noexcept;
+    ~Widget();                              // ★ 只声明，定义必须在 .cpp
+    Widget(Widget&amp;&amp;) noexcept;              // ★ 移动也要去 .cpp 定义
     Widget&amp; operator=(Widget&amp;&amp;) noexcept;
+    Widget(const Widget&amp;) = delete;         // 拷贝默认禁用（拷贝需要 Impl 完整）
+    Widget&amp; operator=(const Widget&amp;) = delete;
+    int get() const;
 };
 
-// widget.cpp
+// ============ widget.cpp ============
 #include &quot;widget.h&quot;
-struct Widget::Impl {               // 实现细节藏在 .cpp
-    int data;
-    std::vector&lt;int&gt; vec;
-    void doWork();
+#include &lt;vector&gt;
+
+struct Widget::Impl {               // 实现细节全在这里
+    std::vector&lt;int&gt; data{1, 2, 3};
 };
-Widget::Widget() : pImpl(std::make_unique&lt;Impl&gt;()) {}
-Widget::~Widget() = default;        // 在 .cpp 里，Impl 已完整定义
+
+Widget::Widget()  : pImpl(std::make_unique&lt;Impl&gt;()) {}
+Widget::~Widget() = default;        // Impl 在此处已完整，default 安全
+Widget::Widget(Widget&amp;&amp;) noexcept = default;
+Widget&amp; Widget::operator=(Widget&amp;&amp;) noexcept = default;
+int Widget::get() const { return pImpl-&gt;data.size(); }
+
+// ============ main.cpp ============
+#include &quot;widget.h&quot;
+int main() {
+    Widget w;                    // w.get() == 3
+    Widget w2 = std::move(w);    // 移动 OK
+    // sizeof(Widget) == 8 —— 就装一个指针
+}
 </code></pre>
+<p>clang 23.1.0 实测编译运行通过：<code class="c">w.get() = 3</code>、<code class="c">sizeof(Widget) = 8</code>、移动后 <code class="c">w2.get() = 3</code>。</p>
+<p><strong>调用方视角的关键数字：<code class="c">sizeof(Widget) = 8</code></strong>。不管 <code class="c">Impl</code> 里塞多少成员（vector、map、第三方库对象），<code class="c">Widget</code> 永远是一个指针的大小——这正是 ABI 稳定的来源。</p>
+<hr />
+<h2>核心规则：析构（和移动）必须在 .cpp 定义</h2>
+<p>把上面头文件里的 <code class="c">~Widget();</code> 声明删掉（让编译器在类内隐式生成），clang 报错原文：</p>
+<pre class="code" data-label="code"><code class="c">error: allocation of incomplete type 'Widget::Impl'
+error: invalid application of 'sizeof' to an incomplete type 'Widget::Impl'
+</code></pre>
+<p>机制：<code class="c">unique_ptr&lt;Impl&gt;</code> 的默认删除器要 <code class="c">delete Impl</code>，而 <code class="c">delete</code> 需要 <code class="c">sizeof(Impl)</code> 和 <code class="c">Impl</code> 的析构——<strong>都要求完整类型</strong>。如果 <code class="c">~Widget</code> 在头文件隐式生成，那么每个包含该头文件、且销毁 <code class="c">Widget</code> 的 TU 都会在"Impl 不完整"的上下文里实例化这个析构，全军覆没。</p>
+<p>对策就是把会触发删除器的特殊成员函数<strong>声明在头文件、定义在 .cpp</strong>（Impl 完整之后）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>成员函数</th>
+<th>头文件</th>
+<th>.cpp</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>析构 <code class="c">~Widget()</code></td>
+<td>只声明</td>
+<td><code class="c">= default</code>（Impl 完整，安全）</td>
+</tr>
+<tr>
+<td>移动构造/移动赋值</td>
+<td>只声明</td>
+<td><code class="c">= default</code></td>
+</tr>
+<tr>
+<td>构造函数</td>
+<td>只声明</td>
+<td>定义（要 <code class="c">make_unique&lt;Impl&gt;</code>）</td>
+</tr>
+<tr>
+<td>拷贝构造/拷贝赋值</td>
+<td>通常 <code class="c">= delete</code></td>
+<td>要支持得手写深拷贝（Impl 逐成员复制）</td>
+</tr>
+</tbody>
+</table></div>
+<p>注意 <code class="c">.cpp</code> 里 <code class="c">~Widget() = default;</code> 是对的——"在类外 <code class="c">= default</code>"让编译器在<strong>这个 TU</strong>（Impl 已完整）里生成析构体。头文件里 <code class="c">= default</code> 才是错的。</p>
+<h3>用 shared_ptr 做 Pimpl 的例外</h3>
+<p><code class="c">shared_ptr&lt;Impl&gt;</code> 的删除器是<strong>构造时类型擦除绑定</strong>的，析构时不需要 <code class="c">Impl</code> 完整——所以 <code class="c">shared_ptr</code> 版 Pimpl 可以连析构声明都省掉。但代价是引用计数开销 + <code class="c">sizeof(Widget)</code> 变 16。Pimpl 语境下所有权明明独占，<code class="c">unique_ptr</code> 才是对价的工具，<code class="c">shared_ptr</code> 版本属于"能跑但买贵了"。</p>
+<hr />
+<h2>成本核算</h2>
+<p><strong>收益：</strong></p>
+<ol>
+<li><strong>编译防火墙</strong>：头文件不再 <code class="c">#include</code> 实现依赖（<code class="c">&lt;vector&gt;</code>、第三方库头）。改 <code class="c">Impl</code> 只重编一个 <code class="c">.cpp</code>；包含头文件的几百个 TU 不被传染。</li>
+<li><strong>ABI 稳定</strong>：<code class="c">Widget</code> 对象布局恒为一个指针（实测 8 字节）。库升级改了私有实现，调用方<strong>不用重编译</strong>，链上新 .so/.a 就行——动态库发布的根基技术。</li>
+<li><strong>信息隐藏</strong>：私有成员的定义彻底不进头文件，连"看到了但访问不了"都不存在。</li>
+</ol>
+<p><strong>代价：</strong></p>
+<ol>
+<li>每次访问实现多一次指针间接（<code class="c">pImpl-&gt;</code>）；</li>
+<li>每个对象多一次堆分配（<code class="c">make_unique&lt;Impl&gt;</code>）；</li>
+<li>代码量翻倍（声明/定义分离，Impl 里还要搬一份成员函数）。</li>
+</ol>
+<p><strong>适用判断</strong>：对外接口类（引擎、连接、会话——构造少、活得久、接口稳定）→ 值；热路径数据结构（订单、行情 tick——每秒百万次构造/拷贝/访问）→ 不值，间接和堆分配都是热路径毒药。</p>
+<hr />
+<h2>常见错误（新手踩坑）</h2>
+<ol>
+<li><strong>头文件里 <code class="c">~Widget() = default;</code></strong>。最常见的 Pimpl 错误——<code class="c">default</code> 在类内 = 在 Impl 不完整处生成析构体 = 每个使用者 TU 都编不过。记住口诀：<strong>声明在头，default 在 .cpp</strong>。</li>
+<li><strong>移动成员忘了也去 .cpp</strong>。只把析构挪走、移动构造留在类内隐式生成——<code class="c">unique_ptr</code> 的移动赋值会先析构旧值，同样触发删除器实例化，同样炸。</li>
+<li><strong>想要拷贝又忘了深拷贝</strong>。<code class="c">unique_ptr</code> 不可拷贝，Pimpl 类默认不可拷贝。要拷贝语义需在 .cpp 手写：<code class="c">Widget::Widget(const Widget&amp; o) : pImpl(std::make_unique&lt;Impl&gt;(*o.pImpl)) {}</code>。</li>
+<li><strong>在热路径类上用 Pimpl</strong>。每次访问多一次间接 + 每对象一次堆分配——tick 数据结构用 Pimpl 是把编译时间省下来、把延迟花出去。</li>
+</ol>
 <hr />
 <h2>新手要点（和 C 的区别）</h2>
 <ul>
-<li><strong>C 的 opaque pointer</strong>：C 里也有类似手法——头文件只声明 <code class="c">struct Widget;</code>，<code class="c">.c</code> 里定义 <code class="c">struct Widget { ... }</code>。《C 和指针》ch07 讲过这个。C++ 版用 <code class="c">unique_ptr</code> 自动管理释放。</li>
-<li><strong>为什么析构要在 .cpp</strong>：<code class="c">unique_ptr</code> 析构需要调用 <code class="c">delete Impl</code>，但 <code class="c">delete</code> 需要 <code class="c">Impl</code> 的完整定义。头文件里只有前向声明，所以析构必须放 <code class="c">.cpp</code>。</li>
+<li><strong>C 的 opaque pointer 就是 Pimpl 的祖宗</strong>：头文件 <code class="c">typedef struct Widget Widget;</code>，<code class="c">.c</code> 里 <code class="c">struct Widget { ... };</code>，调用方只摸指针。《C 和指针》ch07 讲过这个手法。C++ 版的升级是 <code class="c">unique_ptr</code> 自动管理生命周期——C 版要手写 <code class="c">Widget_create/Widget_destroy</code> 并祈祷调用方记得调。</li>
+<li><strong>为什么 C++ 比 C 更需要它</strong>：C 的 struct 成员可以藏在 <code class="c">.c</code> 里天经地义；C++ 的 class 私有成员必须在头文件的类定义里——Pimpl 是把 C 的隐藏能力"偷渡"回 C++ 的办法。</li>
+<li><strong>判断口诀</strong>：这个类是"给别人用的接口"还是"热路径上的数据"？前者考虑 Pimpl，后者千万别。</li>
 </ul>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>降低编译依赖</strong>：大型交易引擎头文件改动会触发全量重编译。Pimpl 把核心结构藏到 <code class="c">.cpp</code>，增量编译从分钟级降到秒级。</li>
+<li><strong>交易引擎的编译时间</strong>：核心引擎头文件被几百个策略 TU 包含，改一行私有实现全量重编分钟级。引擎主类 Pimpl 化后，策略侧只依赖稳定接口头，增量编译秒级。</li>
+<li><strong>商业库交付</strong>：给外部团队的 SDK（行情接入、风控前置）用 Pimpl 保持 ABI 稳定——你升级实现，对方不重编。8 字节的固定对象布局是合同的一部分。</li>
+<li><strong>热路径反例</strong>：订单、行情 tick 这类每秒百万级构造/访问的对象<strong>绝不 Pimpl</strong>——多一次间接就是多一次潜在 cache miss，多一次堆分配就是多一次分配器锁。Pimpl 是给"少而重"的接口类的。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
 <ol>
-<li>Pimpl 里为什么析构函数必须在 <code class="c">.cpp</code> 而非头文件定义？</li>
-<li><code class="c">unique_ptr</code> 析构对类型完整性的要求是什么？</li>
-<li>Pimpl 和 C 的 opaque pointer 有什么关系？</li>
-<li>Pimpl 如何降低编译依赖？</li>
+<li>Pimpl 里为什么析构必须在 <code class="c">.cpp</code> 定义？头文件里 <code class="c">= default</code> 会报什么错？</li>
+<li>除了析构，还有哪些特殊成员函数必须挪到 <code class="c">.cpp</code>？为什么？</li>
+<li>实测 <code class="c">sizeof(Widget)</code>（Pimpl 版）是多少？这个数字为什么就是 ABI 稳定的来源？</li>
+<li>用 <code class="c">shared_ptr&lt;Impl&gt;</code> 做 Pimpl 为什么能省掉析构声明？为什么不推荐？</li>
+<li>Pimpl 的三项代价是什么？什么样的类适合/不适合？</li>
+<li>Pimpl 和 C 的 opaque pointer 是什么关系？C++ 版升级了什么？</li>
 </ol>
 <details>
 <summary>参考答案</summary>
 <ol>
 <li>
-<p>因为编译器生成的 <code class="c">~Widget()</code>（以及 <code class="c">unique_ptr&lt;Impl&gt;</code> 的删除器实例化）需要在析构点看到 <code class="c">Impl</code> 的<strong>完整定义</strong>，才能调用 <code class="c">Impl</code> 的析构函数。如果析构函数定义在头文件里并在类内隐式生成，那么所有包含该头文件的翻译单元在实例化析构时都会要求 <code class="c">Impl</code> 完整——但头文件里 <code class="c">Impl</code> 只是前向声明，于是编译失败（典型报错："incomplete type ... in destructor"）。把 <code class="c">~Widget();</code> 声明在头文件、定义在 <code class="c">.cpp</code>（Impl 定义之后），析构就只在 <code class="c">.cpp</code> 里实例化一次，头文件可以完全不暴露 <code class="c">Impl</code> 的定义。</p>
+<p><code class="c">unique_ptr&lt;Impl&gt;</code> 的默认删除器要 <code class="c">delete Impl</code>，需要 <code class="c">sizeof(Impl)</code> 和 Impl 的析构——都要求完整类型。析构若在头文件（类内）隐式生成，每个包含头文件并销毁 Widget 的 TU 都在 Impl 不完整的上下文实例化它，编译失败：<code class="c">error: invalid application of 'sizeof' to an incomplete type 'Widget::Impl'</code>。把 <code class="c">~Widget();</code> 只声明在头文件、<code class="c">.cpp</code> 里 <code class="c">= default</code>（Impl 完整之后），析构体就只在一个 TU 生成。</p>
 </li>
 <li>
-<p><code class="c">std::unique_ptr&lt;T&gt;</code> 的默认删除器要求 <code class="c">sizeof(T)</code> 已知且 <code class="c">T</code> 可析构：在 <code class="c">unique_ptr</code> <strong>析构、重置（<code class="c">reset</code>）、移动到/自</strong> 等会调用删除器的地方，<code class="c">T</code> 必须是完整类型（complete type）。这是标准对 <code class="c">unique_ptr</code> 的明确要求（<code class="c">shared_ptr</code> 在这方面更宽松，它的删除器是在构造时绑定的类型擦除形式，析构时不必要求 <code class="c">T</code> 完整）。Pimpl 因此要求：所有会触发删除器的特殊成员函数（析构、移动构造、移动赋值——如果它们在头文件中被隐式生成）都必须在 <code class="c">Impl</code> 完整的翻译单元里定义。</p>
+<p>移动构造和移动赋值（<code class="c">unique_ptr</code> 移动赋值会先析构旧值，同样触发删除器）；构造函数也要在 .cpp（<code class="c">make_unique&lt;Impl&gt;</code> 需要完整类型，报 <code class="c">allocation of incomplete type</code>）；若要拷贝语义，拷贝构造/赋值也要在 .cpp 手写深拷贝。规律：<strong>凡是会实例化删除器或创建 Impl 的函数，都得待在 Impl 完整的 TU</strong>。</p>
 </li>
 <li>
-<p>Pimpl（pointer to implementation）本质就是用 C++ 的 RAII 智能指针实现 C 里的 <strong>opaque pointer</strong>（不透明指针）惯用法：C 里头文件只声明 <code class="c">typedef struct Widget Widget;</code>，实现细节藏在 <code class="c">.c</code> 里，调用方只拿到一个不完整类型的指针。二者目的一致——隐藏实现、稳定 ABI；区别是 C 版本需要手写 <code class="c">Widget_create</code>/<code class="c">Widget_destroy</code> 手动管理生命周期，而 C++ 的 Pimpl 用 <code class="c">unique_ptr</code> 让编译器自动释放，异常路径也不会泄漏。</p>
+<p>8 字节（实测）——一个 <code class="c">unique_ptr</code> 指针。无论 Impl 里成员怎么增删改，<code class="c">Widget</code> 的对象布局不变，已有调用方代码的二进制依旧合法：改实现只需重编/重链库一侧，调用方不用动。这就是"ABI 稳定"的物理含义。</p>
 </li>
 <li>
-<p>头文件里不再 <code class="c">#include</code> 实现类的依赖（如 <code class="c">&lt;vector&gt;</code>、第三方库头、平台头），只保留一个前向声明 <code class="c">struct Impl;</code> 和一个 <code class="c">unique_ptr&lt;Impl&gt;</code>。这样：①实现变化（增删私有成员、换容器、换库）只重编译那一个 <code class="c">.cpp</code>；②包含该头文件的所有翻译单元不再被这些依赖"传染"，增量编译范围从"全量"缩小到局部；③编译防火墙也带来 ABI 稳定——<code class="c">Widget</code> 对象大小固定为一个指针，库升级不必重编译调用方。</p>
+<p><code class="c">shared_ptr</code> 的删除器在<strong>构造时</strong>类型擦除绑定到控制块，析构时走的是擦除后的函数指针，不要求 <code class="c">Impl</code> 完整——所以可以连析构声明都省。不推荐是因为 Pimpl 场景所有权明明独占：<code class="c">shared_ptr</code> 白付原子引用计数的税，对象还变 16 字节。独占语义用 <code class="c">unique_ptr</code>，这同时也是在向读者声明"不共享"。</p>
+</li>
+<li>
+<p>代价：访问实现多一次指针间接；每对象多一次堆分配；声明/定义分离 + Impl 搬运的代码量翻倍。适合：构造少、活得久、接口稳定的对外接口类（引擎、连接、SDK 对象）。不适合：热路径数据结构（订单、tick）——间接是 cache miss，堆分配是分配器锁，都是延迟毒药。</p>
+</li>
+<li>
+<p>Pimpl 就是 C opaque pointer 惯用法的 C++ 版：C 里头文件只给 <code class="c">typedef struct Widget Widget;</code>，实现藏 <code class="c">.c</code>。目的相同（隐藏实现、稳定 ABI）。C++ 版的升级：①<code class="c">unique_ptr</code> 自动管理释放，异常路径不泄漏，不用祈祷调用方记得调 <code class="c">Widget_destroy</code>；②类成员函数语法保留，接口仍是一个 class 而不是一包 <code class="c">Widget_xxx(Widget*)</code> 自由函数。</p>
 </li>
 </ol>
 </details>
