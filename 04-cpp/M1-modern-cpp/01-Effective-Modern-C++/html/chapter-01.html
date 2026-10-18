@@ -933,22 +933,21 @@ void show(T &amp;&amp;) [T = std::initializer_list&lt;int&gt; &amp;]
       <section class="section" id="s-item03">
         <div class="sec-head"><div class="sec-no">Item 3</div><h2>Item 3：理解 decltype</h2></div>
 <blockquote>
-<p>第 1 章 类型推导 · Item 3 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item02-auto-type-deduction.md">Item 2 auto 推导</a></p>
+<p>第 1 章 类型推导 · Item 3 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item02-auto-type-deduction.md">Item 2 auto 推导</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item04-viewing-deduced-types.md">Item 4 查看推导结果</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p><code class="c">auto</code> 解决的是"我不想写类型"；<code class="c">decltype</code> 解决的是另一个问题——"<strong>这个表达式的精确类型是什么</strong>"。区别在于：<code class="c">auto</code> 推导时会主动帮你剥掉引用和顶层 const（按值语义），而 <code class="c">decltype</code> 是个诚实的工具——你给它什么，它就原样告诉你什么，不剥、不改、不加工。</p>
+<p><code class="c">auto</code> 解决的是"我不想写类型"；<code class="c">decltype</code> 解决的是另一个问题——"<strong>这个表达式的精确类型是什么</strong>"。<code class="c">auto</code> 推导时会主动帮你剥掉引用和顶层 const（按值语义），而 <code class="c">decltype</code> 是个诚实的工具——你给它什么，它就原样告诉你什么，不剥、不改、不加工。</p>
 <p>这种"诚实"在写泛型转发代码时是刚需：转发函数的返回类型必须和被转发者<strong>一模一样</strong>，引用一个都不能丢。<code class="c">auto</code> 做不到（它一定剥），<code class="c">decltype(auto)</code> 就是为这个场景造的。读懂标准库的 <code class="c">std::forward</code>、<code class="c">decltype(auto)</code> 包装器、尾置返回类型 <code class="c">auto f() -&gt; decltype(expr)</code>，全靠这一节。</p>
 <hr />
 <h2>这节讲什么</h2>
 <ol>
-<li><code class="c">decltype</code> 的两条分支规则：<strong>名字</strong> vs <strong>表达式</strong>；</li>
-<li>"加括号变引用"陷阱的机制和实测；</li>
-<li><code class="c">decltype(auto)</code>（C++14）与 <code class="c">auto</code> 返回类型推导的本质区别——一个保引用、一个剥引用；</li>
-<li><code class="c">return (x);</code> 悬垂陷阱：一对括号引发的 UB，以及编译器警告长什么样。</li>
+<li><code class="c">decltype</code> 的两条分支规则：<strong>名字</strong> vs <strong>表达式</strong>，以及"加括号变引用"陷阱；</li>
+<li><code class="c">decltype(auto)</code>（C++14）与 <code class="c">auto</code> 返回类型推导的本质区别——一个保引用、一个剥引用，<code class="c">return (x);</code> 的悬垂现场；</li>
+<li><strong>C++11 尾置返回类型</strong> <code class="c">auto f(It b, It e) -&gt; decltype(*b)</code> 的经典用例，以及 C++14 <code class="c">decltype(auto)</code> 如何简化它（含版本差异实测）；</li>
+<li><code class="c">decltype</code> 与 <code class="c">std::declval</code> 的组合用法：不构造对象就查询成员调用结果、让不可行候选安静退出重载集。</li>
 </ol>
 <hr />
 <h2>核心规则：两条分支</h2>
-<p><code class="c">decltype</code> 只有两条规则，但界限必须记清：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -973,147 +972,239 @@ void show(T &amp;&amp;) [T = std::initializer_list&lt;int&gt; &amp;]
 <p>clang 23.1.0 实测（全部 <code class="c">static_assert</code> 通过）：</p>
 <pre class="code" data-label="cpp"><code class="c">#include &lt;type_traits&gt;
 using std::is_same_v;
-
 int&amp; getRef() { static int g = 7; return g; }
 int  getVal() { return 42; }
 
 int main() {
     int x = 42;
     const int&amp; cx = x;
-
-    // 分支一：名字 → 声明类型原样保留
-    static_assert(is_same_v&lt;decltype(x),  int&gt;);         // 名字
-    static_assert(is_same_v&lt;decltype(cx), const int&amp;&gt;);  // 引用和 const 都不剥
-
-    // 分支二：表达式 → 按值类别
-    static_assert(is_same_v&lt;decltype(x + 1), int&gt;);      // 右值表达式 → T
-    static_assert(is_same_v&lt;decltype(getRef()), int&amp;&gt;);  // 调用返回左值引用 → int&amp;
-    static_assert(is_same_v&lt;decltype(getVal()), int&gt;);   // 返回右值 → int
+    static_assert(is_same_v&lt;decltype(x),  int&gt;);         // 分支一：名字 → 声明类型
+    static_assert(is_same_v&lt;decltype(cx), const int&amp;&gt;);  //   引用和 const 都不剥
+    static_assert(is_same_v&lt;decltype(x + 1), int&gt;);      // 分支二：右值表达式 → T
+    static_assert(is_same_v&lt;decltype(getRef()), int&amp;&gt;);  //   返回左值引用 → int&amp;
+    static_assert(is_same_v&lt;decltype(getVal()), int&gt;);   //   返回右值 → int
+    static_assert(is_same_v&lt;decltype((x)), int&amp;&gt;);       // ← 加括号陷阱
     return 0;
 }
 </code></pre>
-<p>和 <code class="c">auto</code> 对照看：<code class="c">auto</code> 永远走"按值"那一套（除非你自己写 <code class="c">&amp;</code>），<code class="c">decltype</code> 则<strong>完全不加工</strong>——<code class="c">const int&amp;</code> 进去就 <code class="c">const int&amp;</code> 出来。</p>
-<hr />
-<h2>加括号陷阱：decltype(x) vs decltype((x))</h2>
-<pre class="code" data-label="cpp"><code class="c">int x = 42;
-decltype(x)   a = 1;   // int
-decltype((x)) b = x;   // int&amp;！
-</code></pre>
-<p>多一对括号，类型从值变引用。机制：<code class="c">x</code> 是"未加括号的变量名"，走分支一，给声明类型 <code class="c">int</code>；<code class="c">(x)</code> 不是变量名了，它是一个<strong>表达式</strong>，走分支二——<code class="c">(x)</code> 是左值表达式，所以给 <code class="c">int&amp;</code>。</p>
-<p>实测确认（clang 23.1.0）：</p>
-<pre class="code" data-label="cpp"><code class="c">static_assert(is_same_v&lt;decltype(x),   int&gt;);
-static_assert(is_same_v&lt;decltype((x)), int&amp;&gt;);         // 值变引用
-static_assert(is_same_v&lt;decltype(cx),  const int&amp;&gt;);
-static_assert(is_same_v&lt;decltype((cx)), const int&amp;&gt;);  // 引用还是引用（巧合相同）
-</code></pre>
-<p>口诀：<strong>名字不加括号 = 声明类型；加括号 = 当表达式看，左值给引用。</strong> 注意第三四行——<code class="c">cx</code> 加不加括号结果恰好一样，但原因不同：一个是"声明类型本来就是 <code class="c">const int&amp;</code>"，一个是"左值表达式给 <code class="c">const int&amp;</code>"。巧合掩盖机制，别靠记忆特例，记两条分支。</p>
+<p><code class="c">decltype</code> 是<strong>完全不加工</strong>的那一个：<code class="c">auto</code> 永远走"按值"那套（除非你自己写 <code class="c">&amp;</code>），<code class="c">decltype</code> 则 <code class="c">const int&amp;</code> 进去就 <code class="c">const int&amp;</code> 出来。</p>
+<h3>加括号陷阱的机制</h3>
+<p><code class="c">decltype(x) a = 1;</code> 是 <code class="c">int</code>，而 <code class="c">decltype((x)) b = x;</code> 是 <code class="c">int&amp;</code>——<code class="c">x</code> 是"未加括号的变量名"走分支一，<code class="c">(x)</code> 是<strong>表达式</strong>走分支二，左值给 <code class="c">int&amp;</code>。<code class="c">decltype(auto)</code> 用在变量声明上同样踩坑（实测：<code class="c">decltype(auto) a = x;</code> 是 <code class="c">int</code>，<code class="c">decltype(auto) b = (x);</code> 是 <code class="c">int&amp;</code>）。注意 <code class="c">decltype(cx)</code> 与 <code class="c">decltype((cx))</code> 都是 <code class="c">const int&amp;</code>，但机制不同（声明类型 vs 左值表达式）——巧合掩盖机制，别记特例，记两条分支。</p>
 <hr />
 <h2>decltype(auto)：为转发而生</h2>
-<p>C++14 允许用 <code class="c">decltype(auto)</code> 做占位符：语法位置上是 <code class="c">auto</code>，推导规则用 <code class="c">decltype</code>。这解决了 <code class="c">auto</code> 返回类型推导的一个硬伤——<strong><code class="c">auto</code> 会剥掉引用</strong>：</p>
-<pre class="code" data-label="cpp"><code class="c">int&amp; getRef() { static int g = 7; return g; }
-
-auto badWrapper()         { return getRef(); }   // 返回 int：引用被剥，拷了一份
-decltype(auto) goodWrapper() { return getRef(); } // 返回 int&amp;：原样转发
+<p>C++14 起 <code class="c">decltype(auto)</code> 可做占位符：语法位置上是 <code class="c">auto</code>，推导规则用 <code class="c">decltype</code>。这解决了 <code class="c">auto</code> 返回类型推导的硬伤——<strong><code class="c">auto</code> 会剥掉引用</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">auto badWrapper()            { return getRef(); }   // 返回 int：引用被剥，拷了一份
+decltype(auto) goodWrapper() { return getRef(); }   // 返回 int&amp;：原样转发
 
 static_assert(is_same_v&lt;decltype(badWrapper()),  int&gt;);
 static_assert(is_same_v&lt;decltype(goodWrapper()), int&amp;&gt;);
 </code></pre>
-<p>剥掉引用不只是"多一次拷贝"的问题——它直接改变接口能力：</p>
-<pre class="code" data-label="cpp"><code class="c">badWrapper() = 100;   // error: expression is not assignable
-                      // 返回的是 int 右值，根本不能赋值！
-</code></pre>
-<p>而 <code class="c">decltype(auto)</code> 版本能<strong>写穿</strong>到原对象（clang 23.1.0 实测输出 <code class="c">7</code> 然后 <code class="c">100</code>）：</p>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-int main() {
-    std::cout &lt;&lt; getRef() &lt;&lt; &quot;\n&quot;;   // 7
-    goodWrapper() = 100;             // 返回 int&amp;，能当左值用
-    std::cout &lt;&lt; getRef() &lt;&lt; &quot;\n&quot;;   // 100 —— 原对象被改了
-}
-</code></pre>
-<p>对泛型代码里转发容器元素（<code class="c">c[i]</code> 通常返回引用）或成员引用的包装器，这个差别就是要命和不要命的区别。</p>
+<p>剥引用不只是"多一次拷贝"——它直接改变接口能力：<code class="c">badWrapper() = 100;</code> 报 <code class="c">error: expression is not assignable</code>（返回的是右值），而 <code class="c">goodWrapper() = 100;</code> 能写穿到原对象（实测 <code class="c">getRef()</code> 输出 <code class="c">7</code> → <code class="c">100</code>）。</p>
+<p>转发容器元素（<code class="c">c[i]</code> 返回引用）或成员引用的包装器，这个差别就是要命和不要命的区别；泛型转发配合 <code class="c">std::forward</code> 的标准写法是 <code class="c">template&lt;class T&gt; decltype(auto) wrapper(T&amp;&amp; x) { return std::forward&lt;T&gt;(x); }</code>——<code class="c">forward</code> 结果是 <code class="c">T&amp;</code> 就给 <code class="c">T&amp;</code>、是 <code class="c">T&amp;&amp;</code> 就给 <code class="c">T&amp;&amp;</code>。</p>
 <h3>陷阱：<code class="c">return (x);</code> 悬垂</h3>
-<p><code class="c">decltype(auto)</code> 用 <code class="c">decltype</code> 规则推导 <code class="c">return</code> 语句的表达式——于是加括号陷阱在这里重现，而且后果是 UB：</p>
-<pre class="code" data-label="cpp"><code class="c">decltype(auto) f() {
-    int x = 42;
-    return (x);   // (x) 是左值表达式 → 返回类型推导为 int&amp;
-                  // → 返回局部变量的引用 → 悬垂！
-}
+<p><code class="c">decltype(auto)</code> 用 <code class="c">decltype</code> 规则推导 <code class="c">return</code> 表达式——加括号陷阱在这里重现，后果是 UB：</p>
+<pre class="code" data-label="cpp"><code class="c">decltype(auto) f() { int x = 42; return (x); }   // (x) 是左值 → 返回 int&amp; → 悬垂
 </code></pre>
-<p>clang 23.1.0 + <code class="c">-Wall</code> 能抓到：</p>
-<pre class="code" data-label="code"><code class="c">warning: reference to stack memory associated with
-         local variable 'x' returned [-Wreturn-stack-address]
+<p>clang 23.1.0 实测警告原文（<strong>不加 <code class="c">-Wall</code> 也报</strong>，<code class="c">-Wreturn-stack-address</code> 默认开）：</p>
+<pre class="code" data-label="code"><code class="c">warning: reference to stack memory associated with local variable 'x' returned [-Wreturn-stack-address]
+    1 | decltype(auto) f1() { int x = 42; return (x); }
+      |                                           ^
 </code></pre>
-<p>注意 <code class="c">return x;</code>（不加括号）推导为 <code class="c">int</code>，安全；<code class="c">return (x);</code> 推导为 <code class="c">int&amp;</code>，悬垂。<strong>写 <code class="c">decltype(auto)</code> 函数时，把 <code class="c">return</code> 的表达式当地雷排</strong>：永远别给返回的变量名加括号。</p>
-<h3>完整转发的样子</h3>
-<p>配合 <code class="c">std::forward</code>，泛型包装器的标准写法：</p>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;utility&gt;
+<p><code class="c">return x;</code>（不加括号）推导为 <code class="c">int</code>，安全。<strong>写 <code class="c">decltype(auto)</code> 函数时把 <code class="c">return</code> 的表达式当地雷排</strong>：永远别给返回的变量名加括号。</p>
+<hr />
+<h2>C++11 尾置返回类型：decltype 的经典战场</h2>
+<p>C++11 里返回类型写在参数列表<strong>之前</strong>，而模板常常要"根据参数推导返回类型"——参数这时还没声明。尾置返回类型就是把返回类型挪到参数之后：</p>
+<pre class="code" data-label="cpp"><code class="c">template&lt;class It&gt;
+auto firstOf(It b, It e) -&gt; decltype(*b) { return *b; }   // b 在这里才可见
+</code></pre>
+<p>写成前置形式直接失败（clang 23.1.0 实测报错原文）：</p>
+<pre class="code" data-label="code"><code class="c">error: use of undeclared identifier 'b'
+    4 | decltype(*b) firstOf(It b, It e) { return *b; }
+      |           ^
+</code></pre>
+<h3>三种写法对照（实测）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>最低标准</th>
+<th><code class="c">vector&lt;int&gt;</code> 上的返回类型</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">auto f(It b, It e) -&gt; decltype(*b)</code></td>
+<td>C++11</td>
+<td><code class="c">int&amp;</code></td>
+<td>C++11 唯一能表达的写法；签名冗长</td>
+</tr>
+<tr>
+<td><code class="c">auto f(It b, It e)</code></td>
+<td>C++14</td>
+<td><code class="c">int</code>（<strong>剥引用</strong>）</td>
+<td>最简洁，但语义被改成拷贝</td>
+</tr>
+<tr>
+<td><code class="c">decltype(auto) f(It b, It e)</code></td>
+<td>C++14</td>
+<td><code class="c">int&amp;</code></td>
+<td>简洁 + 保引用，C++14 起首选</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v{1, 2, 3};
+static_assert(is_same_v&lt;decltype(firstOfCxx11(v.begin(), v.end())), int&amp;&gt;);
+static_assert(is_same_v&lt;decltype(firstOfCxx14(v.begin(), v.end())), int&amp;&gt;);
+static_assert(is_same_v&lt;decltype(firstOfAuto(v.begin(), v.end())),  int&gt;);
+firstOfCxx14(v.begin(), v.end()) = 99;   // 写穿；实测随后 v[0] == 99
+</code></pre>
+<p>把 C++14 写法丢给 <code class="c">-std=c++11</code>，实测：</p>
+<pre class="code" data-label="code"><code class="c">error: 'auto' return without trailing return type; deduced return types are a C++14 extension
+warning: 'decltype(auto)' type specifier is a C++14 extension [-Wc++14-extensions]
+error: deduced return types are a C++14 extension
+</code></pre>
+<p>结论：<strong>C++11 里尾置返回类型不是风格选择，是唯一出路</strong>；升到 C++14 后 <code class="c">decltype(auto)</code> 既短又不丢引用。</p>
+<hr />
+<h2>decltype + std::declval：不构造对象就查询类型</h2>
+<p><code class="c">std::declval&lt;T&gt;()</code>（<code class="c">&lt;utility&gt;</code>）是<strong>只有声明、没有定义</strong>的函数模板，返回 <code class="c">T&amp;&amp;</code>。它唯一用途是在 <code class="c">decltype</code>/<code class="c">sizeof</code> 这类<strong>不求值上下文</strong>里凭空造出一个"某类型的值"，好对它做运算、调成员函数：</p>
+<pre class="code" data-label="cpp"><code class="c">// ① 查询成员调用结果的类型——不需要真的构造 Order
+struct Order { int64_t qty() const; };
+using QtyResult = decltype(std::declval&lt;const Order&amp;&gt;().qty());
+static_assert(is_same_v&lt;QtyResult, int64_t&gt;);   // 实测通过
 
-template&lt;typename T&gt;
-decltype(auto) wrapper(T&amp;&amp; x) {
-    return std::forward&lt;T&gt;(x);   // decltype(auto) 保留 forward 结果的值类别
+// ② SFINAE 友好的返回类型：不能相加就退出重载集
+template&lt;class T, class U&gt;
+auto plus(T&amp;&amp; t, U&amp;&amp; u) -&gt; decltype(std::declval&lt;T&gt;() + std::declval&lt;U&gt;()) {
+    return std::forward&lt;T&gt;(t) + std::forward&lt;U&gt;(u);
+}
+
+// ③ declval&lt;T&gt;() vs declval&lt;T&amp;&gt;()：值类别不同
+static_assert(is_same_v&lt;decltype(std::declval&lt;int&gt;()),  int&amp;&amp;&gt;);
+static_assert(is_same_v&lt;decltype(std::declval&lt;int&amp;&gt;()), int&amp;&gt;);
+</code></pre>
+<p><code class="c">plus</code> 实测：对 <code class="c">std::string</code> 输出 <code class="c">abcd</code>、对 <code class="c">int</code> 输出 <code class="c">3</code>；传入不支持 <code class="c">+</code> 的类型时报错原文明确指向替换失败：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching function for call to 'plus'
+note: candidate template ignored: substitution failure [with T = NoAdd &amp;, U = NoAdd &amp;]:
+      invalid operands to binary expression ('NoAdd' and 'NoAdd')
+</code></pre>
+<p>这就是 <code class="c">decltype</code> + <code class="c">declval</code> 的威力：<strong>编译期既能精确查询类型，又能让不可行候选安静退出重载集</strong>。把它当普通函数调用则会被 libc++ 的内置 <code class="c">static_assert</code> 拦下（实测原文）：</p>
+<pre class="code" data-label="code"><code class="c">error: static assertion failed due to requirement '!__is_same(int, int)':
+       std::declval can only be used in an unevaluated context.
+</code></pre>
+<hr />
+<h2>完整可运行例子</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
+#include &lt;string&gt;
+#include &lt;type_traits&gt;
+#include &lt;utility&gt;
+#include &lt;vector&gt;
+using std::is_same_v;
+
+int&amp; getRef() { static int g = 7; return g; }
+// (A) C++11 尾置返回类型
+template&lt;class It&gt;
+auto firstOfCxx11(It b, It e) -&gt; decltype(*b) { return *b; }
+// (B) C++14 decltype(auto)
+template&lt;class It&gt;
+decltype(auto) firstOfCxx14(It b, It e) { return *b; }
+// (C) decltype + declval 查询成员调用结果
+struct Order { int64_t qty() const; };
+static_assert(is_same_v&lt;decltype(std::declval&lt;const Order&amp;&gt;().qty()), int64_t&gt;);
+// (D) SFINAE 友好的通用加法
+template&lt;class T, class U&gt;
+auto plus(T&amp;&amp; t, U&amp;&amp; u) -&gt; decltype(std::declval&lt;T&gt;() + std::declval&lt;U&gt;()) {
+    return std::forward&lt;T&gt;(t) + std::forward&lt;U&gt;(u);
+}
+
+int main() {
+    int x = 42;
+    const int&amp; cx = x;
+    std::cout &lt;&lt; &quot;decltype(x)==int        : &quot; &lt;&lt; is_same_v&lt;decltype(x), int&gt; &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;decltype((x))==int&amp;     : &quot; &lt;&lt; is_same_v&lt;decltype((x)), int&amp;&gt; &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;decltype(cx)==const int&amp;: &quot; &lt;&lt; is_same_v&lt;decltype(cx), const int&amp;&gt; &lt;&lt; &quot;\n&quot;;
+    std::vector&lt;int&gt; v{10, 20, 30};
+    firstOfCxx14(v.begin(), v.end()) = 99;          // 写穿到容器元素
+    std::cout &lt;&lt; &quot;v[0] after write-through: &quot; &lt;&lt; v[0] &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;firstOfCxx11: &quot; &lt;&lt; firstOfCxx11(v.begin(), v.end())
+              &lt;&lt; &quot; getRef: &quot; &lt;&lt; getRef() &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;plus(str): &quot; &lt;&lt; plus(std::string(&quot;ab&quot;), std::string(&quot;cd&quot;))
+              &lt;&lt; &quot; plus(int): &quot; &lt;&lt; plus(1, 2) &lt;&lt; &quot;\n&quot;;
+    std::vector&lt;bool&gt; vb{true};
+    auto proxy = vb[0];                             // 代理，不是 bool
+    std::cout &lt;&lt; &quot;vb[0] is bool? &quot; &lt;&lt; is_same_v&lt;decltype(proxy), bool&gt;
+              &lt;&lt; &quot; sizeof=&quot; &lt;&lt; sizeof(proxy) &lt;&lt; &quot;\n&quot;;
 }
 </code></pre>
-<p><code class="c">std::forward&lt;T&gt;(x)</code> 的类型可能是 <code class="c">T&amp;</code> 或 <code class="c">T&amp;&amp;</code>（取决于是左值还是右值转发），<code class="c">decltype(auto)</code> 把这个类型原样端出去，<code class="c">auto</code> 则会剥成值。这就是为什么标准库里所有转发设施都用 <code class="c">decltype(auto)</code>。</p>
+<p>本机实测 clang 23.1.0（<code class="c">-std=c++17 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">decltype(x)==int        : 1
+decltype((x))==int&amp;     : 1
+decltype(cx)==const int&amp;: 1
+v[0] after write-through: 99
+firstOfCxx11: 99 getRef: 7
+plus(str): abcd plus(int): 3
+vb[0] is bool? 0 sizeof=16
+</code></pre>
+<p>最后一行是伏笔：<code class="c">-&gt; decltype(*b)</code> 忠实返回 <code class="c">vector&lt;bool&gt;</code> 的 16 字节代理类型，不是 <code class="c">bool</code>——<code class="c">decltype</code> 的"诚实"在这里变成陷阱，处理办法见 <a href="chapter-02.html#ch-2">Item 6</a>。</p>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
 <ol>
-<li><strong><code class="c">decltype((x))</code> 当 <code class="c">decltype(x)</code> 用</strong>。定义变量时 <code class="c">decltype((x)) y = something;</code> 会推成引用，<code class="c">y</code> 没初始化或绑错对象，还改到了不想改的东西。</li>
-<li><strong>以为 <code class="c">decltype</code> 会求值</strong>。<code class="c">decltype</code> 的操作数是不求值上下文（unevaluated），<code class="c">decltype(getRef())</code> 不会真的调用 <code class="c">getRef</code>——和 <code class="c">sizeof</code> 一样，纯编译期查询。</li>
-<li><strong>用 <code class="c">auto</code> 写转发包装器</strong>。<code class="c">auto f(T&amp;&amp; x) { return g(std::forward&lt;T&gt;(x)); }</code> 会把 <code class="c">g</code> 返回的引用剥成值，调用方拿到拷贝。转发必须用 <code class="c">decltype(auto)</code>。</li>
-<li><strong><code class="c">return (x);</code></strong>。如上，加括号在 <code class="c">decltype(auto)</code> 函数里 = 返回局部引用 = 悬垂。<code class="c">-Wall</code> 下 clang 能警告，但别把安全网当设计。</li>
-<li><strong>把 <code class="c">decltype(cx)</code>（<code class="c">const int&amp;</code>）用于声明变量却不初始化</strong>：<code class="c">decltype(cx) r;</code> 报错——引用必须初始化。<code class="c">decltype</code> 给你什么类型，你就得守什么类型的规矩。</li>
+<li><strong><code class="c">decltype((x))</code> 当 <code class="c">decltype(x)</code> 用</strong>。定义变量时 <code class="c">decltype((x)) y = ...;</code> 会推成引用，绑错对象甚至改到不想改的东西。</li>
+<li><strong>以为 <code class="c">decltype</code> 会求值</strong>。<code class="c">decltype</code> 的操作数是不求值上下文，<code class="c">decltype(getRef())</code> 不会真的调用——和 <code class="c">sizeof</code> 一样，纯编译期查询。</li>
+<li><strong>用 <code class="c">auto</code> 写转发包装器</strong>。<code class="c">auto f(T&amp;&amp; x) { return g(std::forward&lt;T&gt;(x)); }</code> 把 <code class="c">g</code> 返回的引用剥成值，调用方拿到拷贝。转发必须用 <code class="c">decltype(auto)</code>。</li>
+<li><strong><code class="c">return (x);</code></strong>。在 <code class="c">decltype(auto)</code> 函数里 = 返回局部引用 = 悬垂。有 <code class="c">-Wreturn-stack-address</code> 兜底，但别把安全网当设计。</li>
+<li><strong>在求值上下文调用 <code class="c">std::declval</code></strong>。它只有声明没有定义，libc++ 直接 <code class="c">static_assert</code> 拦下（<code class="c">can only be used in an unevaluated context</code>）。</li>
+<li><strong>C++11 项目里写 <code class="c">auto f() {...}</code> 期待保引用</strong>。既过不了编译（<code class="c">deduced return types are a C++14 extension</code>），语义上也会剥引用；C++11 只能写 <code class="c">-&gt; decltype(expr)</code>。另外 <code class="c">decltype(cx) r;</code> 不初始化会报错——<code class="c">decltype</code> 给你什么类型，你就得守什么类型的规矩。</li>
 </ol>
-<hr />
-<h2>新手要点（和 C 的区别）</h2>
-<ul>
-<li><strong>C 没有 decltype</strong>。C11 的 <code class="c">_Generic</code> 能按类型分派，但它是"选择器"不是"类型查询"，能力远弱。<code class="c">decltype</code> 是 C++ 独有的编译期类型反射的雏形。</li>
-<li><strong>"加括号变引用"对 C 程序员毫无直觉可言</strong>。C 里括号不改变任何类型语义。记口诀：名字给声明类型，表达式按值类别给。</li>
-<li><strong>什么时候用 decltype</strong>：写模板转发、尾置返回类型（<code class="c">auto f() -&gt; decltype(a + b)</code>）、需要精确查询类型时。日常业务代码 <code class="c">auto</code> 就够，<code class="c">decltype</code> 是给泛型基建用的。</li>
-</ul>
+<blockquote>
+<p>和 C 的差别：C 没有 <code class="c">decltype</code>（C11 的 <code class="c">_Generic</code> 是选择器不是类型查询）；C 里括号不改变类型语义，所以"加括号变引用"对 C 程序员毫无直觉——记两条分支，别记特例。</p>
+</blockquote>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>泛型回调转发</strong>：策略引擎的 <code class="c">template&lt;class F&gt; decltype(auto) on_tick(F&amp;&amp; f)</code> 保证回调的返回类型原样传递。如果 <code class="c">auto</code> 剥掉引用，返回订单对象引用的回调会被静默拷一份——热路径上多一次拷贝，语义上还可能让调用方改的是副本。</li>
+<li><strong>泛型回调转发</strong>：策略引擎的 <code class="c">template&lt;class F&gt; decltype(auto) on_tick(F&amp;&amp; f)</code> 保证回调返回类型原样传递（实测 <code class="c">firstOfCxx14(...) = 99;</code> 能写穿）。<code class="c">auto</code> 剥掉引用会让返回订单引用的回调静默拷一份——热路径多一次拷贝，语义上调用方还可能改的是副本。</li>
 <li><strong><code class="c">decltype(auto)</code> + <code class="c">forward</code> 是完美转发闭环的两个半环</strong>：<code class="c">T&amp;&amp;</code> + <code class="c">std::forward</code> 保参数的左右值性，<code class="c">decltype(auto)</code> 保返回值的左右值性。缺任何一个，"完美"都有洞。</li>
-<li><strong>悬垂检测靠编译器</strong>：<code class="c">return (x);</code> 这种坑在代码评审里极难看（就多一对括号），但 <code class="c">-Wreturn-stack-address</code> 能稳定抓到——热路径代码开满 <code class="c">-Wall -Wextra</code> 不是风格洁癖，是在抓 UB。</li>
+<li><strong>协议字段契约钉死在编译期</strong>：<code class="c">static_assert(is_same_v&lt;decltype(std::declval&lt;const Tick&amp;&gt;().timestamp()), int64_t&gt;)</code>，不构造对象就锁定字段类型；字段从 <code class="c">int64_t</code> 改成 <code class="c">uint32_t</code> 时所有依赖点立刻编译失败。</li>
+<li><strong>悬垂检测靠编译器</strong>：<code class="c">return (x);</code> 就多一对括号，评审极难看，但 <code class="c">-Wreturn-stack-address</code> 能稳定抓到——热路径开满 <code class="c">-Wall -Wextra</code> 不是风格洁癖，是在抓 UB。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">int x = 42;</code> <code class="c">decltype(x)</code> 和 <code class="c">decltype((x))</code> 分别是什么？机制上为什么不同？</li>
-<li><code class="c">const int&amp; cx = x;</code> <code class="c">decltype(cx)</code> 和 <code class="c">decltype((cx))</code> 各是什么？结果相同是否意味着机制相同？</li>
-<li><code class="c">auto</code> 返回类型推导和 <code class="c">decltype(auto)</code> 在 <code class="c">return getRef();</code>（<code class="c">getRef</code> 返回 <code class="c">int&amp;</code>）时各得到什么？对调用方有什么实际差别？</li>
-<li><code class="c">decltype(auto) f() { int x = 0; return (x); }</code> 有什么问题？编译器能不能抓到？</li>
-<li>为什么标准库的转发设施用 <code class="c">decltype(auto)</code> 而不是 <code class="c">auto</code> 做返回类型？</li>
-<li><code class="c">decltype(getRef())</code> 会真的调用 <code class="c">getRef</code> 吗？</li>
-</ol>
+<p><strong>1. <code class="c">int x = 42; const int&amp; cx = x;</code> 时 <code class="c">decltype(x)</code>、<code class="c">decltype((x))</code>、<code class="c">decltype(cx)</code>、<code class="c">decltype((cx))</code> 各是什么？机制上为什么不同？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p><code class="c">decltype(x)</code> 是 <code class="c">int</code>，<code class="c">decltype((x))</code> 是 <code class="c">int&amp;</code>。机制：<code class="c">x</code> 是未加括号的变量名，<code class="c">decltype</code> 走分支一直接返回声明类型；<code class="c">(x)</code> 是表达式，走分支二按值类别处理——<code class="c">(x)</code> 是左值表达式，所以给 <code class="c">int&amp;</code>。一对括号把语义从"查名字的声明"切换成了"查表达式的类型与值类别"。</p>
-</li>
-<li>
-<p>都是 <code class="c">const int&amp;</code>，结果相同但机制不同：<code class="c">decltype(cx)</code> 是分支一，返回 <code class="c">cx</code> 的声明类型 <code class="c">const int&amp;</code>；<code class="c">decltype((cx))</code> 是分支二，<code class="c">(cx)</code> 是 <code class="c">const int</code> 类型的左值表达式，按"左值 → T&amp;"给出 <code class="c">const int&amp;</code>。别拿巧合当规则——换个右值表达式两者立刻分道扬镳。</p>
-</li>
-<li>
-<p><code class="c">auto</code> 版返回 <code class="c">int</code>（模板推导规则剥掉引用，得到一份拷贝）；<code class="c">decltype(auto)</code> 版返回 <code class="c">int&amp;</code>（引用原样保留）。实际差别：拷贝版 <code class="c">wrapper() = 100;</code> 直接编译失败（<code class="c">error: expression is not assignable</code>，右值不可赋值），且即使只读也每次多一次拷贝；引用版 <code class="c">wrapper() = 100;</code> 能写穿到原对象。对返回容器元素/成员引用的转发函数，这是语义级差异。</p>
-</li>
-<li>
-<p><code class="c">(x)</code> 是左值表达式，<code class="c">decltype(auto)</code> 把返回类型推成 <code class="c">int&amp;</code>——返回了局部变量 <code class="c">x</code> 的引用，<code class="c">f</code> 返回后 <code class="c">x</code> 销毁，调用方拿到悬垂引用，UB。能抓到：clang <code class="c">-Wall</code> 报 <code class="c">-Wreturn-stack-address</code> 警告。但警告不是保证，写 <code class="c">decltype(auto)</code> 函数要主动排雷：<code class="c">return</code> 的变量名永远不加括号。</p>
-</li>
-<li>
-<p>因为转发的定义是"类型和值类别原样传递"。<code class="c">auto</code> 的推导规则（来自模板推导）主动剥掉引用和顶层 const——被转发函数返回 <code class="c">int&amp;</code>，<code class="c">auto</code> 包装后变成 <code class="c">int</code>，引用丢了、语义变了。<code class="c">decltype(auto)</code> 用 <code class="c">decltype</code> 规则，<code class="c">return std::forward&lt;T&gt;(x);</code> 的表达式类型是 <code class="c">T&amp;</code> 就给 <code class="c">T&amp;</code>、是 <code class="c">T&amp;&amp;</code> 就给 <code class="c">T&amp;&amp;</code>，一个比特都不丢。这是"完美转发"闭环的返回侧。</p>
-</li>
-<li>
-<p>不会。<code class="c">decltype</code> 的操作数是不求值上下文（和 <code class="c">sizeof</code> 同类），编译器只做类型分析，不生成调用代码。所以 <code class="c">decltype</code> 里写多贵的表达式都没有运行开销——但也不能依赖它的"副作用"，根本没有副作用。</p>
-</li>
-</ol>
+<summary>答案</summary>
+<p><code class="c">decltype(x)</code>=<code class="c">int</code>，<code class="c">decltype((x))</code>=<code class="c">int&amp;</code>，<code class="c">decltype(cx)</code>=<code class="c">const int&amp;</code>，<code class="c">decltype((cx))</code>=<code class="c">const int&amp;</code>。机制：<code class="c">x</code>/<code class="c">cx</code> 是未加括号的变量名，走分支一返回<strong>声明类型</strong>；<code class="c">(x)</code>/<code class="c">(cx)</code> 是表达式，走分支二按值类别——左值给 <code class="c">T&amp;</code>。后两者结果相同纯属巧合（声明类型本就是 <code class="c">const int&amp;</code> vs 左值给 <code class="c">const int&amp;</code>），别记特例，记两条分支。实测四个 <code class="c">static_assert</code> 全部通过。</p>
+</details>
+<p><strong>2. <code class="c">auto</code> 返回类型推导和 <code class="c">decltype(auto)</code> 在 <code class="c">return getRef();</code> 时各得到什么？对调用方有什么实际差别？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">auto</code> 版返回 <code class="c">int</code>（剥掉引用，得到一份拷贝）；<code class="c">decltype(auto)</code> 版返回 <code class="c">int&amp;</code>。差别：拷贝版 <code class="c">wrapper() = 100;</code> 编译失败（<code class="c">error: expression is not assignable</code>），只读场景每次多一次拷贝；引用版能写穿到原对象（实测输出 <code class="c">7</code> → <code class="c">100</code>）。</p>
+</details>
+<p><strong>3. 为什么 C++11 里 <code class="c">template&lt;class It&gt; auto firstOf(It b, It e) -&gt; decltype(*b)</code> 必须写成尾置形式？前置写法会怎样？</strong></p>
+<details>
+<summary>答案</summary>
+<p>C++11 的返回类型写在参数列表之前，那时 <code class="c">b</code> 还没进入作用域。前置写法实测报错 <code class="c">error: use of undeclared identifier 'b'</code>。尾置返回类型把返回类型挪到参数之后，<code class="c">b</code> 已声明才写得出来。C++14 起可简化为 <code class="c">decltype(auto) firstOf(It b, It e)</code>（实测在 <code class="c">-std=c++11</code> 下报 <code class="c">deduced return types are a C++14 extension</code>）。</p>
+</details>
+<p><strong>4. <code class="c">decltype(auto) f() { int x = 0; return (x); }</code> 有什么问题？不加 <code class="c">-Wall</code> 能抓到吗？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">(x)</code> 是左值表达式，返回类型被推成 <code class="c">int&amp;</code>——返回局部变量的引用，函数返回后 <code class="c">x</code> 销毁，调用方拿到悬垂引用，UB。能抓到：clang 报 <code class="c">-Wreturn-stack-address</code>，且<strong>默认就开</strong>（本机实测不加 <code class="c">-Wall</code> 同样报）。但警告不是保证，写 <code class="c">decltype(auto)</code> 函数要主动排雷。</p>
+</details>
+<p><strong>5. <code class="c">std::declval</code> 是干什么的？<code class="c">decltype(std::declval&lt;int&gt;())</code> 和 <code class="c">decltype(std::declval&lt;int&amp;&gt;())</code> 各是什么？能当普通函数调用吗？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">declval&lt;T&gt;()</code> 只有声明没有定义、返回 <code class="c">T&amp;&amp;</code>，用途是在 <code class="c">decltype</code>/<code class="c">sizeof</code> 这类不求值上下文里凭空造出一个某类型的值，好对它做运算或调成员函数（如 <code class="c">decltype(std::declval&lt;const Order&amp;&gt;().qty())</code>）。实测 <code class="c">decltype(std::declval&lt;int&gt;())</code> 是 <code class="c">int&amp;&amp;</code>，<code class="c">decltype(std::declval&lt;int&amp;&gt;())</code> 是 <code class="c">int&amp;</code>。不能当普通函数调用——libc++ 内置 <code class="c">static_assert</code> 报 <code class="c">std::declval can only be used in an unevaluated context</code>。</p>
+</details>
+<p><strong>6. 为什么标准库的转发设施用 <code class="c">decltype(auto)</code> 而不是 <code class="c">auto</code> 做返回类型？</strong></p>
+<details>
+<summary>答案</summary>
+<p>因为转发的定义是"类型和值类别原样传递"。<code class="c">auto</code> 的推导规则（来自模板推导）主动剥掉引用和顶层 const——被转发函数返回 <code class="c">int&amp;</code>，<code class="c">auto</code> 包装后变成 <code class="c">int</code>，引用丢了、语义变了。<code class="c">decltype(auto)</code> 用 <code class="c">decltype</code> 规则，<code class="c">return std::forward&lt;T&gt;(x);</code> 是 <code class="c">T&amp;</code> 就给 <code class="c">T&amp;</code>、是 <code class="c">T&amp;&amp;</code> 就给 <code class="c">T&amp;&amp;</code>，一个比特都不丢。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item02-auto-type-deduction.md">Item 2 理解 auto 类型推导</a></li>
 <li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item04-viewing-deduced-types.md">Item 4 查看推导结果</a></li>
+<li>相关：<a href="chapter-02.html#ch-2">Item 6 显式类型初始化习惯</a>（<code class="c">decltype</code> 忠实推出的代理类型怎么处理）</li>
 <li>回到：<a href="#intro">第 1 章 类型推导</a></li>
 </ul>
       </section>
@@ -1127,158 +1218,258 @@ decltype(auto) wrapper(T&amp;&amp; x) {
 <p>这一节给你的不是新规则，而是<strong>验证手段</strong>：怎么让编译器把推导结果吐出来。前三节学的每一条规则，都应该能用本节的方法当场验证——事实上，Item 2/3 里所有"实测"用的就是这些手段。学推导不验证，等于写代码不测试。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p>Meyers 给了三种方法，按精度递增：编译期故意报错、运行时 <code class="c">typeid</code>、运行时 Boost.TypeIndex。每种都附 clang 23.1.0 的真实输出。最后补两个书上没写但实用的：<code class="c">static_assert</code> 断言法和 <code class="c">__PRETTY_FUNCTION__</code> 法。</p>
+<p>Meyers 给了三种方法：编译期故意报错、运行时 <code class="c">typeid</code>、Boost.TypeIndex。每种都附 clang 23.1.0 的真实输出，外加两个书上没写但更实用的补充（<code class="c">static_assert</code> 断言法、<code class="c">__PRETTY_FUNCTION__</code> 打印法），以及一个<strong>不需要 RTTI 也能打印可读类型名</strong>的小工具。最后给出"什么场景用哪种手段"的分工表。</p>
 <hr />
 <h2>方法一：编译期故意报错（最轻量，零依赖）</h2>
 <p>原理：声明一个<strong>只有声明没有定义</strong>的类模板，用它实例化变量——编译器必须生成对象，却发现特化未定义，于是在报错信息里把模板实参（也就是你要查的类型）打印出来：</p>
 <pre class="code" data-label="cpp"><code class="c">template&lt;typename T&gt; struct TypeDisplay;   // 只声明，不定义
 
 int main() {
-    const int&amp; x = 42;
-    auto y = x;                    // auto 会剥掉 const&amp;，推成什么？
-    TypeDisplay&lt;decltype(y)&gt; td;   // 故意触发不完整类型错误
+    const int  ci  = 0;
+    const int&amp; cir = ci;
+    auto a1 = cir;                          // auto 按值 → ?
+    auto&amp;a2 = cir;                          // auto&amp;      → ?
+    decltype(cir) a3 = cir;                 // decltype   → ?
+    TypeDisplay&lt;decltype(a1)&gt; t1;
+    TypeDisplay&lt;decltype(a2)&gt; t2;
+    TypeDisplay&lt;decltype(a3)&gt; t3;
 }
 </code></pre>
-<p>clang 23.1.0 报错原文：</p>
+<p>clang 23.1.0 报错原文（一次编译同时看三个类型）：</p>
 <pre class="code" data-label="code"><code class="c">error: implicit instantiation of undefined template 'TypeDisplay&lt;int&gt;'
-    5 |     TypeDisplay&lt;decltype(y)&gt; td;
+error: implicit instantiation of undefined template 'TypeDisplay&lt;const int &amp;&gt;'
+error: implicit instantiation of undefined template 'TypeDisplay&lt;const int &amp;&gt;'
 </code></pre>
-<p><code class="c">TypeDisplay&lt;int&gt;</code> —— 类型就在报错里：<code class="c">y</code> 是 <code class="c">int</code>，<code class="c">const int&amp;</code> 被剥光了（印证 Item 2 的按值形态）。</p>
-<p><strong>优点</strong>：零依赖、编译期出结果、不受 RTTI 开关影响。
-<strong>缺点</strong>：必须制造一次编译失败；报错格式因编译器而异；一次只能看一个类型。</p>
+<p><code class="c">a1</code> 是 <code class="c">int</code>——<code class="c">const int&amp;</code> 被剥光了（印证 Item 2 的按值形态）；<code class="c">a2</code>/<code class="c">a3</code> 都保住了 <code class="c">const int&amp;</code>。</p>
+<p><strong>优点</strong>：零依赖、编译期出结果、<strong>不受 RTTI 开关影响</strong>（实测 <code class="c">-fno-rtti</code> 下同样报这三条）。
+<strong>缺点</strong>：必须制造一次编译失败；报错格式因编译器而异。</p>
 <hr />
 <h2>方法二：运行时 typeid（能跑，但会骗你）</h2>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
-#include &lt;typeinfo&gt;
-
-int main() {
-    int x = 1;
-    const int&amp; crx = x;
-    const char* s = &quot;hi&quot;;
-    std::cout &lt;&lt; typeid(x).name() &lt;&lt; &quot;\n&quot;;
-    std::cout &lt;&lt; typeid(crx).name() &lt;&lt; &quot;\n&quot;;
-    std::cout &lt;&lt; typeid(s).name() &lt;&lt; &quot;\n&quot;;
-    std::cout &lt;&lt; (typeid(x) == typeid(crx)) &lt;&lt; &quot;\n&quot;;
-}
+<pre class="code" data-label="cpp"><code class="c">int x = 1;
+const int&amp; crx = x;
+const char* s = &quot;hi&quot;;
+std::cout &lt;&lt; typeid(x).name() &lt;&lt; &quot;\n&quot;;    // i
+std::cout &lt;&lt; typeid(crx).name() &lt;&lt; &quot;\n&quot;;  // i  ← const 和 &amp; 全丢了
+std::cout &lt;&lt; typeid(s).name() &lt;&lt; &quot;\n&quot;;    // PKc
+std::cout &lt;&lt; (typeid(x) == typeid(crx));  // 1
 </code></pre>
-<p>clang 23.1.0 实测输出：</p>
-<pre class="code" data-label="code"><code class="c">i        ← int
-i        ← const int&amp; 的 const 和 &amp; 全丢了，还是 i！
-PKc      ← const char*
-1        ← typeid(x) == typeid(crx)：分不出 int 和 const int&amp;
-</code></pre>
-<p>两个坑，一个比一个深：</p>
+<p>clang 23.1.0 实测输出：<code class="c">i</code> / <code class="c">i</code> / <code class="c">PKc</code> / <code class="c">1</code>。两个坑，一个比一个深：</p>
 <ol>
-<li><strong>输出是 mangled name</strong>。<code class="c">i</code> = <code class="c">int</code>，<code class="c">PKc</code> = <code class="c">P</code>ointer to <code class="c">K</code>(const) <code class="c">c</code>(char)。这是 Itanium ABI 的内部编码，不是给人看的。可以用 <code class="c">abi::__cxa_demangle</code> 解码：</li>
-</ol>
-<p><code class="c">cpp
-   #include &lt;cxxabi.h&gt;
-   #include &lt;cstdlib&gt;
-   int st = 0;
-   char* d = abi::__cxa_demangle(typeid(s).name(), nullptr, nullptr, &amp;st);
-   // st == 0 时 d == "char const*"（实测）；用完要 std::free(d)</code></p>
-<p>注意 demangle 是 Itanium ABI（GCC/clang）特有的，MSVC 的 <code class="c">name()</code> 直接给可读名字但格式另一套。</p>
-<ol start="2">
+<li><strong>输出是 mangled name</strong>。<code class="c">i</code> = <code class="c">int</code>，<code class="c">PKc</code> = <code class="c">P</code>ointer to <code class="c">K</code>(const) <code class="c">c</code>(char)。这是 Itanium ABI 的内部编码。可以用 <code class="c">abi::__cxa_demangle(typeid(s).name(), nullptr, nullptr, &amp;st)</code> 解码，实测 <code class="c">st == 0</code> 时得到 <code class="c">"char const*"</code>（用完要 <code class="c">std::free(d)</code>）。注意 demangle 是 Itanium ABI（GCC/clang）特有的，MSVC 的 <code class="c">name()</code> 直接给可读名字但格式另一套。</li>
 <li><strong><code class="c">typeid</code> 按值语义剥掉引用和顶层 const</strong>——和模板按值推导是同一套行为。<code class="c">typeid(x)</code> 和 <code class="c">typeid(crx)</code> 相等（实测输出 <code class="c">1</code>），你根本分不出推出来的是 <code class="c">int</code>、<code class="c">int&amp;</code> 还是 <code class="c">const int&amp;</code>。查类型推导恰恰最常要查的就是引用和 const，而 <code class="c">typeid</code> 恰好把这些丢了。<strong>用它验证推导结果，等于让嫌疑人自己作证。</strong></li>
 </ol>
+<h3>另一个反直觉点：多态类上查的是动态类型</h3>
+<p>对<strong>有虚函数</strong>的类，<code class="c">typeid(*ptr)</code> 查对象的<strong>动态类型</strong>；没有虚函数时只查<strong>静态类型</strong>。clang 23.1.0 实测（demangle 后）：</p>
+<pre class="code" data-label="code"><code class="c">polymorphic     typeid(*p) : Derived   ← 通过基类指针看穿了真实类型
+non-polymorphic typeid(*q) : NBase     ← 只看静态类型，看不穿
+</code></pre>
+<p>这说明 <code class="c">typeid</code> 的设计目标是 RTTI 下探，不是查推导类型——用错场景就会得出两套语义混杂的结论。</p>
 <hr />
 <h2>方法三：Boost.TypeIndex（最精确，但有依赖）</h2>
 <pre class="code" data-label="cpp"><code class="c">#include &lt;boost/type_index.hpp&gt;
-
 template&lt;typename T&gt;
 void f(const T&amp; param) {
-    // type_id_with_cvr 保留 const / volatile / reference
     std::cout &lt;&lt; boost::typeindex::type_id_with_cvr&lt;T&gt;().pretty_name();
 }
 </code></pre>
 <p><code class="c">type_id_with_cvr</code> 是 "with const/volatile/reference" 的缩写——<code class="c">typeid</code> 丢掉的信息它全保留，输出可读，且行为跨编译器一致。</p>
-<p><strong>本机实测说明</strong>：本机（macOS arm64）没装 Boost，这个方法没有实测输出。如果哪天真要用，Homebrew <code class="c">brew install boost</code> 即可；但对查推导类型这件事，下面的替代方案通常够了。</p>
+<p><strong>本机实测说明</strong>：本机（macOS arm64）没装 Boost，实测 <code class="c">fatal error: 'boost/type_index.hpp' file not found</code>（<code class="c">/opt/homebrew/include/boost</code>、<code class="c">/usr/local/include/boost</code> 均不存在），所以这个方法在本机没有输出。真要用 <code class="c">brew install boost</code> 即可；但对查推导类型这件事，下面的零依赖替代方案通常够用。</p>
 <hr />
 <h2>补充方案 A：static_assert 断言法（推荐日常用）</h2>
 <p>不打印，直接<strong>断言你预期的类型</strong>——错了编译就失败，对了零开销零噪音：</p>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;type_traits&gt;
-
-template&lt;typename T&gt;
-void f(T&amp;&amp; param) {
-    static_assert(std::is_same_v&lt;T, int&amp;&gt;, &quot;T should be int&amp; here&quot;);
-}
+<pre class="code" data-label="cpp"><code class="c">template&lt;typename T&gt;
+void f(T&amp;&amp; param) { static_assert(std::is_same_v&lt;T, int&amp;&gt;, &quot;T should be int&amp; here&quot;); }
 </code></pre>
 <p>这是验证推导规则最干净的方式：把"我认为它会推成 X"写成编译期断言，编译器替你判对错。Item 2/3 的全部"实测"就是这么做的。比打印法更进一步：它能进 CI，能留在代码里当文档。</p>
 <h2>补充方案 B：<strong>PRETTY_FUNCTION</strong> 打印法（非标准但全平台可用）</h2>
-<p>GCC/clang/MSVC 都支持的编译器内建变量，打印当前函数的完整修饰签名，模板实例化后会带上实参类型：</p>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
+<p>GCC/clang/MSVC 都支持的编译器内建变量，打印当前函数完整签名，模板实例化后带上实参类型：</p>
+<pre class="code" data-label="cpp"><code class="c">template&lt;typename T&gt; void show(T&amp;&amp; x) { std::cout &lt;&lt; __PRETTY_FUNCTION__ &lt;&lt; &quot;\n&quot;; }
+int x = 27; const int cx = x;
+show(x);    // void show(T &amp;&amp;) [T = int &amp;]
+show(cx);   // void show(T &amp;&amp;) [T = const int &amp;]
+show(27);   // void show(T &amp;&amp;) [T = int]
+</code></pre>
+<p>clang 23.1.0 实测输出如上。万能引用 + <code class="c">__PRETTY_FUNCTION__</code>，三行代码就能看到 <code class="c">T</code> 的精确推导结果——包括引用性和 const，这正是 <code class="c">typeid</code> 做不到的事。</p>
+<h2>补充方案 C：自己写可读类型名打印器（无需 RTTI）</h2>
+<p>把方案 B 的字符串切一刀，就得到一个"打印任意类型可读名字"的工具，对<strong>关掉 RTTI 的构建</strong>尤其有用：</p>
+<pre class="code" data-label="cpp"><code class="c">template&lt;class T&gt;
+std::string type_name() {
+    std::string_view sv = __PRETTY_FUNCTION__;   // &quot;std::string type_name() [T = const int &amp;]&quot;
+    auto b = sv.find(&quot;[T = &quot;) + 5;
+    auto e = sv.rfind(']');
+    return std::string(sv.substr(b, e - b));
+}
+</code></pre>
+<p>clang 23.1.0 实测：<code class="c">type_name&lt;decltype(x)&gt;()</code> → <code class="c">int</code>，<code class="c">type_name&lt;decltype((x))&gt;()</code> → <code class="c">int &amp;</code>，<code class="c">type_name&lt;decltype(crx)&gt;()</code> → <code class="c">const int &amp;</code>，<code class="c">type_name&lt;decltype(v.begin())&gt;()</code> → <code class="c">std::__wrap_iter&lt;int *&gt;</code>。<strong><code class="c">-fno-rtti</code> 下输出完全一致</strong>（把只含 <code class="c">type_name</code> 的程序用 <code class="c">-fno-rtti</code> 编译，实测输出不变）——它是纯编译期字符串操作，和运行时类型信息无关。反过来说：下面完整例子里那几行 <code class="c">typeid</code> 在 <code class="c">-fno-rtti</code> 下会直接编译失败，正好演示了"关 RTTI 就丢了运行期手段"。</p>
+<hr />
+<h2>手段分工：什么时候用哪个</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>推荐手段</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一次性查某个类型是什么</td>
+<td>方法一（TypeDisplay 报错）</td>
+<td>零依赖，立刻出结果</td>
+</tr>
+<tr>
+<td>验证"我推得对不对"、想留进 CI</td>
+<td><code class="c">static_assert(is_same_v&lt;...&gt;)</code></td>
+<td>编译期判定，零运行开销，可长期留存</td>
+</tr>
+<tr>
+<td>想在日志里打印类型名</td>
+<td>方案 C（<code class="c">type_name&lt;T&gt;()</code>）</td>
+<td>可读、无需 RTTI</td>
+</tr>
+<tr>
+<td>生产构建（<code class="c">-fno-rtti</code>）</td>
+<td>方法一 / static_assert / 方案 C</td>
+<td><code class="c">typeid</code> 直接编译失败，不能用</td>
+</tr>
+<tr>
+<td>需要跨编译器一致的可读输出</td>
+<td>Boost.TypeIndex</td>
+<td>唯一保证，但要引入依赖</td>
+</tr>
+<tr>
+<td>快速瞄一眼</td>
+<td>IDE 悬停</td>
+<td>快，但不可全信</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>IDE 悬停 ≠ 编译器真相</strong>：编辑器显示的推导结果来自 IDE 自己的前端（clangd 之类），大多数时候准，但和真实编译器推导偶有出入（尤其模板元编程、SFINAE 场景）。有分歧时以编译器为准——用方法一或 <code class="c">static_assert</code> 做终裁。分工原则：<strong>IDE 负责"快速导航"，编译期手段负责"下结论"</strong>。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;cxxabi.h&gt;
+#include &lt;cstdlib&gt;
+#include &lt;iostream&gt;
+#include &lt;string&gt;
+#include &lt;string_view&gt;
+#include &lt;type_traits&gt;
+#include &lt;typeinfo&gt;
+#include &lt;vector&gt;
 
-template&lt;typename T&gt;
-void show(T&amp;&amp; x) { std::cout &lt;&lt; __PRETTY_FUNCTION__ &lt;&lt; &quot;\n&quot;; }
+// 手段 1（编译期）：只声明不定义的类模板 → 报错里带类型
+template&lt;typename T&gt; struct TypeDisplay;
+// 手段 2（运行期）：typeid + demangle
+static std::string demangle(const char* n) {
+    int st = 0;
+    char* d = abi::__cxa_demangle(n, nullptr, nullptr, &amp;st);
+    std::string r = (st == 0 &amp;&amp; d) ? d : n;
+    std::free(d);
+    return r;
+}
+// 手段 3（编译期，无需 RTTI）：反解 __PRETTY_FUNCTION__
+template&lt;class T&gt;
+std::string type_name() {
+    std::string_view sv = __PRETTY_FUNCTION__;
+    auto b = sv.find(&quot;[T = &quot;) + 5;
+    auto e = sv.rfind(']');
+    return std::string(sv.substr(b, e - b));
+}
 
 int main() {
     int x = 27;
-    const int cx = x;
-    show(x);    // void show(T &amp;&amp;) [T = int &amp;]
-    show(cx);   // void show(T &amp;&amp;) [T = const int &amp;]
-    show(27);   // void show(T &amp;&amp;) [T = int]
+    const int  cx  = x;
+    const int&amp; crx = x;
+    std::cout &lt;&lt; &quot;-- typeid（丢 cv/ref）--\n&quot;;
+    std::cout &lt;&lt; &quot;typeid(x)   : &quot; &lt;&lt; demangle(typeid(x).name()) &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;typeid(crx) : &quot; &lt;&lt; demangle(typeid(crx).name()) &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;equal? &quot; &lt;&lt; (typeid(x) == typeid(crx)) &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;-- type_name&lt;decltype&gt;（保 cv/ref）--\n&quot;;
+    std::cout &lt;&lt; &quot;decltype(x)   : &quot; &lt;&lt; type_name&lt;decltype(x)&gt;() &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;decltype((x)) : &quot; &lt;&lt; type_name&lt;decltype((x))&gt;() &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;decltype(cx)  : &quot; &lt;&lt; type_name&lt;decltype(cx)&gt;() &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;decltype(crx) : &quot; &lt;&lt; type_name&lt;decltype(crx)&gt;() &lt;&lt; &quot;\n&quot;;
+    std::vector&lt;int&gt; v{1, 2, 3};
+    std::cout &lt;&lt; &quot;decltype(v[0])      : &quot; &lt;&lt; type_name&lt;decltype(v[0])&gt;() &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;decltype(v.begin()) : &quot; &lt;&lt; type_name&lt;decltype(v.begin())&gt;() &lt;&lt; &quot;\n&quot;;
+    static_assert(std::is_same_v&lt;decltype(crx), const int&amp;&gt;);   // 手段 4
+    // TypeDisplay&lt;decltype(crx)&gt; td;                           // 手段 1：解开看报错
 }
 </code></pre>
-<p>clang 23.1.0 实测输出如上（Item 2 的"完整可运行例子"用的就是它）。万能引用 + <code class="c">__PRETTY_FUNCTION__</code>，三行代码就能看到 <code class="c">T</code> 的精确推导结果——包括引用性和 const，这正是 <code class="c">typeid</code> 做不到的事。非标准但三巨头都支持，调试用完全够格。</p>
+<p>本机实测 clang 23.1.0（<code class="c">-std=c++17 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">-- typeid（丢 cv/ref）--
+typeid(x)   : int
+typeid(crx) : int
+equal? 1
+-- type_name&lt;decltype&gt;（保 cv/ref）--
+decltype(x)   : int
+decltype((x)) : int &amp;
+decltype(cx)  : const int
+decltype(crx) : const int &amp;
+decltype(v[0])      : int &amp;
+decltype(v.begin()) : std::__wrap_iter&lt;int *&gt;
+</code></pre>
+<p>同一组变量，<code class="c">typeid</code> 把 <code class="c">int</code>/<code class="c">const int&amp;</code> 一律报成 <code class="c">int</code>，而 <code class="c">type_name&lt;decltype(...)&gt;</code> 把引用和 const 原样呈现——<strong>这就是选错工具会得到的两种结论</strong>。解开最后一行注释，报错原文是 <code class="c">error: implicit instantiation of undefined template 'TypeDisplay&lt;const int &amp;&gt;'</code>。</p>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
 <ol>
 <li><strong>拿 <code class="c">typeid</code> 验证推导规则</strong>。如上，<code class="c">typeid</code> 剥引用剥 const，用它"验证" Item 1–3 的规则会得到一堆假阴性——规则没错，是你的尺子把关键维度磨平了。</li>
 <li><strong>以为 mangled name 是 bug</strong>。看到 <code class="c">PKc</code> 别慌，是 ABI 编码，demangle 一下就是 <code class="c">char const*</code>。</li>
 <li><strong>在生产代码里留 <code class="c">typeid</code> 调试输出</strong>。RTTI 有体积和运行时开销，调试完记得拆。</li>
-<li><strong>IDE 悬停 ≠ 编译器真相</strong>。编辑器显示的推导结果来自 IDE 自己的前端（clangd 之类），大多数时候准，但和真实编译器推导偶有出入。有分歧时以编译器为准（方法一或 static_assert）。</li>
+<li><strong>IDE 悬停 ≠ 编译器真相</strong>。编辑器前端（clangd）与真实编译器偶有出入，有分歧用编译期手段终裁。</li>
+<li><strong>以为关掉 RTTI 只是"少点信息"</strong>。clang 下 <code class="c">-fno-rtti</code> 之后 <code class="c">typeid</code> 是<strong>编译错误</strong>（实测 <code class="c">error: use of typeid requires -frtti</code>），<code class="c">dynamic_cast</code> 同样（<code class="c">error: use of dynamic_cast requires -frtti</code>）；但虚函数、虚表、<code class="c">__PRETTY_FUNCTION__</code>、<code class="c">static_assert</code> 全部照常工作（实测虚调用仍输出 <code class="c">2</code>）。所以关 RTTI 之前要先把调试手段换成编译期的。</li>
+<li><strong>把 <code class="c">typeid(*p)</code> 当静态类型看</strong>。多态类上它查的是动态类型（实测输出 <code class="c">Derived</code>），非多态类上才是静态类型（实测输出 <code class="c">NBase</code>）——两套语义混着用极易误判。</li>
 </ol>
-<hr />
-<h2>新手要点（和 C 的区别）</h2>
-<ul>
-<li><strong>C 没有 typeid</strong>。C 的类型系统是纯编译期的，运行时没有任何类型信息可查。RTTI 是 C++ 为运行时类型查询付的额外成本——所以 C++ 给了你一个关掉它的选项。</li>
-<li><strong>新手日常配置</strong>：方法一（故意报错）+ static_assert 就够覆盖所有调试场景，不必装 Boost。IDE 悬停作为快速参考，拿不准时上编译期手段。</li>
-<li><strong><code class="c">typeid().name()</code> 不可信</strong>：剥引用剥 const + mangled name，双重失真。调试类型问题别只靠它。</li>
-</ul>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>调试万能引用推导</strong>：<code class="c">template&lt;class T&gt; void f(T&amp;&amp; x)</code> 里 <code class="c">T</code> 是 <code class="c">int</code> 还是 <code class="c">int&amp;</code> 直接决定 <code class="c">std::forward</code> 的行为——理解移动/转发的第一步就是能随时看到 <code class="c">T</code>。用方法一或 <code class="c">__PRETTY_FUNCTION__</code>。</li>
-<li><strong>生产代码别留 typeid，热路径直接关 RTTI</strong>：clang 下 <code class="c">-fno-rtti</code> 之后 <code class="c">typeid</code> 是<strong>编译错误</strong>（实测：<code class="c">error: use of typeid requires -frtti</code>），不是退化——关了 RTTI 连调试手段都没了。所以热路径的类型调试只能走编译期：<code class="c">static_assert(std::is_same_v&lt;T, U&gt;)</code> 和方法一，或者单独出一个开 RTTI 的调试构建。</li>
+<li><strong>调试万能引用推导</strong>：<code class="c">template&lt;class T&gt; void f(T&amp;&amp; x)</code> 里 <code class="c">T</code> 是 <code class="c">int</code> 还是 <code class="c">int&amp;</code> 直接决定 <code class="c">std::forward</code> 的行为——理解移动/转发的第一步就是能随时看到 <code class="c">T</code>。用方法一或 <code class="c">__PRETTY_FUNCTION__</code> / <code class="c">type_name&lt;T&gt;()</code>。</li>
+<li><strong>生产代码别留 typeid，热路径直接关 RTTI</strong>：clang 下 <code class="c">-fno-rtti</code> 之后 <code class="c">typeid</code> 是编译错误，不是退化——关了 RTTI 连调试手段都没了。所以热路径的类型调试只能走编译期：<code class="c">static_assert(std::is_same_v&lt;T, U&gt;)</code>、方法一，或本文的 <code class="c">type_name&lt;T&gt;()</code>（实测 <code class="c">-fno-rtti</code> 下输出不变）；也可以单独维护一个开 RTTI 的调试构建。</li>
 <li><strong>static_assert 即文档</strong>：<code class="c">static_assert(std::is_same_v&lt;decltype(seq), uint64_t&gt;)</code> 留在订单序号这类关键类型旁边，重构时类型悄悄变了会立刻编译失败——比注释可靠，比运行时断言零开销。</li>
+<li><strong>别把体积结论当常识</strong>：本机对一个只有两个类的示例程序做 <code class="c">-O2</code> 对比，<code class="c">-fno-rtti</code> 版本反而略大（52672 → 53056 字节）——类少时 RTTI 表几乎不占空间，节区对齐噪声盖过了它。关 RTTI 的真正收益是禁掉不可预测的 <code class="c">dynamic_cast</code> 分支，别拿体积当理由。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li>三种查看推导结果的方法分别是什么？各自的核心缺点？</li>
-<li><code class="c">typeid(x).name()</code> 为什么不可靠？它丢了什么信息、输出的又是什么格式？</li>
-<li><code class="c">typeid(x) == typeid(crx)</code>（<code class="c">x</code> 是 <code class="c">int</code>，<code class="c">crx</code> 是 <code class="c">const int&amp;</code>）的结果是 true 还是 false？这说明了什么？</li>
-<li>为什么 HFT 生产代码常用 <code class="c">-fno-rtti</code>？clang 下关掉 RTTI 后 <code class="c">typeid</code> 会怎样？对调试方式有什么影响？</li>
-<li>方法一（TypeDisplay 故意报错）的原理是什么？为什么说它不受 RTTI 开关影响？</li>
-<li>没有 Boost 的情况下，想看 <code class="c">template&lt;class T&gt; void f(T&amp;&amp;)</code> 里 <code class="c">T</code> 的精确类型（含 const 和引用），你有哪两条路？</li>
-</ol>
+<p><strong>1. 三种查看推导结果的方法分别是什么？各自的核心缺点？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p>①<strong>编译期故意报错</strong>：声明只声明不定义的 <code class="c">template&lt;class T&gt; struct TypeDisplay;</code>，用 <code class="c">TypeDisplay&lt;decltype(x)&gt; td;</code> 触发不完整类型错误，报错信息里带真实类型。缺点：必须编译失败一次、输出格式因编译器而异。②<strong>运行时 <code class="c">typeid</code></strong>：<code class="c">typeid(x).name()</code>。缺点：要运行程序；输出是 mangled name（<code class="c">PKc</code> 之类，需 <code class="c">abi::__cxa_demangle</code> 解码）；且按值语义剥掉引用和顶层 const。③<strong>Boost.TypeIndex</strong>（<code class="c">type_id_with_cvr</code>）：保留 const/volatile/reference、跨编译器一致，缺点是要引入 Boost 依赖、仍是运行时手段。</p>
-</li>
-<li>
-<p>双重失真：其一，<code class="c">typeid</code> 的操作数按"按值"处理——引用性被剥掉、顶层 const/volatile 不参与，和模板按值推导是同一套行为，所以 <code class="c">int</code>、<code class="c">int&amp;</code>、<code class="c">const int&amp;</code> 查出来完全一样；其二，<code class="c">name()</code> 返回的是实现相关的 mangled name（Itanium ABI 下 <code class="c">const char*</code> 显示为 <code class="c">PKc</code>），不是可读类型名。要保留 cv 与引用需用 <code class="c">boost::typeindex::type_id_with_cvr</code>，或换编译期手段。</p>
-</li>
-<li>
+<summary>答案</summary>
+<p>①<strong>编译期故意报错</strong>：<code class="c">template&lt;class T&gt; struct TypeDisplay;</code> 只声明不定义，<code class="c">TypeDisplay&lt;decltype(x)&gt; td;</code> 触发不完整类型错误，报错里带真实类型。缺点：必须编译失败一次、输出格式因编译器而异。②<strong>运行时 <code class="c">typeid</code></strong>：<code class="c">typeid(x).name()</code>。缺点：输出是 mangled name（需 <code class="c">abi::__cxa_demangle</code>），且按值语义剥掉引用和顶层 const。③<strong>Boost.TypeIndex</strong>（<code class="c">type_id_with_cvr</code>）：保留 cv/引用、跨编译器一致，缺点是要引入 Boost 依赖（本机未装，实测 <code class="c">file not found</code>）。</p>
+</details>
+<p><strong>2. <code class="c">typeid(x).name()</code> 为什么不可靠？它丢了什么信息、输出的又是什么格式？</strong></p>
+<details>
+<summary>答案</summary>
+<p>双重失真：其一，<code class="c">typeid</code> 的操作数按"按值"处理——引用性被剥掉、顶层 const/volatile 不参与，所以 <code class="c">int</code>、<code class="c">int&amp;</code>、<code class="c">const int&amp;</code> 查出来完全一样（实测 <code class="c">typeid(x) == typeid(crx)</code> 为 <code class="c">1</code>）；其二，<code class="c">name()</code> 返回实现相关的 mangled name（Itanium ABI 下 <code class="c">const char*</code> 显示为 <code class="c">PKc</code>），不是可读类型名。</p>
+</details>
+<p><strong>3. <code class="c">typeid(x) == typeid(crx)</code>（<code class="c">x</code> 是 <code class="c">int</code>，<code class="c">crx</code> 是 <code class="c">const int&amp;</code>）的结果是 true 还是 false？这说明了什么？</strong></p>
+<details>
+<summary>答案</summary>
 <p>true（实测输出 <code class="c">1</code>）。说明 <code class="c">typeid</code> 把 <code class="c">const int&amp;</code> 的 const 和引用全剥了，查到的只是 <code class="c">int</code>——用它验证推导结果时，你最想确认的维度（引用性、const）恰好都被它磨掉了。</p>
-</li>
-<li>
-<p>关 RTTI 省掉 <code class="c">type_info</code> 表的二进制体积和运行时开销（虚表旁的类型信息占 cache 和指令空间），也避免 <code class="c">dynamic_cast</code>/<code class="c">typeid</code> 引入不可预测分支。clang 下 <code class="c">-fno-rtti</code> 后 <code class="c">typeid</code> 是<strong>编译错误</strong>（<code class="c">error: use of typeid requires -frtti</code>）——连编译都过不了。影响：热路径代码不能再用 <code class="c">typeid</code> 打印类型，只能改用编译期手段（<code class="c">static_assert(std::is_same_v&lt;...&gt;)</code>、TypeDisplay 报错法），或维护一个单独打开 RTTI 的调试构建。</p>
-</li>
-<li>
-<p>利用"不完整类型不能定义对象"这条语言规则：<code class="c">TypeDisplay</code> 只有声明没有定义，<code class="c">TypeDisplay&lt;decltype(x)&gt; td;</code> 要求生成对象，编译器发现特化未定义就报错，报错信息必须写出模板实参——类型就这么被套出来了。它是纯编译期机制（连对象都没生成成功），和 RTTI 是运行时设施，两者毫无关系，所以 <code class="c">-fno-rtti</code> 不影响它。</p>
-</li>
-<li>
-<p>①<strong><code class="c">__PRETTY_FUNCTION__</code></strong>：<code class="c">template&lt;typename T&gt; void show(T&amp;&amp; x) { std::cout &lt;&lt; __PRETTY_FUNCTION__ &lt;&lt; "\n"; }</code>，实例化签名里带 <code class="c">T</code> 的完整类型（<code class="c">[T = const int &amp;]</code>），const 和引用都在；非标准但 GCC/clang/MSVC 都支持。②<strong><code class="c">static_assert</code> 断言法</strong>：<code class="c">static_assert(std::is_same_v&lt;T, int&amp;&gt;)</code>——不打印，直接让编译器判你的预期对不对，错了编译失败。还能留在代码里进 CI。</p>
-</li>
-</ol>
+</details>
+<p><strong>4. 为什么 HFT 生产代码常用 <code class="c">-fno-rtti</code>？clang 下关掉 RTTI 后 <code class="c">typeid</code> 会怎样？哪些手段还能用？</strong></p>
+<details>
+<summary>答案</summary>
+<p>关 RTTI 是为了禁掉 <code class="c">dynamic_cast</code>/<code class="c">typeid</code> 引入的不可预测分支，也省掉类型信息表。clang 下 <code class="c">-fno-rtti</code> 后 <code class="c">typeid</code> 是<strong>编译错误</strong>（实测 <code class="c">error: use of typeid requires -frtti</code>），<code class="c">dynamic_cast</code> 同样（<code class="c">error: use of dynamic_cast requires -frtti</code>）。还能用的：虚函数/虚表（实测虚调用仍正常返回 <code class="c">2</code>）、<code class="c">static_assert</code>、TypeDisplay 报错法、<code class="c">__PRETTY_FUNCTION__</code> 与 <code class="c">type_name&lt;T&gt;()</code>（实测输出与开 RTTI 时完全一致）。</p>
+</details>
+<p><strong>5. 方法一（TypeDisplay 故意报错）的原理是什么？为什么说它不受 RTTI 开关影响？</strong></p>
+<details>
+<summary>答案</summary>
+<p>利用"不完整类型不能定义对象"这条语言规则：<code class="c">TypeDisplay</code> 只有声明没有定义，<code class="c">TypeDisplay&lt;decltype(x)&gt; td;</code> 要求生成对象，编译器发现特化未定义就报错，报错信息必须写出模板实参——类型就这么被套出来了。它是纯编译期机制（连对象都没生成成功），和 RTTI 这个运行时设施毫无关系，所以 <code class="c">-fno-rtti</code> 下实测同样报三条 <code class="c">implicit instantiation of undefined template</code>。</p>
+</details>
+<p><strong>6. 没有 Boost 的情况下，想看 <code class="c">template&lt;class T&gt; void f(T&amp;&amp;)</code> 里 <code class="c">T</code> 的精确类型（含 const 和引用），你有哪三条路？</strong></p>
+<details>
+<summary>答案</summary>
+<p>①<strong><code class="c">__PRETTY_FUNCTION__</code></strong>：实例化签名里带 <code class="c">T</code> 的完整类型（<code class="c">[T = const int &amp;]</code>），const 和引用都在，非标准但 GCC/clang/MSVC 都支持。②<strong><code class="c">static_assert(std::is_same_v&lt;T, int&amp;&gt;)</code></strong>：不打印，直接让编译器判你的预期对不对，还能留在代码里进 CI。③<strong><code class="c">type_name&lt;T&gt;()</code> 小工具</strong>：切一刀 <code class="c">__PRETTY_FUNCTION__</code> 的字符串，得到可读类型名（实测 <code class="c">const int &amp;</code>），且 <code class="c">-fno-rtti</code> 下照样能用。</p>
+</details>
+<p><strong>7. <code class="c">typeid(*p)</code> 在多态类和非多态类上分别查到什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>多态类（有虚函数）上查到对象的<strong>动态类型</strong>：<code class="c">Base* p = &amp;derived;</code> 时 <code class="c">typeid(*p)</code> 实测输出 <code class="c">Derived</code>。非多态类上只查<strong>静态类型</strong>：<code class="c">NBase* q = &amp;nDerived;</code> 时 <code class="c">typeid(*q)</code> 实测输出 <code class="c">NBase</code>，看不穿。这也是"typeid 只在多态类上做运行时下探"的含义——用它查推导类型属于用错场景。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item03-decltype.md">Item 3 理解 decltype</a></li>
 <li>下一章：<a href="chapter-02.html#intro">第 2 章 auto</a></li>
+<li>相关：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item01-template-type-deduction.md">Item 1 理解模板类型推导</a>（本节方法用于验证 Item 1–3 的全部规则）</li>
 <li>回到：<a href="#intro">第 1 章 类型推导</a></li>
 </ul>
       </section>

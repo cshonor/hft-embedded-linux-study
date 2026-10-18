@@ -600,7 +600,7 @@ process(s);
       <section class="section" id="s-item24">
         <div class="sec-head"><div class="sec-no">Item 24</div><h2>Item 24：区分万能引用和右值引用</h2></div>
 <blockquote>
-<p>第 5 章 · Item 24 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item23-move-and-forward.md">Item 23 move/forward</a></p>
+<p>第 5 章 右值引用、移动语义与完美转发 · Item 24 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item23-move-and-forward.md">Item 23 move/forward</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item25-move-vs-forward-usage.md">Item 25 move vs forward 使用</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
 <p><code class="c">T&amp;&amp;</code> 这个语法在 C++11 之后有两个完全不同的身份，长得一模一样：</p>
@@ -612,124 +612,303 @@ process(s);
 <hr />
 <h2>这节讲什么</h2>
 <ol>
-<li>万能引用的两条判断标准（缺一不可），附反例；</li>
-<li>左值/右值实参下 <code class="c">T</code> 的推导结果实测；</li>
-<li><code class="c">const T&amp;&amp;</code>、<code class="c">std::vector&lt;T&gt;&amp;&amp;</code> 为什么不是万能引用；</li>
-<li><code class="c">auto&amp;&amp;</code> 与模板 <code class="c">T&amp;&amp;</code> 的等价性。</li>
+<li>两问判断法（缺一不可），配反例与实测报错原文；</li>
+<li><code class="c">__PRETTY_FUNCTION__</code> 推导实测：数组、函数、字符串字面量、const 左值、容器等更多形态；</li>
+<li>常见"假万能引用"：<code class="c">const T&amp;&amp;</code>、<code class="c">std::vector&lt;T&gt;&amp;&amp;</code>、类模板成员里的 <code class="c">T&amp;&amp;</code>；</li>
+<li><code class="c">auto&amp;&amp;</code> 与模板 <code class="c">T&amp;&amp;</code> 的等价性（含 C++20 缩略函数模板）；</li>
+<li>与 <code class="c">std::move</code> / <code class="c">std::forward</code> 的衔接——万能引用不 <code class="c">forward</code> 会怎样；</li>
+<li>全部论断附本机实测（clang 23.1.0，arm64-apple-darwin，libc++，<code class="c">-std=c++17 -Wall</code>）。</li>
 </ol>
 <hr />
-<h2>核心区别：同一张脸，两个身份</h2>
-<pre class="code" data-label="cpp"><code class="c">void f(Widget&amp;&amp; w);               // 右值引用：无推导，只绑右值
-template&lt;class T&gt; void g(T&amp;&amp; x);  // 万能引用：有推导，左右值都绑
+<h2>两问判断法</h2>
+<p>看到 <code class="c">&amp;&amp;</code> 先问两个问题，<strong>两个都答"是"才是万能引用</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>问题</th>
+<th>答"否"的例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>有类型推导吗？</strong>（<code class="c">T</code> 是本函数模板待推导的参数，或 <code class="c">auto</code>）</td>
+<td><code class="c">void f(Widget&amp;&amp;)</code>、<code class="c">template&lt;class T&gt; class C { void f(T&amp;&amp;); }</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>形式恰好是裸 <code class="c">T&amp;&amp;</code> 吗？</strong>（不能有任何修饰或包裹）</td>
+<td><code class="c">const T&amp;&amp;</code>、<code class="c">std::vector&lt;T&gt;&amp;&amp;</code></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="cpp"><code class="c">void f(Widget&amp;&amp; w);               // 右值引用：无推导（问题 1 答否）
+template&lt;class T&gt; void g(T&amp;&amp; x);  // 万能引用：有推导 + 裸 T&amp;&amp;
 auto&amp;&amp; x = expr;                  // 万能引用：auto 也是推导
+template&lt;class T&gt; void h(const T&amp;&amp; x);        // 右值引用：有 const（问题 2 答否）
+template&lt;class T&gt; void k(std::vector&lt;T&gt;&amp;&amp; v); // 右值引用：&amp;&amp; 不在裸 T 上（问题 2 答否）
+template&lt;class T&gt; class C { void m(T&amp;&amp; x); }; // 右值引用：T 在类实例化时已定（问题 1 答否）
 </code></pre>
-<p>判断标准（<strong>两条同时满足</strong>才是万能引用）：</p>
-<ol>
-<li><strong>发生类型推导</strong>：<code class="c">T</code> 是待推导的模板参数，或者是 <code class="c">auto</code>。<code class="c">Widget&amp;&amp;</code> 类型已定，没有推导，直接出局。</li>
-<li><strong>形式恰好是 <code class="c">T&amp;&amp;</code></strong>：不能有任何修饰或包裹。<code class="c">const T&amp;&amp;</code> 出局，<code class="c">std::vector&lt;T&gt;&amp;&amp;</code> 出局（<code class="c">&amp;&amp;</code> 不在裸 <code class="c">T</code> 上）。</li>
-</ol>
-<p>反例验证（clang 23.1.0）：</p>
-<pre class="code" data-label="cpp"><code class="c">struct Widget {};
-void f(Widget&amp;&amp; w);
-Widget w;
-f(w);
-// error: no matching function for call to 'f'
-// 右值引用不绑左值——毫无商量
+<h3>反例实测：全都接不了左值</h3>
+<p>逐个用<strong>左值实参</strong>调用，clang 23.1.0 报错原文：</p>
+<pre class="code" data-label="code"><code class="c">// void f(Widget&amp;&amp; w);  f(w);
+error: no matching function for call to 'f'
+note: candidate function not viable: expects an rvalue for 1st argument
 
-template&lt;typename T&gt; void h(const T&amp;&amp; x);
-int x = 0;
-h(x);
-// error: no matching function for call to 'h'
-// const T&amp;&amp; 是右值引用：只绑 const 右值，非 const 左值不要
+// template&lt;class T&gt; void f(const T&amp;&amp; x);  f(x);   (x 是 int)
+error: no matching function for call to 'f'
+note: candidate function [with T = int] not viable: expects an rvalue for 1st argument
+
+// template&lt;class T&gt; void f(std::vector&lt;T&gt;&amp;&amp; v);  f(v);
+error: no matching function for call to 'f'
+note: candidate function [with T = int] not viable: expects an rvalue for 1st argument
+
+// template&lt;class T&gt; class C { void f(T&amp;&amp; x); };  C&lt;int&gt; c; int x; c.f(x);
+error: rvalue reference to type 'int' cannot bind to lvalue of type 'int'
 </code></pre>
+<p>注意最后一条的报错措辞不同——因为类模板成员函数里 <code class="c">T</code> 早已确定，<code class="c">T&amp;&amp;</code> 就是纯粹的 <code class="c">int&amp;&amp;</code>，clang 直接给"右值引用绑不上左值"的诊断，连重载决议都不用走。<strong>"模板 + <code class="c">&amp;&amp;</code>"从来不是万能引用的充分条件。</strong></p>
+<p>对照组：<code class="c">template&lt;class T&gt; void f(T&amp;&amp; x)</code> 传左值和右值都编译通过。</p>
+<hr />
 <h2>万能引用的推导实测</h2>
-<p><code class="c">__PRETTY_FUNCTION__</code> 观察 <code class="c">T</code> 的真实推导结果（clang 23.1.0）：</p>
-<pre class="code" data-label="cpp"><code class="c">template&lt;typename T&gt;
-void g(T&amp;&amp; x) { std::cout &lt;&lt; __PRETTY_FUNCTION__ &lt;&lt; &quot;\n&quot;; }
-
-int x = 0;
-const int cx = 0;
-g(x);    // void g(T &amp;&amp;) [T = int &amp;]        ← 左值：T 推成引用
-g(cx);   // void g(T &amp;&amp;) [T = const int &amp;]  ← const 左值：const 也进 T
-g(42);   // void g(T &amp;&amp;) [T = int]          ← 右值：T 推成纯类型
+<p>用 <code class="c">__PRETTY_FUNCTION__</code> 观察 <code class="c">T</code> 的真实推导结果（clang 23.1.0）：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt;
+void g(T&amp;&amp; x) {
+    std::cout &lt;&lt; &quot;  &quot; &lt;&lt; __PRETTY_FUNCTION__ &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;     形参是左值引用? &quot; &lt;&lt; std::is_lvalue_reference&lt;decltype(x)&gt;::value
+              &lt;&lt; &quot;   形参是 const? &quot;
+              &lt;&lt; std::is_const&lt;typename std::remove_reference&lt;decltype(x)&gt;::type&gt;::value &lt;&lt; &quot;\n&quot;;
+}
 </code></pre>
+<p><strong>内置类型：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>实参</th>
+<th><code class="c">T</code> 的推导</th>
+<th>形参类型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">g(x)</code>（<code class="c">int</code> 左值）</td>
+<td><code class="c">T = int &amp;</code></td>
+<td><code class="c">int&amp;</code>（左值引用）</td>
+</tr>
+<tr>
+<td><code class="c">g(cx)</code>（<code class="c">const int</code> 左值）</td>
+<td><code class="c">T = const int &amp;</code></td>
+<td><code class="c">const int&amp;</code></td>
+</tr>
+<tr>
+<td><code class="c">g(lref)</code>（<code class="c">int&amp;</code> 变量）</td>
+<td><code class="c">T = int &amp;</code></td>
+<td><code class="c">int&amp;</code></td>
+</tr>
+<tr>
+<td><code class="c">g(42)</code>（纯右值）</td>
+<td><code class="c">T = int</code></td>
+<td><code class="c">int&amp;&amp;</code></td>
+</tr>
+<tr>
+<td><code class="c">g(std::move(x))</code>（将亡值）</td>
+<td><code class="c">T = int</code></td>
+<td><code class="c">int&amp;&amp;</code></td>
+</tr>
+<tr>
+<td><code class="c">g(3.14)</code></td>
+<td><code class="c">T = double</code></td>
+<td><code class="c">double&amp;&amp;</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>数组与函数</strong>（这是最能说明"左值也带类型信息"的一组）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>实参</th>
+<th><code class="c">T</code> 的推导</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">g(arr)</code>（<code class="c">int[5]</code>）</td>
+<td><code class="c">T = int (&amp;)[5]</code> ← 数组类型+长度完整保留，不退化成指针</td>
+</tr>
+<tr>
+<td><code class="c">g(carr)</code>（<code class="c">const int[3]</code>）</td>
+<td><code class="c">T = const int (&amp;)[3]</code></td>
+</tr>
+<tr>
+<td><code class="c">g(freeFunc)</code>（<code class="c">void(int)</code>）</td>
+<td><code class="c">T = void (&amp;)(int)</code> ← 函数左值，推成函数引用</td>
+</tr>
+<tr>
+<td><code class="c">g("literal")</code></td>
+<td><code class="c">T = const char (&amp;)[8]</code> ← 含结尾 <code class="c">\0</code> 的长度 8</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>类类型与容器</strong>：<code class="c">std::string</code> 左值 → <code class="c">T = std::string &amp;</code>；<code class="c">const std::string</code> 左值 → <code class="c">T = const std::string &amp;</code>；<code class="c">std::string("tmp")</code> 与 <code class="c">std::move(s)</code> → <code class="c">T = std::string</code>；<code class="c">std::vector&lt;int&gt;</code> 左值 → <code class="c">T = std::vector&lt;int&gt; &amp;</code>，<code class="c">std::vector&lt;int&gt;{4,5}</code> → <code class="c">T = std::vector&lt;int&gt;</code>。</p>
 <p>规则就两行：</p>
 <ul>
 <li><strong>左值实参 → <code class="c">T</code> 推为 <code class="c">T&amp;</code></strong>，形参类型 <code class="c">T&amp;&amp;</code> = <code class="c">T&amp; &amp;&amp;</code>，引用折叠成 <code class="c">T&amp;</code>（折叠规则见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item28-reference-collapsing.md">Item 28</a>）；</li>
 <li><strong>右值实参 → <code class="c">T</code> 推为 <code class="c">T</code></strong>，形参类型 <code class="c">T&amp;&amp;</code>。</li>
 </ul>
-<p>"T 自己变成引用类型"这条特殊规则只在万能引用推导里存在——这是它和普通模板推导的分叉点，也是"万能"的全部秘密。</p>
+<p>"T 自己变成引用类型"这条特殊规则只在万能引用推导里存在——这是它和普通模板推导的分叉点，也是"万能"的全部秘密。数组/函数那几行额外说明一件事：<strong>万能引用不触发数组到指针、函数到指针的退化</strong>，因为实参是左值，<code class="c">T</code> 直接带上引用。</p>
+<hr />
 <h2>auto&amp;&amp; 与 T&amp;&amp; 等价</h2>
-<p><code class="c">auto&amp;&amp;</code> 走的是和模板 <code class="c">T&amp;&amp;</code> 完全相同的推导（<a href="chapter-01.html#ch-1">Item 2</a> 已实测）：</p>
-<pre class="code" data-label="cpp"><code class="c">auto&amp;&amp; uref1 = x;    // x 是 int 左值 → decltype(uref1) == int&amp;
-auto&amp;&amp; uref2 = 27;   // 右值        → decltype(uref2) == int&amp;&amp;
+<p><code class="c">auto&amp;&amp;</code> 走的是和模板 <code class="c">T&amp;&amp;</code> <strong>完全相同</strong>的推导（<a href="chapter-01.html#ch-1">Item 2</a> 已实测）：</p>
+<pre class="code" data-label="cpp"><code class="c">int i = 0;
+auto&amp;&amp; r1 = i;              // int&amp;
+auto&amp;&amp; r2 = 42;             // int&amp;&amp;
+auto&amp;&amp; r3 = std::move(i);   // int&amp;&amp;
+const auto&amp;&amp; r4 = 42;       // const int&amp;&amp; —— 加了 const 就不是万能引用了
 </code></pre>
-<p>所以读代码时 <code class="c">auto&amp;&amp;</code> 一律按万能引用处理。常见用途：范围 for 里 <code class="c">for (auto&amp;&amp; elem : range)</code>——容器元素是代理（<code class="c">vector&lt;bool&gt;</code>）或引用时也能正确绑定。</p>
-<h2><code class="c">std::vector&lt;T&gt;&amp;&amp;</code> 为什么不是万能引用</h2>
-<pre class="code" data-label="cpp"><code class="c">template&lt;class T&gt;
-void bad(std::vector&lt;T&gt;&amp;&amp; v);   // 右值引用！只接 vector 右值
+<p>实测 <code class="c">decltype(r1)==int&amp;</code> → 1、<code class="c">decltype(r2)==int&amp;&amp;</code> → 1、<code class="c">decltype(r3)==int&amp;&amp;</code> → 1、<code class="c">decltype(r4)==const int&amp;&amp;</code> → 1；另外 <code class="c">decltype((r1))</code> 是 <code class="c">int&amp;</code>——<strong>具名变量永远是左值表达式</strong>，哪怕它的类型是 <code class="c">int&amp;&amp;</code>。这条是理解"为什么万能引用形参必须 <code class="c">forward</code>"的关键。</p>
+<p>所以读代码时 <code class="c">auto&amp;&amp;</code> 一律按万能引用处理。常见用途：范围 for 里 <code class="c">for (auto&amp;&amp; elem : range)</code>——容器元素是代理（<code class="c">vector&lt;bool&gt;</code>）或引用时也能正确绑定。C++20 的缩略函数模板 <code class="c">void h(auto&amp;&amp; x)</code> 同理：实测推导 <code class="c">[x:auto = int &amp;]</code> / <code class="c">[x:auto = const int &amp;]</code> / <code class="c">[x:auto = int]</code>，与模板版逐字对应；clang 在 <code class="c">-std=c++11/14/17</code> 下给 <code class="c">warning: 'auto' parameters are a C++20 extension [-Wc++20-extensions]</code>。</p>
+<hr />
+<h2>与 move / forward 的衔接</h2>
+<p>万能引用是"入口"，正确处理一定配 <code class="c">std::forward</code>。三种写法实测（构造/拷贝/移动带打印）：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;class T&gt; void good(T&amp;&amp; x)   { Traced t(std::forward&lt;T&gt;(x)); }  // 值类别原样传
+template &lt;class T&gt; void bad(T&amp;&amp; x)    { Traced t(x); }                   // 不用 forward
+template &lt;class T&gt; void greedy(T&amp;&amp; x) { Traced t(std::move(x)); }        // 无条件 move
 </code></pre>
-<p><code class="c">T</code> 确实在推导，但 <code class="c">&amp;&amp;</code> 挂在 <code class="c">std::vector&lt;T&gt;</code> 上而不是裸 <code class="c">T</code> 上——形式不是 <code class="c">T&amp;&amp;</code>，第二条不满足。这个函数只接受 <code class="c">vector</code> 的右值，传左值 <code class="c">vector</code> 编译失败。这个坑在泛型容器接口里很常见：以为写了"模板 + &amp;&amp;"就是万能引用，其实收的是纯右值。</p>
+<pre class="code" data-label="code"><code class="c">good(lval)  ← 左值实参
+    COPY ctor
+good(Traced{}) ← 右值实参
+    MOVE ctor
+bad(lval)
+    COPY ctor
+bad(Traced{})       ← 右值也退化成拷贝！
+    COPY ctor
+greedy(lval) ← 左值也被 move，lval.s 被掏空
+    MOVE ctor
+  lval.s 现在为空? yes
+</code></pre>
+<ul>
+<li><code class="c">good</code>：左值走拷贝、右值走移动，<strong>这才是完美转发</strong>（详见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item25-move-vs-forward-usage.md">Item 25</a>）；</li>
+<li><code class="c">bad</code>：形参 <code class="c">x</code> 是具名变量、永远是左值表达式，右值的移动性在函数体内<strong>丢失</strong>——写了万能引用却不用 <code class="c">forward</code>，等于把接口写成"能接一切但一律拷贝"；</li>
+<li><code class="c">greedy</code>：对左值也无条件 <code class="c">std::move</code>，实测把调用方的 <code class="c">lval.s</code> 掏空了——这是最危险的写法，调用方完全没料到自己的左值被搬走。</li>
+</ul>
+<p>记忆：<strong>万能引用形参在函数体内的每一次"往下传"，都该是 <code class="c">std::forward&lt;T&gt;(x)</code>；只有"这是我最后一次用它"才用 <code class="c">std::move(x)</code>，且只在你确定可以搬走时。</strong></p>
+<h3>重载决议：非模板右值引用优先</h3>
+<p>实测（<code class="c">void f(Widget&amp;&amp;)</code> 与 <code class="c">template&lt;class T&gt; void f(T&amp;&amp;)</code> 并存）：<code class="c">f(w)</code>（左值）→ 万能引用版；<code class="c">f(Widget{})</code> 和 <code class="c">f(std::move(w))</code>（右值）→ <strong>非模板右值引用版</strong>；<code class="c">f(s)</code>（<code class="c">std::string</code>）→ 万能引用版。</p>
+<p>规则和其他重载一样：<strong>两者都能精确匹配时，非模板优先</strong>。这也意味着给万能引用再加一个 <code class="c">Widget&amp;&amp;</code> 重载，会把右值流量全部截走——Meyers 在 Item 26 专门讲为什么<strong>不要</strong>这么重载万能引用（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item26-avoid-overloading-universal.md">Item 26</a>）。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
+#include &lt;string&gt;
+#include &lt;utility&gt;
+#include &lt;vector&gt;
+
+struct Widget {};
+void rvRef(Widget&amp;&amp;)               { std::cout &lt;&lt; &quot;  右值引用版：只收 Widget 右值\n&quot;; }
+template&lt;class T&gt; void uniRef(T&amp;&amp;) { std::cout &lt;&lt; &quot;  万能引用版：来者不拒\n&quot;; }
+template&lt;class T&gt; void vecRef(std::vector&lt;T&gt;&amp;&amp;) { std::cout &lt;&lt; &quot;  vector&lt;T&gt;&amp;&amp;：只收 vector 右值\n&quot;; }
+
+struct Payload {
+    Payload() = default;
+    Payload(const Payload&amp;) { std::cout &lt;&lt; &quot;    COPY\n&quot;; }
+    Payload(Payload&amp;&amp;) noexcept { std::cout &lt;&lt; &quot;    MOVE\n&quot;; }
+};
+template &lt;class T&gt; void wrap(T&amp;&amp; x) { Payload p(std::forward&lt;T&gt;(x)); (void)p; }
+
+int main() {
+    std::cout &lt;&lt; std::unitbuf;
+    Widget w;
+    std::cout &lt;&lt; &quot;== 接口接受面 ==\n&quot;;
+    uniRef(w);            uniRef(Widget{});
+    rvRef(Widget{});      // rvRef(w);  ← 解开注释会编译失败
+    std::vector&lt;int&gt; v;
+    vecRef(std::vector&lt;int&gt;{1, 2});   // vecRef(v);  ← 解开注释会编译失败
+
+    std::cout &lt;&lt; &quot;== forward 的价值 ==\n&quot;;
+    Payload p;
+    std::cout &lt;&lt; &quot;  wrap(左值) →&quot;; wrap(p);
+    std::cout &lt;&lt; &quot;  wrap(右值) →&quot;; wrap(Payload{});
+
+    std::cout &lt;&lt; &quot;== auto&amp;&amp; 也是万能引用 ==\n&quot;;
+    int i = 0;
+    auto&amp;&amp; r1 = i;      // int&amp;
+    auto&amp;&amp; r2 = 42;     // int&amp;&amp;
+    std::cout &lt;&lt; &quot;  decltype(r1)==int&amp;? &quot; &lt;&lt; std::is_same&lt;decltype(r1), int&amp;&gt;::value
+              &lt;&lt; &quot;   decltype(r2)==int&amp;&amp;? &quot; &lt;&lt; std::is_same&lt;decltype(r2), int&amp;&amp;&gt;::value &lt;&lt; &quot;\n&quot;;
+}
+</code></pre>
+<p>本机实测 clang 23.1.0（<code class="c">-std=c++17 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">== 接口接受面 ==
+  万能引用版：来者不拒
+  万能引用版：来者不拒
+  右值引用版：只收 Widget 右值
+  vector&lt;T&gt;&amp;&amp;：只收 vector 右值
+== forward 的价值 ==
+  wrap(左值) →    COPY
+  wrap(右值) →    MOVE
+== auto&amp;&amp; 也是万能引用 ==
+  decltype(r1)==int&amp;? 1   decltype(r2)==int&amp;&amp;? 1
+</code></pre>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
 <ol>
 <li><strong>看 <code class="c">&amp;&amp;</code> 就当移动语义</strong>。<code class="c">template&lt;class T&gt; void f(T&amp;&amp;)</code> 不表达"我要移动你"，它表达"我什么都要"——对左值实参它绑左值引用，函数里直接改形参会改到调用方的对象。移动意图只在<strong>右值引用</strong>（<code class="c">Widget&amp;&amp;</code>）里存在。</li>
-<li><strong>万能引用形参不 <code class="c">forward</code> 就用</strong>。形参 <code class="c">x</code> 是变量名，变量名永远是左值表达式——哪怕它绑的是右值。不把 <code class="c">std::forward&lt;T&gt;(x)</code> 写上，右值的移动性在函数体内就丢了（Item 25 详述）。</li>
-<li><strong>给万能引用加 const 优化</strong>。<code class="c">const T&amp;&amp;</code> 不是"更安全的万能引用"，是"只收 const 右值的窄接口"——语义完全变了。</li>
-<li><strong>类模板的成员函数上误认万能引用</strong>。<code class="c">template&lt;class T&gt; class C { void f(T&amp;&amp; x); };</code> —— <code class="c">T</code> 在<strong>类实例化时</strong>已确定，<code class="c">f</code> 的 <code class="c">T&amp;&amp;</code> 无推导发生，是右值引用。成员函数要万能引用得自己再开模板：<code class="c">template&lt;class U&gt; void f(U&amp;&amp;)</code>。</li>
+<li><strong>万能引用形参不 <code class="c">forward</code> 就用</strong>。形参 <code class="c">x</code> 是变量名，变量名永远是左值表达式。实测 <code class="c">bad(Traced{})</code> 打出的是 <code class="c">COPY ctor</code>——右值的移动性丢了。</li>
+<li><strong>给万能引用加 const 优化</strong>。<code class="c">const T&amp;&amp;</code> 不是"更安全的万能引用"，是"只收 const 右值的窄接口"，实测接非 const 左值报 <code class="c">no matching function for call</code>。</li>
+<li><strong>类模板的成员函数上误认万能引用</strong>。<code class="c">template&lt;class T&gt; class C { void f(T&amp;&amp; x); };</code> ——<code class="c">T</code> 在<strong>类实例化时</strong>已确定，<code class="c">f</code> 处无推导，实测报 <code class="c">rvalue reference to type 'int' cannot bind to lvalue of type 'int'</code>。要万能引用得自己再开模板：<code class="c">template&lt;class U&gt; void f(U&amp;&amp;)</code>。</li>
+<li><strong>对万能引用形参无脑 <code class="c">std::move</code></strong>。实测把调用方的左值掏空（<code class="c">lval.s</code> 变空），是静默的数据破坏。</li>
 </ol>
-<hr />
-<h2>新手要点（和 C 的区别）</h2>
-<ul>
-<li><strong>C 没有引用</strong>，只有指针。C 程序员学引用先建立"引用 = 别名，不是对象"的直觉，再谈左右值。</li>
-<li><strong>看到 <code class="c">T&amp;&amp;</code> 先问两个问题</strong>：这里有推导吗？形式是裸 <code class="c">T&amp;&amp;</code> 吗？两个都答"是"才是万能引用，否则是右值引用。这个两问检查应该变成肌肉记忆。</li>
-<li><strong>万能引用 ≠ 万能药</strong>：它只是"能绑一切"的入口，正确用法永远配合 <code class="c">std::forward</code>——否则你写的就是个"来者不拒但乱处理"的函数。</li>
-</ul>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
 <li><strong>泛型回调注册</strong>：<code class="c">template&lt;class F&gt; void setCallback(F&amp;&amp; f)</code> 的 <code class="c">F&amp;&amp;</code> 是万能引用——lambda、函数指针、仿函数来者不拒，配合 <code class="c">std::forward&lt;F&gt;</code> 存进类型擦除容器。muduo 的 <code class="c">setReadCallback</code> 就是这个形态。</li>
 <li><strong>接口语义审查</strong>：评审泛型接口时，看到 <code class="c">T&amp;&amp;</code> 先按两问检查定性——把右值引用当万能引用理解会误判接口的接受面，把万能引用当右值引用理解会漏掉"左值也能进"的副作用面。</li>
 <li><strong><code class="c">for (auto&amp;&amp; e : book)</code></strong>：遍历订单簿时用 <code class="c">auto&amp;&amp;</code> 而不是 <code class="c">auto</code>——前者绑引用零拷贝，后者拷贝每个订单对象。</li>
+<li><strong>行情字段转发</strong>：<code class="c">template&lt;class T&gt; void push(T&amp;&amp; tick)</code> 必须内部 <code class="c">std::forward&lt;T&gt;(tick)</code> 落地，否则右值 tick 会在入队时白白多一次深拷贝——在百万 tick/秒的路径上这笔拷贝就是延迟。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">void f(Widget&amp;&amp;)</code> 和 <code class="c">template&lt;class T&gt; void g(T&amp;&amp;)</code> 的 <code class="c">&amp;&amp;</code> 有何本质不同？</li>
-<li>万能引用的两条判断标准是什么？各举一个"差一点但不是"的反例。</li>
-<li><code class="c">const T&amp;&amp;</code> 是万能引用吗？实测它接非 const 左值会怎样？</li>
-<li>万能引用接左值时 <code class="c">T</code> 推成什么？接右值时呢？（用 <code class="c">__PRETTY_FUNCTION__</code> 实测结果说明）</li>
-<li><code class="c">template&lt;class T&gt; class C { void f(T&amp;&amp;); };</code> 里 <code class="c">f</code> 的形参是万能引用吗？为什么？</li>
-<li><code class="c">auto&amp;&amp;</code> 是什么引用？<code class="c">for (auto&amp;&amp; e : v)</code> 相比 <code class="c">for (auto e : v)</code> 的意义？</li>
-</ol>
+<p><strong>1. <code class="c">void f(Widget&amp;&amp;)</code> 和 <code class="c">template&lt;class T&gt; void g(T&amp;&amp;)</code> 的 <code class="c">&amp;&amp;</code> 有何本质不同？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
+<summary>答案</summary>
 <p><code class="c">void f(Widget&amp;&amp;)</code> 是普通右值引用：<code class="c">Widget</code> 类型确定、无推导，只绑右值（实测接左值报 <code class="c">no matching function for call to 'f'</code>），表达"接管将死对象"。<code class="c">g(T&amp;&amp;)</code> 是万能引用：<code class="c">T</code> 待推导，接左值时 <code class="c">T</code> 推为 <code class="c">T&amp;</code> 经引用折叠形参变 <code class="c">T&amp;</code>，接右值时 <code class="c">T</code> 推为 <code class="c">T</code>、形参为 <code class="c">T&amp;&amp;</code>——同一个函数左右值通吃，配合 <code class="c">std::forward&lt;T&gt;</code> 还原值类别。</p>
-</li>
-<li>
-<p>①发生类型推导（<code class="c">T</code> 是函数模板自己推导的参数，或 <code class="c">auto</code>）；②形式恰好是裸 <code class="c">T&amp;&amp;</code>。反例：满足①不满足②——<code class="c">std::vector&lt;T&gt;&amp;&amp;</code>（<code class="c">&amp;&amp;</code> 不在裸 T 上）；满足②不满足①——<code class="c">template&lt;class T&gt; class C { void f(T&amp;&amp;); }</code>（<code class="c">T</code> 在类实例化时已定，<code class="c">f</code> 处无推导）。<code class="c">const T&amp;&amp;</code> 则连形式都不满足。</p>
-</li>
-<li>
-<p>不是。多了 <code class="c">const</code> 修饰就不是"恰好 <code class="c">T&amp;&amp;</code>"，是右值引用，只能绑 const 右值。实测 <code class="c">h(const T&amp;&amp;)</code> 接非 const 左值报 <code class="c">no matching function for call to 'h'</code>。</p>
-</li>
-<li>
-<p>接左值 <code class="c">T</code> 推为 <code class="c">int&amp;</code>（const 左值则 <code class="c">const int&amp;</code>），接右值 <code class="c">T</code> 推为 <code class="c">int</code>。实测输出：<code class="c">g(x)</code> → <code class="c">[T = int &amp;]</code>，<code class="c">g(cx)</code> → <code class="c">[T = const int &amp;]</code>，<code class="c">g(42)</code> → <code class="c">[T = int]</code>。左值让 <code class="c">T</code> 带引用，形参 <code class="c">T&amp;&amp;</code> 折叠成 <code class="c">T&amp;</code> 所以能绑左值——这是万能引用的全部机制。</p>
-</li>
-<li>
-<p>不是。<code class="c">T</code> 是<strong>类</strong>模板参数，在 <code class="c">C&lt;Widget&gt;</code> 实例化时已确定；成员函数 <code class="c">f</code> 用到 <code class="c">T</code> 时没有推导发生，<code class="c">T&amp;&amp;</code> 是纯右值引用。要万能引用，<code class="c">f</code> 必须自己开模板：<code class="c">template&lt;class U&gt; void f(U&amp;&amp;)</code>，<code class="c">U</code> 在调用处推导。</p>
-</li>
-<li>
-<p><code class="c">auto&amp;&amp;</code> 是万能引用（<code class="c">auto</code> 推导等价于模板推导，Item 2 实测验证）。<code class="c">for (auto&amp;&amp; e : v)</code> 绑容器元素的引用，零拷贝、且能正确处理代理元素（<code class="c">vector&lt;bool&gt;::reference</code>）；<code class="c">for (auto e : v)</code> 逐元素拷贝——遍历订单簿时后者是每 tick 全簿深拷贝的隐形开销。</p>
-</li>
-</ol>
+</details>
+<p><strong>2. 万能引用的两条判断标准是什么？各举一个"差一点但不是"的反例。</strong></p>
+<details>
+<summary>答案</summary>
+<p>①发生类型推导（<code class="c">T</code> 是函数模板自己推导的参数，或 <code class="c">auto</code>）；②形式恰好是裸 <code class="c">T&amp;&amp;</code>。反例：满足①不满足②——<code class="c">std::vector&lt;T&gt;&amp;&amp;</code>（<code class="c">&amp;&amp;</code> 不在裸 T 上，实测接左值报 <code class="c">expects an rvalue</code>）；满足②不满足①——<code class="c">template&lt;class T&gt; class C { void f(T&amp;&amp;); }</code>（<code class="c">T</code> 在类实例化时已定，实测报 <code class="c">rvalue reference to type 'int' cannot bind to lvalue of type 'int'</code>）。<code class="c">const T&amp;&amp;</code> 则连形式都不满足。</p>
+</details>
+<p><strong>3. 万能引用接数组、函数、字符串字面量时 <code class="c">T</code> 推成什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>实测 <code class="c">g(arr)</code> → <code class="c">T = int (&amp;)[5]</code>（数组类型和长度完整保留，<strong>不退化成指针</strong>）；<code class="c">g(carr)</code> → <code class="c">T = const int (&amp;)[3]</code>；<code class="c">g(freeFunc)</code> → <code class="c">T = void (&amp;)(int)</code>（函数左值推成函数引用）；<code class="c">g("literal")</code> → <code class="c">T = const char (&amp;)[8]</code>（长度含结尾 <code class="c">\0</code>）。因为这些都是左值，触发"左值 → <code class="c">T</code> 带引用"的规则。</p>
+</details>
+<p><strong>4. <code class="c">auto&amp;&amp;</code> 是什么引用？<code class="c">const auto&amp;&amp;</code> 呢？<code class="c">for (auto&amp;&amp; e : v)</code> 相比 <code class="c">for (auto e : v)</code> 的意义？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">auto&amp;&amp;</code> 是万能引用（<code class="c">auto</code> 推导等价于模板推导）。实测 <code class="c">decltype(r1)==int&amp;</code>、<code class="c">decltype(r2)==int&amp;&amp;</code>、<code class="c">decltype(r3)==int&amp;&amp;</code>（绑 <code class="c">std::move(i)</code>）。<code class="c">const auto&amp;&amp;</code> 加了 const，不满足"恰好 <code class="c">T&amp;&amp;</code>"，实测 <code class="c">decltype(r4)==const int&amp;&amp;</code>，是纯右值引用。<code class="c">for (auto&amp;&amp; e : v)</code> 绑元素引用，零拷贝且能正确处理代理元素（<code class="c">vector&lt;bool&gt;::reference</code>）；<code class="c">for (auto e : v)</code> 逐元素拷贝——遍历订单簿时后者是每 tick 全簿深拷贝。</p>
+</details>
+<p><strong>5. 类模板的成员函数 <code class="c">template&lt;class T&gt; class C { void f(T&amp;&amp;); };</code> 里 <code class="c">f</code> 的形参是万能引用吗？</strong></p>
+<details>
+<summary>答案</summary>
+<p>不是。<code class="c">T</code> 是<strong>类</strong>模板参数，在 <code class="c">C&lt;Widget&gt;</code> 实例化时已确定；成员函数 <code class="c">f</code> 用到 <code class="c">T</code> 时没有推导发生，<code class="c">T&amp;&amp;</code> 是纯右值引用。实测 <code class="c">C&lt;int&gt; c; int x; c.f(x);</code> 报 <code class="c">error: rvalue reference to type 'int' cannot bind to lvalue of type 'int'</code>。要万能引用，<code class="c">f</code> 必须自己开模板：<code class="c">template&lt;class U&gt; void f(U&amp;&amp;)</code>，<code class="c">U</code> 在调用处推导。</p>
+</details>
+<p><strong>6. 万能引用形参不 <code class="c">std::forward</code> 直接用会怎样？无脑 <code class="c">std::move</code> 又会怎样？</strong></p>
+<details>
+<summary>答案</summary>
+<p>不 <code class="c">forward</code>：形参 <code class="c">x</code> 是具名变量，永远是左值表达式，右值实参的移动性丢失——实测 <code class="c">bad(Traced{})</code> 打出 <code class="c">COPY ctor</code> 而不是 <code class="c">MOVE ctor</code>。无脑 <code class="c">std::move</code>：左值也被搬走，实测 <code class="c">greedy(lval)</code> 之后调用方的 <code class="c">lval.s</code> 变成空字符串，是静默的数据破坏。正解是 <code class="c">std::forward&lt;T&gt;(x)</code>，实测左值走 COPY、右值走 MOVE。</p>
+</details>
+<p><strong>7. <code class="c">void f(Widget&amp;&amp;)</code> 和 <code class="c">template&lt;class T&gt; void f(T&amp;&amp;)</code> 同时存在，传右值调哪个？为什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>调非模板的 <code class="c">f(Widget&amp;&amp;)</code>。实测 <code class="c">f(Widget{})</code> 和 <code class="c">f(std::move(w))</code> 都走"右值引用版"，只有左值 <code class="c">f(w)</code> 和完全无关的类型 <code class="c">f(s)</code>（<code class="c">std::string</code>）才走万能引用版。规则：两者都能精确匹配时<strong>非模板优先</strong>。这也意味着给万能引用额外加一个 <code class="c">Widget&amp;&amp;</code> 重载会截走全部右值流量——所以 Meyers 建议不要重载万能引用（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item26-avoid-overloading-universal.md">Item 26</a>）。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item23-move-and-forward.md">Item 23 move/forward</a></li>
 <li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item25-move-vs-forward-usage.md">Item 25 move vs forward 使用</a></li>
-<li>回到：<a href="#intro">第 5 章</a></li>
+<li>相关：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item28-reference-collapsing.md">Item 28 引用折叠</a>（<code class="c">T&amp; &amp;&amp;</code> 为什么折叠成 <code class="c">T&amp;</code>）、<a href="chapter-01.html#ch-1">Item 2 auto 类型推导</a></li>
+<li>回到：<a href="#intro">第 5 章 右值引用、移动语义与完美转发</a></li>
 </ul>
       </section>
       <section class="section" id="s-item25">
@@ -1110,11 +1289,11 @@ int main() {
       <section class="section" id="s-item27">
         <div class="sec-head"><div class="sec-no">Item 27</div><h2>Item 27：万能引用重载的替代方案</h2></div>
 <blockquote>
-<p>第 5 章 · Item 27 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item26-avoid-overloading-universal.md">Item 26 避免万能引用重载</a></p>
+<p>第 5 章 右值引用、移动语义与完美转发 · Item 27 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item26-avoid-overloading-universal.md">Item 26 避免万能引用重载</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item28-reference-collapsing.md">Item 28 引用折叠</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>Item 26 告诉你"别给万能引用开重载"，因为它太贪婪——精确匹配的普通重载都可能抢不过它。但需求不会消失：你还是要写"什么类型都能进、不同类型走不同逻辑"的接口。这一节给三种替代方案，从"绕开重载决议"到"给模板加约束"到最务实的"干脆别用模板"。</p>
-<p>先看问题现场。经典的 Meyers 例子（clang 23.1.0 实测）：</p>
+<p>Item 26 说"别给万能引用开重载"——它太贪婪，连拷贝构造都可能抢不过：拷贝构造形参是 <code class="c">const Person&amp;</code>，绑<strong>非 const 左值</strong>要追加一次 const 转换；模板 <code class="c">T=Person&amp;</code> 使形参折叠成 <code class="c">Person&amp;</code>，是零转换的精确匹配，于是胜出（const 左值两边都精确匹配 → 非模板优先，所以劫持只在这条路上发生）。但需求不会消失。这一节给四条路：绕开重载决议（标签分发）、给模板上镣铐（enable_if / Concepts）、按值接参 + move，以及应当<strong>优先考虑</strong>的"干脆别用模板"。</p>
+<p>问题现场，Meyers 的经典例子（本机实测 clang 23.1.0）：</p>
 <pre class="code" data-label="cpp"><code class="c">class Person {
 public:
     template&lt;typename T&gt;
@@ -1122,152 +1301,299 @@ public:
     Person(const Person&amp; rhs) : name(rhs.name) {}
     std::string name;
 };
-
 Person p2(&quot;x&quot;);
-Person p3(p2);   // p2 是非 const 左值 → 拷贝构造（const Person&amp;）要加 const，
-                 // 万能引用构造 T=Person&amp; 是零转换精确匹配 → 劫持！
-                 // 然后 string 拿 Person 构造 → 报一个莫名其妙的错：
-// error: no matching constructor for initialization of 'std::string'
+Person p3(p2);   // p2 是非 const 左值
 </code></pre>
-<p>调用方写的是"拷贝一个 Person"，报错却在 <code class="c">std::string</code> 的构造上——错误位置离真凶隔着一层模板。这就是 Item 26 说的问题，也是本节三种方案要消灭的东西。</p>
+<p><code class="c">-std=c++17 -Wall</code> 报错原文：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching constructor for initialization of 'std::string' (aka 'basic_string&lt;char&gt;')
+    explicit Person(T&amp;&amp; n) : name(std::forward&lt;T&gt;(n)) {}
+                             ^    ~~~~~~~~~~~~~~~~~~
+note: in instantiation of function template specialization 'Person::Person&lt;Person &amp;&gt;' requested here
+    Person p3(p2);
+           ^
+</code></pre>
+<p>最后一行 <code class="c">Person::Person&lt;Person &amp;&gt;</code> 是<strong>唯一的破案线索</strong>——调用方写的是"拷贝一个 Person"，报错却落在 <code class="c">std::string</code> 的构造上。真实项目里换个容器（<code class="c">vector</code>/<code class="c">optional</code>/自定义 ring），错误会翻好几屏。本节要消灭的就是这类"错误位置离真凶很远"的诊断。</p>
 <hr />
 <h2>这节讲什么</h2>
 <ol>
-<li>标签分发（tag dispatch）：把分发从重载决议手里抢回来；</li>
-<li><code class="c">enable_if</code> 约束（C++11/14 的正解）与 Concepts（C++20 的现代正解）——实测劫持被治好；</li>
-<li>方案三：放弃万能引用，用具名重载——以及什么时候这就够了。</li>
+<li>方案一 <strong>标签分发</strong>：把分发决策从重载决议手里抢回来；</li>
+<li>方案二 <strong>enable_if</strong>（C++11/14/17 正解）与方案三 <strong>Concepts</strong>（C++20 正解）——含派生类漏网这个进阶坑；</li>
+<li>方案四 <strong>按值接参 + move</strong>：什么前提下值得，实测多花一次移动；</li>
+<li>方案零（默认）<strong>具名重载</strong>：为什么它该先被考虑而不是最后兜底。</li>
 </ol>
+<p>全部论断附本机实测（clang 23.1.0，arm64-apple-darwin，libc++，默认 <code class="c">-std=c++17 -Wall</code>，C++20 段落标 <code class="c">-std=c++20</code>）。</p>
 <hr />
 <h2>方案一：标签分发（tag dispatch）</h2>
 <p>思路：万能引用入口保留（来者不拒），但<strong>不在入口层面做重载</strong>——把分发推迟到内部，用一个编译期"标签"参数走普通重载决议：</p>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;type_traits&gt;
-
-void log_impl(const std::string&amp; msg, std::true_type)  { /* 整型专用通道 */ }
-void log_impl(const std::string&amp; msg, std::false_type) { /* 通用通道 */ }
-
+<pre class="code" data-label="cpp"><code class="c">std::multiset&lt;std::string&gt; names;
 template&lt;class T&gt;
-void log(T&amp;&amp; msg) {
-    if constexpr (std::is_integral_v&lt;std::remove_reference_t&lt;T&gt;&gt;)
-        log_impl(std::to_string(msg), std::true_type{});   // 标签类型 true_type
-    else
-        log_impl(std::forward&lt;T&gt;(msg), std::false_type{}); // 标签类型 false_type
+void logAndAddImpl(T&amp;&amp; name, std::false_type) { names.emplace(std::forward&lt;T&gt;(name)); }  // 名字通道
+void logAndAddImpl(int idx, std::true_type)   { names.emplace(nameFromIdx(idx)); }       // 索引通道
+template&lt;class T&gt;
+void logAndAdd(T&amp;&amp; name) {
+    logAndAddImpl(std::forward&lt;T&gt;(name),
+                  std::is_integral&lt;typename std::remove_reference&lt;T&gt;::type&gt;());
 }
 </code></pre>
-<p><code class="c">std::true_type</code> 和 <code class="c">std::false_type</code> 是两个不同的空类——<code class="c">log_impl</code> 的两个重载靠<strong>第二个参数的类型</strong>区分，走的是最普通、最可预测的重载决议，跟"万能引用抢不抢"完全无关。实测：<code class="c">log(42)</code> 走整型通道，<code class="c">log(std::string("tick"))</code> 走通用通道。</p>
-<p>要点：<strong>贪婪只发生在入口一次</strong>，内部用标签把"该走哪条路"变成显式的编译期判断。C++17 的 <code class="c">if constexpr</code> 让分支不写进实例化，更干净；老代码里你会看到不带 <code class="c">if constexpr</code> 的纯标签分发（把条件塞进标签类型本身），机制相同。</p>
-<h2>方案二：enable_if / Concepts 约束模板</h2>
-<p>思路：不给万能引用开重载，而是<strong>给万能引用上镣铐</strong>——它在某些类型面前直接"不存在"：</p>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;type_traits&gt;
-
-class PersonFixed {
+<p><code class="c">std::true_type</code> / <code class="c">std::false_type</code> 是两个不同的空类——两个 Impl 靠<strong>第二个参数的类型</strong>区分，走最普通、最可预测的重载决议，与"万能引用抢不抢"完全无关。实测输出：</p>
+<pre class="code" data-label="code"><code class="c">名字通道
+名字通道
+索引通道 idx=22
+索引通道 idx=7
+names={ AAPL MSFT name-of-22 name-of-7 }
+</code></pre>
+<p><strong>贪婪只发生在入口一次</strong>：进入函数体后分发由标签类型决定，万能引用不再参与竞争。另外两个细节——标签里必须剥引用（下面两组只差 <code class="c">remove_reference</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">template&lt;class T&gt; void pickOk (T&amp;&amp; v) { pickImpl(std::forward&lt;T&gt;(v), std::is_integral&lt;std::remove_reference_t&lt;T&gt;&gt;()); }
+template&lt;class T&gt; void pickBug(T&amp;&amp; v) { pickImpl(std::forward&lt;T&gt;(v), std::is_integral&lt;T&gt;()); }
+int idx = 7;
+pickOk(55);    // [整型通道]
+pickOk(idx);   // [整型通道]   ← 正确
+pickBug(idx);  // [通用通道]   ← T=int&amp;，is_integral&lt;int&amp;&gt; 恒假
+</code></pre>
+<p>实测输出：<code class="c">pickOk(55) [整型通道]</code> / <code class="c">pickOk(idx) [整型通道]</code> / <code class="c">pickBug(idx) [通用通道]</code>。<strong>这和 enable_if 必须配 <code class="c">decay_t</code> 是同一个坑的两个马甲</strong>：万能引用接左值时 <code class="c">T</code> 自带 <code class="c">&amp;</code>，任何"直接看 <code class="c">T</code>"的 trait 判定都会失效。</p>
+<p><strong>它没过时</strong>：<code class="c">if constexpr</code> 能简化内部实现，但分发条件复杂、要 <code class="c">static_assert</code>、要留扩展点时标签分发仍最显式——标准库 <code class="c">std::advance</code> 按迭代器类别分发就是它的活化石。<strong>版本兼容</strong>上，标签分发是 C++11 就有的机制，但 <code class="c">remove_reference_t</code> 这类 <code class="c">_t</code> 别名到 C++14 才进标准——实测 <code class="c">-std=c++11</code> 下报 <code class="c">error: no template named 'remove_reference_t' in namespace 'std'</code>，<code class="c">c++14</code>/<code class="c">c++20</code> 通过。</p>
+<hr />
+<h2>方案二：enable_if 约束模板（C++11/14/17）</h2>
+<p>反过来想：不给万能引用开重载，而是<strong>给它上镣铐</strong>——在某些类型面前它直接"不存在"（SFINAE）：</p>
+<pre class="code" data-label="cpp"><code class="c">class Fixed {
 public:
     template&lt;typename T,
              typename = std::enable_if_t&lt;
-                 !std::is_same_v&lt;std::decay_t&lt;T&gt;, PersonFixed&gt;&gt;&gt;
-    explicit PersonFixed(T&amp;&amp; n) : name(std::forward&lt;T&gt;(n)) {}
-
-    PersonFixed(const PersonFixed&amp; rhs) : name(rhs.name) {}
+                 !std::is_same_v&lt;std::decay_t&lt;T&gt;, Fixed&gt; &amp;&amp;
+                 !std::is_base_of_v&lt;Fixed, std::decay_t&lt;T&gt;&gt; &gt;&gt;
+    explicit Fixed(T&amp;&amp; n) : name(std::forward&lt;T&gt;(n)) {}
+    Fixed(const Fixed&amp; rhs) : name(rhs.name) { /* 拷贝构造 */ }
+    Fixed(Fixed&amp;&amp; rhs) noexcept : name(std::move(rhs.name)) { /* 移动构造 */ }
     std::string name;
 };
 </code></pre>
-<p><code class="c">enable_if_t&lt;条件&gt;</code> 在条件为假时让整个模板<strong>从候选集里消失</strong>（SFINAE）：<code class="c">T</code> 推导为 <code class="c">PersonFixed&amp;</code> 时约束不满足，这个构造函数模板就像没写过——拷贝构造正常接手。实测：<code class="c">PersonFixed f2(f1);</code>（非 const 左值）走的是拷贝构造，劫持消失。</p>
-<p>注意 <code class="c">std::decay_t&lt;T&gt;</code>：必须先把 <code class="c">T&amp;</code>、<code class="c">const T&amp;</code> 剥成 <code class="c">PersonFixed</code> 再比较，否则 <code class="c">T=PersonFixed&amp;</code> 时 <code class="c">is_same</code> 判定失败、约束形同虚设。这是 enable_if 写法最容易漏的细节。</p>
-<p>C++20 用 Concepts 把镣铐写成人话（clang 23.1.0 + <code class="c">-std=c++20</code> 实测通过）：</p>
-<pre class="code" data-label="cpp"><code class="c">class PersonC {
+<p>实测：非 const 左值 <code class="c">Fixed f2(f1)</code> 输出 <code class="c">Fixed 拷贝构造</code>，<code class="c">Fixed f4(std::move(f3))</code> 输出 <code class="c">Fixed 移动构造</code>——劫持消失，特殊成员函数各司其职。构造函数没有返回类型，<code class="c">enable_if</code> 只能挂<strong>模板默认实参</strong>，不能放返回值处。</p>
+<h3>漏掉 decay_t 会怎样（实测对照）</h3>
+<p>约束写成 <code class="c">!std::is_same_v&lt;T, Bad&gt;</code>（不带 <code class="c">decay_t</code>），同样的调用：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching constructor for initialization of 'std::string' (aka 'basic_string&lt;char&gt;')
+note: in instantiation of function template specialization 'Bad::Bad&lt;Bad &amp;, void&gt;' requested here
+    Bad b(a);
+</code></pre>
+<p><strong>报错与未加约束时一字不差</strong>——约束在 <code class="c">T=Bad&amp;</code> 时恒为真，从未生效过。这是"加了 enable_if 怎么还报错"的第一答案：删掉 <code class="c">decay_t</code> 对比报错，没变化就说明它没生效。</p>
+<h3>派生类漏网（进阶坑）</h3>
+<p>即使加了 <code class="c">decay_t</code>，也只挡住"正好是本类"。实测 <code class="c">Base copy_of_d(d)</code>（<code class="c">Derived d</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">Base 模板构造 [T=7Derived]     ← typeid(...).name() 的修饰名，派生类被误吞
+</code></pre>
+<p>补上 <code class="c">!std::is_base_of_v&lt;Base, std::decay_t&lt;T&gt;&gt;</code> 后实测变为：</p>
+<pre class="code" data-label="code"><code class="c">Base 模板构造 [T=i]     ← Derived() 构造 Base 部分时的 Base(0)
+Base 拷贝构造            ← copy_of_d(d) 正确走到拷贝构造
+</code></pre>
+<p>结论：通用约束的标准形式是<strong>同时排除本类和基类</strong>，<code class="c">is_base_of</code> 的基类放第一个实参（写反会漏判）。</p>
+<hr />
+<h2>方案三：C++20 Concepts（新项目默认答案）</h2>
+<p><code class="c">requires</code> 语义与 enable_if 相同，但约束写在明处、<strong>可命名、可 <code class="c">&amp;&amp;</code> 组合、可复用</strong>（clang 23.1.0 + <code class="c">-std=c++20</code> 实测通过）：</p>
+<pre class="code" data-label="cpp"><code class="c">template&lt;class T, class Self&gt;
+concept NotSelf = !std::is_same_v&lt;std::decay_t&lt;T&gt;, Self&gt;;
+template&lt;class T&gt;
+concept StringLike = requires(T&amp;&amp; t) { std::string(std::forward&lt;T&gt;(t)); };
+class PersonC {
 public:
-    template&lt;typename T&gt;
-        requires (!std::is_same_v&lt;std::decay_t&lt;T&gt;, PersonC&gt;)
+    template&lt;typename T&gt; requires NotSelf&lt;T, PersonC&gt; &amp;&amp; StringLike&lt;T&gt;
     explicit PersonC(T&amp;&amp; n) : name(std::forward&lt;T&gt;(n)) {}
-
     PersonC(const PersonC&amp;) = default;
+    PersonC(PersonC&amp;&amp;) noexcept = default;
     std::string name;
 };
 </code></pre>
-<p><code class="c">requires</code> 子句语义和 enable_if 相同，但：约束写在明处、可读、可命名复用（<code class="c">template&lt;std::integral T&gt;</code>），报错从 SFINAE 实例化噪声变成"约束未满足"一句话。新项目直接用 Concepts，enable_if 只留给维护 C++17 及以前的代码。</p>
-<h2>方案三：放弃万能引用重载（务实首选）</h2>
+<p>实测 <code class="c">PersonC b(a);</code>（非 const 左值）走拷贝构造，<code class="c">std::cout &lt;&lt; b.name</code> 输出 <code class="c">alice</code>。</p>
+<p>诊断方面，clang 23.1.0 上两者<strong>都可追究到一个 statement</strong>，Concepts 不是"报错更短"而是"更结构化"：</p>
+<pre class="code" data-label="code"><code class="c">Concepts:  note: candidate template ignored: constraints not satisfied [with T = std::vector&lt;int&gt; &amp;]
+           note: because 'std::vector&lt;int&gt; &amp;' does not satisfy 'StringLike'
+enable_if: note: candidate template ignored: requirement
+                 'std::is_constructible_v&lt;std::string, std::vector&lt;int&gt; &amp;&gt;'
+                 was not satisfied [with T = std::vector&lt;int&gt; &amp;]
+</code></pre>
+<p>两者首行都是 <code class="c">error: no matching constructor for initialization of 'PersonX'</code>。Concepts 真正拉开差距的是 GCC 9 及更早——那才是 enable_if 展开成几十行实例化噪声的年代。</p>
+<hr />
+<h2>方案四：按值接参 + move（有前提）</h2>
+<p>还有一种"绕开重载"的思路：<strong>压根不写万能引用</strong>，参数按值接，函数体里 <code class="c">std::move</code> 到目标位置：</p>
+<pre class="code" data-label="cpp"><code class="c">template&lt;class T&gt; void setFwd(T&amp;&amp; v) { p_ = std::forward&lt;T&gt;(v); }   // A
+void setByValue(Payload v)          { p_ = std::move(v); }          // B
+</code></pre>
+<p>本机实测 clang 23.1.0（<code class="c">-O0</code>，<code class="c">Payload</code> 内含超过 SSO 长度的 <code class="c">std::string</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>实参形态</th>
+<th>A <code class="c">setFwd(T&amp;&amp;)</code></th>
+<th>B <code class="c">setByValue(Payload)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>左值</td>
+<td>copy-assign ×1</td>
+<td>copy-ctor ×1 + move-assign ×1</td>
+</tr>
+<tr>
+<td>prvalue（<code class="c">Payload{}</code>）</td>
+<td>move-assign ×1</td>
+<td>move-assign ×1（prvalue 直接构造进形参）</td>
+</tr>
+<tr>
+<td>具名右值（<code class="c">std::move(lv)</code>）</td>
+<td>move-assign ×1</td>
+<td>move-ctor ×1 + move-assign ×1</td>
+</tr>
+</tbody>
+</table></div>
+<p>对应计数输出：<code class="c">A setFwd(左值) | copy-assign=1</code>、<code class="c">B setByValue(左值) | copy=1 move-assign=1</code>、<code class="c">A setFwd(具名右值) | move-assign=1</code>、<code class="c">B setByValue(具名右值) | move=1 move-assign=1</code>。</p>
+<p><strong>结论</strong>：按值接参在 3 种实参形态里有 2 种<strong>多付一次移动</strong>。它值得用的前提是移动足够廉价、可读性收益明显、不需要区分左右值——典型场景是 Meyers 在 Item 41 说的<strong>构造函数</strong>（必留一份，forward 省不掉那次拷贝）。像上面"赋值到已有成员"的用法纯亏一次移动：<strong>热路径上 <code class="c">Tick(uint64_t ts)</code> 按值可以，tick buffer 按值是要出事的。</strong></p>
+<hr />
+<h2>方案零：具名重载（默认先试这个）</h2>
 <pre class="code" data-label="cpp"><code class="c">void set(const std::string&amp; s);
 void set(int idx);
 void set(OrderId id);
 </code></pre>
-<p>需求如果就是"接这几种已知类型"，直接用具名重载：无模板、无推导、无 SFINAE，行为一眼到底，报错一句话说清。代价是多写几个重载、字符串字面量可能多一次构造——但换来的是<strong>零意外</strong>。</p>
+<p>为什么它该被优先考虑：<strong>① 它做隐式转换，约束模板不做</strong>；<strong>② 它不可能被劫持</strong>（不进模板候选集）；<strong>③ 它能吃 <code class="c">T&amp;&amp;</code> 吃不下</strong>的实参（<code class="c">set({1,2,3})</code>、<code class="c">set(nullptr)</code>，见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item30-forwarding-failures.md">Item 30</a>）；<strong>④ 报错聚焦 overload set</strong>，没有实例化栈。实测：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Meters { Meters(double); };
+void setDistance(const Meters&amp;);                                     // 非模板
+template&lt;class T&gt; requires std::is_arithmetic_v&lt;std::remove_reference_t&lt;T&gt;&gt;
+void setDistanceT(T&amp;&amp;);                                              // 约束模板
+setDistance(10);      // OK：int → Meters（隐式转换）
+setDistance(1.5f);    // OK：float → Meters
+setDistanceT(10);     // OK
+setDistanceT(Meters{2});
+// error: no matching function for call to 'setDistanceT'
+// note: candidate template ignored: constraints not satisfied [with T = Meters]
+// note: because 'std::is_arithmetic_v&lt;std::remove_reference_t&lt;Meters&gt;&gt;' evaluated to false
+</code></pre>
+<p>模板推导是"精确"的：它推实参自己的类型，不会替你转换成目标类型。这是模板方案永远补不回来的能力差。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>四条方案收在一个文件里（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>，零警告）：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
+#include &lt;set&gt;
+#include &lt;string&gt;
+#include &lt;type_traits&gt;
+#include &lt;utility&gt;
+std::multiset&lt;std::string&gt; names;
+// ===== 方案一：标签分发 =====
+void addImpl(std::string&amp;&amp; s, std::false_type) {                    // 名字通道
+    std::cout &lt;&lt; &quot;[标签] 名字: &quot; &lt;&lt; s &lt;&lt; &quot;\n&quot;;  names.emplace(std::move(s));
+}
+void addImpl(int idx, std::true_type) {                             // 索引通道
+    std::cout &lt;&lt; &quot;[标签] 索引: &quot; &lt;&lt; idx &lt;&lt; &quot;\n&quot;; names.emplace(&quot;sym-&quot; + std::to_string(idx));
+}
+template&lt;class T&gt;
+void addTag(T&amp;&amp; v) { addImpl(std::forward&lt;T&gt;(v), std::is_integral&lt;std::remove_reference_t&lt;T&gt;&gt;()); }
+// ===== 方案二：enable_if =====
+class Person {
+public:
+    template&lt;class T, class = std::enable_if_t&lt;
+        !std::is_same_v&lt;std::decay_t&lt;T&gt;, Person&gt; &amp;&amp;
+        !std::is_base_of_v&lt;Person, std::decay_t&lt;T&gt;&gt;&gt;&gt;
+    explicit Person(T&amp;&amp; n) : name(std::forward&lt;T&gt;(n)) { std::cout &lt;&lt; &quot;[约束] 模板构造\n&quot;; }
+    Person(const Person&amp; o) : name(o.name) { std::cout &lt;&lt; &quot;[约束] 拷贝构造\n&quot;; }
+    std::string name;
+};
+// ===== 方案四：按值接参 + move =====
+struct Book { std::string title; void retitle(std::string t) { title = std::move(t); } };
+int main() {
+    addTag(&quot;AAPL&quot;);          // false_type → 名字通道
+    addTag(7);               // true_type  → 索引通道
+    int idx = 9;  addTag(idx);            // 剥了引用，仍走索引通道
+    Person p1(&quot;tom&quot;);  Person p2(p1);     // decay_t 生效 → 拷贝构造（不再被劫持）
+    Book b;  std::string t = &quot;EMC++&quot;;
+    b.retitle(t);            // 进参一次拷贝 + 一次移动赋值
+    std::cout &lt;&lt; b.title &lt;&lt; &quot;\n&quot;;
+}
+</code></pre>
+<p>本机实测 clang 23.1.0 输出：</p>
+<pre class="code" data-label="code"><code class="c">[标签] 名字: AAPL
+[标签] 索引: 7
+[标签] 索引: 9
+[约束] 模板构造
+[约束] 拷贝构造
+EMC++
+</code></pre>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
 <ol>
-<li><strong>enable_if 忘写 <code class="c">decay_t</code></strong>。<code class="c">is_same_v&lt;T, Person&gt;</code> 在 <code class="c">T = Person&amp;</code> 时恒假——左值劫持依旧。比较前一律 <code class="c">std::decay_t&lt;T&gt;</code>。</li>
-<li><strong>以为标签分发过时了</strong>。<code class="c">if constexpr</code> 能覆盖的场景变多，但标签分发在"分发条件复杂、要静态断言、要留扩展点"时仍然是最显式的方案——标准库的迭代器分发（<code class="c">std::advance</code> 按迭代器类别）就是标签分发的活化石。</li>
-<li><strong>给构造函数用 enable_if 时放错位置</strong>。构造函数没有返回类型，<code class="c">enable_if</code> 只能放模板默认实参（<code class="c">typename = std::enable_if_t&lt;...&gt;</code>），不能放返回类型处——这是构造场景特有的写法。</li>
-<li><strong>能用具名重载解决的非要上模板</strong>。三个类型的分发写成万能引用 + 约束，是把简单问题复杂化。方案三不是"新手村"，是默认选项；前两方案是确认重载真的不够用时才上。</li>
+<li><strong>enable_if / 标签判定忘写 <code class="c">decay_t</code> / <code class="c">remove_reference</code></strong>。实测：加了约束后报错原文与没加完全一致（<code class="c">Bad::Bad&lt;Bad &amp;, void&gt;</code>）。</li>
+<li><strong>只排除本类不排除基类</strong>。实测 <code class="c">Base copy_of_d(d)</code> 输出 <code class="c">Base 模板构造 [T=7Derived]</code>，需补 <code class="c">!std::is_base_of_v&lt;Self, std::decay_t&lt;T&gt;&gt;</code>。</li>
+<li><strong>给构造函数用 enable_if 时放错位置</strong>。构造函数没有返回类型，<code class="c">enable_if</code> 只能挂模板默认实参。</li>
+<li><strong>用 <code class="c">-std=c++11</code> 编写着 <code class="c">_t</code> 别名的代码</strong>。实测报 <code class="c">no template named 'remove_reference_t' in namespace 'std'</code>——<code class="c">_t</code> 别名是 C++14 引进的。</li>
+<li><strong>能用具名重载的硬上模板</strong>。除了把问题复杂化，还会<strong>丢掉隐式转换</strong>（实测 <code class="c">setDistance(1.5f)</code> 通过、<code class="c">setDistanceT(Meters{2})</code> 被拦）。</li>
+<li><strong>以为 pass-by-value + move 与 forward 等价</strong>。实测赋值语义下 3 种实参形态有 2 种多付一次移动。</li>
 </ol>
-<hr />
-<h2>新手要点</h2>
-<ul>
-<li><strong>学习顺序</strong>：先用方案三（具名重载）建立"多数需求不需要模板"的直觉 → 再学 Concepts（现代、直白）→ enable_if 读老代码够用即可 → 标签分发理解机制即可。</li>
-<li><strong>SFINAE 一句话</strong>："替换失败不是错误"——模板实参替换出非法类型时，该模板安静出局，不报错。enable_if 就是故意制造替换失败的工具。</li>
-<li><strong>C++20 分水岭</strong>： Concepts 不是 enable_if 的语法糖，是把"约束"提升为语言一级概念；能写 C++20 就别写 enable_if。</li>
-</ul>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>行情解码分发</strong>：<code class="c">template&lt;class T&gt; void onMessage(T&amp;&amp; msg)</code> 按消息类型分发解码器——用标签分发或 Concepts 约束，避免万能引用吞掉"本该精确匹配的专门重载"。行情 handler 的错配是静默的（能编译、跑错逻辑），比编译错更贵。</li>
-<li><strong>接口约束即文档</strong>：<code class="c">requires std::is_same_v&lt;std::decay_t&lt;T&gt;, Tick&gt;</code> 写在签名上，调用方一看就知道接口接受什么——热路径代码的接口显式性比少写两行重要。</li>
+<li><strong>行情分发接入口</strong>：<code class="c">template&lt;class T&gt; void onMessage(T&amp;&amp; msg)</code> 按消息类型分发解码器——用 Concepts（<code class="c">requires Decodable&lt;T&gt;</code>）或标签分发，避免万能引用吞掉本该精确匹配的专门重载。handler 错配是静默的（能编译、跑错分支），比编不过贵得多。</li>
+<li><strong>小值类型的构造函数</strong>：<code class="c">Position(Symbol s, Qty q)</code> 这种"参数可移动且便宜"的类型，按值接参 + move 最省心；但 <code class="c">setXxx()</code> 这类<strong>赋值</strong>接口别用，实测多付一次移动。</li>
+<li><strong>热路径值类型别开万能引用重载</strong>：<code class="c">Tick(uint64_t ts)</code> / <code class="c">Tick(const Tick&amp;)</code> 用具名重载就够——一旦掺进 <code class="c">T&amp;&amp;</code>，每个调用点都要在脑内跑一遍重载决议 + 引用折叠。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">Person p3(p2)</code>（非 const 左值）为什么会被万能引用构造劫持？实测报什么错？</li>
-<li>标签分发如何绕开"万能引用贪婪匹配"？标签本身是什么？</li>
-<li><code class="c">enable_if</code> 约束里为什么必须写 <code class="c">std::decay_t&lt;T&gt;</code> 而不是直接比 <code class="c">T</code>？</li>
-<li>C++20 用什么替代 enable_if？写出 Person 约束构造的 Concepts 版本。</li>
-<li>什么时候方案三（具名重载）优于前两种模板方案？</li>
-</ol>
+<p><strong>1. <code class="c">Person p3(p2)</code>（<code class="c">p2</code> 非 const 左值）为什么被万能引用构造劫持？报错里哪一行是破案线索？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p>拷贝构造形参是 <code class="c">const Person&amp;</code>，非 const 左值 <code class="c">p2</code> 绑它要追加 const（一次限定转换）；万能引用构造 <code class="c">T=Person&amp;</code> 是零转换精确匹配，重载决议胜出——于是模板体里 <code class="c">std::string</code> 拿 <code class="c">Person</code> 构造，报 <code class="c">error: no matching constructor for initialization of 'std::string'</code>（实测原文）。错误落在 <code class="c">string</code> 构造上，离真凶（重载被抢）隔一层模板，极难排查。</p>
-</li>
-<li>
-<p>万能引用只做入口（来者不拒但不做决策），内部把实参 <code class="c">forward</code> 给一个带<strong>编译期标签参数</strong>的 impl 重载集：<code class="c">log_impl(x, std::is_integral&lt;T&gt;{})</code>。标签是空类（<code class="c">std::true_type</code>/<code class="c">std::false_type</code> 或自定义 trait 类型），不同类型触发普通重载决议——分发由标签类型决定，与万能引用的匹配优先级完全无关。</p>
-</li>
-<li>
-<p>万能引用接左值时 <code class="c">T</code> 推成 <code class="c">Person&amp;</code>（接 const 左值推成 <code class="c">const Person&amp;</code>）——直接 <code class="c">is_same_v&lt;T, Person&gt;</code> 恒为假，约束永远挡不住想挡的类型。<code class="c">std::decay_t</code> 把引用、const、数组/函数形态全剥回 <code class="c">Person</code>，比较才有意义。这是 enable_if 约束写法最高频的疏漏。</p>
-</li>
-<li>
-<p>Concepts / <code class="c">requires</code> 子句：</p>
-</li>
-</ol>
-<p><code class="c">cpp
-   template&lt;typename T&gt;
-       requires (!std::is_same_v&lt;std::decay_t&lt;T&gt;, Person&gt;)
-   explicit Person(T&amp;&amp; n) : name(std::forward&lt;T&gt;(n)) {}</code></p>
-<p>语义与 enable_if 相同（不满足就从候选集消失），但约束写在明处、可命名复用、报错是"约束未满足"而非一串实例化噪声。clang 23.1.0 + <code class="c">-std=c++20</code> 实测通过，非 const 左值拷贝正确走拷贝构造。</p>
-<ol start="5">
-<li>当需求是"接这几种已知类型"且类型集合稳定时：具名重载无推导、无 SFINAE、行为直读、报错直白，零意外面。模板方案（标签分发/约束）只在"类型集合开放"（泛型库接口）或"按类型性质分发"（整型/非整型）时值得。先排除简单方案再上模板，是 Meyers 的本意。</li>
-</ol>
+<summary>答案</summary>
+<p>拷贝构造形参 <code class="c">const Person&amp;</code> 绑非 const 左值要追加一次 const 转换；模板 <code class="c">T=Person&amp;</code> 折叠成 <code class="c">Person&amp;</code>，零转换精确匹配 → 胜出。模板体执行 <code class="c">std::string name(std::forward&lt;Person&amp;&gt;(p2))</code> 失败。破案线索是最后一行的 <code class="c">note: in instantiation of function template specialization 'Person::Person&lt;Person &amp;&gt;' requested here</code>——错误文本主体却落在 string 构造上。看转发相关报错，<strong>永远先翻到最后几条 note 找 <code class="c">[T = ...]</code></strong>。</p>
+</details>
+<p><strong>2. 标签分发怎么绕开"万能引用贪婪匹配"？标签本身是什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>万能引用只做入口（来者不拒但不决策），函数体里把实参 <code class="c">forward</code> 给一个<strong>带编译期标签参数</strong>的 impl 重载集。标签是空类（<code class="c">std::true_type</code>/<code class="c">std::false_type</code> 或 trait 产出的类型），两重载靠第二个形参的<strong>类型</strong>区分，走最普通的重载决议。实测：<code class="c">addTag(7)</code> 走索引通道、<code class="c">addTag("AAPL")</code> 走名字通道。</p>
+</details>
+<p><strong>3. 为什么 enable_if 约束必须写 <code class="c">std::decay_t&lt;T&gt;</code>？漏了观察到什么现象？</strong></p>
+<details>
+<summary>答案</summary>
+<p>接左值时 <code class="c">T</code> 推成 <code class="c">Person&amp;</code>，直接 <code class="c">is_same_v&lt;T, Person&gt;</code> 恒假 → 约束从未生效 → SFINAE 没把候选移除。实测现象：加了约束后<strong>报错原文与没加时一字不差</strong>（<code class="c">no matching constructor for initialization of 'std::string'</code> + <code class="c">Bad&lt;Bad &amp;, void&gt;</code>）。</p>
+</details>
+<p><strong>4. 加了 <code class="c">decay_t</code> 之后还有什么类型能漏进约束模板？怎么补？</strong></p>
+<details>
+<summary>答案</summary>
+<p><strong>派生类</strong>。<code class="c">decay_t&lt;Derived&gt;</code> 是 <code class="c">Derived</code> 而非 <code class="c">Base</code>，条件照样成立。实测 <code class="c">Base copy_of_d(d)</code> 输出 <code class="c">Base 模板构造 [T=7Derived]</code>；补 <code class="c">!std::is_base_of_v&lt;Self, std::decay_t&lt;T&gt;&gt;</code> 后输出变成 <code class="c">Base 拷贝构造</code>。</p>
+</details>
+<p><strong>5. C++20 Concepts 相对 enable_if 真正强在哪？实测报错差异多大？</strong></p>
+<details>
+<summary>答案</summary>
+<p>语义等价（不满足即从候选集消失），真正优势是约束<strong>有名字、可 <code class="c">&amp;&amp;</code> 组合、可复用</strong>。实测 clang 23.1.0 上两者都可追究到一个 statement——Concepts 是 <code class="c">constraints not satisfied [with T = ...]</code> + <code class="c">because ... does not satisfy 'StringLike'</code>，enable_if 是 <code class="c">requirement '...' was not satisfied [with T = ...]</code>。<strong>不是"更短"而是更结构化</strong>。</p>
+</details>
+<p><strong>6. 什么情况选"按值接参 + move"而不是万能引用转发？给实测数据。</strong></p>
+<details>
+<summary>答案</summary>
+<p>前提是"移动廉价且必须留一份拷贝"，典型是<strong>构造函数</strong>。实测 <code class="c">-O0</code>：<code class="c">setFwd</code> 左值 1 copy-assign、prvalue 1 move-assign、具名右值 1 move-assign；<code class="c">setByValue</code> 左值 1 copy-ctor + 1 move-assign、prvalue 1 move-assign、具名右值 1 move-ctor + 1 move-assign。<strong>赋值语义下 3 种形态有 2 种多付一次移动</strong>。</p>
+</details>
+<p><strong>7. 为什么 Meyers 把"用具名重载"当默认方案而非权宜之计？</strong></p>
+<details>
+<summary>答案</summary>
+<p>因为约束模板仍然会丢东西：① 推导精确，<strong>不做目标类型的隐式转换</strong>——实测 <code class="c">setDistance(1.5f)</code> 通过，算术约束模板却把 <code class="c">Meters{2}</code> 拦在门外；② 模板吃不下 <code class="c">{}</code>、重载函数名、位字段这些实参（Item 30）；③ 报错聚焦 overload set，不用翻实例化栈。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
-<li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item28-reference-collapsing.md">Item 28 引用折叠</a></li>
-<li>回到：<a href="#intro">第 5 章</a></li>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item26-avoid-overloading-universal.md">Item 26 避免万能引用重载</a>（本节要解决的问题）</li>
+<li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item28-reference-collapsing.md">Item 28 引用折叠</a>（<code class="c">T&amp;&amp;</code> 为什么会变成 <code class="c">T&amp;</code>）</li>
+<li>相关：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item30-forwarding-failures.md">Item 30 完美转发失败的处境</a>（模板方案的剩余边界）</li>
+<li>相关：<a href="chapter-08.html#ch-8">第 8 章 Item 41 按值传递</a>（方案四的完整论述）</li>
+<li>回到：<a href="#intro">第 5 章 右值引用、移动语义与完美转发</a></li>
 </ul>
       </section>
       <section class="section" id="s-item28">
         <div class="sec-head"><div class="sec-no">Item 28</div><h2>Item 28：理解引用折叠</h2></div>
 <blockquote>
-<p>第 5 章 · Item 28 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item27-alternatives.md">Item 27 替代方案</a></p>
+<p>第 5 章 右值引用、移动语义与完美转发 · Item 28 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item27-alternatives.md">Item 27 替代方案</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item29-move-not-exist.md">Item 29 移动不存在/廉价</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>C++ 有条硬性规则：<strong>你不能声明"引用的引用"</strong>——<code class="c">int&amp; &amp; r = x;</code> 直接编译失败。但模板和 <code class="c">auto</code> 推导会<strong>间接</strong>造出引用的引用：万能引用接左值时 <code class="c">T</code> 被推为 <code class="c">Widget&amp;</code>，形参类型 <code class="c">T&amp;&amp;</code> 就变成了 <code class="c">Widget&amp; &amp;&amp;</code>——一个"引用的引用"。语言必须回答"这算什么"，答案就是引用折叠（reference collapsing）。</p>
-<p>这条规则是整个第 5 章的地基：万能引用能绑左值靠它（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item24-universal-vs-rvalue.md">Item 24</a>），<code class="c">std::forward</code> 能还原值类别靠它，<code class="c">decltype(auto)</code> 的行为也靠它。不懂折叠，第 5 章的其他内容全是死记硬背；懂了折叠，它们全是一条规则的推论。</p>
+<p>C++ 有条硬性规则：<strong>你不能声明"引用的引用"</strong>。<code class="c">int&amp; &amp;&amp; r = x;</code> 直接编译失败，实测报错 <code class="c">error: 'r' declared as a reference to a reference</code>。</p>
+<p>但模板和 <code class="c">auto</code> 推导会<strong>间接</strong>造出引用的引用：万能引用接左值时 <code class="c">T</code> 被推为 <code class="c">Widget&amp;</code>，形参类型 <code class="c">T&amp;&amp;</code> 展开就是 <code class="c">Widget&amp; &amp;&amp;</code>。语言必须回答"这算什么"，答案就是<strong>引用折叠</strong>（reference collapsing）。这条规则是第 5 章的地基：万能引用能绑左值靠它（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item24-universal-vs-rvalue.md">Item 24</a>），<code class="c">std::forward</code> 能还原值类别靠它，<code class="c">decltype(auto)</code> 的行为也靠它。不懂折叠，第 5 章其余内容全是死记硬背；懂了，它们全是这一条规则的推论。</p>
 <hr />
 <h2>这节讲什么</h2>
 <ol>
-<li>四条折叠规则（static_assert 全表实测）；</li>
+<li>四条折叠规则（<code class="c">static_assert</code> 全表实测）与 const 为何不参与；</li>
 <li>折叠发生的四个语境——也是"引用的引用"唯一合法的四个地方；</li>
-<li>用折叠解释万能引用为什么能绑左值；</li>
-<li><code class="c">std::forward</code> 如何用折叠还原值类别。</li>
+<li><code class="c">auto&amp;&amp;</code>、<code class="c">typedef/using</code>、<code class="c">decltype</code> 三个语境的实测结果；</li>
+<li><code class="c">std::forward</code> 如何用折叠实现（给出 libc++ 同构实现并实测行为）；</li>
+<li>折叠与类型推导的关系：<code class="c">T&amp;&amp;</code> 为什么会把 <code class="c">T</code> 推成 <code class="c">T&amp;</code>。</li>
 </ol>
+<p>全部论断附本机实测（clang 23.1.0，arm64-apple-darwin，libc++，<code class="c">-std=c++17 -Wall</code>）。</p>
 <hr />
 <h2>四条规则（实测验证）</h2>
 <div class="tbl-wrap"><table>
@@ -1297,11 +1623,8 @@ void set(OrderId id);
 </tbody>
 </table></div>
 <p><strong>口诀：左值引用会传染——组合里出现一个 <code class="c">&amp;</code>，结果就是 <code class="c">&amp;</code>；只有两个 <code class="c">&amp;&amp;</code> 才保持 <code class="c">&amp;&amp;</code>。</strong></p>
-<p>clang 23.1.0 实测（用别名间接造出"引用的引用"，全部断言通过）：</p>
-<pre class="code" data-label="cpp"><code class="c">#include &lt;type_traits&gt;
-using std::is_same_v;
-
-using Lref = int&amp;;
+<p>直接写 <code class="c">int&amp; &amp;&amp;</code> 非法，用 <code class="c">using</code> 别名间接组合就合法（clang 23.1.0 实测，四组断言全部通过）：</p>
+<pre class="code" data-label="cpp"><code class="c">using Lref = int&amp;;
 using Rref = int&amp;&amp;;
 
 using A = Lref&amp;;     // &amp;  + &amp;
@@ -1309,109 +1632,226 @@ using B = Lref&amp;&amp;;    // &amp;  + &amp;&amp;
 using C = Rref&amp;;     // &amp;&amp; + &amp;
 using D = Rref&amp;&amp;;    // &amp;&amp; + &amp;&amp;
 
-static_assert(is_same_v&lt;A, int&amp;&gt;);
-static_assert(is_same_v&lt;B, int&amp;&gt;);
-static_assert(is_same_v&lt;C, int&amp;&gt;);
-static_assert(is_same_v&lt;D, int&amp;&amp;&gt;);   // 唯一活下来的一对
-
-// decltype 语境同理：decltype(rx) 给 int&amp;，再加 &amp; 触发折叠
-int x = 0; int&amp; rx = x;
-static_assert(is_same_v&lt;decltype(rx)&amp;, int&amp;&gt;);
+static_assert(std::is_same_v&lt;A, int&amp;&gt;,  &quot;&amp; + &amp;   -&gt; &amp;&quot;);
+static_assert(std::is_same_v&lt;B, int&amp;&gt;,  &quot;&amp; + &amp;&amp;  -&gt; &amp;&quot;);
+static_assert(std::is_same_v&lt;C, int&amp;&gt;,  &quot;&amp;&amp; + &amp;  -&gt; &amp;&quot;);
+static_assert(std::is_same_v&lt;D, int&amp;&amp;&gt;, &quot;&amp;&amp; + &amp;&amp; -&gt; &amp;&amp;&quot;);
 </code></pre>
-<p>注意写法上的取巧：<code class="c">int&amp; &amp;&amp;</code> 直接写是非法的，但通过 <code class="c">using</code> 别名间接组合（<code class="c">Lref&amp;&amp;</code>）就合法——折叠规则就是为这种"间接产生"准备的。</p>
+<p>对照：直接声明的报错原文（<code class="c">-std=c++17 -Wall</code>）。</p>
+<pre class="code" data-label="code"><code class="c">error: 'r' declared as a reference to a reference
+    int main() { int x = 0; int&amp; &amp;&amp; r = x; (void)r; }
+                                 ^
+</code></pre>
+<p><code class="c">const</code> 不参与折叠——折叠只解决引用性，cv 限定各自独立保留。实测 <code class="c">using CLref = const int&amp;; using E = CLref&amp;&amp;;</code> 得 <code class="c">const int&amp;</code>（const 原样留下，引用性被压成 <code class="c">&amp;</code>）。同理 <strong><code class="c">&amp;&amp; + &amp;</code> 的顺序不影响结果</strong>：口诀是"有 <code class="c">&amp;</code> 则 <code class="c">&amp;</code>"。</p>
 <hr />
 <h2>折叠发生的四个语境</h2>
-<p>C++ 里"引用的引用"只能间接出现在这四个地方，折叠也只在这四个地方发生：</p>
-<ol>
-<li><strong>模板类型推导</strong>：万能引用 <code class="c">T&amp;&amp;</code> 接左值时 <code class="c">T</code> 推为 <code class="c">T&amp;</code>，<code class="c">T&amp; &amp;&amp;</code> → <code class="c">T&amp;</code>；</li>
-<li><strong><code class="c">auto</code> 推导</strong>：<code class="c">auto&amp;&amp;</code> 同理（<code class="c">auto</code> 推导就是模板推导，Item 2）；</li>
-<li><strong><code class="c">typedef</code> / <code class="c">using</code> 别名</strong>：<code class="c">using A = Lref&amp;&amp;;</code>（上面的实测就是这么做的）；</li>
-<li><strong><code class="c">decltype</code></strong>：<code class="c">decltype(rx)&amp;</code> 这种"decltype 产出引用类型再叠引用"的组合。</li>
-</ol>
+<p>C++ 里"引用的引用"只能<strong>间接</strong>出现在这四个地方，折叠也只在这四个地方发生：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>语境</th>
+<th>例子</th>
+<th>折叠前 → 后</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>模板类型推导</td>
+<td><code class="c">template&lt;class T&gt; void f(T&amp;&amp;)</code>，左值实参使 <code class="c">T=T&amp;</code></td>
+<td><code class="c">T&amp; &amp;&amp;</code> → <code class="c">T&amp;</code></td>
+</tr>
+<tr>
+<td><code class="c">auto</code> 推导</td>
+<td><code class="c">auto&amp;&amp; r = 左值;</code></td>
+<td><code class="c">auto=T&amp;</code> → <code class="c">T&amp; &amp;&amp;</code> → <code class="c">T&amp;</code></td>
+</tr>
+<tr>
+<td><code class="c">typedef</code> / <code class="c">using</code> 别名</td>
+<td><code class="c">using A = Lref&amp;&amp;;</code></td>
+<td><code class="c">int&amp; &amp;&amp;</code> → <code class="c">int&amp;</code></td>
+</tr>
+<tr>
+<td><code class="c">decltype</code></td>
+<td><code class="c">decltype(rx)&amp;&amp;</code>（<code class="c">decltype(rx)</code> 是 <code class="c">int&amp;</code>）</td>
+<td><code class="c">int&amp; &amp;&amp;</code> → <code class="c">int&amp;</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>其他任何地方出现"引用的引用"都是编译错误。折叠是<strong>纯编译期的类型计算</strong>，生成的代码里没有任何"折叠"动作。</p>
+<hr />
 <h2>用折叠解释万能引用</h2>
-<p><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item24-universal-vs-rvalue.md">Item 24</a> 说"万能引用接左值时 <code class="c">T</code> 推为 <code class="c">T&amp;</code>"，当时没解释最后一步——现在补上：</p>
-<pre class="code" data-label="cpp"><code class="c">template&lt;class T&gt; void f(T&amp;&amp; x);
-
-Widget w;
-f(w);          // T 推为 Widget&amp;
-               // 形参类型 T&amp;&amp; 展开为 Widget&amp; &amp;&amp;
-               // 折叠：&amp; + &amp;&amp; → &amp;  →  形参是 Widget&amp;，绑左值 ✓
-
-f(Widget{});   // T 推为 Widget
-               // 形参 Widget&amp;&amp;，无需折叠，绑右值 ✓
+<p><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item24-universal-vs-rvalue.md">Item 24</a> 说"万能引用接左值时 <code class="c">T</code> 推为 <code class="c">T&amp;</code>"，当时没解释最后一步——现在补上。实测（用 <code class="c">if constexpr</code> 把 <code class="c">T</code> 和 <code class="c">decltype(x)</code> 打印出来）：</p>
+<pre class="code" data-label="cpp"><code class="c">template&lt;class T&gt; void f(T&amp;&amp; x) { /* 打印 name&lt;T&gt;() 与 name&lt;decltype(x)&gt;() */ }
+int lv = 1; const int clv = 2;
+f(lv);   f(clv);   f(3);
 </code></pre>
-<p>同一个 <code class="c">T&amp;&amp;</code> 形参，靠"推导让 T 带引用" + "折叠把双引用压回单引用"两步，实现了左右值通吃。</p>
-<h2>用折叠理解 std::forward</h2>
-<p><code class="c">std::forward&lt;T&gt;(x)</code> 的本质是<strong>按 T 的引用性条件转换</strong>：</p>
-<pre class="code" data-label="cpp"><code class="c">template&lt;class T&gt;
-T&amp;&amp; forward(std::remove_reference_t&lt;T&gt;&amp; x) noexcept {
-    return static_cast&lt;T&amp;&amp;&gt;(x);
+<p>本机实测 clang 23.1.0 输出：</p>
+<pre class="code" data-label="code"><code class="c">f(左值):          T=int&amp;          decltype(x)=int&amp;
+f(const 左值):    T=const int&amp;    decltype(x)=const int&amp;
+f(右值):          T=int           decltype(x)=int&amp;&amp;
+</code></pre>
+<p>推导链条：<code class="c">f(左值)</code> → <code class="c">T</code> 被推为 <code class="c">int&amp;</code> → 形参类型 <code class="c">T&amp;&amp;</code> 展开为 <code class="c">int&amp; &amp;&amp;</code> → 折叠成 <code class="c">int&amp;</code> → 能绑左值 ✓。<code class="c">f(右值)</code> → <code class="c">T=int</code> → 形参 <code class="c">int&amp;&amp;</code> → 无需折叠 → 绑右值 ✓。<strong>同一个 <code class="c">T&amp;&amp;</code> 形参靠"推导让 T 带引用" + "折叠把双引用压回单引用"两步实现左右值通吃。</strong></p>
+<h3>auto&amp;&amp; 是同一套规则</h3>
+<p><code class="c">auto</code> 推导就是模板推导（<a href="chapter-01.html#ch-1">Item 2</a>），所以 <code class="c">auto&amp;&amp;</code> 也是万能引用，也走折叠。实测：</p>
+<pre class="code" data-label="code"><code class="c">  auto&amp;&amp; &lt;- 左值      : int&amp;
+  auto&amp;&amp; &lt;- const 左值: const int&amp;
+  auto&amp;&amp; &lt;- 右值      : int&amp;&amp;
+</code></pre>
+<p>因此 <code class="c">for (auto&amp;&amp; x : container)</code> 是容器遍历的万能写法：左值元素（多数容器）绑成 <code class="c">T&amp;</code>，代理迭代器返回的右值（如 <code class="c">vector&lt;bool&gt;</code> 的 <code class="c">reference</code>）绑成 <code class="c">T&amp;&amp;</code>，两种都能正确绑定。</p>
+<h3>decltype 语境</h3>
+<p><code class="c">decltype</code> 产出的是类型（含引用性），再往上叠引用同样触发折叠。实测：</p>
+<pre class="code" data-label="code"><code class="c">  decltype(rx)&amp;  = int&amp;      // rx 声明为 int&amp;
+  decltype(rx)&amp;&amp; = int&amp;      // 有 &amp; 则 &amp;，叠 &amp;&amp; 也救不回来
+</code></pre>
+<hr />
+<h2>std::forward 如何用折叠实现</h2>
+<p>libc++ 里 <code class="c">std::forward</code> 就长这样（取自本机 <code class="c">/Users/a0000/micromamba/envs/cdev/bin/../include/c++/v1/__utility/forward.h</code>，去掉属性宏）：</p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;class T&gt;
+T&amp;&amp; forward(remove_reference_t&lt;T&gt;&amp; t) noexcept {
+    return static_cast&lt;T&amp;&amp;&gt;(t);          // ★ 折叠发生在这里
+}
+
+template &lt;class T&gt;
+T&amp;&amp; forward(remove_reference_t&lt;T&gt;&amp;&amp; t) noexcept {
+    static_assert(!is_lvalue_reference&lt;T&gt;::value, &quot;cannot forward an rvalue as an lvalue&quot;);
+    return static_cast&lt;T&amp;&amp;&gt;(t);
 }
 </code></pre>
+<p>把这段改成自己的 <code class="c">my_forward</code>（把 <code class="c">remove_reference_t</code> 写全就是 C++11 版）后实测，行为与 <code class="c">std::forward</code> 完全一致：</p>
+<pre class="code" data-label="code"><code class="c">fwd(s)              :  左值重载
+fwd(std::string())  :  右值重载
+fwdWrongL(s)        :  左值重载     ← forward&lt;std::string&amp;&gt;，恒定左值
+fwdWrongL(rvalue)   :  左值重载     ← 右值被压成左值（写错 T 的代价）
+fwdWrongR(s)        :  右值重载     ← 左值被抬成右值（写错 T 的代价）
+</code></pre>
+<p><code class="c">static_cast&lt;T&amp;&amp;&gt;</code> 按 <code class="c">T</code> 分情况：</p>
 <ul>
-<li>左值转发：<code class="c">T = Widget&amp;</code> → 返回类型 <code class="c">T&amp;&amp;</code> = <code class="c">Widget&amp; &amp;&amp;</code> → 折叠为 <code class="c">Widget&amp;</code> → 传出左值；</li>
-<li>右值转发：<code class="c">T = Widget</code> → 返回类型 <code class="c">Widget&amp;&amp;</code> → 传出右值。</li>
+<li><strong>左值转发</strong>：<code class="c">T = Widget&amp;</code> → <code class="c">static_cast&lt;Widget&amp; &amp;&amp;&gt;</code> → 折叠为 <code class="c">Widget&amp;</code> → 返回类型也是 <code class="c">T&amp;&amp;</code> = <code class="c">Widget&amp;</code> → 传出左值；</li>
+<li><strong>右值转发</strong>：<code class="c">T = Widget</code> → <code class="c">static_cast&lt;Widget&amp;&amp;&gt;</code> → 返回类型 <code class="c">Widget&amp;&amp;</code> → 传出右值。</li>
 </ul>
-<p><code class="c">forward</code> 的全部"智能"就是把 <code class="c">T</code> 的引用性塞进 <code class="c">static_cast&lt;T&amp;&amp;&gt;</code>，然后<strong>让折叠规则干活</strong>。理解了折叠，<code class="c">forward</code> 就没有任何神秘之处——它是个一行流。</p>
+<p><code class="c">forward</code> 的全部"智能"就是把 <code class="c">T</code> 的引用性塞进 <code class="c">static_cast&lt;T&amp;&amp;&gt;</code>，然后<strong>让折叠规则干活</strong>。它有 <code class="c">static_assert</code> 兜底 <code class="c">forward&lt;T&amp;&gt;(右值)</code> 这种明显写错的调用。理解了折叠，<code class="c">forward</code> 就没有任何神秘之处——它是个一行流。</p>
+<h3>为什么必须显式写 <code class="c">std::forward&lt;T&gt;</code></h3>
+<p>因为形参类型 <code class="c">remove_reference_t&lt;T&gt;&amp;</code> 里 <code class="c">T</code> 出现在<strong>不可推导语境</strong>（non-deduced context）：编译器没法从实参类型反推出 <code class="c">T</code>。实测漏写会直接编不过：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching function for call to 'forward'
+    auto&amp;&amp; r = std::forward(s);
+                            ^~~~~~~~~
+note: candidate template ignored: couldn't infer template argument '_Tp'
+</code></pre>
+<p>对照 <code class="c">std::move</code>——它的形参是 <code class="c">T&amp;&amp;</code>（可推导），返回 <code class="c">__libcpp_remove_reference_t&lt;T&gt;&amp;&amp;</code>，<strong>不依赖折叠</strong>：先把 <code class="c">T</code> 的引用性用 <code class="c">remove_reference_t</code> 抹平，再无脑加 <code class="c">&amp;&amp;</code>。所以 <code class="c">move(x)</code> 可以不写模板实参，而 <code class="c">forward&lt;T&gt;(x)</code> 必须写。这个"必须手写类型"的设计正是 Item 25 反复强调"别把 forward 写成 move"的根因——写错一个字母就改变值类别。</p>
 <hr />
-<h2>常见错误（新手踩坑）</h2>
+<h2>完整可运行例子</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
+#include &lt;string&gt;
+#include &lt;type_traits&gt;
+#include &lt;utility&gt;
+
+using Lref = int&amp;;
+using Rref = int&amp;&amp;;
+static_assert(std::is_same_v&lt;Lref&amp;,  int&amp;&gt;,  &quot;&amp; + &amp;   -&gt; &amp;&quot;);
+static_assert(std::is_same_v&lt;Lref&amp;&amp;, int&amp;&gt;,  &quot;&amp; + &amp;&amp;  -&gt; &amp;&quot;);
+static_assert(std::is_same_v&lt;Rref&amp;,  int&amp;&gt;,  &quot;&amp;&amp; + &amp;  -&gt; &amp;&quot;);
+static_assert(std::is_same_v&lt;Rref&amp;&amp;, int&amp;&amp;&gt;, &quot;&amp;&amp; + &amp;&amp; -&gt; &amp;&amp;&quot;);
+
+template&lt;class T&gt; constexpr const char* nm() {
+    using X = T;
+    if constexpr (std::is_same_v&lt;X, std::string&amp;&gt;)       return &quot;string&amp;&quot;;
+    else if constexpr (std::is_same_v&lt;X, std::string&gt;)   return &quot;string&quot;;
+    else if constexpr (std::is_same_v&lt;X, std::string&amp;&amp;&gt;) return &quot;string&amp;&amp;&quot;;
+    else return &quot;?&quot;;
+}
+
+// 手写 forward（与 libc++ 同构）
+template&lt;class T&gt;
+T&amp;&amp; fwd_impl(std::remove_reference_t&lt;T&gt;&amp; x) noexcept { return static_cast&lt;T&amp;&amp;&gt;(x); }
+
+void sink(std::string&amp;  ) { std::cout &lt;&lt; &quot;  -&gt; 左值重载\n&quot;; }
+void sink(std::string&amp;&amp; ) { std::cout &lt;&lt; &quot;  -&gt; 右值重载\n&quot;; }
+
+template&lt;class T&gt; void relay(T&amp;&amp; x) {
+    std::cout &lt;&lt; &quot;  T=&quot; &lt;&lt; nm&lt;T&gt;() &lt;&lt; &quot; / decltype(x)=&quot; &lt;&lt; nm&lt;decltype(x)&gt;()
+              &lt;&lt; &quot; / 形参折叠后=&quot; &lt;&lt; nm&lt;decltype(x)&gt;();
+    sink(fwd_impl&lt;T&gt;(x));
+}
+
+int main() {
+    std::string s = &quot;tick&quot;;
+    relay(s);                 // 左值
+    relay(std::string(&quot;px&quot;)); // 右值
+
+    std::cout &lt;&lt; &quot;auto&amp;&amp; &lt;-\n&quot;;
+    auto&amp;&amp; p1 = s;                    std::cout &lt;&lt; &quot;  左值: &quot; &lt;&lt; nm&lt;decltype(p1)&gt;() &lt;&lt; &quot;\n&quot;;
+    auto&amp;&amp; p2 = std::string(&quot;qty&quot;);   std::cout &lt;&lt; &quot;  右值: &quot; &lt;&lt; nm&lt;decltype(p2)&gt;() &lt;&lt; &quot;\n&quot;;
+}
+</code></pre>
+<p>本机实测 clang 23.1.0（<code class="c">-std=c++17 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">  T=string&amp; / decltype(x)=string&amp; / 形参折叠后=string&amp;  -&gt; 左值重载
+  T=string / decltype(x)=string&amp;&amp; / 形参折叠后=string&amp;&amp;  -&gt; 右值重载
+auto&amp;&amp; &lt;-
+  左值: string&amp;
+  右值: string&amp;&amp;
+</code></pre>
+<hr />
+<h2>常见错误（新手踩坑)</h2>
 <ol>
-<li><strong>试图直接写 <code class="c">int&amp; &amp;</code></strong>。语法错误——折叠只在四个间接语境发生，手写"引用的引用"永远是非法的。</li>
-<li><strong>把折叠当成运行时行为</strong>。折叠是纯编译期的类型计算，生成的代码里没有任何"折叠"动作。</li>
-<li><strong>以为 <code class="c">&amp;&amp; + &amp;</code> 顺序影响结果</strong>。不影响——口诀是"有 <code class="c">&amp;</code> 则 <code class="c">&amp;</code>"，与顺序无关（<code class="c">&amp; &amp;&amp;</code> 和 <code class="c">&amp;&amp; &amp;</code> 都折叠为 <code class="c">&amp;</code>）。</li>
-<li><strong>把 <code class="c">T&amp;&amp;</code> 的折叠和 <code class="c">const</code> 推导混在一起</strong>。const 不参与折叠：折叠只管引用性，<code class="c">const int&amp; &amp;&amp;</code> 折叠为 <code class="c">const int&amp;</code>，const 原样保留。</li>
+<li><strong>试图直接写 <code class="c">int&amp; &amp;</code></strong>。语法错误（<code class="c">declared as a reference to a reference</code>）——折叠只在四个间接语境发生。</li>
+<li><strong>把折叠当成运行时行为</strong>。它是纯编译期类型计算，生成的机器码里没有任何"折叠"。</li>
+<li><strong>以为 <code class="c">&amp;&amp; + &amp;</code> 顺序影响结果</strong>。不影响——口诀是"有 <code class="c">&amp;</code> 则 <code class="c">&amp;"</code>。</li>
+<li><strong>以为 const 也参与折叠</strong>。不参与：<code class="c">const &amp;</code> + <code class="c">&amp;&amp;</code> 折叠为 <code class="c">const &amp;</code>，const 原样保留。</li>
+<li><strong><code class="c">forward</code> 漏写模板实参</strong>。实测 <code class="c">couldn't infer template argument '_Tp'</code>——<code class="c">T</code> 在 <code class="c">remove_reference_t&lt;T&gt;&amp;</code> 里是不可推导语境。而 <code class="c">move</code> 可以省略实参，两者别混。</li>
+<li><strong>手写 forward 时把 <code class="c">static_cast&lt;T&amp;&amp;&gt;</code> 写成 <code class="c">static_cast&lt;T&amp;&gt;</code></strong>。前者依赖折叠保留值类别，后者无条件给左值——转发形同虚设。</li>
 </ol>
-<hr />
-<h2>新手要点（和 C 的区别）</h2>
-<ul>
-<li><strong>C 没有引用</strong>，自然没有折叠。这是 C++ 类型系统为模板推导打的地基补丁。</li>
-<li><strong>不用背表</strong>：记"左值引用会传染"一句就够，四条规则全是它的展开。</li>
-<li><strong>折叠是"类型代数"</strong>：和指针运算、数组退化一样，属于"编译器替你做的类型运算"——看不见但决定行为，值得一次性搞懂终身免疫。</li>
-</ul>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>读框架代码的钥匙</strong>：muduo/策略框架里 <code class="c">template&lt;class T&gt; void setCallback(T&amp;&amp; f)</code>、<code class="c">template&lt;class... Args&gt; void emplace(Args&amp;&amp;... args)</code> 满地都是——理解折叠才能推断每个调用的 <code class="c">T</code> 实际推成了什么、转发后会不会意外拷贝。</li>
-<li><strong>完美转发的正确性闭环</strong>：<code class="c">T&amp;&amp;</code> 接参（Item 24）+ 折叠（本节）+ <code class="c">std::forward&lt;T&gt;</code> 传出（Item 25）三者构成完整链条，缺一环就是"看似转发了实际拷了一份"的热路径隐形开销。</li>
+<li><strong>读框架代码的钥匙</strong>：muduo / 策略框架里 <code class="c">template&lt;class T&gt; void setCallback(T&amp;&amp; f)</code>、<code class="c">template&lt;class... Args&gt; void emplace(Args&amp;&amp;... args)</code> 满地都是——理解折叠才能推断每个调用点 <code class="c">T</code> 实际推成了什么、转发后会不会意外拷一份。</li>
+<li><strong>完美转发的正确性闭环</strong>：<code class="c">T&amp;&amp;</code> 接参（Item 24）+ 折叠（本节）+ <code class="c">std::forward&lt;T&gt;</code> 传出（Item 25）三者构成完整链条，缺一环就是"看似转发了实际多拷一次"的热路径隐形开销。</li>
+<li><strong><code class="c">auto&amp;&amp;</code> 遍历省心</strong>：<code class="c">for (auto&amp;&amp; t : ring)</code> 同时吃左值元素和代理引用，不需要为不同容器写两个版本的循环。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li>引用折叠的四条规则是什么？用一句口诀概括。</li>
-<li>为什么 <code class="c">int&amp; &amp;&amp;</code> 不能直接写，但 <code class="c">using A = Lref&amp;&amp;;</code>（<code class="c">Lref = int&amp;</code>）合法？</li>
-<li>折叠发生在哪四个语境？</li>
-<li>用折叠规则解释：<code class="c">f(w)</code>（<code class="c">w</code> 是 <code class="c">Widget</code> 左值）调用 <code class="c">template&lt;class T&gt; void f(T&amp;&amp;)</code> 时形参的最终类型。</li>
-<li><code class="c">std::forward&lt;T&gt;(x)</code> 在 <code class="c">T = Widget&amp;</code> 和 <code class="c">T = Widget</code> 时各返回什么类型？折叠在其中起了什么作用？</li>
-<li><code class="c">const Widget&amp; &amp;&amp;</code> 折叠成什么？const 参与折叠吗？</li>
-</ol>
+<p><strong>1. 引用折叠的四条规则是什么？用一句口诀概括。</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p><code class="c">&amp;&amp;</code>：<code class="c">&amp;+&amp;→&amp;</code>、<code class="c">&amp;+&amp;&amp;→&amp;</code>、<code class="c">&amp;&amp;+&amp;→&amp;</code>、<code class="c">&amp;&amp;+&amp;&amp;→&amp;&amp;</code>。口诀：<strong>左值引用会传染</strong>——组合里出现一个 <code class="c">&amp;</code>，结果就是 <code class="c">&amp;</code>；只有两个 <code class="c">&amp;&amp;</code> 才保持 <code class="c">&amp;&amp;</code>。已用 using 别名四组 <code class="c">static_assert</code> 实测验证。</p>
-</li>
-<li>
-<p>语言规则禁止直接声明"引用的引用"，语法层面 <code class="c">int&amp; &amp;&amp;</code> 非法。但折叠规则存在的意义就是处理<strong>间接</strong>产生的引用的引用——别名展开、模板推导、decltype 这些语境里类型是"算"出来的，语言不禁止计算过程产生引用的引用，而是规定用折叠把它压回单引用。<code class="c">using A = Lref&amp;&amp;;</code> 属于别名语境，合法且折叠为 <code class="c">int&amp;</code>。</p>
-</li>
-<li>
+<summary>答案</summary>
+<p><code class="c">&amp;+&amp;→&amp;</code>、<code class="c">&amp;+&amp;&amp;→&amp;</code>、<code class="c">&amp;&amp;+&amp;→&amp;</code>、<code class="c">&amp;&amp;+&amp;&amp;→&amp;&amp;</code>。口诀：<strong>左值引用会传染</strong>——组合里出现一个 <code class="c">&amp;</code>，结果就是 <code class="c">&amp;</code>；只有两个 <code class="c">&amp;&amp;</code> 才保持 <code class="c">&amp;&amp;</code>。已用 <code class="c">using</code> 别名造出四组引用叠引用，<code class="c">static_assert</code> 全部通过。</p>
+</details>
+<p><strong>2. 为什么 <code class="c">int&amp; &amp;&amp;</code> 不能直接写，但 <code class="c">using A = Lref&amp;&amp;;</code>（<code class="c">Lref = int&amp;</code>）合法？</strong></p>
+<details>
+<summary>答案</summary>
+<p>语言规则禁止<strong>直接声明</strong>"引用的引用"，实测报错 <code class="c">error: 'r' declared as a reference to a reference</code>。但折叠规则存在的意义就是处理<strong>间接</strong>产生的引用叠引用——别名展开、模板推导、<code class="c">decltype</code> 这些语境里类型是"算"出来的，语言不禁止计算过程产生叠引用，而是规定用折叠把它压回单引用。</p>
+</details>
+<p><strong>3. 折叠发生在哪四个语境？</strong></p>
+<details>
+<summary>答案</summary>
 <p>模板类型推导、<code class="c">auto</code> 推导、<code class="c">typedef</code>/<code class="c">using</code> 别名、<code class="c">decltype</code>。这四个也是 C++ 中仅有的能间接产生"引用的引用"的地方。</p>
-</li>
-<li>
-<p><code class="c">T</code> 推为 <code class="c">Widget&amp;</code>（万能引用对左值实参的特殊规则），形参类型 <code class="c">T&amp;&amp;</code> 展开为 <code class="c">Widget&amp; &amp;&amp;</code>，按折叠规则 <code class="c">&amp; + &amp;&amp; → &amp;</code>，最终形参类型是 <code class="c">Widget&amp;</code>——所以能绑定左值。</p>
-</li>
-<li>
-<p><code class="c">T = Widget&amp;</code>：返回类型 <code class="c">T&amp;&amp;</code> = <code class="c">Widget&amp; &amp;&amp;</code> 折叠为 <code class="c">Widget&amp;</code>，传出左值；<code class="c">T = Widget</code>：返回 <code class="c">Widget&amp;&amp;</code>，传出右值。折叠是 forward 的全部机制——<code class="c">static_cast&lt;T&amp;&amp;&gt;</code> 把 <code class="c">T</code> 的引用性带进类型，折叠规则自动给出正确的值类别。forward 不需要运行时分支，纯类型计算。</p>
-</li>
-<li>
-<p><code class="c">const Widget&amp;</code>。const 不参与折叠——折叠只解决引用性（<code class="c">&amp;</code>/<code class="c">&amp;&amp;</code>），cv 限定各自独立保留：<code class="c">const &amp;</code> 与 <code class="c">&amp;&amp;</code> 折叠，引用性变 <code class="c">&amp;</code>，const 原样留下。</p>
-</li>
-</ol>
+</details>
+<p><strong>4. 用折叠规则解释：<code class="c">f(w)</code>（<code class="c">w</code> 是 <code class="c">Widget</code> 左值）调用 <code class="c">template&lt;class T&gt; void f(T&amp;&amp;)</code> 时形参的最终类型。</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">T</code> 推为 <code class="c">Widget&amp;</code>，形参类型 <code class="c">T&amp;&amp;</code> 展开为 <code class="c">Widget&amp; &amp;&amp;</code>，按规则 <code class="c">&amp; + &amp;&amp; → &amp;</code>，最终形参是 <code class="c">Widget&amp;</code>——所以能绑左值。实测印证：<code class="c">T=string&amp; / decltype(x)=string&amp;</code>。</p>
+</details>
+<p><strong>5. <code class="c">std::forward&lt;T&gt;(x)</code> 在 <code class="c">T = Widget&amp;</code> 和 <code class="c">T = Widget</code> 时各返回什么？折叠起了什么作用？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">T = Widget&amp;</code>：返回类型 <code class="c">T&amp;&amp;</code> = <code class="c">Widget&amp; &amp;&amp;</code> 折叠为 <code class="c">Widget&amp;</code>，传出左值；<code class="c">T = Widget</code>：返回 <code class="c">Widget&amp;&amp;</code>，传出右值。折叠是 forward 的全部机制——<code class="c">static_cast&lt;T&amp;&amp;&gt;</code> 把 <code class="c">T</code> 的引用性带进类型，折叠自动给出正确值类别，不需要任何运行时分支。</p>
+</details>
+<p><strong>6. 为什么 <code class="c">std::forward</code> 必须显式写模板实参，而 <code class="c">std::move</code> 不用？</strong></p>
+<details>
+<summary>答案</summary>
+<p>forward 的形参是 <code class="c">remove_reference_t&lt;T&gt;&amp;</code>，<code class="c">T</code> 处在<strong>不可推导语境</strong>，编译器反推不出 <code class="c">T</code>——实测漏写报 <code class="c">couldn't infer template argument '_Tp'</code>。move 的形参是 <code class="c">T&amp;&amp;</code>（可推导），返回 <code class="c">__libcpp_remove_reference_t&lt;T&gt;&amp;&amp;</code>，先用 <code class="c">remove_reference_t</code> 抹平引用性再无脑加 <code class="c">&amp;&amp;</code>，<strong>不依赖折叠</strong>，所以可以不写实参。</p>
+</details>
+<p><strong>7. <code class="c">const Widget&amp; &amp;&amp;</code> 折叠成什么？const 参与折叠吗？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">const Widget&amp;</code>。const 不参与折叠——折叠只解决引用性（<code class="c">&amp;</code>/<code class="c">&amp;&amp;</code>），cv 限定各自独立保留。实测 <code class="c">using CLref = const int&amp;; using E = CLref&amp;&amp;;</code> 得 <code class="c">const int&amp;</code>。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item27-alternatives.md">Item 27 替代方案</a></li>
 <li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item29-move-not-exist.md">Item 29 移动不存在/廉价</a></li>
-<li>回到：<a href="#intro">第 5 章</a></li>
+<li>相关：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item24-universal-vs-rvalue.md">Item 24 区分万能引用与右值引用</a>（折叠的第一现场）</li>
+<li>相关：<a href="chapter-06.html#ch-6">Item 33 泛型 lambda</a>（<code class="c">decltype(x)</code> 拿的就是折叠后的形参类型）</li>
+<li>回到：<a href="#intro">第 5 章 右值引用、移动语义与完美转发</a></li>
 </ul>
       </section>
       <section class="section" id="s-item29">
@@ -1650,72 +2090,147 @@ std::vector&lt;Config&gt; configs;   // 频繁 push_back
       <section class="section" id="s-item30">
         <div class="sec-head"><div class="sec-no">Item 30</div><h2>Item 30：熟悉完美转发失败的处境</h2></div>
 <blockquote>
-<p>第 5 章 · Item 30 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item29-move-not-exist.md">Item 29 移动不存在/廉价</a></p>
+<p>第 5 章 右值引用、移动语义与完美转发 · Item 30 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item29-move-not-exist.md">Item 29 移动不存在/廉价</a> · 下一章：<a href="chapter-06.html#intro">第 6 章 Lambda 表达式</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>完美转发（<code class="c">template&lt;class T&gt; void fwd(T&amp;&amp; x) { target(std::forward&lt;T&gt;(x)); }</code>）听起来是"什么都能原样递过去"的银弹。Meyers 用一整条专门泼冷水：有四种实参<strong>根本进不了转发的门</strong>——不是转错，是编译直接失败。这四种失败全是同一个根因：<strong>模板推导需要先确定实参的类型，而这几种实参恰恰没有可推导的类型</strong>。</p>
-<p>这一节的价值不在"背四个特例"，而在建立排查反射：泛型包装器编译报错时，先看实参是不是踩了这四条边界——它们的报错信息都不指向真正的原因。</p>
+<p>完美转发（<code class="c">template&lt;class T&gt; void fwd(T&amp;&amp; x) { target(std::forward&lt;T&gt;(x)); }</code>）听起来是"什么都能原样递过去"的银弹。Meyers 用一整节泼冷水：有五种实参<strong>根本进不了转发的门</strong>——不是转错，是编译/链接直接失败。</p>
+<p>它们的根因分两类：<strong>模板推导需要先确定实参的类型</strong>（大括号列表、重载函数名、函数模板名没类型可推），或<strong>万能引用接左值时会退化成非常量左值引用形参</strong>（0/NULL 推错类型、整型 <code class="c">static const</code> 成员被 ODR-use、位字段绑不上引用）。</p>
+<p>这一节的价值不在"背五个特例"，而在建立排查反射：泛型包装器报错时，先看实参是不是踩了这几条边界——它们的报错信息几乎都不指向真正的原因。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p>四种转发失败场景 + 各自的变通方法，全部附 clang 23.1.0 报错原文：</p>
+<p>五种失败场景 + 各自的变通方法，全部附 clang 23.1.0 实测报错原文：</p>
 <ol>
 <li>braced-init-list <code class="c">{1,2,3}</code>；</li>
 <li><code class="c">0</code> / <code class="c">NULL</code> 当空指针；</li>
+<li>只有声明的整型 <code class="c">static const</code> 成员；</li>
 <li>重载函数名 / 函数模板名；</li>
 <li>位字段（bit-field）。</li>
 </ol>
+<p>外加一张速查表和一个"全部修法跑通"的完整例子。本机环境：clang 23.1.0，arm64-apple-darwin，libc++，<code class="c">-std=c++17 -Wall</code>。</p>
 <hr />
 <h2>失败一：braced-init-list</h2>
 <pre class="code" data-label="cpp"><code class="c">void target(std::initializer_list&lt;int&gt; il) {}
-
 template&lt;class T&gt; void fwd(T&amp;&amp; x) { target(std::forward&lt;T&gt;(x)); }
-
 fwd({1, 2, 3});
-// error: no matching function for call to 'fwd'
-//        note: couldn't infer template argument 'T'
+</code></pre>
+<p>报错原文：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching function for call to 'fwd'
+    fwd({1, 2, 3});
+    ^~~
+note: candidate template ignored: couldn't infer template argument 'T'
 </code></pre>
 <p><code class="c">{1,2,3}</code> 不是表达式、没有类型——模板推导无从下手（这就是 <a href="chapter-01.html#ch-1">Item 2</a> 的"模板不吃大括号列表"在转发场景的重演）。</p>
-<p><strong>变通</strong>：先让 <code class="c">auto</code> 接一下（<code class="c">auto</code> 有专门的 initializer_list 规则），再转发具名变量：</p>
-<pre class="code" data-label="cpp"><code class="c">auto il = {1, 2, 3};   // auto 推为 std::initializer_list&lt;int&gt;
-fwd(il);               // OK：il 有确定类型
-// 或显式给出类型：
-fwd(std::initializer_list&lt;int&gt;{1, 2, 3});
+<p><strong>变通</strong>：先让 <code class="c">auto</code> 接一下（<code class="c">auto</code> 有专门的 <code class="c">initializer_list</code> 规则），或显式给出类型。实测两种都通过：</p>
+<pre class="code" data-label="cpp"><code class="c">auto il = {1, 2, 3};                       // auto 推为 std::initializer_list&lt;int&gt;
+fwd(il);                                   // OK：il 有确定类型
+fwd(std::initializer_list&lt;int&gt;{4, 5});     // OK：显式给类型
 </code></pre>
+<hr />
 <h2>失败二：0 / NULL 当空指针</h2>
-<p><code class="c">0</code> 和 <code class="c">NULL</code> 是整型，推导结果与指针无关。本机（macOS arm64, libc++）实测：</p>
-<pre class="code" data-label="cpp"><code class="c">template&lt;typename T&gt; void fwd2(T&amp;&amp; x) { std::cout &lt;&lt; __PRETTY_FUNCTION__ &lt;&lt; &quot;\n&quot;; }
-
-fwd2(NULL);      // void fwd2(T &amp;&amp;) [T = long]          ← NULL 是 0L！
-fwd2(nullptr);   // void fwd2(T &amp;&amp;) [T = std::nullptr_t] ← 唯一正确
+<p><code class="c">0</code> 和 <code class="c">NULL</code> 是整型，推导结果与指针无关。本机实测（打印 <code class="c">__PRETTY_FUNCTION__</code>）：</p>
+<pre class="code" data-label="code"><code class="c">void probe(T &amp;&amp;) [T = int]              ← probe(0)
+void probe(T &amp;&amp;) [T = long]             ← probe(NULL)：本机 NULL 定义为 0L
+void probe(T &amp;&amp;) [T = std::nullptr_t]   ← probe(nullptr)：唯一正确
+void probe(T &amp;&amp;) [T = long]             ← probe(0L)
 </code></pre>
-<p><code class="c">fwd(0)</code> 推成 <code class="c">int</code>、<code class="c">fwd(NULL)</code> 推成 <code class="c">long</code>（本机 <code class="c">NULL</code> 定义为 <code class="c">0L</code>——不同平台可能是 <code class="c">int</code> 或 <code class="c">long</code>，这本身就是 NULL 的罪状之一）。目标函数期望指针时，<code class="c">int&amp;&amp;</code> 转不过去，编译失败或静默走错重载。</p>
-<p><strong>变通</strong>：永远用 <code class="c">nullptr</code>。它的类型 <code class="c">std::nullptr_t</code> 能转成任何指针类型，是"空指针"语义的唯一正确载体。</p>
-<h2>失败三：重载函数名 / 函数模板名</h2>
-<pre class="code" data-label="cpp"><code class="c">void ov(int) {}
+<p>目标函数期望指针时，<code class="c">long&amp;&amp;</code> 转不过去，报错是这样：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching function for call to 'target'
+    template&lt;class T&gt; void fwd(T&amp;&amp; x) { target(std::forward&lt;T&gt;(x)); }
+                                        ^~~~~~
+note: in instantiation of function template specialization 'fwd&lt;long&gt;' requested here
+note: candidate function not viable: no known conversion from 'long' to 'void *' for 1st argument
+</code></pre>
+<p>注意第二个 note——<code class="c">fwd&lt;long&gt;</code> 这个实例化记录再次成为破案线索。</p>
+<p><code class="c">NULL</code> 的罪状有两条：<strong>它是整型</strong>，<strong>具体是哪个整型随平台漂</strong>（本机 <code class="c">long</code>，别的平台可能是 <code class="c">int</code>）。<strong>变通</strong>：永远用 <code class="c">nullptr</code>，类型 <code class="c">std::nullptr_t</code> 能转成任何指针类型，是"空指针"语义的唯一可移植载体（呼应 <a href="chapter-03.html#ch-3">Item 8</a>）。</p>
+<hr />
+<h2>失败三：只有声明的整型 static const 成员</h2>
+<p>这是五种里<strong>唯一一种不在编译期炸</strong>的——它编译通过、<strong>链接失败</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">class Widget {
+public:
+    static const std::size_t MinVals = 28;   // 声明 + 类内初始化器，无类外定义
+};
+void process(std::size_t n);
+template&lt;class T&gt; void fwd(T&amp;&amp; x) { process(std::forward&lt;T&gt;(x)); }
+std::cout &lt;&lt; Widget::MinVals;   // OK：值上下文，编译期常量替换
+fwd(Widget::MinVals);           // ★ ODR-use
+</code></pre>
+<p>实测链接报错原文：</p>
+<pre class="code" data-label="code"><code class="c">Undefined symbols for architecture arm64:
+  &quot;Widget::MinVals&quot;, referenced from:
+      _main in emcH_30c-f0d573.o
+ld: symbol(s) not found for architecture arm64
+</code></pre>
+<p>机理：编译器允许给整型 <code class="c">static const</code> 成员写类内初始化器，是为了让它能用在<strong>编译期常量上下文</strong>（数组长度、switch case、<code class="c">std::cout &lt;&lt;</code> 这种值读取）。但一旦它被<strong>绑定到一个引用</strong>（万能引用接左值时形参是 <code class="c">T&amp;</code> 语义），就需要一个真实地址 → ODR-use → 必须在某处有定义。大多数编译器能优化掉这种场景，但<strong>不需要就等于可能在换一行代码、换一个优化级别后突然链接失败</strong>——标准不保证。</p>
+<p><strong>三种变通</strong>（实测全部通过）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>说明</th>
+<th>版本要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类外加 <code class="c">const std::size_t Widget::MinVals;</code></td>
+<td>最经典、最无依赖</td>
+<td>C++11 起</td>
+</tr>
+<tr>
+<td><code class="c">static constexpr std::size_t MinVals = 28;</code></td>
+<td>C++17 起 constexpr 静态数据成员隐含 <code class="c">inline</code>，自动生成定义</td>
+<td><strong>C++17 起</strong></td>
+</tr>
+<tr>
+<td><code class="c">const std::size_t snap = Widget::MinVals; fwd(snap);</code></td>
+<td>值拷贝到本地变量，不触发 ODR-use</td>
+<td>C++11 起</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>版本差异是实测出来的</strong>：把同一份"修法"代码用 <code class="c">-std=c++11</code> / <code class="c">-std=c++14</code> 编译，第二种写法照样链接失败：</p>
+<pre class="code" data-label="code"><code class="c">Undefined symbols for architecture arm64:
+  &quot;W_inline::MinVals&quot;, referenced from:
+      _main in emcH_30fix-de05ea.o
+</code></pre>
+<p><code class="c">-std=c++17</code> 才通过。<strong>所以老代码里给整型 static const 成员兜的合作方式还是写类外定义。</strong></p>
+<hr />
+<h2>失败四：重载函数名 / 函数模板名</h2>
+<pre class="code" data-label="cpp"><code class="c">void ov(int)    {}
 void ov(double) {}
-
-template&lt;class T&gt; void fwd2(T&amp;&amp; x) {}
-
-fwd2(ov);
-// error: no matching function for call to 'fwd2'
-//        note: couldn't infer template argument 'T'
+template&lt;class T&gt; void tmpl(T) {}
+fwd(ov);     // error: no matching function for call to 'fwd'
+fwd(tmpl);   // error: no matching function for call to 'fwd'
 </code></pre>
-<p>重载函数名不是一个值，是<strong>一组候选的名字</strong>——没有唯一类型，<code class="c">T</code> 无从推导。函数模板名同理（<code class="c">fwd2(std::move)</code> 也是这个错）。</p>
-<p><strong>变通</strong>：调用侧用 <code class="c">static_cast</code> 先把名字钉成具体函数指针：</p>
-<pre class="code" data-label="cpp"><code class="c">fwd2(static_cast&lt;void(*)(int)&gt;(ov));   // 明确选 void(int) 版本
+<p>两种情况的报错原文一致：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching function for call to 'fwd'
+    fwd(ov);
+    ^~~
+note: candidate template ignored: couldn't infer template argument 'T'
 </code></pre>
-<h2>失败四：位字段</h2>
-<pre class="code" data-label="cpp"><code class="c">struct Bits { unsigned b : 1; };
-Bits bits; bits.b = 1;
-
-fwd2(bits.b);
-// error: non-const reference cannot bind to bit-field 'b'
+<p>重载函数名不是一个值，是<strong>一组候选的名字</strong>——没有唯一类型，<code class="c">T</code> 无从推导。函数模板名同理（连"它是哪个实例化"都没定）。</p>
+<p><strong>变通</strong>：调用侧用 <code class="c">static_cast</code> 先把名字钉成具体函数指针，让重载决议在那里完成。实测通过并正确选到 <code class="c">void(int)</code> 版本：</p>
+<pre class="code" data-label="cpp"><code class="c">fwd(static_cast&lt;void(*)(int)&gt;(ov));   // 明确选 void(int) 版本
+template&lt;class T&gt; void tmpl(T);
+callIt(static_cast&lt;void(*)(int)&gt;(tmpl&lt;int&gt;));   // 模板名要先实例化成具体函数
 </code></pre>
-<p>位字段没有独立地址，不能绑非 const 引用——万能引用接左值时形参是 <code class="c">T&amp;</code>，绑不上。这个报错是四种里<strong>最诚实的</strong>：它直接说出了位字段。</p>
-<p><strong>变通</strong>：先拷到普通变量再转发（位字段本来就是值语义，拷贝零损失）：</p>
-<pre class="code" data-label="cpp"><code class="c">unsigned tmp = bits.b;
-fwd2(tmp);
+<hr />
+<h2>失败五：位字段</h2>
+<pre class="code" data-label="cpp"><code class="c">struct Bits { unsigned flag : 1; unsigned rest : 31; };
+Bits b{}; b.flag = 1;
+fwd(b.flag);
 </code></pre>
+<p>报错原文（这是五种里<strong>最诚实</strong>的一种——它直接说出了"bit-field"）：</p>
+<pre class="code" data-label="code"><code class="c">error: non-const reference cannot bind to bit-field 'flag'
+    fwd(b.flag);
+        ^~~~~~
+note: bit-field is declared here
+    struct Bits { unsigned flag : 1; unsigned rest : 31; };
+                           ^
+note: passing argument to parameter 'x' here
+</code></pre>
+<p>位字段没有独立地址（多个位共享一个存储单元），不能绑非 const 引用；而万能引用接左值时形参正是 <code class="c">T&amp;</code> 语义——绑不上。这其实不是转发特有的问题：<code class="c">auto&amp; r = b.flag;</code> 和 <code class="c">&amp;b.flag</code> 同样非法。</p>
+<p><strong>变通</strong>：先拷到普通变量再转发——位字段本来就是值语义，拷贝零损失。实测通过。</p>
 <hr />
 <h2>速查表</h2>
 <div class="tbl-wrap"><table>
@@ -1731,89 +2246,152 @@ fwd2(tmp);
 <tr>
 <td><code class="c">{1,2,3}</code></td>
 <td>braced-init-list 无类型</td>
-<td>couldn't infer template argument</td>
-<td><code class="c">auto il = {...}; fwd(il);</code></td>
+<td><code class="c">couldn't infer template argument 'T'</code></td>
+<td><code class="c">auto il = {...}; fwd(il);</code> 或显式 <code class="c">std::initializer_list&lt;int&gt;{...}</code></td>
 </tr>
 <tr>
 <td><code class="c">0</code> / <code class="c">NULL</code></td>
-<td>推成 int/long 而非指针</td>
-<td>目标重载不匹配</td>
+<td>推成 <code class="c">int</code>/<code class="c">long</code> 而非指针</td>
+<td><code class="c">no known conversion from 'long' to 'void *'</code></td>
 <td>用 <code class="c">nullptr</code></td>
 </tr>
 <tr>
-<td>重载/模板函数名</td>
+<td>仅有声明的整型 <code class="c">static const</code> 成员</td>
+<td>绑引用触发 ODR-use</td>
+<td>链接期 <code class="c">Undefined symbols: "X::Member"</code></td>
+<td>类外给定义；C++17 起用 <code class="c">constexpr</code>（隐含 inline）；或先拷到本地变量</td>
+</tr>
+<tr>
+<td>重载函数名 / 函数模板名</td>
 <td>一组候选无唯一类型</td>
-<td>couldn't infer template argument</td>
-<td><code class="c">static_cast&lt;void(*)(int)&gt;(f)</code></td>
+<td><code class="c">couldn't infer template argument 'T'</code></td>
+<td><code class="c">static_cast&lt;void(*)(int)&gt;(ov)</code></td>
 </tr>
 <tr>
 <td>位字段</td>
 <td>不能绑非 const 引用</td>
-<td>cannot bind to bit-field</td>
+<td><code class="c">non-const reference cannot bind to bit-field</code></td>
 <td>拷到普通变量再转</td>
 </tr>
 </tbody>
 </table></div>
-<p>共同根因一句话：<strong>模板推导要求实参先有确定类型，这四者恰好没有</strong>。</p>
+<p>共同根因一句话：<strong>模板推导要求实参先有确定类型（或可绑引用），这五者恰好不满足</strong>。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>五种失败 → 五种修法，一次编译跑完（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>，零警告、链接成功）：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;cstddef&gt;
+#include &lt;initializer_list&gt;
+#include &lt;iostream&gt;
+#include &lt;utility&gt;
+void target(std::initializer_list&lt;int&gt; il) { std::cout &lt;&lt; &quot;[1] target il size=&quot; &lt;&lt; il.size() &lt;&lt; &quot;\n&quot;; }
+void targetPtr(void* p)                    { std::cout &lt;&lt; &quot;[2] targetPtr p=&quot; &lt;&lt; p &lt;&lt; &quot;\n&quot;; }
+void process(std::size_t n)                { std::cout &lt;&lt; &quot;[3] process(&quot; &lt;&lt; n &lt;&lt; &quot;)\n&quot;; }
+template&lt;class T&gt; void callIt(T&amp;&amp; f)       { std::cout &lt;&lt; &quot;[4] &quot;; f(1); }
+template&lt;class T&gt; void fwdIL(T&amp;&amp; x)   { target(std::forward&lt;T&gt;(x)); }
+template&lt;class T&gt; void fwdPtr(T&amp;&amp; x)  { targetPtr(std::forward&lt;T&gt;(x)); }
+template&lt;class T&gt; void fwdProc(T&amp;&amp; x) { process(std::forward&lt;T&gt;(x)); }
+struct W_def {
+    static const std::size_t MinVals = 28;      // 修法 A：类外还要给定义
+};
+const std::size_t W_def::MinVals;               // ← 类外定义
+struct W_inline {
+    static constexpr std::size_t MinVals = 28;  // 修法 B：C++17 起隐含 inline
+};
+struct W_copy {
+    static const std::size_t MinVals = 28;      // 修法 C：先拷到局部变量
+};
+void ov(int)    { std::cout &lt;&lt; &quot;ov(int)\n&quot;; }
+void ov(double) { std::cout &lt;&lt; &quot;ov(double)\n&quot;; }
+struct Bits { unsigned flag : 1; unsigned rest : 31; };
+int main() {
+    auto il = {1, 2, 3};                        // [1] 让 auto 先接住
+    fwdIL(il);
+    fwdIL(std::initializer_list&lt;int&gt;{4, 5});
+    fwdPtr(nullptr);                            // [2] nullptr，不是 NULL
+    fwdProc(W_def::MinVals);                    // [3A]
+    fwdProc(W_inline::MinVals);                 // [3B] 需 C++17
+    const std::size_t snap = W_copy::MinVals;   // [3C]
+    fwdProc(snap);
+    callIt(static_cast&lt;void(*)(int)&gt;(ov));      // [4] static_cast 消歧
+    Bits b{}; b.flag = 1;
+    unsigned flag = b.flag;                     // [5] 拷到普通变量
+    fwdProc(flag);
+}
+</code></pre>
+<p>本机实测 clang 23.1.0 输出：</p>
+<pre class="code" data-label="code"><code class="c">[1] target il size=3
+[1] target il size=2
+[2] targetPtr p=0
+[3] process(28)
+[3] process(28)
+[3] process(28)
+[4] ov(int)
+[3] process(1)
+</code></pre>
+<p>同一份代码在 <code class="c">-std=c++11</code> / <code class="c">-std=c++14</code> 下编不过——修法 B（<code class="c">constexpr</code>）在这两个标准里不隐含 <code class="c">inline</code>，链接报错 <code class="c">Undefined symbols for architecture arm64: "W_inline::MinVals"</code>。</p>
 <hr />
 <h2>常见错误（新手踩坑)</h2>
 <ol>
-<li><strong>以为 <code class="c">fwd({...})</code> 能转发给 vector</strong>。不能——哪怕目标就是 <code class="c">vector&lt;int&gt;</code>，推导在 <code class="c">{}</code> 面前直接放弃。要么具名变量，要么显式 <code class="c">std::initializer_list&lt;int&gt;{...}</code> 或 <code class="c">std::vector&lt;int&gt;{...}</code>。</li>
-<li><strong>跨平台用 NULL 转发</strong>。本机 <code class="c">NULL</code> 是 <code class="c">long</code>，别的平台可能是 <code class="c">int</code>——转发的行为跟着平台漂。<code class="c">nullptr</code> 是唯一可移植答案。</li>
-<li><strong>对位字段取引用/指针的变体</strong>：<code class="c">auto&amp; r = bits.b;</code>、<code class="c">&amp;bits.b</code> 同样非法——不是转发特有的问题，是位字段的根本属性。</li>
-<li><strong>看到 "couldn't infer template argument" 就慌</strong>。这个报错 90% 是踩了本节四条之一——先对照速查表，别去怀疑模板本身。</li>
+<li><strong>以为 <code class="c">fwd({...})</code> 能转发给 <code class="c">vector</code></strong>。不能——哪怕目标就是 <code class="c">vector&lt;int&gt;</code>，推导在 <code class="c">{}</code> 面前直接放弃。要么具名变量，要么显式 <code class="c">std::initializer_list&lt;int&gt;{...}</code> / <code class="c">std::vector&lt;int&gt;{...}</code>。</li>
+<li><strong>跨平台用 NULL 转发</strong>。本机 <code class="c">NULL</code> 是 <code class="c">long</code>，别的平台可能是 <code class="c">int</code>——转发行为跟着平台漂。<code class="c">nullptr</code> 是唯一可移植答案。</li>
+<li><strong>把 "链接报 Undefined symbol" 当成编译器 bug</strong>。它大概率是本节失败三：某个整型 <code class="c">static const</code> 成员被绑了引用却没有类外定义。</li>
+<li><strong>以为 <code class="c">constexpr</code> 万能</strong>。实测 <code class="c">-std=c++11/14</code> 下 <code class="c">static constexpr</code> 成员仍然需要类外定义——换个 <code class="c">-std</code> 就失效，很容易在升级标准或降级兼容时炸。</li>
+<li><strong>对位字段取引用/指针的变体</strong>：<code class="c">auto&amp; r = b.flag;</code>、<code class="c">&amp;b.flag</code> 同样非法——不是转发特有的问题，是位字段的根本属性。</li>
+<li><strong>看到 "couldn't infer template argument" 就慌</strong>。这个报错覆盖了本节三种失败——先对照速查表，别去怀疑模板实现本身。</li>
 </ol>
-<hr />
-<h2>新手要点</h2>
-<ul>
-<li><strong>"完美"是有边界的</strong>：完美转发覆盖"有确定类型的实参"，边界外四种各有个性化的合法绕行路线。</li>
-<li><strong>报错翻译能力</strong>：<code class="c">couldn't infer template argument 'T'</code> 出现在转发调用上时，心里要立刻弹出这张速查表——泛型代码的排障效率就体现在这种报错到根因的映射上。</li>
-<li><strong>预防针</strong>：写泛型包装器（<code class="c">template&lt;class... Args&gt; void log(Args&amp;&amp;...)</code>）时，把四条边界写进接口文档，比事后回答一百个"为什么编不过"省时间。</li>
-</ul>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>变参日志/事件模板</strong>：<code class="c">template&lt;class... Args&gt; void emit(Args&amp;&amp;... args)</code> 是策略引擎的标准件——调用方传 <code class="c">{px, qty}</code>、传 <code class="c">NULL</code>、传位字段标志位时全撞在本节四条上。接口文档里列清边界 + 给出绕行写法，是泛型接口交付的一部分。</li>
-<li><strong>协议结构的位字段</strong>：FIX/二进制协议解析常用位字段压标志位——它们进不了任何 <code class="c">T&amp;</code> 语义的泛型接口，拷贝成普通变量是唯一通道。这条限制也反过来提醒：给泛型接口用的结构别用位字段。</li>
+<li><strong>变参日志/事件模板</strong>：<code class="c">template&lt;class... Args&gt; void emit(Args&amp;&amp;... args)</code> 是策略引擎的标准件——调用方传 <code class="c">{px, qty}</code>、传 <code class="c">NULL</code>、传位字段标志位时全撞在边界上。把五条边界写进接口文档，比事后回答一百个"为什么编不过"省时间。</li>
+<li><strong>协议结构的位字段</strong>：FIX / 二进制协议解析常用位字段压标志位——它们进不了任何 <code class="c">T&amp;</code> 语义的泛型接口，拷贝成普通变量是唯一通道。反过来提醒：<strong>给泛型接口用的结构别用位字段。</strong></li>
+<li><strong>常量表别踩 ODR 坑</strong>：<code class="c">struct Limits { static const std::size_t MaxOrders = 1024; };</code> 传给转发型日志函数（<code class="c">log(Limits::MaxOrders)</code>）会在链接期炸——要么给类外定义，要么 C++17 起写 <code class="c">constexpr</code>。</li>
+<li><strong>行情 SDK 的 nullptr 纪律</strong>：回调注册 <code class="c">registerHandler(nullptr)</code> 走的是转发接口，<code class="c">NULL</code> 会推成整型从而匹配到错误的重载（实测 <code class="c">no known conversion from 'long' to 'void *'</code>）。风格规则里直接用 clang-tidy / 编译选项把 <code class="c">NULL</code> 列为违规符号，比人工 review 可靠。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li>完美转发失败的四种场景是什么？它们的共同根因？</li>
-<li><code class="c">fwd({1,2,3})</code> 报什么错？两种变通写法？</li>
-<li>本机实测 <code class="c">fwd2(NULL)</code> 和 <code class="c">fwd2(nullptr)</code> 的 <code class="c">T</code> 各推成什么？这说明什么？</li>
-<li>重载函数名为什么转发不了？<code class="c">static_cast&lt;void(*)(int)&gt;(ov)</code> 解决了什么？</li>
-<li>位字段转发失败的报错原文是什么？为什么位字段不能有非 const 引用？</li>
-<li>排查泛型转发编译错误的反射动作应该是什么？</li>
-</ol>
+<p><strong>1. 完美转发失败的五种场景是什么？它们的共同根因？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p>①braced-init-list；②<code class="c">0</code>/<code class="c">NULL</code> 当空指针；③重载函数名/函数模板名；④位字段。共同根因：模板推导要求实参先有一个确定类型——<code class="c">{}</code> 不是表达式没有类型，<code class="c">0</code>/<code class="c">NULL</code> 的类型是整型不是"空指针"，重载名是一组候选不是一个值，位字段不能绑非 const 引用。</p>
-</li>
-<li>
-<p><code class="c">error: no matching function for call to 'fwd'</code>，注释里 <code class="c">couldn't infer template argument 'T'</code>（实测原文）。变通：①<code class="c">auto il = {1,2,3}; fwd(il);</code>（<code class="c">auto</code> 有 initializer_list 专门规则，模板没有）；②<code class="c">fwd(std::initializer_list&lt;int&gt;{1,2,3});</code> 显式给类型。</p>
-</li>
-<li>
-<p><code class="c">NULL</code> → <code class="c">T = long</code>（本机 <code class="c">NULL</code> 是 <code class="c">0L</code>；别的平台可能是 <code class="c">int</code>）；<code class="c">nullptr</code> → <code class="c">T = std::nullptr_t</code>。说明 <code class="c">NULL</code> 是"某个整型"，类型随平台漂移，转发进指针语境必然出问题；<code class="c">nullptr</code> 有专属类型、能转成任意指针，是空指针语义的唯一可移植载体。</p>
-</li>
-<li>
-<p>重载函数名不是值，是一组候选函数的名字，没有唯一类型，<code class="c">T</code> 无从推导（<code class="c">couldn't infer template argument 'T'</code>）。<code class="c">static_cast&lt;void(*)(int)&gt;(ov)</code> 在调用侧完成重载决议——把名字钉死成 <code class="c">void(int)</code> 这一个函数的指针，实参有了确定类型 <code class="c">void(*)(int)</code>，推导才能进行。</p>
-</li>
-<li>
-<p><code class="c">error: non-const reference cannot bind to bit-field 'b'</code>（实测原文，四种里唯一直接说真话的）。位字段没有独立地址（多个位共享一个字），而引用必须能绑定到一个可寻址的对象——非 const 引用意味着可能通过它写回，写回一个"没有地址的位"无从谈起。</p>
-</li>
-<li>
-<p>看到转发相关的 <code class="c">couldn't infer template argument</code> / <code class="c">no matching function</code>，先对照速查表查实参：是不是 <code class="c">{}</code>？是不是 <code class="c">0</code>/<code class="c">NULL</code>？是不是重载名？是不是位字段？四种边界覆盖绝大多数转发失败，先排除边界再去怀疑模板实现本身。</p>
-</li>
-</ol>
+<summary>答案</summary>
+<p>①braced-init-list；②<code class="c">0</code>/<code class="c">NULL</code> 当空指针；③只有声明的整型 <code class="c">static const</code> 成员；④重载函数名/函数模板名；⑤位字段。共同根因：模板推导要求实参先有确定类型（或可绑引用）——<code class="c">{}</code> 不是表达式没有类型，<code class="c">0</code>/<code class="c">NULL</code> 的类型是整型而非"空指针"，重载名是一组候选不是一个值，static const 成员绑引用会触发 ODR-use，位字段不能绑非 const 引用。</p>
+</details>
+<p><strong>2. <code class="c">fwd({1,2,3})</code> 报什么错？两种变通写法？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">error: no matching function for call to 'fwd'</code> + <code class="c">note: candidate template ignored: couldn't infer template argument 'T'</code>（实测原文）。变通：①<code class="c">auto il = {1,2,3}; fwd(il);</code>（<code class="c">auto</code> 有 initializer_list 专门规则，模板没有）；②<code class="c">fwd(std::initializer_list&lt;int&gt;{1,2,3});</code> 显式给类型。</p>
+</details>
+<p><strong>3. 本机实测 <code class="c">probe(NULL)</code> 和 <code class="c">probe(nullptr)</code> 的 <code class="c">T</code> 各推成什么？这说明什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">NULL</code> → <code class="c">T = long</code>（本机 <code class="c">NULL</code> 定义为 <code class="c">0L</code>；别的平台可能是 <code class="c">int</code>，实测 <code class="c">probe(0)</code> 得 <code class="c">T = int</code>）；<code class="c">nullptr</code> → <code class="c">T = std::nullptr_t</code>。说明 <code class="c">NULL</code> 是"某个整型"，类型随平台漂移，转发进指针语境必然出问题（实测 <code class="c">no known conversion from 'long' to 'void *'</code>）；<code class="c">nullptr</code> 有专属类型、能转成任意指针。</p>
+</details>
+<p><strong>4. 整型 <code class="c">static const</code> 成员转发失败为什么是链接错误而不是编译错误？有哪三种修法？</strong></p>
+<details>
+<summary>答案</summary>
+<p>这个类内初始化器的存在与否不是重点——关键在于它是否被 <strong>ODR-use</strong>：值上下文（打印、数组长度）用编译期常量替换即可；一旦绑到引用就需要真实地址 → 必须有定义，没有就在链接期报 <code class="c">Undefined symbols for architecture arm64: "Widget::MinVals"</code>。三种修法：①类外 <code class="c">const std::size_t Widget::MinVals;</code>（C++11 起）；②<code class="c">static constexpr</code>（<strong>C++17 起</strong>才隐含 inline，实测 c++11/14 仍链接失败）；③先拷到本地变量 <code class="c">const std::size_t snap = Widget::MinVals;</code>。</p>
+</details>
+<p><strong>5. 重载函数名为什么转发不了？<code class="c">static_cast&lt;void(*)(int)&gt;(ov)</code> 解决了什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>重载函数名不是值，是一组候选的名字，没有唯一类型，<code class="c">T</code> 无从推导（<code class="c">couldn't infer template argument 'T'</code>）。函数模板名同理。 <code class="c">static_cast&lt;void(*)(int)&gt;(ov)</code> 在调用侧完成重载决议——把名字钉死成 <code class="c">void(int)</code> 这一个函数的指针，实参有了确定类型 <code class="c">void(*)(int)</code>，推导才能进行。</p>
+</details>
+<p><strong>6. 位字段转发失败的报错原文是什么？为什么位字段不能有非 const 引用？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">error: non-const reference cannot bind to bit-field 'flag'</code>，并附 <code class="c">note: bit-field is declared here</code> 与 <code class="c">note: passing argument to parameter 'x' here</code>（实测原文，五种里唯一直接说真话的）。位字段没有独立地址（多个位共享一个存储单元），而引用必须绑定到可寻址对象——非 const 引用意味着可能通过它写回一个"没有地址的位"，无从谈起。</p>
+</details>
+<p><strong>7. 排查泛型转发编译错误的反射动作应该是什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>看到 <code class="c">couldn't infer template argument</code> / <code class="c">no matching function</code> / 链接期 <code class="c">Undefined symbols</code>，先对照速查表查实参：是不是 <code class="c">{}</code>？是不是 <code class="c">0</code>/<code class="c">NULL</code>？是不是 static const 成员？是不是重载名？是不是位字段？五种边界覆盖绝大多数转发失败；同时<strong>翻到最后几条 note 找 <code class="c">[T = ...]</code> 或实际实例化类型</strong>——那是唯一指出元凶的行。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item29-move-not-exist.md">Item 29 移动不存在/廉价</a></li>
 <li>下一章：<a href="chapter-06.html#intro">第 6 章 Lambda 表达式</a></li>
-<li>回到：<a href="#intro">第 5 章</a></li>
+<li>相关：<a href="chapter-01.html#ch-1">Item 2 auto 类型推导</a>（auto 能吃大括号列表，模板不能）</li>
+<li>相关：<a href="chapter-03.html#ch-3">第 3 章 Item 8 nullptr</a>（为什么 nullptr 取代 0/NULL）</li>
+<li>回到：<a href="#intro">第 5 章 右值引用、移动语义与完美转发</a></li>
 </ul>
       </section>
 

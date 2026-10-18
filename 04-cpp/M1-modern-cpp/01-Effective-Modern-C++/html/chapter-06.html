@@ -805,113 +805,241 @@ sp-&gt;do_work();
       <section class="section" id="s-item33">
         <div class="sec-head"><div class="sec-no">Item 33</div><h2>Item 33：对 auto&amp;&amp; 形参用 decltype + std::forward（泛型 lambda）</h2></div>
 <blockquote>
-<p>第 6 章 · Item 33 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item32-init-capture.md">Item 32 初始化捕获</a></p>
+<p>第 6 章 Lambda 表达式 · Item 33 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item32-init-capture.md">Item 32 初始化捕获</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item34-lambda-vs-bind.md">Item 34 lambda vs bind</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
 <p>函数模板的完美转发你已经会了：<code class="c">template&lt;class T&gt; void f(T&amp;&amp; x) { g(std::forward&lt;T&gt;(x)); }</code>。C++14 把泛型能力给了 lambda（参数可以写 <code class="c">auto</code>），问题随之而来：<strong>lambda 没有你能写的模板参数名 <code class="c">T</code></strong>——<code class="c">forward</code> 需要显式模板实参，<code class="c">forward&lt;???&gt;(x)</code> 里填什么？</p>
-<p>Meyers 的答案：<code class="c">decltype(x)</code>。形参 <code class="c">x</code> 的声明类型里带着推导出的引用性，<code class="c">decltype</code> 原样取出（Item 3 的规则在这里派上用场），交给 <code class="c">forward</code> 正好够用。这是第 1 章（decltype）、第 5 章（万能引用 + forward）两条线在 lambda 里的合流点。</p>
+<p>Meyers 的答案：<code class="c">decltype(x)</code>。形参 <code class="c">x</code> 的声明类型里带着推导出的引用性，<code class="c">decltype</code> 原样取出（<a href="chapter-01.html#ch-1">Item 3</a> 的规则在这里派上用场），交给 <code class="c">forward</code> 正好够用。这是第 1 章（decltype）、第 5 章（万能引用 + forward）两条线在 lambda 里的合流点。</p>
 <hr />
 <h2>这节讲什么</h2>
 <ol>
-<li>泛型 lambda 完美转发的标准写法与实测（左值/右值各走各的重载）；</li>
-<li>为什么必须用 <code class="c">decltype(x)</code>、为什么 <code class="c">std::move</code> 是错的（实测对照）；</li>
-<li>C++20 的显式模板参数 lambda（终于能写出 <code class="c">T</code> 了）。</li>
+<li>泛型 lambda 的真面目：闭包类里的模板 <code class="c">operator()</code>（含手写等价类对照）；</li>
+<li>为什么完美转发必须配 <code class="c">std::forward&lt;decltype(x)&gt;(x)</code>，<code class="c">std::move</code> 错在哪（实测）；</li>
+<li><code class="c">decltype(x)</code> 为什么给出引用类型，<code class="c">decltype((x))</code> 为什么会把右值性弄丢；</li>
+<li>返回类型推导的规则与冲突报错；</li>
+<li>C++20 显式模板参数列表 lambda（终于能写出 <code class="c">T</code>）；</li>
+<li>与 <code class="c">std::function</code> 的配合，以及类型擦除的实测代价。</li>
 </ol>
+<p>本机环境：clang 23.1.0，arm64-apple-darwin，libc++，默认 <code class="c">-std=c++17 -Wall</code>，C++20 段落标 <code class="c">-std=c++20</code>。</p>
 <hr />
-<h2>核心用法与实测</h2>
-<pre class="code" data-label="cpp"><code class="c">auto fwd = [](auto&amp;&amp; x){
-    func(std::forward&lt;decltype(x)&gt;(x));
+<h2>泛型 lambda = 闭包类里的模板 operator()</h2>
+<p>写 <code class="c">[](auto&amp;&amp; x){...}</code> 时，编译器生成的闭包类大致是这样（手写等价版实测行为一致）：</p>
+<pre class="code" data-label="cpp"><code class="c">struct CompilerClosure {
+    template&lt;class __T&gt;
+    auto operator()(__T&amp;&amp; x) const { return x + x; }
 };
 </code></pre>
-<p><code class="c">auto&amp;&amp;</code> 是万能引用（有 <code class="c">auto</code> 推导，<a href="chapter-05.html#ch-5">Item 24</a>）：左值实参 → <code class="c">auto</code> 推为 <code class="c">T&amp;</code>（形参折叠成 <code class="c">T&amp;</code>）；右值实参 → <code class="c">auto</code> 推为 <code class="c">T</code>（形参为 <code class="c">T&amp;&amp;</code>）。<code class="c">decltype(x)</code> 取形参的<strong>声明类型</strong>——左值实参时是 <code class="c">T&amp;</code>，右值实参时是 <code class="c">T&amp;&amp;</code>——正是 <code class="c">forward</code> 需要的输入。</p>
-<p>clang 23.1.0 实测（重载分辨值类别）：</p>
-<pre class="code" data-label="cpp"><code class="c">void func(std::string&amp; s)  { std::cout &lt;&lt; &quot;左值重载: &quot; &lt;&lt; s &lt;&lt; &quot;\n&quot;; }
-void func(std::string&amp;&amp; s) { std::cout &lt;&lt; &quot;右值重载: &quot; &lt;&lt; s &lt;&lt; &quot;\n&quot;; }
+<p><code class="c">__T</code> 是编译器内部的名字——<strong>你的 lambda 体里够不着它</strong>，这是后面所有麻烦的根源。实测同一个 lambda 被不同类型调用（这本身就是"<code class="c">operator()</code> 是模板"的证据）：</p>
+<pre class="code" data-label="code"><code class="c">twice(21)          = 42          // __T = int
+twice(2.5)         = 5           // __T = double
+twice(std::string) = abab        // __T = std::string
+手写闭包 cc(21)     = 42
+手写闭包 cc(2.5)    = 5
+</code></pre>
+<p><code class="c">decltype(x)</code> 是唯一能合法拿到这个类型的途径。</p>
+<hr />
+<h2>必须配 forward<decltype(x)>(x)</h2>
+<pre class="code" data-label="cpp"><code class="c">void func(std::string&amp;  s);   // 左值重载
+void func(std::string&amp;&amp; s);   // 右值重载
 
 auto fwd = [](auto&amp;&amp; x){ func(std::forward&lt;decltype(x)&gt;(x)); };
-std::string s = &quot;tick&quot;;
-fwd(s);                    // 左值重载: tick   ← 左值保持左值
-fwd(std::string(&quot;新生&quot;));   // 右值重载: 新生   ← 右值保持右值
+auto bad = [](auto&amp;&amp; x){ func(std::move(x)); };
 </code></pre>
-<p>两个重载各走各的，转发是完美的。</p>
-<h2>反面教材：用 std::move 代替 forward</h2>
-<pre class="code" data-label="cpp"><code class="c">auto bad = [](auto&amp;&amp; x){ func(std::move(x)); };
-bad(s);                    // 右值重载: tick   ← 左值被强制转成右值！
+<p>clang 23.1.0 实测：</p>
+<pre class="code" data-label="code"><code class="c">fwd(s)          :  左值重载: tick-long-enough-to-beat-sso-optimization
+fwd(&quot;临时&quot;)      :  右值重载: 临时
+bad(s)          :  右值重载: tick-long-enough-to-beat-sso-optimization
 </code></pre>
-<p><code class="c">std::move</code> 是<strong>无条件</strong>转右值——左值实参也被强行移动，调用方的对象在不知情中被"允许掏空"。实测里 <code class="c">bad(s)</code> 走了右值重载，证明 <code class="c">s</code> 被当右值处理了。</p>
-<p>附带一个诚实的实测细节：打印 <code class="c">bad</code> 之后的 <code class="c">s</code>，本机（libc++ SSO）仍显示 <code class="c">"tick"</code>——move 后源对象是<strong>有效但未指定</strong>状态，libc++ 的短字符串优化恰好没清它。<strong>"看起来没被掏空"不是安全的证据</strong>——换长字符串（堆分配）或别的实现就清空了。正确性不能赌实现细节。</p>
-<h2>为什么不能写 forward&lt;T&gt;</h2>
-<p>lambda 的闭包类型里 <code class="c">operator()</code> 确实是模板，但那个模板参数<strong>没有你能写的名字</strong>：</p>
-<pre class="code" data-label="cpp"><code class="c">// 闭包类型大致长这样（编译器合成）：
-class Closure {
-public:
-    template&lt;typename __T&gt;
-    auto operator()(__T&amp;&amp; x) const { ... }
-};
+<p><code class="c">auto&amp;&amp;</code> 是万能引用（有 <code class="c">auto</code> 推导，<a href="chapter-05.html#ch-5">Item 24</a>）：左值实参 → <code class="c">auto</code> 推为 <code class="c">T&amp;</code>（形参折叠成 <code class="c">T&amp;</code>）；右值实参 → <code class="c">auto</code> 推为 <code class="c">T</code>（形参 <code class="c">T&amp;&amp;</code>）。<code class="c">decltype(x)</code> 取形参的<strong>声明类型</strong>——正是 <code class="c">forward</code> 需要的输入。</p>
+<h3>decltype(x) 为什么给出引用类型</h3>
+<p>实测（<code class="c">nm&lt;T&gt;()</code> 把类型名打印出来）：</p>
+<pre class="code" data-label="code"><code class="c">probe(左值):
+  decltype(x)   = std::string&amp;
+  decltype((x)) = std::string&amp;
+probe(右值):
+  decltype(x)   = std::string&amp;&amp;
+  decltype((x)) = std::string&amp;
 </code></pre>
-<p><code class="c">__T</code> 是编译器的内部名，你的 lambda 体里够不着它。<code class="c">decltype(x)</code> 是唯一能合法拿到这个类型的途径。</p>
+<p>两条结论：</p>
+<ul>
+<li><strong><code class="c">decltype(x)</code> 走的是 Item 3 的"分支一"</strong>——<code class="c">x</code> 是<strong>变量名的 id-expression</strong>，结果是它的<strong>声明类型</strong>，完整保留引用性与 cv：左值实参时 <code class="c">T&amp;</code>、右值实参时 <code class="c">T&amp;&amp;</code>。</li>
+<li><strong><code class="c">decltype((x))</code> 是"分支二"</strong>——<code class="c">(x)</code> 是<strong>表达式</strong>，左值表达式恒给 <code class="c">T&amp;</code>。实测右值实参时它把 <code class="c">std::string&amp;&amp;</code> 压成了 <code class="c">std::string&amp;</code>，<strong>右值性丢失</strong>，forward 退化成左值转发。<strong>转发语境永远写 <code class="c">decltype(x)</code>，一个括号都不能多加。</strong></li>
+</ul>
+<h3>反面教材：std::move 的代价（本机实测纠正）</h3>
+<p><code class="c">std::move</code> 是<strong>无条件</strong>转右值，左值实参也被强行移动。笔记里流传多年的说法——"SSO 短字符串 move 后内容还在"——<strong>在本机不成立</strong>：</p>
+<pre class="code" data-label="code"><code class="c">std::string short_s = &quot;tick&quot;;                                   // SSO：数据存在对象里
+std::string long_s  = &quot;AAPL 20260710 C 230.00 x100 @1.2345&quot;;    // 堆分配
+auto takes = [](auto&amp;&amp; x){ std::string owned = std::move(x); ... };
+
+  取走: tick
+  move 后 short_s = '' (size=0)
+  取走: AAPL 20260710 C 230.00 x100 @1.2345
+  move 后 long_s  = '' (size=0)
+</code></pre>
+<p>本机 libc++ 上<strong>短串和长串移动后都被清空</strong>。标准只保证源对象处于"有效但未指定"状态——它现在恰好是空串，换实现可以直接改成别的有效值。<strong>结论不变但理由要更正：不能用"看起来没被掏空"当安全证据，得靠写法正确。</strong>对照 <code class="c">forward</code> 的版本：左值实参时被<strong>拷贝</strong>进 <code class="c">owned</code>，源对象内容完好（实测 <code class="c">lv = '左值内容-足够长-...'</code> 保留）。</p>
+<hr />
+<h2>返回类型推导</h2>
+<p>泛型 lambda 的返回类型按 <code class="c">auto</code> 规则推导（每次实例化独立推导）。两条分支返回类型不一致时实测报错：</p>
+<pre class="code" data-label="cpp"><code class="c">auto pick = [](auto x){ if (x &gt; 0) return x; else return 0.0; };   // int / double 冲突
+std::cout &lt;&lt; pick(1) &lt;&lt; &quot;\n&quot;;
+</code></pre>
+<pre class="code" data-label="code"><code class="c">error: 'auto' in return type deduced as 'double' here but deduced as 'int' in earlier return statement
+note: in instantiation of function template specialization 'main()::(lambda)::operator()&lt;int&gt;' requested here
+</code></pre>
+<p>需要稳定分支类型时，显式写尾置返回类型：<code class="c">[](auto x) -&gt; double { ... }</code>。</p>
+<hr />
 <h2>C++20：终于能写 T 了</h2>
 <p>C++20 允许 lambda 带显式模板参数列表（clang 23.1.0 + <code class="c">-std=c++20</code> 实测）：</p>
-<pre class="code" data-label="cpp"><code class="c">auto f = []&lt;typename T&gt;(T&amp;&amp; x){
-    func(std::forward&lt;T&gt;(x));   // T 有名字了，forward&lt;T&gt; 直写
-};
+<pre class="code" data-label="cpp"><code class="c">auto f = []&lt;typename T&gt;(T&amp;&amp; x){ func(std::forward&lt;T&gt;(x)); };   // T 有名字了
+
+auto probe = []&lt;typename T&gt;(T&amp;&amp; x){ std::cout &lt;&lt; __PRETTY_FUNCTION__ &lt;&lt; &quot;\n&quot;; };
+auto conv  = []&lt;typename T&gt;(T x){ return static_cast&lt;double&gt;(x); };
+conv.template operator()&lt;long&gt;(7);                             // 甚至可以显式指定实参
+auto sum2  = []&lt;std::integral... Ts&gt;(Ts... xs){ return (xs + ...); };  // 变参 + 约束
 </code></pre>
-<p>实测推导与模板一致：左值实参 <code class="c">[T = int &amp;]</code>、右值实参 <code class="c">[T = int]</code>。C++20 项目里这是更直白的写法；C++14/17 代码库里 <code class="c">decltype(x)</code> 写法仍是标准答案。</p>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">  auto main()::(lambda)::operator()(T &amp;&amp;) const [T = std::string &amp;]
+  auto main()::(lambda)::operator()(T &amp;&amp;) const [T = std::string]
+  auto main()::(lambda)::operator()(T &amp;&amp;) const [T = int]
+conv.template operator()&lt;long&gt;(7): 7
+sum2(1,2,3) = 6
+</code></pre>
+<p>注意 <code class="c">__PRETTY_FUNCTION__</code> 里的 <code class="c">(lambda)::operator()</code>——<strong>这直接证实了"闭包类的 operator() 是模板"</strong>。另外 <code class="c">-std=c++17</code> 下这段会给出 <code class="c">warning: explicit template parameter list for lambdas is a C++20 extension</code>（作为扩展仍能编译），不要误以为已经在 C++17 合法。</p>
+<hr />
+<h2>与 std::function 的配合：类型擦除只冻结一种签名</h2>
+<p><code class="c">std::function</code> 做的是<strong>类型擦除</strong>，它必须先把"要调用什么签名"固化下来：</p>
+<pre class="code" data-label="cpp"><code class="c">auto twice = [](auto&amp;&amp; x){ return x + x; };
+std::function&lt;int(int)&gt; fi = twice;    // 冻结成 int(int)，此时才实例化 operator()&lt;int&gt;
+fi(21);                                // OK：42
+</code></pre>
+<p>擦除之后泛型就消失了——实测再用别的类型调用：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching function for call to object of type 'std::function&lt;int (int)&gt;'
+    std::cout &lt;&lt; f2(std::string(&quot;x&quot;)) &lt;&lt; &quot;\n&quot;;
+                 ^~
+note: candidate function not viable: no known conversion from 'std::string' to 'int' for 1st argument
+</code></pre>
+<p>所以 <strong><code class="c">std::function</code> 存泛型 lambda 时，你选的那个签名就是它的全部能力</strong>。要保留泛型请用 <code class="c">auto</code> 变量或模板参数传递闭包。</p>
+<h3>性能实测（<code class="c">-O2</code>，取 5 轮最小值）</h3>
+<pre class="code" data-label="code"><code class="c">泛型 lambda 直调       : 0.31 ~ 0.39 ns/次
+再包一层 lambda        : 0.31 ~ 0.35 ns/次
+std::function 类型擦除 : 0.94 ns/次
+类型擦除 / 直调 = 2.4x ~ 3.0x
+</code></pre>
+<p><code class="c">auto</code> 变量持有的 lambda 一路上都会被内联展开（实测"再包一层"没有任何额外开销）；<code class="c">std::function</code> 每次调用要走一次间接跳转（通过擦除后的 invoker 指针），实测约多付 0.5-0.6 ns/次。绝对数字很小，但它决定了：<strong>回调注册可以用 <code class="c">std::function</code>，热路径上逐条调用的地方要用模板传闭包。</strong></p>
+<hr />
+<h2>完整可运行例子</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;functional&gt;
+#include &lt;iostream&gt;
+#include &lt;string&gt;
+#include &lt;type_traits&gt;
+#include &lt;utility&gt;
+
+void func(std::string&amp;  s) { std::cout &lt;&lt; &quot;  左值重载: &quot; &lt;&lt; s &lt;&lt; &quot;\n&quot;; }
+void func(std::string&amp;&amp; s) { std::cout &lt;&lt; &quot;  右值重载: &quot; &lt;&lt; s &lt;&lt; &quot;\n&quot;; }
+
+template&lt;class T&gt; const char* nm() {
+    if constexpr (std::is_same_v&lt;T, std::string&amp;&gt;)       return &quot;std::string&amp;&quot;;
+    else if constexpr (std::is_same_v&lt;T, std::string&gt;)   return &quot;std::string&quot;;
+    else if constexpr (std::is_same_v&lt;T, std::string&amp;&amp;&gt;) return &quot;std::string&amp;&amp;&quot;;
+    else return &quot;?&quot;;
+}
+
+int main() {
+    auto fwd = [](auto&amp;&amp; x){ func(std::forward&lt;decltype(x)&gt;(x)); };
+    auto bad = [](auto&amp;&amp; x){ func(std::move(x)); };
+
+    std::string s = &quot;tick-long-enough-to-beat-sso-optimization&quot;;
+    std::cout &lt;&lt; &quot;fwd(s)     :&quot;; fwd(s);
+    std::cout &lt;&lt; &quot;fwd(右值)  :&quot;; fwd(std::string(&quot;新生&quot;));
+    std::cout &lt;&lt; &quot;bad(s)     :&quot;; bad(s);
+
+    auto probe = [](auto&amp;&amp; x){
+        std::cout &lt;&lt; &quot;  decltype(x)   = &quot; &lt;&lt; nm&lt;decltype(x)&gt;()
+                  &lt;&lt; &quot; / decltype((x)) = &quot; &lt;&lt; nm&lt;decltype((x))&gt;() &lt;&lt; &quot;\n&quot;;
+    };
+    std::cout &lt;&lt; &quot;probe(左值):\n&quot;; probe(s);
+    std::cout &lt;&lt; &quot;probe(右值):\n&quot;; probe(std::string(&quot;y&quot;));
+
+    auto twice = [](auto&amp;&amp; x){ return x + x; };
+    std::cout &lt;&lt; &quot;twice(21) = &quot; &lt;&lt; twice(21) &lt;&lt; &quot; / twice(std::string(ab)) = &quot; &lt;&lt; twice(std::string(&quot;ab&quot;)) &lt;&lt; &quot;\n&quot;;
+    std::function&lt;int(int)&gt; fi = twice;
+    std::cout &lt;&lt; &quot;std::function&lt;int(int)&gt;::fi(21) = &quot; &lt;&lt; fi(21) &lt;&lt; &quot;\n&quot;;
+}
+</code></pre>
+<p>本机实测 clang 23.1.0（<code class="c">-std=c++17 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">fwd(s)     :  左值重载: tick-long-enough-to-beat-sso-optimization
+fwd(右值)  :  右值重载: 新生
+bad(s)     :  右值重载: tick-long-enough-to-beat-sso-optimization
+probe(左值):
+  decltype(x)   = std::string&amp; / decltype((x)) = std::string&amp;
+probe(右值):
+  decltype(x)   = std::string&amp;&amp; / decltype((x)) = std::string&amp;
+twice(21) = 42 / twice(std::string(ab)) = abab
+std::function&lt;int(int)&gt;::fi(21) = 42
+</code></pre>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
 <ol>
-<li><strong>泛型 lambda 里用 <code class="c">std::move</code></strong>。如实测：左值也被转右值，调用方对象被掏空（而且 SSO 下可能"看起来没事"，bug 会潜伏到换数据/换平台才爆）。</li>
+<li><strong>泛型 lambda 里用 <code class="c">std::move</code></strong>。实测 <code class="c">bad(s)</code> 走右值重载——左值实参被允许掏空。本机实测纠正：SSO 短串移动后<strong>同样被清空</strong>（<code class="c">size=0</code>），"短串看不出问题"的说法在这套 libc++ 上不成立。</li>
 <li><strong>试图 <code class="c">forward&lt;auto&gt;(x)</code></strong>——<code class="c">auto</code> 不是类型，不能当模板实参。<code class="c">decltype(x)</code> 是唯一通道（C++20 前）。</li>
-<li><strong><code class="c">decltype((x))</code> 加括号</strong>。Item 3 的括号陷阱在这里同样存在：<code class="c">decltype((x))</code> 对左值形参给 <code class="c">T&amp;</code>……和 <code class="c">decltype(x)</code> 恰好相同？不——<code class="c">x</code> 是<strong>变量名</strong>，<code class="c">decltype(x)</code> 给声明类型（含推导出的引用性）；<code class="c">(x)</code> 是表达式，左值表达式恒给 <code class="c">T&amp;</code>——右值实参的 <code class="c">x</code>（声明类型 <code class="c">T&amp;&amp;</code>）经 <code class="c">(x)</code> 只剩 <code class="c">T&amp;</code>，右值性丢了。转发里永远写 <code class="c">decltype(x)</code>，不多不少。</li>
+<li><strong><code class="c">decltype((x))</code> 多加一对括号</strong>。实测右值实参时它把 <code class="c">std::string&amp;&amp;</code> 压成 <code class="c">std::string&amp;</code>，右值性丢失、转发退化。永远写 <code class="c">decltype(x)</code>。</li>
+<li><strong>以为 <code class="c">std::function</code> 能保住泛型</strong>。它只冻结一个签名，实测用别的类型调用报 <code class="c">no matching function for call to object of type 'std::function&lt;int (int)&gt;'</code>。</li>
+<li><strong>返回类型推导冲突</strong>。两条 <code class="c">return</code> 类型不一致时报 <code class="c">deduced as 'double' here but deduced as 'int' in earlier return statement</code>——显式写 <code class="c">-&gt; T</code>。</li>
+<li><strong>在 <code class="c">-std=c++17</code> 下用 C++20 的模板参数列表写法</strong>。能编（作为扩展），但会出 <code class="c">-Wc++20-extensions</code> 警告——不要把带警告的代码当已标准化。</li>
 <li><strong>普通 lambda 过度泛化</strong>。参数类型明明确定（只接 <code class="c">const Tick&amp;</code>），就别写 <code class="c">auto&amp;&amp;</code>——泛型接口的接受面越大，误用面越大。</li>
 </ol>
-<hr />
-<h2>新手要点</h2>
-<ul>
-<li><strong>版本线</strong>：C++11 lambda 参数必须显式类型；C++14 起支持 <code class="c">auto</code>（泛型 lambda）；C++20 起支持显式模板参数列表 <code class="c">[]&lt;class T&gt;(T&amp;&amp; x)</code>。</li>
-<li><strong>记忆钩子</strong>：lambda 里没有 <code class="c">T</code>，有 <code class="c">x</code>——<code class="c">forward&lt;decltype(x)&gt;(x)</code>，<code class="c">decltype</code> 就是你的 <code class="c">T</code>。</li>
-<li><strong>什么时候用</strong>：写"把实参原样递给下一层"的转发 lambda（回调适配、异步包装）。普通 lambda 不需要这套。</li>
-</ul>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
 <li><strong>回调适配层</strong>：策略引擎里把用户 lambda 包一层再接进事件循环（记日志、计时、异常吞掉）——包装层必须完美转发，否则 tick 对象在每一跳被多拷一次。<code class="c">[](auto&amp;&amp; tick){ timer.scoped([&amp;]{ user_cb(std::forward&lt;decltype(tick)&gt;(tick)); }); }</code> 是标准件。</li>
-<li><strong>decltype 全家桶的汇合点</strong>：Item 3 的 <code class="c">decltype</code> 规则 + Item 24 的万能引用 + Item 25 的 forward，在泛型 lambda 这一个语法点上全部用上——它是检验前三章是否真懂的试金石。</li>
+<li><strong><code class="c">std::function</code> 别用在每 tick</strong>：实测类型擦除多付 0.5-0.6 ns/次且有间接跳转。回调注册/存储用它没问题，逐条调用的热路径要用模板传闭包（<code class="c">template&lt;class F&gt; void onTick(F&amp;&amp; cb)</code>），让 <code class="c">operator()</code> 内联展开。</li>
+<li><strong>decltype 全家桶的汇合点</strong>：Item 3 的 decltype 规则 + 第 5 章的万能引用 / 引用折叠 / forward，在泛型 lambda 这一个语法点上全部用上——它是检验前面内容是否真懂的试金石。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li>泛型 lambda 的 <code class="c">auto&amp;&amp;</code> 参数如何配合 <code class="c">std::forward</code> 实现完美转发？为什么不能写 <code class="c">forward&lt;T&gt;</code>？</li>
-<li><code class="c">decltype(x)</code> 在 <code class="c">auto&amp;&amp;</code> 形参上拿到什么？左值实参和右值实参时分别是什么？</li>
-<li>用 <code class="c">std::move</code> 代替 <code class="c">forward&lt;decltype(x)&gt;</code> 会发生什么？实测里有什么容易误导读者的细节？</li>
-<li><code class="c">decltype(x)</code> 和 <code class="c">decltype((x))</code> 在转发语境下有何区别？哪个对？</li>
-<li>C++20 给泛型 lambda 加了什么新写法？</li>
-</ol>
+<p><strong>1. 泛型 lambda 的 <code class="c">auto&amp;&amp;</code> 参数如何配合 <code class="c">std::forward</code> 实现完美转发？为什么不能写 <code class="c">forward&lt;T&gt;</code>？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p><code class="c">auto&amp;&amp;</code> 是万能引用：左值实参使 <code class="c">auto</code> 推为 <code class="c">T&amp;</code>（形参折叠成 <code class="c">T&amp;</code>），右值实参推为 <code class="c">T</code>（形参 <code class="c">T&amp;&amp;</code>）。<code class="c">decltype(x)</code> 取出形参的声明类型——左值时是 <code class="c">T&amp;</code>、右值时是 <code class="c">T&amp;&amp;</code>——交给 <code class="c">std::forward&lt;decltype(x)&gt;(x)</code> 即可还原值类别（实测：左值走左值重载、右值走右值重载）。不能写 <code class="c">forward&lt;T&gt;</code> 是因为 lambda 的模板参数是编译器合成的内部名，源码里没有可写的 <code class="c">T</code>。</p>
-</li>
-<li>
-<p>拿到形参 <code class="c">x</code> 的声明类型，完整保留引用性与 cv：左值实参时是 <code class="c">T&amp;</code>，右值实参时是 <code class="c">T&amp;&amp;</code>。它不像 <code class="c">auto</code> 那样剥引用——这正是 Item 3 的 <code class="c">decltype</code> 分支一规则（变量名 → 声明类型）在起作用。</p>
-</li>
-<li>
-<p>左值实参也被强制转右值：<code class="c">bad(s)</code>（<code class="c">s</code> 是左值）实测走了右值重载，<code class="c">s</code> 被"允许掏空"。误导细节：移动后打印 <code class="c">s</code> 在本机仍显示 <code class="c">"tick"</code>——libc++ 的 SSO 短字符串移动后保留了内容，但标准只保证"有效未指定"；换长字符串（堆分配）或换实现就清空。"没看到破坏"不等于"没有破坏"。</p>
-</li>
-<li>
-<p><code class="c">decltype(x)</code> 取变量名的声明类型（<code class="c">T&amp;</code> 或 <code class="c">T&amp;&amp;</code>，含推导出的引用性）——正确；<code class="c">decltype((x))</code> 把 <code class="c">(x)</code> 当表达式，左值表达式恒给 <code class="c">T&amp;</code>，右值实参的 <code class="c">T&amp;&amp;</code> 被压成 <code class="c">T&amp;</code>，右值性丢失、forward 退化成左值转发。转发语境永远写 <code class="c">decltype(x)</code>，不多不少。</p>
-</li>
-<li>
-<p>显式模板参数列表：<code class="c">[]&lt;typename T&gt;(T&amp;&amp; x){ func(std::forward&lt;T&gt;(x)); }</code>——模板参数终于有了可写的名字，<code class="c">forward&lt;T&gt;</code> 直写，与函数模板写法完全对齐（clang 23.1.0 + <code class="c">-std=c++20</code> 实测通过，推导结果与 <code class="c">auto&amp;&amp;</code> 版一致）。</p>
-</li>
-</ol>
+<summary>答案</summary>
+<p><code class="c">auto&amp;&amp;</code> 是万能引用：左值实参使 <code class="c">auto</code> 推为 <code class="c">T&amp;</code>（形参折叠成 <code class="c">T&amp;</code>），右值实参推为 <code class="c">T</code>（形参 <code class="c">T&amp;&amp;</code>）。<code class="c">decltype(x)</code> 取出形参的声明类型——左值时 <code class="c">T&amp;</code>、右值时 <code class="c">T&amp;&amp;</code>——交给 <code class="c">std::forward&lt;decltype(x)&gt;(x)</code> 即可还原值类别（实测左值走左值重载、右值走右值重载）。不能写 <code class="c">forward&lt;T&gt;</code> 是因为那个模板参数是编译器合成的内部名，源码里没有可写的 <code class="c">T</code>。</p>
+</details>
+<p><strong>2. 为什么说"泛型 lambda = 闭包类里的模板 operator()”？有什么实测证据？</strong></p>
+<details>
+<summary>答案</summary>
+<p>手写 <code class="c">struct CompilerClosure { template&lt;class __T&gt; auto operator()(__T&amp;&amp; x) const { return x + x; }; };</code> 与 <code class="c">[](auto&amp;&amp; x){ return x + x; }</code> 行为一致（实测 <code class="c">cc(21)=42</code>、<code class="c">cc(2.5)=5</code>）。更直接的证据：同一个 lambda 能被 <code class="c">int</code>/<code class="c">double</code>/<code class="c">std::string</code> 分别调用；<code class="c">__PRETTY_FUNCTION__</code> 打印出 <code class="c">main()::(lambda)::operator()(T &amp;&amp;) const [T = std::string &amp;]</code>——明写了 <code class="c">operator()</code> 是模板。</p>
+</details>
+<p><strong>3. <code class="c">decltype(x)</code> 在 <code class="c">auto&amp;&amp;</code> 形参上拿到什么？左右值实参时分别是什么？为什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>拿到形参 <code class="c">x</code> 的声明类型，完整保留引用性与 cv：左值实参时 <code class="c">std::string&amp;</code>，右值实参时 <code class="c">std::string&amp;&amp;</code>（实测）。因为 <code class="c">x</code> 作为变量名的 id-expression，走的是 Item 3 的"分支一"——给声明类型；它不像 <code class="c">auto</code> 那样剥引用。</p>
+</details>
+<p><strong>4. <code class="c">decltype((x))</code> 有什么问题？实测证据是什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">(x)</code> 是表达式，走 Item 3 的"分支二"——左值表达式恒给 <code class="c">T&amp;</code>。实测右值实参时 <code class="c">decltype(x)=std::string&amp;&amp;</code> 而 <code class="c">decltype((x))=std::string&amp;</code>：右值性被压掉，forward 退化成左值转发。<strong>永远写 <code class="c">decltype(x)</code>，不多不少一个括号。</strong></p>
+</details>
+<p><strong>5. 用 <code class="c">std::move</code> 代替 <code class="c">forward&lt;decltype(x)&gt;</code> 会发生什么？本机对 SSO 的实测结论是什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>左值实参也被强制转右值：实测 <code class="c">bad(s)</code>（<code class="c">s</code> 是左值）走了右值重载。关于"看起来没事"的细节需要更正——本机 libc++ 上<strong>短串（SSO）和长串移动后 <code class="c">size</code> 都变成 0</strong>（实测 <code class="c">move 后 short_s = '' (size=0)</code>）。标准只保证"有效但未指定"，现在是空串、换个实现可以是任何有效值。所以"没看到破坏"绝不是证据，唯一可靠的是写法正确。</p>
+</details>
+<p><strong>6. C++20 给泛型 lambda 加了什么新写法？在 C++17 下会怎样？</strong></p>
+<details>
+<summary>答案</summary>
+<p>显式模板参数列表：<code class="c">[]&lt;typename T&gt;(T&amp;&amp; x){ func(std::forward&lt;T&gt;(x)); }</code>——模板参数终于有了可写的名字，还能配合约束（<code class="c">[]&lt;std::integral... Ts&gt;(Ts... xs)</code>）与显式指定实参（<code class="c">conv.template operator()&lt;long&gt;(7)</code>）。<code class="c">-std=c++17</code> 下能编但给出 <code class="c">warning: explicit template parameter list for lambdas is a C++20 extension</code>，不要当成已标准化。</p>
+</details>
+<p><strong>7. 泛型 lambda 存进 <code class="c">std::function</code> 会丢什么？性能代价实测多少？</strong></p>
+<details>
+<summary>答案</summary>
+<p>丢泛型本身：<code class="c">std::function&lt;int(int)&gt; f = twice;</code> 只冻结 <code class="c">int(int)</code> 这一个实例化，再用 <code class="c">std::string</code> 调用报 <code class="c">no matching function for call to object of type 'std::function&lt;int (int)&gt;'</code>。性能上（<code class="c">-O2</code>，5 轮最小值）泛型 lambda 直调约 0.31-0.39 ns/次、<code class="c">std::function</code> 约 0.94 ns/次，即约 2.4-3.0 倍、多付约 0.5-0.6 ns/次；而"再包一层 lambda"没有任何额外开销（完全内联）。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item32-init-capture.md">Item 32 初始化捕获</a></li>
 <li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item34-lambda-vs-bind.md">Item 34 lambda vs bind</a></li>
-<li>回到：<a href="#intro">第 6 章</a></li>
+<li>相关：<a href="chapter-05.html#ch-5">第 5 章 Item 28 引用折叠</a>（<code class="c">decltype(x)</code> 拿到的就是折叠后的形参类型）</li>
+<li>相关：<a href="chapter-01.html#ch-1">第 1 章 Item 3 decltype</a>（<code class="c">decltype(x)</code> 与 <code class="c">decltype((x))</code> 的分支规则）</li>
+<li>回到：<a href="#intro">第 6 章 Lambda 表达式</a></li>
 </ul>
       </section>
       <section class="section" id="s-item34">
