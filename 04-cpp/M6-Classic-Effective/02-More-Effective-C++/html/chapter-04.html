@@ -276,6 +276,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-item16"><span class="n">16</span>理清临时对象的产生与消除</a>
+          <a href="#s-item17"><span class="n">17</span>剖析 new/delete 的底层开销，优化堆内存使用</a>
+          <a href="#s-item18"><span class="n">18</span>通过重载 operator new 实现自定义内存池</a>
+          <a href="#s-item19"><span class="n">19</span>临时对象、拷贝构造与 RVO/NRVO（综合复习）</a>
+          <a href="#s-item20"><span class="n">20</span>按需选用静态绑定与动态绑定，不要无脑虚函数</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -298,7 +303,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Meyers《More Effective C++》· 按需查</div>
           <h1>第四部分 效率优化（Efficiency）</h1>
           <div class="meta">
-<span>book <b>M6-Classic-Effective · 02-More-Effective-C++</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>1</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M6-Classic-Effective · 02-More-Effective-C++</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>6</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -317,6 +322,648 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </ul>
 <h2>章节摘要</h2>
 <p>效率优化：临时对象消除、<code class="c">new</code>/<code class="c">delete</code> 底层开销、自定义内存池、RVO/NRVO、按需选虚函数。</p>
+      </section>
+      <section class="section" id="s-item16">
+        <div class="sec-head"><div class="sec-no">Item 16</div><h2>条款 16：理清临时对象的产生与消除</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Understand the origins of temporary objects.</strong> 临时对象（无名、活一行表达式）
+是 C++ 性能损耗最隐蔽的来源：它们在你看不见的地方构造、拷贝、析构——
+每行"人畜无害"的代码背后可能藏着一串。本条列出临时对象的五个产地与
+对应的消除手法（→ Effective item21 RVO、item26 延后定义的落地版）。</p>
+<p>← 上一章 <a href="chapter-03.html#ch-3">ch03 异常</a>；下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item17-深度剖析newdelete底层内存分配开销，优化堆内存使用.md">item17 new/delete 开销</a>。</p>
+<hr />
+<h2>1. 临时对象的五个产地</h2>
+<p><strong>产地一：按值返回的函数调用</strong>（最常见）</p>
+<pre class="code" data-label="cpp"><code class="c">Rational operator*(const Rational&amp;, const Rational&amp;);
+Rational r = a * b * c;     // (a*b) 产生临时1，临时1 * c 产生临时2——
+                            // 两次构造+析构（RVO 只优化最后一层，中间临时照样活）
+</code></pre>
+<p><strong>产地二：隐式类型转换</strong>（最隐蔽）</p>
+<pre class="code" data-label="cpp"><code class="c">void log(const std::string&amp; s);
+log(&quot;hello&quot;);               // const char* → string 隐式构造一个临时（含堆分配！）
+int count(const std::string&amp; s, char c);
+count(&quot;hello world&quot;, 'o');  // 同上——每调用一次造一个 string
+</code></pre>
+<p><strong>产地三：表达式求值的中间结果</strong></p>
+<pre class="code" data-label="cpp"><code class="c">std::string s = a + b + c + d;   // 每个 + 一个临时（老实现）；
+                                  // C++11 起 string 的 operator+ 有 &amp;&amp; 重载才救回来
+</code></pre>
+<p><strong>产地四：按值传参</strong></p>
+<pre class="code" data-label="cpp"><code class="c">void process(Widget w);     // 调用处：实参 → w 一次拷贝构造；返回时 w 析构
+process(make_widget());     // 多一层：临时对象 → w（移动构造，RVO 可消）
+</code></pre>
+<p><strong>产地五：正确但浪费的写法</strong></p>
+<pre class="code" data-label="cpp"><code class="c">for (const auto&amp; kv : map) { std::string key = kv.first; ... }   // 每轮拷一个 string
+// vs
+for (const auto&amp; [key, value] : map) { ... }                     // 结构化绑定，零拷贝
+</code></pre>
+<h2>2. 消除手法对照表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>产地</th>
+<th>手法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>按值返回</td>
+<td>RVO 信任它（→ Effective item21：C++17 强制，别加 move）；链式表达式重构为分段或输出参数</td>
+</tr>
+<tr>
+<td>隐式转换</td>
+<td>重载覆盖常见实参类型（<code class="c">log(const char*)</code> 版）；或调用方显式复用（<code class="c">const std::string s = ...; log(s);</code>）</td>
+</tr>
+<tr>
+<td>中间结果</td>
+<td>移动语义版本（<code class="c">operator+(string&amp;&amp;, ...)</code>）；<code class="c">+=</code> 替代 <code class="c">+</code> 链</td>
+</tr>
+<tr>
+<td>按值传参</td>
+<td>const 引用（Effective item20）；要"吃掉"参数时才按值（sink 参数 + move）</td>
+</tr>
+<tr>
+<td>通用</td>
+<td>结构化绑定、<code class="c">string_view</code>/<code class="c">span</code> 只读视图（→ item54）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>隐式转换那条最值得展开</strong>：<code class="c">log("hello")</code> 的临时 string <strong>带堆分配</strong>
+（SSO 放不下时）——热路径上一个 <code class="c">log(tick.symbol)</code> 就是一次 malloc。
+给 log 加 <code class="c">std::string_view</code> 重载（C++17）是彻底的解法：const char*、
+string、string_view 三吃，零分配。</p>
+<h2>3. 侦测手法：怎么找到临时对象</h2>
+<ul>
+<li><strong>静态</strong>：review 时盯"按值返回的表达式链"和"字符串实参"——
+  两个最高产地人工筛一遍</li>
+<li><strong>动态</strong>：给类型加带打印的构造/析构（Tracer 模式，→ 18.1 ① 的手法）——
+  临时对象的"构造/析构对"在输出里一目了然</li>
+<li><strong>工具</strong>：<code class="c">perf record</code> 里看 <code class="c">operator new</code>/<code class="c">string 构造</code>的调用点占比
+  （→ 06.6.5 ch06 perf 的方法论）——临时对象的分配在 profile 里藏不住</li>
+</ul>
+<h2>HFT 关联</h2>
+<ul>
+<li>热路径的字符串纪律：<strong><code class="c">string_view</code> 进、string 出</strong>（→ item54 的白名单）——
+  隐式转换产地（log/lookup）全部用 string_view 接口封死</li>
+<li>链式表达式的拆写：<code class="c">r = a * b * c</code> 在价格计算里常见——
+  拆成 <code class="c">t1 = a * b; r = t1 * c;</code> 并配合 RVO/移动，中间临时数量立即可数</li>
+<li>别在热路径赌"编译器会优化掉"：临时对象的消除是<strong>写法</strong>问题——
+  <code class="c">-O2</code> 能消的是无名临时的构造（RVO/复制省略），消不掉<strong>隐式转换的堆分配</strong></li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> <code class="c">log("hello")</code>（<code class="c">log(const std::string&amp;)</code>）的成本是什么？怎么彻底消除？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">const char*</code> → <code class="c">std::string</code> 隐式构造一个<strong>临时 string</strong>：
+超 SSO 长度时含<strong>一次堆分配</strong> + 一次 strlen 拷贝 + 调用结束后的析构释放。
+热路径上这就是"看不见的 malloc"。
+彻底解法：接口改 <code class="c">log(std::string_view)</code>——const char*（直接包指针+长度）、
+string（零拷贝视图）、string_view 三种实参全部零分配零拷贝
+（→ item54 的 string_view 白名单）。
+过渡方案：补 <code class="c">log(const char*)</code> 重载，但 string 实参仍走临时——
+string_view 是一劳永逸版。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">Rational r = a * b * c;</code> 里 RVO 能消除几个临时对象？链式运算怎么改写最省？</p>
+<details>
+<summary>参考答案</summary>
+<p>RVO <strong>只能消除最后一层</strong>：<code class="c">(a*b)</code> 的临时对象真实存在（它是 <code class="c">*c</code> 的左操作数），
+只有最终赋值给 r 的那层可以被 RVO/移动消掉——
+两个临时至少活一个（构造 + 析构各一次）。
+最省写法取决于类型：
+① 有移动语义的 <code class="c">operator+(T&amp;&amp;, ...)</code> 重载链（string 模式）：
+<code class="c">t = a * b;</code> 后 <code class="c">t *= c;</code> 或 <code class="c">r = std::move(t) * c</code>——让中间结果被"吃掉"而不是拷贝；
+② 数学类型用<strong>表达式模板</strong>（高级：把整个表达式变成类型，求值一次完成——
+Eigen/Blaze 的做法，写库才值得）；
+③ 热路径直接分段 + 输出参数（<code class="c">mul(a, b, t1); mul(t1, c, r);</code>）——
+临时数量显式可控。</p>
+</details>
+<p><strong>题目 3：</strong> 怎么在 profile 里确认"临时对象是瓶颈"而不是"感觉它慢"？</p>
+<details>
+<summary>参考答案</summary>
+<p>三步量化（→ 06.6.5 方法论）：
+① <strong>分配路径</strong>：<code class="c">perf record -g ./app</code> 看 <code class="c">operator new</code>/<code class="c">malloc</code> 的
+调用栈占比——临时对象的大头（隐式 string/容器拷贝）会在这里现形；
+② <strong>构造热点</strong>：带符号的 profile 里 string/vector 构造函数若进前 20，
+说明拷贝/临时密集；
+③ <strong>对照实验</strong>：把怀疑的写法改成 string_view/移动版重跑基准
+（<code class="c">perf stat</code> 前后对比 instructions 与 LLC-misses）——
+优化收益量化在纸面上，不靠感觉。
+临时对象优化的陷阱：消除一个 10ns 的临时在 1µs 的热循环里是 1%，
+先确认它在 p99 预算里真的占份额再动手（06.6.5 ch02 的优先序）。</p>
+</details>
+      </section>
+      <section class="section" id="s-item17">
+        <div class="sec-head"><div class="sec-no">Item 17</div><h2>条款 17：剖析 new/delete 的底层开销，优化堆内存使用</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Understand the costs of new/delete and optimize heap usage.</strong>
+一次 <code class="c">new</code> 的价格远超直觉：它不是"一条指令"，而是
+<strong>分配器锁 + 尺寸分档查找 + 可能的系统调用 + 构造函数</strong>的复合体。
+本条把开销拆开（→ 19.1 的机制层、06.6.5 ch07 的实测层的桥梁），
+给出"什么时候必须池化"的量化判别。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item16-理清80%性能损耗的来源：临时对象的产生与消除手段.md">item16 临时对象</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item18-通过重载operatornew实现自定义内存池，减少频繁堆分配损耗.md">item18 自定义内存池</a>。</p>
+<hr />
+<h2>1. 一次 new 的完整成本解剖</h2>
+<pre class="code" data-label="code"><code class="c">new T 的真实成本（glibc malloc，典型 x86_64）：
+  ① operator new → malloc：
+     - 线程缓存（tcache）命中：~20-50ns      ← 最好情况
+     - tcache 未命中 → 中央堆 + 锁竞争：~100-500ns
+     - 大块（&gt;128KB）→ mmap 系统调用：~1-10µs（含页错误）
+  ② T 的构造函数：类型复杂度决定（POD≈0，含 string/vector 的成员 = 又一轮 malloc）
+  ③ 首次触碰页错误（新页）：~数百 ns/页
+delete 的成本通常低于 new（tcache 归还），但同样参与锁竞争
+</code></pre>
+<p><strong>关键事实</strong>：
+- malloc 是<strong>通用</strong>分配器——为各种尺寸/线程/生存期模式折中，
+  你的特定模式（固定尺寸、单线程、批量释放）它并不专门优化
+- 成本<strong>不可预测</strong>：tcache 命中率、锁竞争、mmap 时机——
+  同样一次 new，p50 和 p999 差两个数量级（→ 06.6.5 ch07 的实测）
+- 析构链同样昂贵：<code class="c">delete container_of_objects</code> 是 N 次析构 + N 次 free 的串联</p>
+<h2>2. 什么时候必须池化（量化判别）</h2>
+<pre class="code" data-label="code"><code class="c">信号①：profile 里 malloc/free 占比 &gt; 5%（perf record，→ 06.6.5 ch06）
+信号②：分配模式高度规律（固定尺寸的订单/行情对象，每秒数万次）
+信号③：延迟预算 p99 &lt; 10µs，而 malloc 的 p999 已经超过预算
+信号④：多线程分配（锁竞争随核数恶化——tcmalloc/jemalloc 也救不了全部）
+满足任意两条 → 池化；全不满足 → 默认分配器（别过度工程）
+</code></pre>
+<h2>3. 池化的收益结构（为什么快一个量级）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>malloc</th>
+<th>专用池</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>查找</td>
+<td>尺寸分档 + 空闲链表遍历</td>
+<td><strong>freelist 头插法 O(1)</strong>（弹一个指针）</td>
+</tr>
+<tr>
+<td>锁</td>
+<td>全局/arena 锁</td>
+<td>单线程域<strong>无锁</strong>（或 per-CPU 池）</td>
+</tr>
+<tr>
+<td>元数据</td>
+<td>每块 8-16B 头</td>
+<td>零（sized delete 传尺寸，→ 19.1 ②）</td>
+</tr>
+<tr>
+<td>缓存</td>
+<td>块分散（年代久远）</td>
+<td><strong>预分配连续</strong>——顺序访问局部性好</td>
+</tr>
+<tr>
+<td>可预测性</td>
+<td>p50/p999 差 100×</td>
+<td>常数时间（池空 = 显式失败，→ item49 HFT）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>4. 与通用优化的关系（别跳过这一步）</h2>
+<p>池化前的标准动作（→ Effective item50 ②）：
+1. <strong>先减分配次数</strong>（临时对象治理，→ item16）——最好的池化是不需要池
+2. <strong>换通用分配器</strong>（LD_PRELOAD jemalloc/tcmalloc，→ item50 ③）——
+   零代码成本，多线程收益立竿见影
+3. <strong>再池化特定热点类型</strong>（item49 类内重载 / item18 自定义池）——
+   影响面最小、收益最集中</p>
+<h2>HFT 关联</h2>
+<ul>
+<li>交易系统的答案从来不是"优化 malloc"而是<strong>消灭运行期 malloc</strong>：
+  启动时池化一切（订单/回报/行情消息），运行期只剩 acquire/release
+  （→ 19.1 HFT 的铁律）——本条的量化判别在交易系统里全部命中</li>
+<li>池的"显式失败"语义（item49 ③：池空 = 容量事故当场爆炸）比 malloc 的
+  "变慢/碎片化"诚实——容量问题在测试期暴露，不带进生产</li>
+<li>mmap 大块分配的页错误成本：启动预分配后 <strong>prefault</strong>（每页写一次
+  或 <code class="c">MAP_POPULATE</code>/<code class="c">mlock</code>）——把页错误从运行期挪到启动期（→ 03/13 的大页实践）</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> 为什么说 malloc 的成本"不可预测"？这对延迟预算意味着什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>malloc 的成本依赖运行时状态：tcache 命中与否（几十 ns vs 几百 ns）、
+中央堆锁竞争（随并发恶化）、尺寸是否触发 mmap（µs 级系统调用）、
+碎片化程度（随运行时长恶化）——p50 和 p999 差两个数量级。
+延迟预算管的是<strong>尾延迟</strong>（p99/p999，→ 06.6.5 ch02）：
+一个 p50 很快但 p999 超预算的组件，等于预算里没有它。
+这就是"运行期零分配"铁律的本质——不是 malloc 平均慢，
+是它的<strong>尾部</strong>没有位置。池化的价值首先是<strong>确定性</strong>（常数时间），
+其次才是平均速度。</p>
+</details>
+<p><strong>题目 2：</strong> 池化前为什么要"先减分配次数、再换通用分配器、最后才池化"？</p>
+<details>
+<summary>参考答案</summary>
+<p>按<strong>成本/收益比</strong>排序的工程顺序：
+① 减分配（item16 临时对象治理）——零风险纯收益，
+很多"池化需求"在临时对象清完后直接消失（本来分配就不多）；
+② LD_PRELOAD 换 jemalloc/tcmalloc——零代码成本，
+多线程场景的锁竞争立刻缓解（通用分配器的 15 年工业优化，别手写对抗它）；
+③ 池化特定类型（item49/item18）——有正确性成本（item51/52 的常规全要守）、
+维护成本、容量规划成本，只给 profile 证明的热点类型用。
+跳过前两步直接池化 = 用最高的成本解决可能已经不存在的问题——
+性能工程的第一课：先量化，再动手（06.6.5 ch02）。</p>
+</details>
+<p><strong>题目 3：</strong> 启动预分配后为什么还要 prefault/mlock？</p>
+<details>
+<summary>参考答案</summary>
+<p>池的内存来自一次性大块分配（new/mmap）——但 Linux 的分配是<strong>懒分配</strong>：
+mmap 只建虚拟地址映射，<strong>物理页在首次触碰时才分配</strong>（页错误中断，
+每页几百 ns + 可能缺页换出）。
+不 prefault 的话，"池化"只是把页错误从 malloc 路径挪到了<strong>首次使用路径</strong>——
+热路径第一笔订单照样吃页错误。
+prefault（启动时每页写一字节）或 <code class="c">mlock</code>/<code class="c">MAP_POPULATE</code> 把物理页钉住：
+页错误成本全部在启动期付清，运行期触碰零中断——
+这是"把不可预测成本从热路径移到冷路径"的通用手法
+（与 13-dpdk 大页（hugepage）同源：2MB 页把页错误数量再除 512）。</p>
+</details>
+      </section>
+      <section class="section" id="s-item18">
+        <div class="sec-head"><div class="sec-no">Item 18</div><h2>条款 18：通过重载 operator new 实现自定义内存池</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Implement a custom memory pool via operator new overloading.</strong>
+承接 item17 的量化判别：当池化被证明必要，这就是最小可运行实现——
+固定尺寸 freelist 池 + 类内 operator new/delete（→ item49 的机制、
+19.1 的两层模型、item51/52 的常规合规）。
+本节代码为教学骨架，可直接编译运行。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item17-深度剖析newdelete底层内存分配开销，优化堆内存使用.md">item17 new/delete 开销</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item19-理解临时对象、拷贝构造、返回值优化RVONRVO.md">item19 RVO/NRVO 复习</a>。</p>
+<hr />
+<h2>1. 最小可运行实现（固定尺寸池）</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;cstddef&gt;
+#include &lt;new&gt;
+
+template &lt;typename T, std::size_t N&gt;
+class FixedPool {
+    union Slot {                            // union：空闲时存 next 指针，
+        Slot* next;                         // 占用时存对象——零元数据开销
+        alignas(T) char storage[sizeof(T)];
+    };
+    Slot arena_[N];                         // 预分配连续内存（缓存友好，item17 ③）
+    Slot* free_ = nullptr;
+public:
+    FixedPool() {                           // 启动时串成 freelist
+        for (std::size_t i = 0; i + 1 &lt; N; ++i) arena_[i].next = &amp;arena_[i + 1];
+        arena_[N - 1].next = nullptr;
+        free_ = &amp;arena_[0];
+    }
+    void* acquire() noexcept {
+        if (!free_) return nullptr;         // 池空 = 显式失败（item49 ③ 的语义选择）
+        Slot* s = free_; free_ = free_-&gt;next;
+        return s;
+    }
+    void release(void* p) noexcept {        // noexcept 铁律（→ MoreEff item11）
+        if (!p) return;                     // nullptr 免疫（item51 常规）
+        auto* s = static_cast&lt;Slot*&gt;(p);
+        s-&gt;next = free_; free_ = s;         // 头插归还，O(1) 无锁
+    }
+};
+
+// 用法：类内重载接池（→ item49 的形态）
+class Order {
+    inline static FixedPool&lt;Order, 4096&gt; pool_;   // C++17 inline 静态成员
+public:
+    static void* operator new(std::size_t) {
+        if (void* p = pool_.acquire()) return p;
+        throw std::bad_alloc();             // 或按容量语义 terminate（item17 HFT）
+    }
+    static void operator delete(void* p) noexcept { pool_.release(p); }
+    static void operator delete(void* p, std::size_t) noexcept { pool_.release(p); }
+    // ...订单字段...
+};
+</code></pre>
+<h2>2. 骨架的五个设计点（每处都对应一条已学条款）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>设计</th>
+<th>对应条款</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>union Slot：空闲槽位复用为 next 指针</td>
+<td>零元数据（→ 19.1 sized delete 的同一哲学）</td>
+</tr>
+<tr>
+<td>arena 预分配连续数组</td>
+<td>缓存局部性（→ item17 ③）+ 一次 malloc（无碎片）</td>
+</tr>
+<tr>
+<td>acquire/release 全 noexcept + nullptr 免疫</td>
+<td>MoreEff item11 + Effective item51 常规</td>
+</tr>
+<tr>
+<td>池空返回 nullptr → 调用方决定语义</td>
+<td>item49 ③：容量事故显式化，不静默降级</td>
+</tr>
+<tr>
+<td><code class="c">operator delete</code> 双版本（含 sized）</td>
+<td>item51 常规 + 19.1 ② sized delete 红利</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. 生产化还差什么（诚实清单）</h2>
+<p>教学骨架 → 生产池的距离：
+1. <strong>线程安全</strong>：多线程域加锁 / per-CPU 池 / 无锁 freelist（CAS + ABA 防护，→ M4 并发 ch07）
+2. <strong>prefault/mlock</strong>：启动触碰全部页（→ item17 ③），把页错误付在启动期
+3. <strong>统计埋点</strong>：acquire/release 计数 + 高水位（→ Effective item50 ② + item52 的泄漏侦测）
+4. <strong>构造/析构边界</strong>：池只给裸内存——<code class="c">new (slot) T(...)</code> placement 构造
+   + 手动析构归还（→ 19.1 ③ 铁律），类内 operator new 形态已含此语义
+5. <strong>容量规划</strong>：N 从哪来（峰值 × 余量）+ 池空告警（→ item48 预案哲学）</p>
+<h2>HFT 关联</h2>
+<ul>
+<li>这就是"运行期零分配"的最小形态：订单/回报对象每 tick 数千次
+  acquire/release 全部 O(1) 无锁、常数时间——malloc 从热路径彻底消失</li>
+<li>池类型按<strong>尺寸档</strong>组织（Order 一池、ExecutionReport 一池）——
+  避免可变尺寸的碎片问题（freelist 池只服务固定尺寸，→ item17 ③）</li>
+<li>无锁化升级路径：单线程域（一个线程一个池，免去同步）→ per-CPU 池 →
+  MPMC 无锁 freelist（→ 06.6.5 无锁专题）——按真实并发度逐级加码，
+  别一上来就 CAS（正确性成本指数级）</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> union Slot 为什么能省掉元数据？代价是什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>union 让同一块内存在两种身份间复用：<strong>空闲时</strong>存 <code class="c">next</code> 指针
+（串 freelist），<strong>占用时</strong>存对象本身——空闲槽位不需要任何额外元数据
+（malloc 每块要 8-16B 头部存尺寸/链表指针，池的这个开销是零）。
+代价：① 只适合<strong>固定尺寸</strong>（每槽一样大，可变尺寸要分档）；
+② 类型擦除——调试时"这个槽里是什么"没有记录
+（生产化时用 debug 版加元数据，或按 item50 ② 的统计埋点补偿）；
+③ 对齐必须手工保证（<code class="c">alignas(T)</code>——union 成员取最大对齐，写错就是 UB，→ 19.5）。</p>
+</details>
+<p><strong>题目 2：</strong> 池空时 <code class="c">acquire()</code> 返回 nullptr，<code class="c">operator new</code> 为什么抛 bad_alloc
+而不是返回 nullptr？这个选择背后的语义是什么？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">operator new</code> 的语言常规（Effective item51 ④）：失败必须抛 <code class="c">std::bad_alloc</code>
+（或调 new-handler）——返回 nullptr 违反常规
+（用户代码 <code class="c">new Order</code> 后不做判空检查，null 被解引用就是 UB）。
+但更深的语义在 HFT 语境（item17 ③ / item49 ③）：
+<strong>池空 = 容量规划事故</strong>——订单池在盘中耗尽意味着"峰值估算错了"或
+"对象泄漏了"（→ item52 的泄漏侦测），两者都是必须<strong>当场暴露</strong>的事故，
+不能静默继续（返回 nullptr 让错误以"随机 crash"的形式在下游爆发）。
+教学版抛 bad_alloc 是守语言常规；生产版直接 terminate + 高水位告警
+更接近"容量事故当场爆炸"的哲学——两条都比"返回 null 继续跑"诚实。</p>
+</details>
+<p><strong>题目 3：</strong> 单线程域的池要支持"网关线程 + 策略线程"两个线程，三个升级方案的风险排序？</p>
+<details>
+<summary>参考答案</summary>
+<p>从低风险到高风险：
+① <strong>每线程一池</strong>（thread_local FixedPool）——零同步零共享，
+风险最低（代价：两个池各自容量规划，池间不能互借——对象跨线程归还时
+要路由回 owner 池，加 owner 标记）；
+② <strong>per-CPU 池 + 远程归还队列</strong>——借出方线程的"待归还队列"无锁 MPSC，
+均衡性更好（实现复杂度中等）；
+③ <strong>MPMC 无锁 freelist</strong>（CAS + ABA 计数/tag）——共享最充分，
+但 ABA/内存序的正确性成本指数级（→ M4 并发 ch07：无锁数据结构是
+独立的专业领域，"看起来简单的 CAS 版"几乎必然有 ABA 窗口）。
+原则：无共享优于少共享优于真共享——
+能①不②，能②不③（→ 06.6.5 无锁专题的同一结论）。</p>
+</details>
+      </section>
+      <section class="section" id="s-item19">
+        <div class="sec-head"><div class="sec-no">Item 19</div><h2>条款 19：临时对象、拷贝构造与 RVO/NRVO（综合复习）</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Master temporaries, copying, and RVO/NRVO.</strong> 本条是效率章的枢纽——
+把 item16（临时对象产地）、Effective item21（RVO 实测）、19.7（移动语义）
+串成一条完整的成本链：<strong>对象在你看不见的地方被拷贝了多少次，
+以及现代 C++ 如何让这些拷贝消失</strong>。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item18-通过重载operatornew实现自定义内存池，减少频繁堆分配损耗.md">item18 自定义内存池</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item20-按需选用静态绑定动态绑定（虚函数），不要无脑虚函数增加开销.md">item20 静态 vs 动态绑定</a>。</p>
+<hr />
+<h2>1. 成本链全景（三个时代的同一段代码）</h2>
+<pre class="code" data-label="cpp"><code class="c">Rational operator*(const Rational&amp; a, const Rational&amp; b) { return Rational(...); }
+Rational r = a * b;
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时代</th>
+<th>实际发生</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C++98（无 RVO 保证）</td>
+<td>局部构造 → 拷贝到临时 → 拷贝到 r（2 次拷贝 + 3 次析构）</td>
+<td>高</td>
+</tr>
+<tr>
+<td>C++11/14（RVO 优化 + 移动）</td>
+<td>局部构造 → 移动到 r（编译器几乎总做 NRVO）</td>
+<td>低</td>
+</tr>
+<tr>
+<td>C++17+（RVO <strong>强制</strong>）</td>
+<td>直接在 r 的存储上构造（→ Effective item21 本机实测：-O0 也零拷贝）</td>
+<td><strong>零</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>推论</strong>：现代 C++ 里"按值返回"已经零成本——
+还在为了"省拷贝"返回引用/输出参数的代码，多数是在跟 C++98 的幽灵作战
+（Effective item21 的完整论证 + 实测）。</p>
+<h2>2. 拷贝的真实残留地（现代 C++ 里拷贝躲在哪）</h2>
+<p>RVO 消不掉的三类拷贝（效率优化的真实战场）：</p>
+<pre class="code" data-label="cpp"><code class="c">// ① 函数参数的按值传递
+void process(std::string s);        // 调用处必拷（除非实参是右值 → 移动）
+process(name);                      // name 是左值：拷贝构造一次
+
+// ② 容器扩容的元素搬迁
+vec.push_back(x);                   // 扩容时 N 个元素移动（或拷贝——noexcept 决定，
+                                    // → 18.1 ② 实测：移动没 noexcept 就退化为拷贝）
+
+// ③ 你亲手写的拷贝
+auto backup = current_config;       // copy-and-swap 的第一步（Effective item29：
+                                    // 这是有意付费的拷贝——强保证的成本）
+</code></pre>
+<p>判别：这个拷贝是<strong>意外</strong>（写法问题，能消）还是<strong>代价</strong>（语义需要，该付）？
+item16 管意外，本条管代价的定价。</p>
+<h2>3. 移动语义的边界（别把 move 当万能）</h2>
+<ul>
+<li><code class="c">std::move</code> 不移动（→ 19.7 ④ 实测：它只是类型转换，移动发生在接收方）</li>
+<li>移动后对象"有效但未指定"（19.7 实测 size()=0 是 libstdc++ 细节不是标准承诺）</li>
+<li><strong>小对象移动可能不省</strong>：POD ≤ 16B 的移动和拷贝成本相同（都是寄存器搬运）——
+  move 的收益在"带资源的对象"（string/vector/unique_ptr 的指针过户）</li>
+<li>移动构造必须 noexcept 才被容器信任（18.1 ②）——标 noexcept 是性能承诺</li>
+</ul>
+<h2>HFT 关联</h2>
+<ul>
+<li>热路径的拷贝审计只需盯②和③：容器扩容（预分配 reserve 消灭之）、
+  有意拷贝（配置快照 copy-and-swap，冷路径专属）——
+  ① 的按值传参在小 POD 上本来就该按值（Effective item20 的例外）</li>
+<li>订单簿的 <code class="c">reserve()</code> 是消灭"扩容搬迁"的标准动作：
+  档位上限已知（合约深度），启动时 reserve 到位 = 运行期零搬迁零分配</li>
+<li><code class="c">return std::move(local)</code> 仍是审查清单第一条（Effective item21 ②：
+  阻止 NRVO 的反优化——本机实测 NRVO 在 -O0 都生效）</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> C++17 起 <code class="c">Rational r = a * b;</code> 的真实成本是什么？为什么 -O0 也一样？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>一次构造，零拷贝零移动</strong>——C++17 把 RVO（return 纯右值表达式）从
+"优化"升级为<strong>语言保证</strong>：<code class="c">return Rational(...)</code> 的构造直接发生在
+r 的存储上（Effective item21 本机实测：g++ -O0 输出只有"构造"，无拷贝无移动）。
+-O0 也生效因为它是<strong>语义</strong>不是优化——编译器无权不做
+（这与 NRVO（具名局部变量）不同：NRVO 仍属"允许但不强制"，
+主流编译器 -O0 也做，但标准不保证）。
+结论：现代 C++ 按值返回是零成本惯用法，为它返回引用是在跟 C++98 的幽灵作战。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">vec.push_back(x)</code> 的"扩容搬迁"在什么条件下退化为拷贝？怎么验证和修？</p>
+<details>
+<summary>参考答案</summary>
+<p>当元素类型的移动构造<strong>未标 noexcept</strong> 时：vector 扩容要保强保证
+（搬一半抛异常还能回滚），不敢用可能抛的移动——退化为拷贝（→ 18.1 ② 本机实测：
+MoveThrow 版扩容打印"拷贝"，MoveNoexcept 版打印"移动"）。
+验证：给移动/拷贝构造各加打印，<code class="c">reserve</code> 触发扩容观察输出；
+或 <code class="c">static_assert(std::is_nothrow_move_constructible_v&lt;T&gt;)</code> 编译期钉死。
+修复：移动构造/移动赋值/swap 全部 noexcept（三件套，
+→ item14 的 noexcept 语义）——这是自定义值类型进 STL 容器的入场券。</p>
+</details>
+<p><strong>题目 3：</strong> 热路径上 <code class="c">void process(Price p)</code> 按值传参是错误吗？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>不是</strong>——这是 Effective item20 的例外：POD 小对象（Price 通常 4-8B）
+按值传递走<strong>寄存器</strong>，比 const 引用（一次解引用 + 潜在 cache miss）
+<strong>更快</strong>。判别规则：
+按值 ≤ 16B 的 trivially copyable 类型 → 按值（寄存器直达）；
+带资源的/大的 → const 引用；
+要"吃掉"参数（sink）→ 按值 + move（移动构造接管，调用方传右值时零拷贝）。
+热路径的参数形态审查：<code class="c">sizeof(T) &lt;= 16 &amp;&amp; is_trivially_copyable_v&lt;T&gt;</code>
+的 static_assert 值得写进 Price/Qty 类里——它同时保证
+"按值合理"和"可 memcpy"（→ 19.8 守卫模式）。</p>
+</details>
+      </section>
+      <section class="section" id="s-item20">
+        <div class="sec-head"><div class="sec-no">Item 20</div><h2>条款 20：按需选用静态绑定与动态绑定，不要无脑虚函数</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Choose static or dynamic binding deliberately.</strong> 虚函数不是免费的：
+每次调用一次间接跳转（vtable 解引用 + 分支预测压力），
+每个对象一个 vptr（8B），每个类一张 vtable——
+无脑给所有函数加 virtual，是在为"可能永远用不到的多态"预付成本。
+本条给出绑定方式的成本解剖与决策框架（→ item35 替代方案的量化版）。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item19-理解临时对象、拷贝构造、返回值优化RVONRVO.md">item19 RVO 综合</a>；
+下一条 <a href="chapter-05.html#ch-5">item21 按需声明虚函数</a>。</p>
+<hr />
+<h2>1. 动态绑定的真实成本（逐项）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>成本项</th>
+<th>量化</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调用间接</td>
+<td>vptr 加载 + vtable 加载 + 间接跳转</td>
+<td>2 次内存访问（冷 cache 时各一次 miss，→ 06.6.5 ch06）</td>
+</tr>
+<tr>
+<td>分支预测</td>
+<td>间接跳转目标<strong>不固定</strong></td>
+<td>多态程度高时 BTB 失效——比直接调用差一个量级</td>
+</tr>
+<tr>
+<td>vptr</td>
+<td>对象 +8B</td>
+<td>小对象尺寸直接翻倍（<code class="c">struct { int x; }</code> 4B → 16B 含对齐）</td>
+</tr>
+<tr>
+<td>内联阻断</td>
+<td>虚调用<strong>不可内联</strong></td>
+<td>连带失去内联后的全部优化（→ Effective item30 ②）</td>
+</tr>
+<tr>
+<td>去虚拟化条件</td>
+<td><code class="c">final</code> 或编译器能证明具体类型</td>
+<td>否则 LTO 也救不了</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>对照</strong>：直接调用在可预测目标下 ≈ 免费（Effective item30 实测：
+1 亿次调用 inline vs noinline 差异在噪声内）；虚调用在现代 CPU 上
+~1-5ns（cache 命中时）——<strong>单次不贵，热循环里百万次就是毫秒级</strong>。</p>
+<h2>2. 决策框架（什么才配得上虚函数）</h2>
+<pre class="code" data-label="text"><code class="c">问①：真的需要**运行期**才知道调谁吗？
+     编译期已知 → 静态绑定（普通函数/模板/if constexpr）
+问②：需要异构容器吗（基类指针装不同派生）？
+     类型集合封闭 → variant + visit（编译期分发，→ item35）
+问③：定制点有多少？
+     一两个 → 函数指针/std::function 注入（item35 替代二）
+问④：以上都否、且需要开放扩展 → 才用虚函数
+</code></pre>
+<p><strong>"将来可能要扩展"不是理由</strong>——YAGNI：静态绑定的代码改虚函数
+是半小时的事，无脑虚函数的成本却从第一天就在付。</p>
+<h2>3. 降成本手法（必须用虚函数时）</h2>
+<ul>
+<li><strong><code class="c">final</code> 类/方法</strong>：编译器确定目标后可去虚拟化（devirtualize）——
+  虚调用变直接调用进而内联（→ Effective item30 HFT 关联）</li>
+<li><strong>收窄多态面</strong>：基类指针只在<strong>冷边界</strong>（注册/分发入口）使用，
+  热循环内部拿具体类型（<code class="c">auto* p = static_cast&lt;Derived*&gt;(base); p-&gt;hot_path();</code>
+  ——静态类型已知，调用静态绑定）</li>
+<li><strong>CRTP 替代</strong>（item35 ③）：类型集合编译期已知时，
+  "多态"编译期完成，零 vptr 零间接</li>
+</ul>
+<h2>HFT 关联</h2>
+<ul>
+<li>行情回调的绑定方式选择是教科书场景：
+  策略基类 <code class="c">on_tick</code> 虚函数 = 每 tick 一次间接跳转 + 不可内联——
+  单策略极致优化时换 CRTP（编译期分发）；
+  框架要管 N 个策略时留虚函数（异构容器是虚函数的主场，→ item35 组合用法）</li>
+<li>消息解码的绑定：<strong>switch/msg_type 查表</strong>（静态分派，→ 19.3 成员指针表）
+  优于虚函数链——间接跳转目标规律（表驱动），分支预测友好</li>
+<li>vptr 的 8B 在订单簿档位（每档 24-32B 目标）里是不可接受的尺寸税——
+  热路径数据结构<strong>零虚函数</strong>（POD + static_assert，→ 19.5）</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> 虚函数调用的成本为什么"单次不贵，热循环里致命"？</p>
+<details>
+<summary>参考答案</summary>
+<p>单次虚调用 ≈ 1-5ns（vptr/vtable 各一次加载 + 间接跳转，cache 命中时）——
+孤立看无所谓。但热循环的账是<strong>乘法</strong>：每 tick 10 次虚调用 × 每天
+百亿 tick = 秒级纯开销；更隐蔽的是<strong>连带成本</strong>：
+虚调用不可内联（内联后的常量折叠/死代码消除/寄存器优化全部失去，
+→ Effective item30 ②），间接跳转在多态目标下 BTB 失效
+（分支预测惩罚每次 ~15-20 周期）。
+热路径的真实成本模型不是"虚调用单价"，而是
+"单价 × 频率 + 失去的优化机会"——后者通常是大头。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">final</code> 关键字为什么能让虚函数变快？它的收益链是什么？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">final</code>（类或方法）向编译器承诺"<strong>没有更派生的实现了</strong>"——
+于是编译器在<strong>调用点</strong>能确定虚调用的真实目标（去虚拟化，devirtualization）：
+<code class="c">Derived d; Base&amp; b = d; b.f();</code> 若 f 或 Derived 是 final，
+编译器把虚调用改写成 <code class="c">Derived::f</code> 的<strong>直接调用</strong>——
+收益链：直接调用 → 可内联 → 内联后暴露函数体 →
+常量折叠/死代码消除/寄存器分配全部解锁。
+一个关键字换回整条优化链——这是 final 在热路径的真实价值
+（语义价值"禁止继承"反而是赠品）。
+注意条件：去虚拟化需要编译器在调用点<strong>看到</strong>具体类型——
+经工厂/容器拿到的纯 Base&amp; 救不了，那种场景只有 CRTP/variant。</p>
+</details>
+<p><strong>题目 3：</strong> "策略基类 on_tick 用虚函数"和"msg_type 查表分发"各适合什么场景？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>虚函数策略基类</strong>：策略<strong>类型开放</strong>（第三方/插件随时新增）、
+需要异构容器（引擎 <code class="c">vector&lt;unique_ptr&lt;Strategy&gt;&gt;</code> 统一调度）——
+间接跳转成本换扩展性，框架边界合理（→ item35）。
+<strong>msg_type 查表</strong>：消息<strong>类型封闭</strong>（协议枚举有限）、
+分发在热路径（每包一次）——<code class="c">handlers[msg.type]</code> 一次数组索引 +
+间接跳转目标高度规律（表项少且复用，BTB 友好）；
+配合 constexpr 表（→ 19.3 成员指针表）甚至可被编译器优化为
+跳转表（jump table，无函数调用开销）。
+判别：扩展性需求在<strong>运行期</strong>（新策略不重启上线）→ 虚函数；
+扩展性需求在<strong>编译期</strong>（协议升级发版）→ 查表/variant——
+热路径的分发永远向编译期倾斜。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

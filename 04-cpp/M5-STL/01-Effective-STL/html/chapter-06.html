@@ -276,6 +276,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-item38"><span class="n">38</span>仿函数按值传递</a>
+          <a href="#s-item39"><span class="n">39</span>使谓词仿函数可配对</a>
+          <a href="#s-item40"><span class="n">40</span>–42：函数适配器（ptr_fun / mem_fun / mem_fun_ref）</a>
+          <a href="#s-item43"><span class="n">43</span>优先传函数对象而非函数指针</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -300,7 +304,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Meyers《Effective STL》· 写容器/缓冲区时查</div>
           <h1>第 6 章 仿函数、仿函数类、函数等</h1>
           <div class="meta">
-<span>book <b>M5-STL · 01-Effective-STL</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>1</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M5-STL · 01-Effective-STL</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>5</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -332,6 +336,925 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><strong>函数指针阻碍内联</strong>：热路径排序比较器用 lambda 而非函数指针，让 <code class="c">sort</code> 能内联比较逻辑，性能差距可达数倍。</li>
 </ul>
 <hr />
+      </section>
+      <section class="section" id="s-item38">
+        <div class="sec-head"><div class="sec-no">Item 38</div><h2>Item 38：仿函数按值传递</h2></div>
+<blockquote>
+<p>第 6 章 仿函数与函数 · Item 38 · 上一节：<a href="chapter-05.html#intro">ch05-algorithms</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item39-predicate-adaptable.md">Item 39 predicate 可配对</a></p>
+</blockquote>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p>在 C 里，你传给 <code class="c">qsort</code> 的比较函数是函数指针——按值传递指针，函数本身不会被拷贝。C++ STL 的做法不同：它按<strong>值</strong>拷贝仿函数对象本身。</p>
+<pre class="code" data-label="C"><code class="c">/* C: 函数指针按值传递（只拷贝 8 字节指针） */
+int cmp(const void *a, const void *b) { return *(int*)a - *(int*)b; }
+qsort(arr, n, sizeof(int), cmp);  // cmp 的地址被传进去
+</code></pre>
+<pre class="code" data-label="cpp"><code class="c">// C++: 仿函数对象本身被按值拷贝
+struct Sum {
+    int total = 0;
+    void operator()(int x) { total += x; }  // 注意：non-const!
+};
+std::vector&lt;int&gt; v = {1, 2, 3};
+Sum result = std::for_each(v.begin(), v.end(), Sum{});  // 拷贝传入，拷贝返回
+std::cout &lt;&lt; result.total;  // 6（但内部副本的状态不可预测）
+</code></pre>
+<p><strong>直觉</strong>：STL 算法会拷贝你的仿函数（可能多次拷贝），所以它必须<strong>轻量</strong>且 <code class="c">operator()</code> 应为 <strong>const</strong>。</p>
+<h2>这节讲什么</h2>
+<p>STL 算法（<code class="c">for_each</code>、<code class="c">transform</code>、<code class="c">find_if</code>、<code class="c">sort</code> 等）按值传递仿函数，意味着：</p>
+<ol>
+<li>仿函数会被<strong>拷贝</strong>（可能不止一次）</li>
+<li>算法内部操作的是仿函数的 <strong>const 副本</strong></li>
+<li>有状态仿函数的状态变化发生在<strong>副本</strong>上，外部看不到</li>
+<li>想取回最终状态 → 用 <code class="c">for_each</code> 的<strong>返回值</strong>（它是最后一次操作的仿函数副本）</li>
+</ol>
+<h3>按值传递的机制</h3>
+<pre class="code" data-label="cpp"><code class="c">// STL 内部等价于：
+template&lt;typename Iter, typename Func&gt;
+Func for_each(Iter first, Iter last, Func f) {  // 按值接收
+    for (; first != last; ++first)
+        f(*first);  // 对 const 副本调用
+    return f;       // 返回最终副本
+}
+</code></pre>
+<p><code class="c">f</code> 是按值传入的拷贝。如果 <code class="c">operator()</code> 不是 const，某些编译器会报警告，且语义上不合理——你修改的是副本的状态。</p>
+<h3>有状态仿函数的正确用法</h3>
+<pre class="code" data-label="cpp"><code class="c">struct Accumulator {
+    long long sum = 0;
+    void operator()(int x) const {   // const: 但这会阻止修改 sum
+        // sum += x;  // 编译错误！const 成员函数不能修改成员
+    }
+};
+
+// 正确做法：用 mutable 或引用外部变量
+struct Accumulator2 {
+    mutable long long sum = 0;  // mutable 允许 const 函数修改
+    void operator()(int x) const { sum += x; }
+};
+
+auto acc = std::for_each(v.begin(), v.end(), Accumulator2{});
+std::cout &lt;&lt; acc.sum;  // 正确：返回的副本携带最终状态
+</code></pre>
+<h2>常见错误（新手踩坑）</h2>
+<h3>错误 1：<code class="c">operator()</code> 忘加 const</h3>
+<pre class="code" data-label="cpp"><code class="c">struct Bad {
+    bool operator()(int x) { return x &gt; 0; }  // non-const!
+};
+// std::sort(v.begin(), v.end(), Bad{});  // 某些编译器报错或警告
+</code></pre>
+<p><strong>修复</strong>：加 <code class="c">const</code>。</p>
+<pre class="code" data-label="cpp"><code class="c">struct Good {
+    bool operator()(int x) const { return x &gt; 0; }  // const!
+};
+</code></pre>
+<h3>错误 2：有状态仿函数期望外部看到中间状态</h3>
+<pre class="code" data-label="cpp"><code class="c">struct Counter {
+    int count = 0;
+    void operator()(int) { count++; }  // 修改的是副本
+};
+Counter c{0};
+std::for_each(v.begin(), v.end(), c);  // c 是按值传入的！
+std::cout &lt;&lt; c.count;  // 0！外部 c 没变
+</code></pre>
+<p><strong>修复</strong>：用返回值，或用引用捕获。</p>
+<pre class="code" data-label="cpp"><code class="c">// 方式 1：用返回值
+Counter result = std::for_each(v.begin(), v.end(), Counter{});
+std::cout &lt;&lt; result.count;  // 正确
+
+// 方式 2：lambda 引用捕获
+int count = 0;
+std::for_each(v.begin(), v.end(), &amp;count { count++; });
+std::cout &lt;&lt; count;  // 正确
+</code></pre>
+<h3>错误 3：仿函数太大，拷贝代价高</h3>
+<pre class="code" data-label="cpp"><code class="c">struct Heavy {  // 拷贝代价大
+    char data[4096];
+    bool operator()(int x) const { return x &gt; 0; }
+};
+std::sort(v.begin(), v.end(), Heavy{});  // 每次拷贝 4KB！
+</code></pre>
+<p><strong>修复</strong>：轻量化仿函数，重数据用指针持有。</p>
+<pre class="code" data-label="cpp"><code class="c">struct Light {
+    const char* data;  // 只拷贝指针
+    bool operator()(int x) const { return x &gt; 0; }
+};
+</code></pre>
+<h2>新手要点（和 C 的区别）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方面</th>
+<th>C (函数指针)</th>
+<th>C++ (仿函数)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>传递方式</td>
+<td>按值传指针（8 字节）</td>
+<td>按值传对象（大小取决于类）</td>
+</tr>
+<tr>
+<td>状态</td>
+<td>无状态（全局变量变通）</td>
+<td>有状态（成员变量）</td>
+</tr>
+<tr>
+<td>const 要求</td>
+<td>无（函数本身就是 const）</td>
+<td><code class="c">operator()</code> 应声明 const</td>
+</tr>
+<tr>
+<td>内联</td>
+<td>难（间接调用）</td>
+<td>可内联（类型已知）</td>
+</tr>
+<tr>
+<td>取最终状态</td>
+<td>无返回值机制</td>
+<td><code class="c">for_each</code> 返回最终副本</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>lambda 替代手写仿函数</strong>：<code class="c">[&amp;](const Tick&amp; t){ ... }</code> 零拷贝、可内联，HFT 热路径首选</li>
+<li><strong>有状态仿函数做回测累积</strong>：PnL 统计用 <code class="c">for_each</code> 返回值取结果，但注意值拷贝语义——大状态用引用捕获</li>
+<li><strong>仿函数必须轻量</strong>：热路径排序比较器不应携带大成员，每次拷贝都影响 cache</li>
+</ul>
+<h2>代码自测</h2>
+<h3>Q1: for_each 返回值</h3>
+<pre class="code" data-label="cpp"><code class="c">struct Logger {
+    int calls = 0;
+    void operator()(int x) const { calls++; }
+};
+std::vector&lt;int&gt; v = {1, 2, 3, 4, 5};
+auto result = std::for_each(v.begin(), v.end(), Logger{});
+std::cout &lt;&lt; result.calls;
+</code></pre>
+<blockquote>
+<p>输出是什么？为什么不能直接用原始 <code class="c">Logger{}</code> 对象查看 calls？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p>输出 <strong>5</strong>。<code class="c">for_each</code> 按值接收仿函数，内部操作的是副本，返回最终副本。<code class="c">result</code> 是那个副本，记录了 5 次调用。</p>
+<p>直接用 <code class="c">Logger{}</code> 看不到 calls，因为原始对象从未被调用——被调用的是它的拷贝。</p>
+<p><strong>关键</strong>：<code class="c">operator()</code> 必须 const，但成员用 <code class="c">mutable</code> 才能在 const 函数中修改。</p>
+</details>
+<h3>Q2: mutable 的必要性</h3>
+<pre class="code" data-label="cpp"><code class="c">struct Counter {
+    int n = 0;
+    void operator()(int) const { n++; }  // 编译结果？
+};
+</code></pre>
+<blockquote>
+<p>这段代码能编译吗？如果不能，怎么修？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>不能编译</strong>。<code class="c">const</code> 成员函数不能修改非 <code class="c">mutable</code> 成员。</p>
+<p>修复：加 <code class="c">mutable</code>。</p>
+<pre class="code" data-label="cpp"><code class="c">struct Counter {
+    mutable int n = 0;
+    void operator()(int) const { n++; }
+};
+</code></pre>
+<p>或用 lambda 引用捕获（更推荐）：</p>
+<pre class="code" data-label="cpp"><code class="c">int n = 0;
+std::for_each(v.begin(), v.end(), &amp;n { n++; });
+</code></pre>
+</details>
+<h3>Q3: 拷贝代价</h3>
+<pre class="code" data-label="cpp"><code class="c">struct Big {
+    int buf[1024];
+    bool operator()(int a, int b) const { return a &lt; b; }
+};
+std::vector&lt;int&gt; v(1000);
+std::sort(v.begin(), v.end(), Big{});  // 有什么问题？
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong>问题</strong>：<code class="c">Big</code> 大小约 4KB，<code class="c">sort</code> 内部可能多次拷贝仿函数，每次拷贝 4KB。</p>
+<p><strong>修复</strong>：仿函数应只持有必要数据。比较器不需要 <code class="c">buf</code>：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Small {
+    bool operator()(int a, int b) const { return a &lt; b; }
+};  // 空类，sizeof = 1（空基类优化后可为 0）
+</code></pre>
+<p>或直接用 lambda：<code class="c">std::sort(v.begin(), v.end(), [](int a, int b) { return a &lt; b; });</code></p>
+</details>
+<h3>Q4: lambda 按值捕获</h3>
+<pre class="code" data-label="cpp"><code class="c">int threshold = 100;
+auto it = std::find_if(v.begin(), v.end(),
+    [threshold](int x) { return x &gt; threshold; });
+threshold = 200;  // 之后改 threshold
+// it 指向的元素是否受影响？
+</code></pre>
+<details>
+<summary>答案</summary>
+<p>不受影响。lambda 按值捕获 <code class="c">threshold</code>，捕获的是<strong>创建 lambda 时的值</strong>（100）。之后修改外部 <code class="c">threshold</code> 不影响 lambda 内部的副本。</p>
+<p>如果需要共享最新值，用引用捕获 <code class="c">[&amp;threshold]</code>——但要注意生命周期。</p>
+<p><strong>HFT</strong>：热路径按值捕获更安全（无数据竞争），但会增加仿函数大小。</p>
+</details>
+<h2>参考与延伸</h2>
+<ul>
+<li>上一节：<a href="chapter-05.html#intro">ch05-algorithms</a></li>
+<li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item39-predicate-adaptable.md">Item 39 predicate 可配对</a></li>
+<li><a href="#intro">Effective Modern C++ Item 34：lambda vs bind</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-item39">
+        <div class="sec-head"><div class="sec-no">Item 39</div><h2>Item 39：使谓词仿函数可配对</h2></div>
+<blockquote>
+<p>第 6 章 仿函数与函数 · Item 39 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item38-functor-by-value.md">Item 38 按值传递</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item40-42-function-adapters.md">Item 40-42 函数适配器</a></p>
+</blockquote>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p>在 C 里，判断条件就是 <code class="c">if (x &gt; 5)</code>——想取反就写 <code class="c">if (!(x &gt; 5))</code>，直接改表达式。C++ STL 的谓词是仿函数或函数指针，取反需要"配对"机制。</p>
+<pre class="code" data-label="C"><code class="c">/* C: 直接取反 */
+int is_positive(int x) { return x &gt; 0; }
+int is_not_positive(int x) { return !is_positive(x); }
+// 或者调用处直接 !is_positive(x)
+</code></pre>
+<pre class="code" data-label="cpp"><code class="c">// C++: 用 not1/not2 配对器取反
+struct IsPositive {
+    typedef int argument_type;  // C++03 必须声明这些 typedef
+    bool operator()(int x) const { return x &gt; 0; }
+};
+// C++03: not1(IsPositive{}) 需要 argument_type
+// C++11+: lambda 更简单
+auto it = std::find_if(v.begin(), v.end(),
+    [](int x) { return !(x &gt; 0); });  // 直接在 lambda 里取反
+</code></pre>
+<p><strong>直觉</strong>：谓词是返回 bool 的可调用对象。C++03 要让它能被 <code class="c">not1</code>/<code class="c">not2</code> 取反，需声明嵌套 typedef。C++11 后 lambda 让"配对"需求基本消失。</p>
+<h2>这节讲什么</h2>
+<p><strong>谓词（predicate）</strong> = 返回 <code class="c">bool</code> 的仿函数/函数指针。</p>
+<p>可配对（adaptable）谓词需要满足：
+1. 返回 <code class="c">bool</code>（或可隐式转为 bool）
+2. <code class="c">operator()</code> 是 <code class="c">const</code>
+3. C++03：声明 <code class="c">argument_type</code>（一元）或 <code class="c">first_argument_type</code>/<code class="c">second_argument_type</code>（二元）</p>
+<h3>C++03 可配对谓词</h3>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;functional&gt;
+
+// 一元谓词
+struct IsEven : std::unary_function&lt;int, bool&gt; {
+    bool operator()(int x) const { return x % 2 == 0; }
+};
+// std::unary_function&lt;int, bool&gt; 自动提供 argument_type = int, result_type = bool
+
+// 取反
+auto it = std::find_if(v.begin(), v.end(), std::not1(IsEven{}));
+// 等价于找奇数
+</code></pre>
+<h3>C++11 后：lambda 让配对过时</h3>
+<pre class="code" data-label="cpp"><code class="c">// C++03 方式（繁琐）
+struct IsEven : std::unary_function&lt;int, bool&gt; {
+    bool operator()(int x) const { return x % 2 == 0; }
+};
+std::find_if(v.begin(), v.end(), std::not1(IsEven{}));
+
+// C++11 方式（简单）
+std::find_if(v.begin(), v.end(), [](int x) { return x % 2 != 0; });
+// 直接写否定逻辑，不需要 not1
+</code></pre>
+<h3>std::function 和 std::not_fn（C++17）</h3>
+<pre class="code" data-label="cpp"><code class="c">// C++17: std::not_fn 取反任意可调用对象
+auto is_even = [](int x) { return x % 2 == 0; };
+auto is_odd = std::not_fn(is_even);  // C++17
+</code></pre>
+<h2>常见错误（新手踩坑）</h2>
+<h3>错误 1：谓词返回非 bool</h3>
+<pre class="code" data-label="cpp"><code class="c">struct Bad {
+    int operator()(int x) const { return x; }  // 返回 int 不是 bool
+};
+// 可以隐式转 bool，但不是谓词的最佳实践
+std::find_if(v.begin(), v.end(), Bad{});
+</code></pre>
+<p><strong>修复</strong>：显式返回 bool。</p>
+<pre class="code" data-label="cpp"><code class="c">struct Good {
+    bool operator()(int x) const { return x != 0; }
+};
+</code></pre>
+<h3>错误 2：operator() 不是 const</h3>
+<pre class="code" data-label="cpp"><code class="c">struct BadPred {
+    mutable int count = 0;
+    bool operator()(int x) { count++; return x &gt; 0; }  // non-const!
+};
+// std::not1(BadPred{}) 可能编译失败
+</code></pre>
+<p><strong>修复</strong>：加 const。</p>
+<pre class="code" data-label="cpp"><code class="c">struct GoodPred {
+    mutable int count = 0;
+    bool operator()(int x) const { count++; return x &gt; 0; }
+};
+</code></pre>
+<h3>错误 3：C++03 代码忘了继承 unary_function</h3>
+<pre class="code" data-label="cpp"><code class="c">// C++03: 缺少 argument_type
+struct IsPositive {
+    bool operator()(int x) const { return x &gt; 0; }
+};
+// std::not1(IsPositive{}) 编译失败：找不到 argument_type
+</code></pre>
+<p><strong>修复</strong>：继承 <code class="c">std::unary_function&lt;int, bool&gt;</code> 或手写 typedef。</p>
+<pre class="code" data-label="cpp"><code class="c">struct IsPositive : std::unary_function&lt;int, bool&gt; {
+    bool operator()(int x) const { return x &gt; 0; }
+};
+// 现在 not1 能用了
+</code></pre>
+<h2>新手要点（和 C 的区别）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方面</th>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>谓词</td>
+<td>函数返回 int（0/非0）</td>
+<td>仿函数/lambda 返回 bool</td>
+</tr>
+<tr>
+<td>取反</td>
+<td><code class="c">!func(x)</code> 直接写</td>
+<td><code class="c">not1</code>/<code class="c">not2</code>（C++03）或 lambda 内取反（C++11+）</td>
+</tr>
+<tr>
+<td>类型要求</td>
+<td>无</td>
+<td>C++03 需 argument_type typedef；C++11 无此要求</td>
+</tr>
+<tr>
+<td>const</td>
+<td>函数天然 const</td>
+<td><code class="c">operator()</code> 需显式声明 const</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>lambda 直接写否定逻辑</strong>：<code class="c">[&amp;](const Order&amp; o){ return !o.is_active(); }</code> 比 <code class="c">not1</code> 配对更清晰</li>
+<li><strong>谓词必须是纯函数</strong>：HFT 过滤逻辑不应有副作用，const operator() 强制无副作用语义</li>
+<li><strong>C++17 not_fn</strong>：如果需要通用取反，<code class="c">std::not_fn</code> 比 <code class="c">not1</code> 更灵活，支持任意可调用对象</li>
+</ul>
+<h2>代码自测</h2>
+<h3>Q1: not1 需要什么</h3>
+<pre class="code" data-label="cpp"><code class="c">struct GreaterThan {
+    bool operator()(int x) const { return x &gt; threshold; }
+    int threshold;
+};
+// std::not1(GreaterThan{5}) 能编译吗？
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong>不能编译</strong>。<code class="c">not1</code> 要求谓词声明 <code class="c">argument_type</code> typedef（C++03 可配对要求）。<code class="c">GreaterThan</code> 没有声明它。</p>
+<p>修复（C++03）：</p>
+<pre class="code" data-label="cpp"><code class="c">struct GreaterThan : std::unary_function&lt;int, bool&gt; {
+    int threshold;
+    explicit GreaterThan(int t) : threshold(t) {}
+    bool operator()(int x) const { return x &gt; threshold; }
+};
+</code></pre>
+<p>C++11+ 直接用 lambda：<code class="c">[](int x) { return x &lt;= 5; }</code></p>
+</details>
+<h3>Q2: 谓词返回值</h3>
+<pre class="code" data-label="cpp"><code class="c">struct Checker {
+    operator bool() const { return true; }  // 这能做谓词吗？
+    bool operator()(int x) const { return x &gt; 0; }  // 这才是谓词
+};
+</code></pre>
+<blockquote>
+<p><code class="c">Checker</code> 中的两个函数哪个和谓词有关？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><code class="c">bool operator()(int x) const</code> 是谓词——它是调用运算符，返回 bool。</p>
+<p><code class="c">operator bool()</code> 是<strong>转换运算符</strong>，把 <code class="c">Checker</code> 对象转为 bool，和谓词无关。</p>
+<p>谓词的核心是 <code class="c">operator()</code> 返回 bool，不是对象本身能转 bool。</p>
+</details>
+<h3>Q3: lambda 取反</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v = {1, -2, 3, -4, 5};
+// 找第一个非正数，用 lambda 写
+auto it = std::find_if(v.begin(), v.end(), /* ??? */);
+</code></pre>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="cpp"><code class="c">auto it = std::find_if(v.begin(), v.end(), [](int x) { return x &lt;= 0; });
+// it 指向 -2
+</code></pre>
+<p>不需要 <code class="c">not1</code>，直接在 lambda 内写否定逻辑。这是 C++11+ 的推荐做法。</p>
+</details>
+<h3>Q4: C++17 not_fn</h3>
+<pre class="code" data-label="cpp"><code class="c">auto is_positive = [](int x) { return x &gt; 0; };
+auto is_not_positive = std::not_fn(is_positive);
+std::vector&lt;int&gt; v = {1, -2, 3};
+auto it = std::find_if(v.begin(), v.end(), is_not_positive);
+// it 指向哪个元素？
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><code class="c">it</code> 指向 <strong>-2</strong>（第一个非正数）。</p>
+<p><code class="c">std::not_fn</code>（C++17）包装 <code class="c">is_positive</code>，返回取反结果。<code class="c">is_not_positive(x)</code> = <code class="c">!is_positive(x)</code> = <code class="c">!(x &gt; 0)</code> = <code class="c">x &lt;= 0</code>。</p>
+<p><code class="c">not_fn</code> 比旧的 <code class="c">not1</code>/<code class="c">not2</code> 更通用——不需要 <code class="c">argument_type</code> typedef，适用于任何可调用对象。</p>
+</details>
+<h2>参考与延伸</h2>
+<ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item38-functor-by-value.md">Item 38 按值传递</a></li>
+<li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item40-42-function-adapters.md">Item 40-42 函数适配器</a></li>
+<li><a href="#intro">Effective Modern C++ ch06 lambda</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-item40">
+        <div class="sec-head"><div class="sec-no">Item 40</div><h2>Item 40–42：函数适配器（ptr_fun / mem_fun / mem_fun_ref）</h2></div>
+<blockquote>
+<p>第 6 章 仿函数与函数 · Items 40–42 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item39-predicate-adaptable.md">Item 39 谓词可配对</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item43-functor-vs-function-pointer.md">Item 43 仿函数优于函数指针</a></p>
+</blockquote>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p>在 C 里，调用结构体的方法只能手写循环——没有"把成员函数传给算法"的机制。</p>
+<pre class="code" data-label="C"><code class="c">/* C: 手写循环调用结构体&quot;方法&quot; */
+struct Widget { int value; };
+void widget_do_work(struct Widget* w) { w-&gt;value *= 2; }
+
+for (int i = 0; i &lt; n; i++) {
+    widget_do_work(&amp;widgets[i]);  // 手动循环
+}
+</code></pre>
+<pre class="code" data-label="cpp"><code class="c">// C++03: 用 mem_fun_ref 把成员函数包装成仿函数
+std::for_each(widgets.begin(), widgets.end(),
+    std::mem_fun_ref(&amp;Widget::doWork));
+
+// C++11+: lambda 直接写，适配器完全不需要
+std::for_each(widgets.begin(), widgets.end(),
+    [](Widget&amp; w) { w.doWork(); });
+</code></pre>
+<p><strong>直觉</strong>：C++03 的函数适配器把"普通函数指针"或"成员函数指针"包装成仿函数，让 STL 算法能用。C++11 后 lambda 基本完全替代了它们。</p>
+<h2>这节讲什么</h2>
+<p>三个适配器（全部在 <code class="c">&lt;functional&gt;</code> 中，C++11 起废弃，C++17 移除）：</p>
+<h3>Item 40：<code class="c">ptr_fun</code> — 包装普通函数指针</h3>
+<pre class="code" data-label="cpp"><code class="c">bool is_even(int x) { return x % 2 == 0; }
+
+// 不用适配器也能传函数指针
+std::find_if(v.begin(), v.end(), is_even);
+
+// 用 ptr_fun 包装（让函数指针&quot;可配对&quot;）
+std::find_if(v.begin(), v.end(), std::not1(std::ptr_fun(is_even)));
+// ptr_fun 提供了 argument_type，使 not1 可用
+</code></pre>
+<h3>Item 41：<code class="c">mem_fun</code> — 包装成员函数指针（对象指针）</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;Widget*&gt; widget_ptrs;
+std::for_each(widget_ptrs.begin(), widget_ptrs.end(),
+    std::mem_fun(&amp;Widget::doWork));  // 对指针调用 doWork()
+</code></pre>
+<h3>Item 42：<code class="c">mem_fun_ref</code> — 包装成员函数指针（对象本身）</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;Widget&gt; widgets;
+std::for_each(widgets.begin(), widgets.end(),
+    std::mem_fun_ref(&amp;Widget::doWork));  // 对对象调用 doWork()
+</code></pre>
+<h3>三者区别</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>适配器</th>
+<th>包装什么</th>
+<th>调用方式</th>
+<th>等价 lambda</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">ptr_fun(f)</code></td>
+<td>普通函数 <code class="c">f</code></td>
+<td><code class="c">f(x)</code></td>
+<td><code class="c">[&amp;](auto&amp; x) { return f(x); }</code></td>
+</tr>
+<tr>
+<td><code class="c">mem_fun(&amp;C::m)</code></td>
+<td>成员函数（指针容器）</td>
+<td><code class="c">ptr-&gt;m()</code></td>
+<td><code class="c">[&amp;](auto* p) { p-&gt;m(); }</code></td>
+</tr>
+<tr>
+<td><code class="c">mem_fun_ref(&amp;C::m)</code></td>
+<td>成员函数（对象容器）</td>
+<td><code class="c">obj.m()</code></td>
+<td><code class="c">[&amp;](auto&amp; o) { o.m(); }</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>为什么 C++11 后不需要了</h3>
+<pre class="code" data-label="cpp"><code class="c">// C++03: 三种适配器
+std::find_if(v.begin(), v.end(), std::not1(std::ptr_fun(is_even)));
+std::for_each(ptrs.begin(), ptrs.end(), std::mem_fun(&amp;Widget::doWork));
+std::for_each(objs.begin(), objs.end(), std::mem_fun_ref(&amp;Widget::doWork));
+
+// C++11: lambda 统一替代
+std::find_if(v.begin(), v.end(), [](int x) { return x % 2 != 0; });
+std::for_each(ptrs.begin(), ptrs.end(), [](Widget* p) { p-&gt;doWork(); });
+std::for_each(objs.begin(), objs.end(), [](Widget&amp; o) { o.doWork(); });
+</code></pre>
+<p>lambda 更清晰、更灵活、可内联，完全没有理由在新代码中使用这些废弃适配器。</p>
+<h3>C++11 替代：std::function + std::bind</h3>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;functional&gt;
+
+// std::bind 部分替代 mem_fun
+auto fn = std::bind(&amp;Widget::doWork, std::placeholders::_1);
+std::for_each(objs.begin(), objs.end(), fn);
+
+// 但 lambda 通常比 bind 更好
+std::for_each(objs.begin(), objs.end(), [](Widget&amp; w) { w.doWork(); });
+</code></pre>
+<h2>常见错误（新手踩坑）</h2>
+<h3>错误 1：mem_fun vs mem_fun_ref 混用</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;Widget&gt; objs;
+std::for_each(objs.begin(), objs.end(),
+    std::mem_fun(&amp;Widget::doWork));  // 错！mem_fun 是给指针用的
+</code></pre>
+<p><strong>修复</strong>：对象容器用 <code class="c">mem_fun_ref</code>，指针容器用 <code class="c">mem_fun</code>。或者直接用 lambda。</p>
+<h3>错误 2：在 C++17 代码中使用已删除的适配器</h3>
+<pre class="code" data-label="cpp"><code class="c">// C++17: ptr_fun/mem_fun/mem_fun_ref 已删除
+std::for_each(v.begin(), v.end(), std::ptr_fun(do_something));  // 编译错误
+</code></pre>
+<p><strong>修复</strong>：用 lambda 替代。</p>
+<h3>错误 3：过度使用 std::bind</h3>
+<pre class="code" data-label="cpp"><code class="c">// 可行但难以阅读
+auto fn = std::bind(std::greater&lt;int&gt;(), std::placeholders::_1, 5);
+std::find_if(v.begin(), v.end(), fn);
+
+// lambda 更清晰
+auto it = std::find_if(v.begin(), v.end(), [](int x) { return x &gt; 5; });
+</code></pre>
+<h2>新手要点（和 C 的区别）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方面</th>
+<th>C</th>
+<th>C++03</th>
+<th>C++11+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调用函数指针</td>
+<td>直接传 <code class="c">qsort</code></td>
+<td><code class="c">ptr_fun</code> 配对</td>
+<td>lambda / 直接传</td>
+</tr>
+<tr>
+<td>调用成员函数</td>
+<td>手写循环</td>
+<td><code class="c">mem_fun</code>/<code class="c">mem_fun_ref</code></td>
+<td>lambda</td>
+</tr>
+<tr>
+<td>部分应用</td>
+<td>无</td>
+<td><code class="c">bind1st</code>/<code class="c">bind2nd</code></td>
+<td><code class="c">std::bind</code> 或 lambda</td>
+</tr>
+<tr>
+<td>可读性</td>
+<td>—</td>
+<td>差（嵌套适配器）</td>
+<td>好（lambda 直观）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>lambda 全面替代适配器</strong>：HFT 代码中用 <code class="c">[&amp;](const Tick&amp; t){ strategy.on_tick(t); }</code> 清晰且可内联</li>
+<li><strong>std::function 的开销</strong>：<code class="c">std::function</code> 有类型擦除开销（堆分配 + 虚调用），热路径避免使用，用模板参数或 lambda 替代</li>
+<li><strong>bind 的性能陷阱</strong>：<code class="c">std::bind</code> 可能产生额外拷贝，lambda 按值/引用捕获更可控</li>
+</ul>
+<h2>代码自测</h2>
+<h3>Q1: mem_fun vs mem_fun_ref</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;Widget&gt; objs;
+std::vector&lt;Widget*&gt; ptrs;
+// 分别用 C++03 适配器调用 doWork
+</code></pre>
+<blockquote>
+<p>objs 和 ptrs 分别应该用哪个适配器？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<ul>
+<li><code class="c">objs</code>（对象容器）→ <code class="c">std::mem_fun_ref(&amp;Widget::doWork)</code></li>
+<li><code class="c">ptrs</code>（指针容器）→ <code class="c">std::mem_fun(&amp;Widget::doWork)</code></li>
+</ul>
+<p>C++11+ 统一用 lambda：</p>
+<pre class="code" data-label="cpp"><code class="c">std::for_each(objs.begin(), objs.end(), [](Widget&amp; w) { w.doWork(); });
+std::for_each(ptrs.begin(), ptrs.end(), [](Widget* p) { p-&gt;doWork(); });
+</code></pre>
+</details>
+<h3>Q2: ptr_fun 的唯一用途</h3>
+<pre class="code" data-label="cpp"><code class="c">bool is_positive(int x) { return x &gt; 0; }
+// A:
+std::find_if(v.begin(), v.end(), is_positive);
+// B:
+std::find_if(v.begin(), v.end(), std::not1(std::ptr_fun(is_positive)));
+</code></pre>
+<blockquote>
+<p>什么时候必须用 <code class="c">ptr_fun</code>？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p>只有需要 <code class="c">not1</code>/<code class="c">not2</code> <strong>配对</strong>时才需要 <code class="c">ptr_fun</code>——它给函数指针添加 <code class="c">argument_type</code> typedef。</p>
+<p>单纯传函数指针（A 方式）不需要 <code class="c">ptr_fun</code>。</p>
+<p>C++11+ 完全不需要：直接用 lambda <code class="c">[](int x) { return x &lt;= 0; }</code> 替代 <code class="c">not1(ptr_fun(...))</code>。</p>
+</details>
+<h3>Q3: lambda 替代</h3>
+<pre class="code" data-label="cpp"><code class="c">// C++03: 写出等价的 lambda
+std::for_each(widgets.begin(), widgets.end(),
+    std::mem_fun_ref(&amp;Widget::process));
+</code></pre>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="cpp"><code class="c">std::for_each(widgets.begin(), widgets.end(),
+    [](Widget&amp; w) { w.process(); });
+</code></pre>
+<p>如果 <code class="c">process</code> 是 const 成员函数且不修改对象：</p>
+<pre class="code" data-label="cpp"><code class="c">std::for_each(widgets.begin(), widgets.end(),
+    [](const Widget&amp; w) { w.process(); });
+</code></pre>
+</details>
+<h3>Q4: std::function vs lambda</h3>
+<pre class="code" data-label="cpp"><code class="c">// A: std::function
+std::function&lt;bool(int)&gt; pred = [threshold=100](int x) { return x &gt; threshold; };
+
+// B: 直接 lambda（auto 推导）
+auto pred2 = [threshold=100](int x) { return x &gt; threshold; };
+
+std::find_if(v.begin(), v.end(), pred);
+std::find_if(v.begin(), v.end(), pred2);
+</code></pre>
+<blockquote>
+<p>A 和 B 在性能上有什么区别？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>B 更快</strong>。<code class="c">auto pred2</code> 推导为闭包类型（编译器生成的唯一类），<code class="c">find_if</code> 模板实例化时类型已知，<code class="c">operator()</code> 可内联。</p>
+<p><strong>A 用 std::function</strong>：类型擦除 → <code class="c">operator()</code> 通过虚调用或函数指针间接调用 → <strong>无法内联</strong>。且 <code class="c">std::function</code> 可能堆分配（如果闭包大于 SBO 缓冲区）。</p>
+<p><strong>HFT</strong>：热路径用 <code class="c">auto</code> + lambda，避免 <code class="c">std::function</code>。<code class="c">std::function</code> 用于需要"存储可调用对象"的场景（如回调注册表），不在热路径上。</p>
+</details>
+<h2>参考与延伸</h2>
+<ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item39-predicate-adaptable.md">Item 39 谓词可配对</a></li>
+<li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item43-functor-vs-function-pointer.md">Item 43 仿函数优于函数指针</a></li>
+<li><a href="#intro">Effective Modern C++ Item 34：lambda 优于 bind</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-item43">
+        <div class="sec-head"><div class="sec-no">Item 43</div><h2>Item 43：优先传函数对象而非函数指针</h2></div>
+<blockquote>
+<p>第 6 章 仿函数与函数 · Item 43 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item40-42-function-adapters.md">Item 40-42 函数适配器</a> · 下一节：<a href="chapter-07.html#intro">ch07 使用 STL 编程</a></p>
+</blockquote>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p>在 C 里，<code class="c">qsort</code> 接收函数指针。编译器看到函数指针调用时，通常<strong>无法内联</strong>——因为它不确定指针指向哪个函数（即使只有一个候选）。</p>
+<pre class="code" data-label="C"><code class="c">/* C: 函数指针 → 无法内联 */
+int cmp(const void *a, const void *b) { return *(int*)a - *(int*)b; }
+qsort(arr, n, sizeof(int), cmp);
+// 编译器：cmp 是指针，可能指向任何函数 → 不内联
+</code></pre>
+<pre class="code" data-label="cpp"><code class="c">// C++: 仿函数 → 类型唯一 → 编译器可内联
+struct Cmp {
+    bool operator()(int a, int b) const { return a &lt; b; }
+};
+std::sort(v.begin(), v.end(), Cmp{});  // Cmp{} 类型已知 → 内联！
+
+// C++11: lambda 本质就是编译器生成的仿函数
+std::sort(v.begin(), v.end(), [](int a, int b) { return a &lt; b; });  // 也可内联
+</code></pre>
+<p><strong>直觉</strong>：函数指针是运行时间接调用，仿函数/lambda 是编译期已知类型——编译器可以内联，性能差距可达数倍。</p>
+<h2>这节讲什么</h2>
+<h3>为什么函数指针阻碍内联</h3>
+<pre class="code" data-label="cpp"><code class="c">// 函数指针版本
+bool less_than(int a, int b) { return a &lt; b; }
+std::sort(v.begin(), v.end(), less_than);
+// 编译器看到 less_than 是一个指针参数
+// 它不能假设指针只指向 less_than（理论上可被重新赋值）
+// → 保守起见，不内联 → 每次比较一次函数调用
+</code></pre>
+<pre class="code" data-label="cpp"><code class="c">// 仿函数版本
+struct LessThan {
+    bool operator()(int a, int b) const { return a &lt; b; }
+};
+std::sort(v.begin(), v.end(), LessThan{});
+// 模板实例化：sort&lt;decltype(v.begin()), LessThan&gt;
+// LessThan::operator() 类型已知，调用点确定
+// → 编译器内联 → 零调用开销
+</code></pre>
+<h3>性能对比</h3>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;vector&gt;
+#include &lt;algorithm&gt;
+#include &lt;chrono&gt;
+#include &lt;iostream&gt;
+
+bool func_ptr_cmp(int a, int b) { return a &lt; b; }
+struct FunctorCmp {
+    bool operator()(int a, int b) const { return a &lt; b; }
+};
+
+int main() {
+    std::vector&lt;int&gt; v(1000000);
+    for (auto&amp; x : v) x = rand();
+
+    auto v1 = v;
+    auto t1 = std::chrono::high_resolution_clock::now();
+    std::sort(v1.begin(), v1.end(), func_ptr_cmp);  // 函数指针
+    auto t2 = std::chrono::high_resolution_clock::now();
+
+    auto v2 = v;
+    auto t3 = std::chrono::high_resolution_clock::now();
+    std::sort(v2.begin(), v2.end(), FunctorCmp{});  // 仿函数
+    auto t4 = std::chrono::high_resolution_clock::now();
+
+    std::cout &lt;&lt; &quot;func ptr: &quot; &lt;&lt; (t2-t1).count() &lt;&lt; &quot; ns\n&quot;;
+    std::cout &lt;&lt; &quot;functor:  &quot; &lt;&lt; (t4-t3).count() &lt;&lt; &quot; ns\n&quot;;
+    // 典型结果：functor 快 1.5-3x
+}
+</code></pre>
+<h3>lambda = 编译器生成的仿函数</h3>
+<pre class="code" data-label="cpp"><code class="c">// 这个 lambda
+auto cmp = [](int a, int b) { return a &lt; b; };
+
+// 编译器生成等价的仿函数
+struct __lambda_cmp {
+    bool operator()(int a, int b) const { return a &lt; b; }
+};
+auto cmp = __lambda_cmp{};
+</code></pre>
+<p>所以 lambda 和手写仿函数<strong>性能完全等价</strong>，但写法更简洁。</p>
+<h2>常见错误（新手踩坑）</h2>
+<h3>错误 1：热路径用函数指针</h3>
+<pre class="code" data-label="cpp"><code class="c">// 反模式：热路径用函数指针
+typedef bool (*CompareFn)(const Order&amp;, const Order&amp;);
+void process_orders(std::vector&lt;Order&gt;&amp; orders, CompareFn cmp) {
+    std::sort(orders.begin(), orders.end(), cmp);  // 不内联！
+}
+</code></pre>
+<p><strong>修复</strong>：用模板参数或 lambda。</p>
+<pre class="code" data-label="cpp"><code class="c">// 模板版本
+template&lt;typename Cmp&gt;
+void process_orders(std::vector&lt;Order&gt;&amp; orders, Cmp cmp) {
+    std::sort(orders.begin(), orders.end(), cmp);  // 可内联
+}
+// 调用：process_orders(orders, [](const Order&amp; a, const Order&amp; b) { ... });
+</code></pre>
+<h3>错误 2：用 std::function 存热路径回调</h3>
+<pre class="code" data-label="cpp"><code class="c">// std::function 有类型擦除开销
+void process(std::vector&lt;int&gt;&amp; v, std::function&lt;bool(int,int)&gt; cmp) {
+    std::sort(v.begin(), v.end(), cmp);  // 不内联（间接调用）
+}
+</code></pre>
+<p><strong>修复</strong>：模板参数。</p>
+<pre class="code" data-label="cpp"><code class="c">template&lt;typename Cmp&gt;
+void process(std::vector&lt;int&gt;&amp; v, Cmp cmp) {
+    std::sort(v.begin(), v.end(), cmp);  // 可内联
+}
+</code></pre>
+<h3>错误 3：以为函数指针和仿函数性能一样</h3>
+<pre class="code" data-label="cpp"><code class="c">// 函数指针和仿函数&quot;功能相同&quot;但性能不同
+std::sort(v.begin(), v.end(), func_ptr_cmp);  // 慢
+std::sort(v.begin(), v.end(), FunctorCmp{});  // 快
+std::sort(v.begin(), v.end(), [](int a, int b) { return a &lt; b; });  // 快（=仿函数）
+</code></pre>
+<h2>新手要点（和 C 的区别）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方面</th>
+<th>C (函数指针)</th>
+<th>C++ (仿函数/lambda)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类型</td>
+<td>统一的指针类型</td>
+<td>每个仿函数/lambda 类型唯一</td>
+</tr>
+<tr>
+<td>内联</td>
+<td>难（间接调用）</td>
+<td>可内联（类型已知）</td>
+</tr>
+<tr>
+<td>状态</td>
+<td>无（全局变量变通）</td>
+<td>有（成员变量 / 捕获）</td>
+</tr>
+<tr>
+<td>语法</td>
+<td>简洁</td>
+<td>仿函数繁琐，lambda 简洁</td>
+</tr>
+<tr>
+<td>性能</td>
+<td>最差</td>
+<td>最好</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>热路径排序比较器必须用 lambda</strong>：<code class="c">std::sort</code> 配函数指针不内联，配 lambda 可内联 + SIMD 优化</li>
+<li><strong>模板参数传策略</strong>：策略模式用模板参数 <code class="c">template&lt;typename Strategy&gt;</code> 而非 <code class="c">std::function</code>，确保编译期内联</li>
+<li><strong>lambda 捕获注意拷贝</strong>：按值捕获大对象增加仿函数大小，热路径用引用捕获（注意线程安全）</li>
+</ul>
+<h2>代码自测</h2>
+<h3>Q1: 内联判断</h3>
+<pre class="code" data-label="cpp"><code class="c">bool cmp_func(int a, int b) { return a &lt; b; }
+struct CmpFunctor {
+    bool operator()(int a, int b) const { return a &lt; b; }
+};
+
+std::sort(v.begin(), v.end(), cmp_func);    // A
+std::sort(v.begin(), v.end(), CmpFunctor{}); // B
+std::sort(v.begin(), v.end(), [](int a, int b) { return a &lt; b; }); // C
+</code></pre>
+<blockquote>
+<p>A、B、C 哪个能内联？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>B 和 C 能内联</strong>，A 通常不能。</p>
+<ul>
+<li><strong>A（函数指针）</strong>：<code class="c">cmp_func</code> 作为指针传入，编译器不确定指针指向哪个函数 → 不内联</li>
+<li><strong>B（仿函数）</strong>：<code class="c">CmpFunctor</code> 类型已知，<code class="c">operator()</code> 可内联</li>
+<li><strong>C（lambda）</strong>：编译器生成唯一闭包类型，等价于 B，可内联</li>
+</ul>
+<p>B 和 C 性能等价，C 写法更简洁。</p>
+</details>
+<h3>Q2: 模板 vs std::function</h3>
+<pre class="code" data-label="cpp"><code class="c">// A: std::function 参数
+void sort_v1(std::vector&lt;int&gt;&amp; v, std::function&lt;bool(int,int)&gt; cmp);
+
+// B: 模板参数
+template&lt;typename Cmp&gt;
+void sort_v2(std::vector&lt;int&gt;&amp; v, Cmp cmp);
+</code></pre>
+<blockquote>
+<p>A 和 B 在 sort 内联上有什么区别？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>B 可内联，A 不可</strong>。</p>
+<ul>
+<li><strong>A（std::function）</strong>：类型擦除 → <code class="c">operator()</code> 通过虚表/函数指针间接调用 → 不内联。且可能堆分配。</li>
+<li><strong>B（模板参数）</strong>：每个 <code class="c">Cmp</code> 类型生成独立实例化 → 调用点类型已知 → 可内联</li>
+</ul>
+<p><strong>HFT</strong>：热路径用模板参数。<code class="c">std::function</code> 用于回调注册表等"需要存储异质可调用对象"的非热路径场景。</p>
+</details>
+<h3>Q3: lambda 捕获大小</h3>
+<pre class="code" data-label="cpp"><code class="c">int threshold = 100;
+std::vector&lt;int&gt; buf(1024);
+
+// A: 按值捕获 threshold
+auto a = [threshold](int x) { return x &gt; threshold; };
+
+// B: 按引用捕获 buf
+auto b = [&amp;buf](int x) { /* use buf */ };
+
+// C: 按值捕获 buf
+auto c = [buf](int x) { /* use buf */ };
+</code></pre>
+<blockquote>
+<p>A、B、C 的仿函数大小分别是多少？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<ul>
+<li><strong>A</strong>：sizeof = 4（一个 int）。轻量，拷贝廉价。</li>
+<li><strong>B</strong>：sizeof = 8（一个指针）。引用捕获只存指针。</li>
+<li><strong>C</strong>：sizeof = 4096（拷贝整个 vector）。<strong>每次拷贝 4KB</strong>！</li>
+</ul>
+<p><strong>教训</strong>：大对象用引用捕获 <code class="c">[&amp;buf]</code>，按值捕获只用于小类型（int/double/指针）。</p>
+<p><strong>HFT</strong>：热路径仿函数必须轻量，sort 内部会拷贝仿函数。大捕获用引用（注意生命周期和线程安全）。</p>
+</details>
+<h3>Q4: 有状态 lambda</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v = {3, 1, 4, 1, 5, 9, 2, 6};
+int comparisons = 0;
+std::sort(v.begin(), v.end(), [&amp;comparisons](int a, int b) {
+    comparisons++;
+    return a &lt; b;
+});
+std::cout &lt;&lt; comparisons;
+</code></pre>
+<blockquote>
+<p>这段代码能正确统计比较次数吗？有什么风险？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>能正确统计</strong>。lambda 引用捕获 <code class="c">comparisons</code>，每次比较递增的是外部变量。</p>
+<p><strong>风险</strong>：
+1. <strong>线程安全</strong>：如果 sort 被并行执行（C++17 <code class="c">std::execution::par</code>），多线程同时写 <code class="c">comparisons</code> 是数据竞争 → UB
+2. <strong>sort 可能拷贝 lambda</strong>：但引用捕获只拷贝指针，指向同一个 <code class="c">comparisons</code>，所以统计正确</p>
+<p><strong>HFT</strong>：热路径避免有状态 lambda（副作用影响优化）。如果必须统计，用无竞争的原子计数器，且不在生产热路径上。</p>
+</details>
+<h2>参考与延伸</h2>
+<ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item40-42-function-adapters.md">Item 40-42 函数适配器</a></li>
+<li>下一节：<a href="chapter-07.html#intro">ch07 使用 STL 编程</a></li>
+<li><a href="#intro">Effective Modern C++ Item 34：lambda 优于 bind</a></li>
+</ul>
       </section>
 
       <section class="section" id="quiz">

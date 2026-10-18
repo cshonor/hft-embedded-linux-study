@@ -276,6 +276,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-item12"><span class="n">12</span>-13：理解 vector/string 的容量与扩容</a>
+          <a href="#s-item14"><span class="n">14</span>用 reserve 避免不必要的重新分配</a>
+          <a href="#s-item15"><span class="n">15</span>注意 string 实现的多样性</a>
+          <a href="#s-item16"><span class="n">16</span>将 string/vector 数据传给旧 C API</a>
+          <a href="#s-item17"><span class="n">17</span>交错使用 vector 和 string 数据</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -300,7 +305,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Meyers《Effective STL》· 写容器/缓冲区时查</div>
           <h1>第 2 章 vector 和 string</h1>
           <div class="meta">
-<span>book <b>M5-STL · 01-Effective-STL</b></span><span>chapter <b>Ch 2</b></span><span>sections <b>1</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M5-STL · 01-Effective-STL</b></span><span>chapter <b>Ch 2</b></span><span>sections <b>6</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -348,6 +353,1055 @@ legacy_read(buf.data(), buf.size());   // 可写缓冲
 <li><strong>C API 互操作</strong>：DPDK / syscall 接口要 <code class="c">data()</code>/<code class="c">c_str()</code> 取裸指针，注意返回前容器不能扩容（否则指针失效）。</li>
 </ul>
 <hr />
+      </section>
+      <section class="section" id="s-item12">
+        <div class="sec-head"><div class="sec-no">Item 12</div><h2>Item 12-13：理解 vector/string 的容量与扩容</h2></div>
+<blockquote>
+<p>第 2 章 vector 和 string · Item 12-13 · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item14-reserve-avoid-realloc.md">Item 14 reserve 避免重新分配</a></p>
+</blockquote>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p>C 程序员动态数组的扩容是手动的：</p>
+<pre class="code" data-label="C"><code class="c">int* arr = malloc(10 * sizeof(int));
+int capacity = 10, size = 0;
+// 满了就手动扩容
+if (size == capacity) {
+    capacity *= 2;
+    arr = realloc(arr, capacity * sizeof(int));  // 可能搬移整块内存
+}
+arr[size++] = 42;
+</code></pre>
+<p>C++ 的 <code class="c">vector</code> 自动管理扩容，但扩容时迭代器/指针/引用全部失效——这是 <code class="c">vector</code> 最常见的 UB 来源。</p>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
+v.push_back(1);
+auto p = &amp;v[0];      // p 指向 v 的数据
+v.push_back(2);       // 可能扩容 → p 悬空！
+// *p;  // UB！
+</code></pre>
+<hr />
+<h2>这节讲什么</h2>
+<p><code class="c">vector</code> 的 <code class="c">size()</code>/<code class="c">capacity()</code>/<code class="c">reserve()</code>/<code class="c">shrink_to_fit()</code> 四件套。扩容策略通常是翻倍——均摊 O(1) 插入，但单次扩容有 O(n) 拷贝/移动尖峰。扩容时所有迭代器、指针、引用全部失效。</p>
+<hr />
+<h2>容量四件套</h2>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
+v.push_back(1);  // size=1, capacity 可能=1
+
+v.reserve(100);  // capacity≥100, size 不变
+// 预分配 100 个元素的空间，后续 push_back 不扩容
+
+v.shrink_to_fit();  // 请求 capacity=size（非强制）
+// 减少内存占用，但实现可以忽略
+
+std::cout &lt;&lt; v.size() &lt;&lt; ' ' &lt;&lt; v.capacity();
+// size = 当前元素数, capacity = 已分配可容纳数
+</code></pre>
+<h3>扩容过程</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
+for (int i = 0; i &lt; 10; ++i)
+    v.push_back(i);
+
+// 典型扩容轨迹（GCC libstdc++ 2x 策略）：
+// push_back(0): size=1, capacity=1   → 分配 1
+// push_back(1): size=2, capacity=2   → 分配 2，拷贝 1 个
+// push_back(2): size=3, capacity=4   → 分配 4，拷贝 2 个
+// push_back(3): size=4, capacity=4   → 无扩容
+// push_back(4): size=5, capacity=8   → 分配 8，拷贝 4 个
+// ...
+// push_back(9): size=10, capacity=16 → 分配 16，拷贝 8 个
+// 总分配次数：4-5 次，总拷贝次数：1+2+4+8=15 次
+</code></pre>
+<h3>迭代器失效规则</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>失效范围</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">push_back</code></td>
+<td>扩容→全部失效；不扩容→<code class="c">end()</code> 失效</td>
+</tr>
+<tr>
+<td><code class="c">insert(pos, val)</code></td>
+<td>pos 之后全部失效（扩容则全部）</td>
+</tr>
+<tr>
+<td><code class="c">erase(pos)</code></td>
+<td>pos 及之后失效</td>
+</tr>
+<tr>
+<td><code class="c">reserve/clear</code></td>
+<td>全部失效</td>
+</tr>
+<tr>
+<td><code class="c">shrink_to_fit</code></td>
+<td>全部失效</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>常见错误（新手踩坑）</h2>
+<h3>错误 1：扩容后使用旧指针/迭代器</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v = {1, 2, 3};
+auto it = v.begin();
+v.push_back(4);  // 可能扩容 → it 失效
+std::cout &lt;&lt; *it;  // UB！
+</code></pre>
+<p><strong>修正：</strong> 扩容后重新获取迭代器，或预 <code class="c">reserve</code> 避免扩容。</p>
+<h3>错误 2：热路径上动态扩容导致延迟尖峰</h3>
+<pre class="code" data-label="cpp"><code class="c">// HFT 热路径：每 tick 都 push_back，可能触发扩容
+for (auto&amp; tick : incoming_ticks)
+    tick_buffer.push_back(tick);  // 扩容时 O(n) 拷贝 → 延迟尖峰
+</code></pre>
+<p><strong>修正：</strong> 启动时 <code class="c">tick_buffer.reserve(MAX_TICKS);</code> 消除热路径扩容。</p>
+<h3>错误 3：shrink_to_fit 后假设容量</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
+v.reserve(1000);
+v.push_back(1);
+v.shrink_to_fit();
+// v.capacity() 可能是 1，也可能不是——标准不保证
+</code></pre>
+<p><strong>修正：</strong> <code class="c">shrink_to_fit</code> 是非绑定请求，不要依赖其效果。检查 <code class="c">capacity()</code> 确认。</p>
+<hr />
+<h2>新手要点（和 C 的区别）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>C</th>
+<th>C++ STL</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>动态数组</td>
+<td><code class="c">malloc</code>/<code class="c">realloc</code></td>
+<td><code class="c">vector</code> 自动扩容</td>
+<td>异常安全</td>
+</tr>
+<tr>
+<td>容量管理</td>
+<td>手动 <code class="c">capacity</code> 变量</td>
+<td><code class="c">size()</code>/<code class="c">capacity()</code></td>
+<td>内建</td>
+</tr>
+<tr>
+<td>预分配</td>
+<td><code class="c">realloc</code> 手动</td>
+<td><code class="c">reserve()</code></td>
+<td>语义清晰</td>
+</tr>
+<tr>
+<td>扩容失效</td>
+<td><code class="c">realloc</code> 后旧指针失效</td>
+<td>迭代器/指针/引用失效</td>
+<td>相同问题</td>
+</tr>
+<tr>
+<td>收缩</td>
+<td><code class="c">realloc</code> 缩小</td>
+<td><code class="c">shrink_to_fit()</code>（非强制）</td>
+<td>标准不保证</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>一句话：</strong> C 的 <code class="c">realloc</code> 和 <code class="c">vector</code> 扩容本质相同——都可能搬移内存。<code class="c">reserve</code> 是 C++ 版的"提前 <code class="c">realloc</code> 到足够大小"，消除热路径上的扩容尖峰。</p>
+<hr />
+<h2>HFT 关联</h2>
+<ul>
+<li><strong><code class="c">reserve</code> 消除扩容尖峰</strong>：行情 tick 缓冲按峰值 <code class="c">reserve</code>，热路径零扩容。这是 HFT <code class="c">vector</code> 调优第一课。</li>
+<li><strong><code class="c">unordered_map::reserve</code> 避免 rehash</strong>：<code class="c">reserve(bucket_count)</code> 预分配桶数组，避免热路径 rehash。</li>
+<li><strong>迭代器失效是 UB</strong>：热路径上保存的指针/迭代器在扩容后变悬空——预 <code class="c">reserve</code> 或用索引代替指针。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<h3>Q1: 扩容代价</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
+for (int i = 0; i &lt; 1000; ++i) v.push_back(i);  // A: 无 reserve
+
+std::vector&lt;int&gt; v2;
+v2.reserve(1000);
+for (int i = 0; i &lt; 1000; ++i) v2.push_back(i);  // B: 有 reserve
+</code></pre>
+<blockquote>
+<p>A 和 B 各发生多少次内存分配？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<ul>
+<li><strong>A</strong>：约 10 次分配（2x 增长：1→2→4→...→1024，log₂(1000)≈10）。每次分配 = 新内存 + 拷贝旧元素 + 释放旧内存。</li>
+<li><strong>B</strong>：1 次分配（<code class="c">reserve(1000)</code> 一次分配，后续 <code class="c">push_back</code> 不扩容）。</li>
+</ul>
+</details>
+<h3>Q2: 迭代器失效</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v = {1, 2, 3};
+auto it = v.begin() + 1;  // 指向 2
+v.reserve(100);           // A
+v.push_back(4);           // B
+std::cout &lt;&lt; *it;         // C
+</code></pre>
+<blockquote>
+<p>C 行安全吗？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>视情况</strong>：
+- 如果 <code class="c">reserve(100)</code> 扩容了（原 capacity &lt; 100）→ A 行后 <code class="c">it</code> 已失效 → C 行 UB。
+- 如果 <code class="c">reserve(100)</code> 没扩容（原 capacity ≥ 100）→ A 行后 <code class="c">it</code> 有效 → B 行不扩容（capacity 足够）→ C 行安全。</p>
+<p><strong>最佳实践</strong>：<code class="c">reserve</code> 后不要使用旧迭代器——重新获取。</p>
+</details>
+<h3>Q3: capacity 增长策略</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
+for (int i = 0; i &lt; 20; ++i) {
+    v.push_back(i);
+    std::cout &lt;&lt; v.capacity() &lt;&lt; ' ';
+}
+</code></pre>
+<blockquote>
+<p>GCC libstdc++ 和 MSVC 的输出有何不同？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<ul>
+<li><strong>GCC libstdc++（2x）</strong>：1 2 4 8 16 16 16 16 32 ...（翻倍增长）</li>
+<li><strong>MSVC（1.5x）</strong>：1 2 3 4 6 9 13 19 28 ...（1.5 倍增长）</li>
+</ul>
+<p>倍率越大→扩容次数越少但浪费越多。倍率越小→扩容次数多但内存利用率高。<code class="c">reserve(n)</code> 让你自己控制——HFT 按 peak 预分配。</p>
+</details>
+<h3>Q4: shrink_to_fit</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
+v.reserve(1000);
+for (int i = 0; i &lt; 10; ++i) v.push_back(i);
+std::cout &lt;&lt; v.capacity() &lt;&lt; ' ';  // A
+v.shrink_to_fit();
+std::cout &lt;&lt; v.capacity();          // B
+</code></pre>
+<blockquote>
+<p>A 输出什么？B 一定小于 A 吗？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<ul>
+<li><strong>A</strong>：1000（<code class="c">reserve</code> 的值）。</li>
+<li><strong>B</strong>：不一定小于 1000。<code class="c">shrink_to_fit</code> 是非绑定请求——标准说"不保证收缩"。大多数实现会收缩到 size（10），但不是强制的。</li>
+</ul>
+<p>不要依赖 <code class="c">shrink_to_fit</code> 的行为。如果必须释放内存，用 <code class="c">vector&lt;int&gt;().swap(v);</code>（swap 技巧强制释放）。</p>
+</details>
+<hr />
+<h2>参考与延伸</h2>
+<ul>
+<li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item14-reserve-avoid-realloc.md">Item 14 reserve 避免重新分配</a></li>
+<li>回到：<a href="#intro">第 2 章 vector 和 string</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-item14">
+        <div class="sec-head"><div class="sec-no">Item 14</div><h2>Item 14：用 reserve 避免不必要的重新分配</h2></div>
+<blockquote>
+<p>第 2 章 vector 和 string · Item 14 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item12-13-capacity-reserve.md">Item 12-13 容量与扩容</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item15-string-implementation.md">Item 15 string 实现多样性</a></p>
+</blockquote>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p>C 程序员知道提前分配足够内存的重要性：</p>
+<pre class="code" data-label="C"><code class="c">// 不好的做法：频繁 realloc
+char* buf = malloc(1);
+for (int i = 0; i &lt; 1000; ++i) {
+    buf = realloc(buf, i + 2);  // 可能每次都搬移！
+    buf[i] = data[i];
+}
+
+// 好的做法：一次分配够
+char* buf = malloc(1000);
+for (int i = 0; i &lt; 1000; ++i) buf[i] = data[i];
+</code></pre>
+<p>C++ 的 <code class="c">vector</code> 同理——<code class="c">reserve</code> 是 <code class="c">vector</code> 性能调优的第一手段。</p>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;Tick&gt; ticks;
+ticks.reserve(estimate);          // 一次性分配
+for (...) ticks.push_back(tick);  // 零扩容
+</code></pre>
+<hr />
+<h2>这节讲什么</h2>
+<p><code class="c">reserve(n)</code> 预分配容量，让后续 <code class="c">push_back</code> 不触发扩容。对 <code class="c">unordered_map</code> 同理——<code class="c">reserve(bucket_count)</code> 避免 rehash 尖峰。<code class="c">reserve</code> 是消除热路径延迟尖峰的关键手段。</p>
+<hr />
+<h2>reserve 的正确用法</h2>
+<pre class="code" data-label="cpp"><code class="c">// vector
+std::vector&lt;int&gt; v;
+v.reserve(10000);  // 预分配 10000 个 int 的空间
+for (int i = 0; i &lt; 10000; ++i)
+    v.push_back(i);  // 零扩容，零迭代器失效
+
+// unordered_map
+std::unordered_map&lt;int, std::string&gt; m;
+m.reserve(10000);  // 预分配桶，避免 rehash
+for (int i = 0; i &lt; 10000; ++i)
+    m[i] = &quot;value&quot;;  // 零 rehash
+
+// string
+std::string s;
+s.reserve(1024);  // 预分配
+for (char c : data) s += c;  // 零扩容
+</code></pre>
+<h3>什么时候用 reserve</h3>
+<pre class="code" data-label="cpp"><code class="c">// ✅ 知道（或能估计）最终大小
+std::vector&lt;Order&gt; orders;
+orders.reserve(max_orders_per_tick);  // HFT 启动时按峰值预分配
+
+// ✅ 批量插入前
+v.reserve(v.size() + src.size());
+v.insert(v.end(), src.begin(), src.end());
+
+// ❌ 不知道大小，只是盲目 reserve
+v.reserve(1000000);  // 如果最终只用了 10 个 → 浪费 4MB
+</code></pre>
+<hr />
+<h2>常见错误（新手踩坑）</h2>
+<h3>错误 1：reserve 后忘了 size 还是 0</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
+v.reserve(100);
+std::cout &lt;&lt; v.size();   // 0！reserve 不改变 size
+// v[0] = 42;  // UB！size 是 0，越界
+</code></pre>
+<p><strong>修正：</strong> <code class="c">reserve</code> 只改变 <code class="c">capacity</code>，不改变 <code class="c">size</code>。要用 <code class="c">resize(n)</code> 来同时改变 size（会值初始化新元素）。</p>
+<h3>错误 2：reserve 过大浪费内存</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
+v.reserve(10000000);  // 40MB，但实际只用了 100 个
+// 浪费 39.6MB 内存
+</code></pre>
+<p><strong>修正：</strong> 按实际峰值 reserve，不要盲目预留过大空间。</p>
+<h3>错误 3：对 list/forward_list 调用 reserve</h3>
+<pre class="code" data-label="cpp"><code class="c">std::list&lt;int&gt; l;
+// l.reserve(100);  // 编译错误！list 没有 reserve
+</code></pre>
+<p><strong>修正：</strong> <code class="c">reserve</code> 是 <code class="c">vector</code>/<code class="c">string</code>/<code class="c">unordered_*</code> 的接口。<code class="c">list</code> 不需要预分配（每个节点独立分配）。</p>
+<hr />
+<h2>新手要点（和 C 的区别）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>C</th>
+<th>C++ STL</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>预分配</td>
+<td><code class="c">malloc(n)</code> 直接</td>
+<td><code class="c">reserve(n)</code></td>
+<td>分离分配与构造</td>
+</tr>
+<tr>
+<td>扩容</td>
+<td><code class="c">realloc</code></td>
+<td>自动翻倍</td>
+<td>均摊 O(1)</td>
+</tr>
+<tr>
+<td>大小 vs 容量</td>
+<td><code class="c">n</code> vs <code class="c">capacity</code></td>
+<td><code class="c">size()</code> vs <code class="c">capacity()</code></td>
+<td>明确区分</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>一句话：</strong> C 的 <code class="c">malloc(n)</code> 一步到位分配+可用。C++ 的 <code class="c">reserve(n)</code> 只分配不构造——<code class="c">size</code> 不变，<code class="c">capacity</code> 变。这是"分配与构造分离"的设计。</p>
+<hr />
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>启动时 reserve 峰值容量</strong>：HFT 系统启动时按峰值行情量 <code class="c">reserve</code>，热路径零扩容、零迭代器失效。</li>
+<li><strong><code class="c">unordered_map::reserve</code> 避免 rehash</strong>：订单 ID→订单对象映射，预 <code class="c">reserve</code> 避免 rehash 导致的全表重哈希尖峰。</li>
+<li><strong><code class="c">reserve</code> + <code class="c">emplace_back</code> = 零分配热路径</strong>：预 reserve + 原地构造 = 热路径上零 <code class="c">malloc</code>、零拷贝、零迭代器失效。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<h3>Q1: reserve vs resize</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
+v.reserve(10);   // A
+std::cout &lt;&lt; v.size() &lt;&lt; ' ' &lt;&lt; v.capacity() &lt;&lt; '\n';
+
+std::vector&lt;int&gt; v2;
+v2.resize(10);   // B
+std::cout &lt;&lt; v2.size() &lt;&lt; ' ' &lt;&lt; v2.capacity() &lt;&lt; '\n';
+</code></pre>
+<blockquote>
+<p>A 和 B 的输出分别是什么？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<ul>
+<li><strong>A</strong>：<code class="c">0 10</code>。<code class="c">reserve</code> 只改变 capacity（预分配空间），不改变 size（没有元素）。</li>
+<li><strong>B</strong>：<code class="c">10 10</code>（或 capacity≥10）。<code class="c">resize</code> 改变 size（新增 10 个值初始化为 0 的元素），capacity 至少等于 size。</li>
+</ul>
+<p><code class="c">reserve</code> = 分配空间但不创建元素。<code class="c">resize</code> = 创建/销毁元素。</p>
+</details>
+<h3>Q2: reserve 的时机</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
+for (int i = 0; i &lt; 1000; ++i) {
+    if (i == 500) v.reserve(1000);  // A: 中途 reserve
+    v.push_back(i);
+}
+// vs
+std::vector&lt;int&gt; v2;
+v2.reserve(1000);  // B: 开头 reserve
+for (int i = 0; i &lt; 1000; ++i) v2.push_back(i);
+</code></pre>
+<blockquote>
+<p>A 方案有什么问题？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>A 方案</strong>：前 500 次 <code class="c">push_back</code> 已经触发了约 9 次扩容（2x：1→2→...→512）。中途 <code class="c">reserve(1000)</code> 会触发一次额外的扩容（从 512→1000），但前 9 次扩容的代价已经产生了。</p>
+<p><strong>B 方案</strong>：只有 1 次分配，0 次扩容。</p>
+<p><strong>教训</strong>：<code class="c">reserve</code> 要尽早调——在知道容量需求的第一时间就调。</p>
+</details>
+<h3>Q3: unordered_map reserve</h3>
+<pre class="code" data-label="cpp"><code class="c">std::unordered_map&lt;int, std::string&gt; m;
+// 预期插入 10000 个键值对
+// A
+for (int i = 0; i &lt; 10000; ++i) m[i] = &quot;val&quot;;
+
+// B
+m.reserve(10000);
+for (int i = 0; i &lt; 10000; ++i) m[i] = &quot;val&quot;;
+</code></pre>
+<blockquote>
+<p>A 方案发生了多少次 rehash？B 方案呢？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<ul>
+<li><strong>A</strong>：约 5-6 次 rehash（桶数增长策略通常是 2x：1→2→4→...→32768）。每次 rehash = 重新哈希所有已有元素 + 分配新桶数组 → 延迟尖峰。</li>
+<li><strong>B</strong>：0 次 rehash。<code class="c">reserve(10000)</code> 一次分配足够桶数，后续插入不 rehash。</li>
+</ul>
+<p><strong>HFT</strong>：<code class="c">unordered_map</code> 启动时 <code class="c">reserve</code> 避免热路径 rehash 尖峰。</p>
+</details>
+<h3>Q4: string reserve</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string s;
+for (int i = 0; i &lt; 100; ++i) {
+    s += &quot;hello&quot;;  // 每次 += 可能扩容
+}
+// vs
+std::string s2;
+s2.reserve(500);  // 100 * 5
+for (int i = 0; i &lt; 100; ++i) s2 += &quot;hello&quot;;
+</code></pre>
+<blockquote>
+<p>两个方案的性能差异？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p>方案 1：约 9 次扩容（2x 增长），每次扩容拷贝已有字符串。</p>
+<p>方案 2：1 次分配，0 次扩容。</p>
+<p>性能差距取决于字符串长度——长字符串的拷贝代价更大，<code class="c">reserve</code> 收益更明显。HFT 中构造 FIX 消息时预 <code class="c">reserve</code> 是标准做法。</p>
+</details>
+<hr />
+<h2>参考与延伸</h2>
+<ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item12-13-capacity-reserve.md">Item 12-13 容量与扩容</a></li>
+<li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item15-string-implementation.md">Item 15 string 实现多样性</a></li>
+<li>回到：<a href="#intro">第 2 章 vector 和 string</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-item15">
+        <div class="sec-head"><div class="sec-no">Item 15</div><h2>Item 15：注意 string 实现的多样性</h2></div>
+<blockquote>
+<p>第 2 章 vector 和 string · Item 15 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item14-reserve-avoid-realloc.md">Item 14 reserve 避免重新分配</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item16-pass-to-c-api.md">Item 16 传给 C API</a></p>
+</blockquote>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p>C 程序员的字符串只有一个布局：</p>
+<pre class="code" data-label="C"><code class="c">char s[100];  // 固定大小数组
+// 或
+char* s = malloc(strlen(src) + 1);  // 堆分配 + '\0'
+// sizeof(char*) = 4/8 字节，固定
+</code></pre>
+<p>C++ 的 <code class="c">std::string</code> 在不同标准库实现中布局不同：</p>
+<pre class="code" data-label="cpp"><code class="c">// GCC libstdc++: sizeof(string) = 32
+// libc++: sizeof(string) = 24
+// MSVC: sizeof(string) = 32
+// 不同实现用不同的 SSO 阈值和内部布局
+</code></pre>
+<p>跨平台二进制共享时不能假设 <code class="c">string</code> 的内存布局。</p>
+<hr />
+<h2>这节讲什么</h2>
+<p>不同标准库实现的 <code class="c">string</code> 布局不同。<strong>SSO（Small String Optimization）</strong>让短字符串零堆分配。<code class="c">sizeof(string)</code> 从 8 到 32 字节不等。跨平台二进制共享时用 <code class="c">const char*</code> 或定长缓冲。</p>
+<hr />
+<h2>SSO 详解</h2>
+<pre class="code" data-label="cpp"><code class="c">// SSO 的核心思想：短字符串存在对象内部，长字符串在堆上
+// 两种模式共用同一块内存（union）
+
+// GCC libstdc++ string 内部布局（简化）：
+struct string {
+    char local_buf[16];  // SSO：短字符串存这里（≤15 字符 + '\0'）
+    size_t length;
+    union {
+        char* heap_ptr;  // 长字符串：堆指针
+        // local_buf 复用
+    };
+    size_t capacity;
+};
+// sizeof = 32
+
+// SSO 阈值：
+// libstdc++: 15 字符
+// libc++:    22 字符
+// MSVC:      15 字符
+</code></pre>
+<pre class="code" data-label="cpp"><code class="c">std::string s1 = &quot;AAPL&quot;;      // 4 字符 → SSO，零堆分配
+std::string s2 = &quot;BTC-PERP-20240927&quot;;  // 19 字符 → 可能超 SSO 阈值，堆分配
+// sizeof(s1) == sizeof(s2)  // true，布局相同
+</code></pre>
+<hr />
+<h2>常见错误（新手踩坑）</h2>
+<h3>错误 1：假设 sizeof(string) 跨平台一致</h3>
+<pre class="code" data-label="cpp"><code class="c">// 在 GCC 上 sizeof(string) = 32
+// 在 libc++ 上 sizeof(string) = 24
+// 跨平台二进制接口不能用 string 传参
+void send_data(const std::string&amp; s);  // ⚠️ ABI 依赖
+</code></pre>
+<p><strong>修正：</strong> 跨 ABI 边界用 <code class="c">const char*</code> + length。</p>
+<h3>错误 2：假设 SSO 阈值</h3>
+<pre class="code" data-label="cpp"><code class="c">// 在 libstdc++ 上 SSO 阈值是 15
+// 在 libc++ 上 SSO 阈值是 22
+std::string s = &quot;1234567890123456&quot;;  // 16 字符
+// libstdc++: 堆分配（超 15）
+// libc++: SSO（≤ 22）
+// 性能行为不同！
+</code></pre>
+<p><strong>修正：</strong> 不要依赖具体 SSO 阈值。如果需要确保零分配，用 <code class="c">array&lt;char, N&gt;</code> 或 <code class="c">string_view</code>。</p>
+<h3>错误 3：假设 string 内存连续且以 '\0' 结尾（C++03 没保证）</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string s = &quot;hello&quot;;
+char* p = &amp;s[0];
+p[3] = 'X';  // C++11 起安全（连续存储）
+// C++03 不保证连续存储
+</code></pre>
+<p><strong>修正：</strong> C++11 起 <code class="c">string</code> 保证连续存储且 <code class="c">data()</code>/<code class="c">c_str()</code> 等价于 <code class="c">&amp;operator[](../../../../../../4.5.0)</code>。</p>
+<hr />
+<h2>新手要点（和 C 的区别）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>C <code class="c">char*</code></th>
+<th>C++ <code class="c">string</code></th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>布局</td>
+<td>固定（指针+数据）</td>
+<td>实现多样（SSO/堆）</td>
+<td>标准不规定布局</td>
+</tr>
+<tr>
+<td>sizeof</td>
+<td>4/8（指针）</td>
+<td>24/32（含 SSO）</td>
+<td>实现相关</td>
+</tr>
+<tr>
+<td>短字符串</td>
+<td>无优化</td>
+<td>SSO 零分配</td>
+<td>性能优化</td>
+</tr>
+<tr>
+<td>'\0' 终止</td>
+<td>必须</td>
+<td>C++11 起保证</td>
+<td>兼容 C API</td>
+</tr>
+<tr>
+<td>ABI</td>
+<td>统一</td>
+<td>不统一</td>
+<td>跨平台要注意</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>一句话：</strong> C 的 <code class="c">char*</code> 布局固定（一个指针），C++ 的 <code class="c">string</code> 布局因实现而异（SSO 阈值、sizeof 不同）。跨平台二进制接口用 <code class="c">const char*</code>，不用 <code class="c">string</code>。</p>
+<hr />
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>SSO 与 symbol</strong>：交易对 symbol 短（"AAPL"、"ESU5"），SSO 让 <code class="c">string</code> 零堆分配。但长 symbol（"BTC-PERP-20240927"）超 SSO 阈值会堆分配——可考虑 <code class="c">string_view</code> + 外部缓冲。</li>
+<li><strong>跨 ABI 用 <code class="c">const char*</code></strong>：DPDK / syscall 接口要 <code class="c">const char*</code>，不用 <code class="c">string</code>（ABI 不兼容）。</li>
+<li><strong><code class="c">string_view</code>（C++17）零拷贝</strong>：用 <code class="c">string_view</code> 指向外部缓冲，零拷贝、零分配、跨 ABI 安全。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<h3>Q1: SSO</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string s1 = &quot;hi&quot;;       // 2 字符
+std::string s2 = &quot;hello world this is a long string&quot;;  // 38 字符
+std::cout &lt;&lt; sizeof(s1) &lt;&lt; ' ' &lt;&lt; sizeof(s2);
+</code></pre>
+<blockquote>
+<p>sizeof 相同吗？为什么？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>相同</strong>（如 GCC libstdc++ 中都是 32）。SSO 用 union 共用内存——短字符串存在内部缓冲，长字符串用堆指针。两种模式共用同一块内存，所以 sizeof 相同。</p>
+<p>区别在内部：s1 没有堆分配（SSO），s2 有堆分配（超阈值）。</p>
+</details>
+<h3>Q2: 跨平台 sizeof</h3>
+<pre class="code" data-label="cpp"><code class="c">std::cout &lt;&lt; sizeof(std::string);
+// GCC libstdc++: ?
+// libc++: ?
+// MSVC: ?
+</code></pre>
+<blockquote>
+<p>三个实现的 sizeof 分别是多少（大概）？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<ul>
+<li>GCC libstdc++: 32</li>
+<li>libc++: 24</li>
+<li>MSVC: 32</li>
+</ul>
+<p>不同实现的 <code class="c">string</code> 内部布局不同（SSO 缓冲大小、指针/长度字段排列不同）。跨平台不能假设 sizeof。</p>
+</details>
+<h3>Q3: SSO 阈值</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string s = &quot;1234567890123456&quot;;  // 16 字符
+// 在 libstdc++（SSO ≤ 15）上会发生什么？
+// 在 libc++（SSO ≤ 22）上呢？
+</code></pre>
+<details>
+<summary>答案</summary>
+<ul>
+<li><strong>libstdc++（阈值 15）</strong>：16 &gt; 15 → 堆分配。<code class="c">malloc</code> + 拷贝。</li>
+<li><strong>libc++（阈值 22）</strong>：16 ≤ 22 → SSO。零堆分配。</li>
+</ul>
+<p>同一段代码在不同实现上的性能行为不同——这就是"string 实现多样性"的实际影响。</p>
+</details>
+<h3>Q4: string_view 替代</h3>
+<pre class="code" data-label="cpp"><code class="c">// 旧代码
+void process(const std::string&amp; s);  // 依赖 string 布局
+
+// C++17
+void process(std::string_view sv);  // 零拷贝、跨 ABI
+std::string s = &quot;hello&quot;;
+process(s);            // string → string_view 隐式转换
+process(&quot;world&quot;);      // const char* → string_view
+process(some_vector);  // vector&lt;char&gt; → string_view
+</code></pre>
+<blockquote>
+<p>string_view 相比 const string&amp; 有什么优势？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<ol>
+<li><strong>零拷贝</strong>：<code class="c">string_view</code> 只存指针+长度，不拷贝数据。</li>
+<li><strong>跨类型</strong>：接受 <code class="c">string</code>、<code class="c">const char*</code>、<code class="c">vector&lt;char&gt;</code>、<code class="c">array&lt;char,N&gt;</code> 等。</li>
+<li><strong>跨 ABI</strong>：<code class="c">string_view</code> 布局固定（指针+大小），不依赖 <code class="c">string</code> 实现。</li>
+<li><strong>零分配</strong>：不触发 SSO/堆分配。</li>
+</ol>
+<p><strong>注意</strong>：<code class="c">string_view</code> 不拥有数据——原数据销毁后 <code class="c">string_view</code> 变悬空（类似 C 的指针）。</p>
+</details>
+<hr />
+<h2>参考与延伸</h2>
+<ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item14-reserve-avoid-realloc.md">Item 14 reserve 避免重新分配</a></li>
+<li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item16-pass-to-c-api.md">Item 16 传给 C API</a></li>
+<li>回到：<a href="#intro">第 2 章 vector 和 string</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-item16">
+        <div class="sec-head"><div class="sec-no">Item 16</div><h2>Item 16：将 string/vector 数据传给旧 C API</h2></div>
+<blockquote>
+<p>第 2 章 vector 和 string · Item 16 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item15-string-implementation.md">Item 15 string 实现多样性</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item17-vector-string-interop.md">Item 17 交错使用 vector 和 string</a></p>
+</blockquote>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p>C 程序员的字符串/缓冲区就是裸内存：</p>
+<pre class="code" data-label="C"><code class="c">char buf[256];
+read(fd, buf, 256);          // 直接传指针
+write(fd, buf, n);           // 直接传指针
+legacy_parse(buf, n);        // C API 接受 char* + length
+</code></pre>
+<p>C++ 的 <code class="c">string</code>/<code class="c">vector</code> 封装了内存管理，但很多 C API（POSIX syscall、DPDK、第三方 C 库）只接受裸指针。你需要用 <code class="c">c_str()</code>/<code class="c">data()</code> 取出连续内存传给 C API。</p>
+<pre class="code" data-label="cpp"><code class="c">std::string s = &quot;hello&quot;;
+legacy_c_func(s.c_str());  // 只读 C 字符串
+
+std::vector&lt;char&gt; buf(256);
+legacy_read(buf.data(), buf.size());  // 可写缓冲
+</code></pre>
+<hr />
+<h2>这节讲什么</h2>
+<p>C++11 起 <code class="c">string</code> 与 <code class="c">vector</code> 都保证连续存储。<code class="c">c_str()</code>/<code class="c">data()</code> 取连续内存传给 C API。注意：返回的指针在容器扩容/析构后失效。</p>
+<hr />
+<h2>C API 互操作</h2>
+<pre class="code" data-label="cpp"><code class="c">// 只读：传 string 给接受 const char* 的 C API
+std::string filename = &quot;data.txt&quot;;
+FILE* fp = fopen(filename.c_str(), &quot;r&quot;);  // c_str() 返回 const char*
+
+// 可写：传 vector 给接受 char*/void* 的 C API
+std::vector&lt;char&gt; buf(4096);
+ssize_t n = read(fd, buf.data(), buf.size());  // data() 返回 char*
+buf.resize(n);  // 缩到实际读取的大小
+
+// 可写 string：
+std::string s(256, '\0');
+int len = legacy_read(s.data(), s.size());  // C++17 起 data() 返回 char*
+s.resize(len);
+</code></pre>
+<h3>指针失效陷阱</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;char&gt; buf;
+buf.resize(100);
+char* p = buf.data();
+legacy_func(p, 100);  // ✅
+
+buf.push_back('x');    // 可能扩容 → p 失效！
+legacy_func(p, 100);   // UB！p 指向已释放的旧内存
+</code></pre>
+<hr />
+<h2>常见错误（新手踩坑）</h2>
+<h3>错误 1：扩容后使用 data()/c_str() 返回的指针</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string s = &quot;hello&quot;;
+const char* p = s.c_str();
+s += &quot; world&quot;;  // 可能扩容 → p 失效
+printf(&quot;%s&quot;, p);  // UB！
+</code></pre>
+<p><strong>修正：</strong> 在不扩容的范围内使用指针。先完成所有修改，再取 <code class="c">c_str()</code>。</p>
+<h3>错误 2：用 &amp;v[0] 代替 data()（C++03 遗留）</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v(10);
+int* p = &amp;v[0];    // C++03 写法（v 为空时 UB）
+int* p2 = v.data(); // C++11 写法（v 为空时返回 nullptr，安全）
+</code></pre>
+<p><strong>修正：</strong> 用 <code class="c">data()</code>，空容器时安全返回 <code class="c">nullptr</code>。</p>
+<h3>错误 3：传 string 给需要可写缓冲的 C API 时忘了预留空间</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string s;  // size = 0
+// s.data() 指向空缓冲
+read(fd, s.data(), 256);  // UB！size 是 0，没有可写空间
+</code></pre>
+<p><strong>修正：</strong> <code class="c">std::string s(256, '\0');</code> 先分配足够空间，再传 <code class="c">s.data()</code>。</p>
+<hr />
+<h2>新手要点（和 C 的区别）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>C</th>
+<th>C++ STL</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>缓冲区</td>
+<td><code class="c">char buf[N]</code></td>
+<td><code class="c">vector&lt;char&gt;</code> / <code class="c">string</code></td>
+<td>RAII 管理</td>
+</tr>
+<tr>
+<td>传给 C API</td>
+<td>直接传 <code class="c">buf</code></td>
+<td><code class="c">data()</code> / <code class="c">c_str()</code></td>
+<td>取连续内存</td>
+</tr>
+<tr>
+<td>指针失效</td>
+<td><code class="c">realloc</code> 后</td>
+<td>扩容后</td>
+<td>相同问题</td>
+</tr>
+<tr>
+<td>可写访问</td>
+<td>直接</td>
+<td><code class="c">data()</code>（C++17 char*）</td>
+<td>C++11 前 const</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>一句话：</strong> C 的数组就是裸指针，直接传给 API。C++ 的 <code class="c">vector</code>/<code class="c">string</code> 封装了内存，用 <code class="c">data()</code>/<code class="c">c_str()</code> 取出裸指针传给 C API——但注意扩容会让指针失效。</p>
+<hr />
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>C API 互操作</strong>：DPDK / syscall 接口要 <code class="c">data()</code>/<code class="c">c_str()</code> 取裸指针，注意返回前容器不能扩容（否则指针失效）。</li>
+<li><strong><code class="c">string_view</code> 零拷贝桥接</strong>：C++17 <code class="c">string_view</code> 可以从 <code class="c">const char*</code> + length 构造，在 C API 和 C++ 代码间零拷贝传递只读数据。</li>
+<li><strong>预分配缓冲</strong>：<code class="c">vector&lt;char&gt; buf(4096)</code> 预分配固定大小缓冲，传 <code class="c">data()</code> 给 <code class="c">read()</code>，避免热路径动态分配。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<h3>Q1: c_str vs data</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string s = &quot;hello&quot;;
+const char* p1 = s.c_str();   // A
+const char* p2 = s.data();    // B
+// p1 和 p2 有什么区别？
+</code></pre>
+<details>
+<summary>答案</summary>
+<p>C++11 起<strong>没有区别</strong>——两者都返回 <code class="c">const char*</code>，指向连续内存，且以 <code class="c">'\0'</code> 结尾。</p>
+<p>历史区别：C++03 中 <code class="c">c_str()</code> 保证 <code class="c">'\0'</code> 终止，<code class="c">data()</code> 不保证。C++11 统一了——<code class="c">data()</code> 也保证 <code class="c">'\0'</code> 终止。</p>
+</details>
+<h3>Q2: 可写缓冲</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string s;           // A
+std::string s2(256, 0);  // B
+
+// read(fd, s.data(), 256);    // A: 安全吗？
+read(fd, s2.data(), 256);      // B: 安全吗？
+</code></pre>
+<blockquote>
+<p>A 和 B 哪个安全？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<ul>
+<li><strong>A 不安全</strong>：<code class="c">s</code> 的 size 是 0，<code class="c">s.data()</code> 指向空缓冲（或 nullptr）。<code class="c">read</code> 写入 256 字节 → 缓冲区溢出/UB。</li>
+<li><strong>B 安全</strong>：<code class="c">s2</code> 的 size 是 256，<code class="c">s2.data()</code> 指向 256 字节的可写缓冲。</li>
+</ul>
+<p>C++17 起 <code class="c">string::data()</code> 返回 <code class="c">char*</code>（可写）。C++11/14 返回 <code class="c">const char*</code>（只读），需要 <code class="c">&amp;s[0]</code>。</p>
+</details>
+<h3>Q3: 指针失效</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v = {1, 2, 3};
+int* p = v.data();
+v.reserve(100);  // A
+v.push_back(4);  // B
+*p = 99;         // C
+</code></pre>
+<blockquote>
+<p>C 行安全吗？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>视情况</strong>：
+- 如果 <code class="c">reserve(100)</code> 扩容了（原 capacity &lt; 100）→ A 行后 <code class="c">p</code> 失效 → C 行 UB。
+- 如果 <code class="c">reserve(100)</code> 没扩容 → A 行后 <code class="c">p</code> 有效 → B 行不扩容（capacity≥100）→ C 行安全。</p>
+<p><strong>最佳实践</strong>：扩容/修改后重新获取 <code class="c">data()</code>。</p>
+</details>
+<h3>Q4: vector 传给 C API</h3>
+<pre class="code" data-label="cpp"><code class="c">// C API: void process_data(const int* data, size_t count);
+std::vector&lt;int&gt; v = {10, 20, 30, 40, 50};
+process_data(v.data(), v.size());  // A
+
+// 如果在调用前 v.push_back(60); 呢？
+v.push_back(60);
+process_data(v.data(), v.size());  // B
+</code></pre>
+<blockquote>
+<p>B 安全吗？和 A 有什么区别？</p>
+</blockquote>
+<p><detailf>
+<summary>答案</summary></p>
+<p><strong>B 安全</strong>——但前提是 <code class="c">push_back</code> 后重新获取了 <code class="c">data()</code>。B 行在 <code class="c">push_back</code> 之后调用 <code class="c">v.data()</code>，获取的是新的指针（可能已扩容搬迁）。<code class="c">size()</code> 也更新为 6。</p>
+<p><strong>关键规则</strong>：每次修改容器后重新获取 <code class="c">data()</code>/<code class="c">c_str()</code>，不要缓存指针。</p>
+</details>
+<hr />
+<h2>参考与延伸</h2>
+<ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item15-string-implementation.md">Item 15 string 实现多样性</a></li>
+<li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item17-vector-string-interop.md">Item 17 交错使用 vector 和 string</a></li>
+<li>回到：<a href="#intro">第 2 章 vector 和 string</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-item17">
+        <div class="sec-head"><div class="sec-no">Item 17</div><h2>Item 17：交错使用 vector 和 string 数据</h2></div>
+<blockquote>
+<p>第 2 章 vector 和 string · Item 17 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item16-pass-to-c-api.md">Item 16 传给 C API</a></p>
+</blockquote>
+<h2>为什么要学这个（先建立直觉）</h2>
+<p>C 程序员的字符数据只有一种形式：</p>
+<pre class="code" data-label="C"><code class="c">char buf[100];           // 缓冲区
+char* s = &quot;hello&quot;;       // 字符串
+// 两者本质相同：连续 char 数组
+// buf 和 s 可以互传
+</code></pre>
+<p>C++ 的 <code class="c">vector&lt;char&gt;</code> 和 <code class="c">string</code> 都是一段连续字符，但语义不同——<code class="c">string</code> 有 <code class="c">\0</code> 终止语义，<code class="c">vector&lt;char&gt;</code> 没有。C++17 的 <code class="c">string_view</code> 让二者可以零拷贝互操作。</p>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;char&gt; v = {'h', 'e', 'l', 'l', 'o'};
+std::string s(v.begin(), v.end());      // vector → string
+std::string_view sv(v.data(), v.size()); // vector → string_view（零拷贝）
+</code></pre>
+<hr />
+<h2>这节讲什么</h2>
+<p><code class="c">vector&lt;char&gt;</code> 和 <code class="c">string</code> 都是一段连续字符，可互相借用。但 <code class="c">string</code> 有 <code class="c">\0</code> 终止语义，<code class="c">vector&lt;char&gt;</code> 没有——二进制数据用 <code class="c">vector&lt;char&gt;</code> 或 <code class="c">string_view</code>，别用 <code class="c">string</code>。</p>
+<hr />
+<h2>互操作方式</h2>
+<pre class="code" data-label="cpp"><code class="c">// vector&lt;char&gt; → string
+std::vector&lt;char&gt; v = {'h', 'e', 'l', 'l', 'o'};
+std::string s(v.begin(), v.end());  // 区间构造
+
+// string → vector&lt;char&gt;
+std::string s2 = &quot;world&quot;;
+std::vector&lt;char&gt; v2(s2.begin(), s2.end());
+
+// C++17 string_view：零拷贝指向二者
+std::string_view sv1(v.data(), v.size());   // 指向 vector
+std::string_view sv2(s2);                    // 指向 string
+// string_view 不拥有数据，原数据销毁后 sv 变悬空
+</code></pre>
+<h3>string vs vector<char> 语义差异</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string s = &quot;hello&quot;;
+s += '\0';        // string 可以包含 '\0'，但 c_str() 在第一个 '\0' 截断
+s.c_str();        // 返回 &quot;hello&quot;（在 '\0' 处截断）
+s.size();         // 6（包含 '\0'）
+
+std::vector&lt;char&gt; v = {'h', 'e', 'l', 'l', 'o', '\0', 'X'};
+// vector 不关心 '\0'，完整存储所有字节
+v.size();         // 7
+</code></pre>
+<hr />
+<h2>常见错误（新手踩坑）</h2>
+<h3>错误 1：用 string 存二进制数据</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string binary_data = read_raw_socket();  // 可能含 '\0'
+// 后续用 c_str() / strlen 会截断！
+strlen(binary_data.c_str());  // 只到第一个 '\0'
+</code></pre>
+<p><strong>修正：</strong> 二进制数据用 <code class="c">vector&lt;char&gt;</code> 或 <code class="c">string_view</code>，不用 <code class="c">string</code>。</p>
+<h3>错误 2：string_view 悬空</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string_view get_data() {
+    std::string s = &quot;hello&quot;;
+    return s;  // 返回指向 s 的 string_view
+}  // s 析构 → string_view 悬空！
+</code></pre>
+<p><strong>修正：</strong> <code class="c">string_view</code> 不拥有数据。返回 <code class="c">string</code>（拥有数据），不要返回指向局部变量的 <code class="c">string_view</code>。</p>
+<h3>错误 3：用 string 的 += 拼接大量数据</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string result;
+for (int i = 0; i &lt; 1000; ++i) {
+    result += generate_chunk(i);  // 可能多次扩容
+}
+</code></pre>
+<p><strong>修正：</strong> <code class="c">result.reserve(estimated_size);</code> 预分配。</p>
+<hr />
+<h2>新手要点（和 C 的区别）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>C <code class="c">char*</code></th>
+<th>C++ <code class="c">string</code></th>
+<th>C++ <code class="c">vector&lt;char&gt;</code></th>
+<th>C++17 <code class="c">string_view</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">\0</code> 语义</td>
+<td>终止符</td>
+<td>有（c_str 截断）</td>
+<td>无</td>
+<td>无</td>
+</tr>
+<tr>
+<td>二进制安全</td>
+<td>❌</td>
+<td>❌（c_str 截断）</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>拥有数据</td>
+<td>手动</td>
+<td>✅ RAII</td>
+<td>✅ RAII</td>
+<td>❌ 不拥有</td>
+</tr>
+<tr>
+<td>零拷贝</td>
+<td>N/A</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>一句话：</strong> C 的 <code class="c">char*</code> 不区分文本和二进制。C++ 用 <code class="c">string</code> 存文本（<code class="c">\0</code> 语义），<code class="c">vector&lt;char&gt;</code> 存二进制，<code class="c">string_view</code> 零拷贝指向二者。</p>
+<hr />
+<h2>HFT 关联</h2>
+<ul>
+<li><strong><code class="c">vector&lt;char&gt;</code> vs <code class="c">string</code> 解析</strong>：FIX/二进制协议用 <code class="c">vector&lt;char&gt;</code> 或 <code class="c">string_view</code>，避免 <code class="c">string</code> 的 <code class="c">\0</code> 截断语义。</li>
+<li><strong><code class="c">string_view</code> 零拷贝</strong>：行情消息解析用 <code class="c">string_view</code> 指向接收缓冲，零拷贝切片/查找，不分配内存。</li>
+<li><strong>避免 <code class="c">string</code> 拼接</strong>：热路径上不用 <code class="c">string +=</code> 拼接，预 <code class="c">reserve</code> 或直接写入固定缓冲。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<h3>Q1: string vs vector<char></h3>
+<pre class="code" data-label="cpp"><code class="c">std::string s = &quot;hello&quot;;
+s.push_back('\0');
+s.push_back('X');
+std::cout &lt;&lt; s.size() &lt;&lt; ' ' &lt;&lt; strlen(s.c_str());
+</code></pre>
+<blockquote>
+<p>输出什么？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p>输出 <code class="c">7 5</code>。
+- <code class="c">s.size()</code> = 7（string 完整存储所有字符，包括 <code class="c">\0</code> 和 <code class="c">X</code>）。
+- <code class="c">strlen(s.c_str())</code> = 5（C 函数 <code class="c">strlen</code> 在第一个 <code class="c">\0</code> 处停止计数）。</p>
+<p>这就是 <code class="c">string</code> 存二进制数据的问题——<code class="c">c_str()</code> 和 C API 在 <code class="c">\0</code> 处截断。</p>
+</details>
+<h3>Q2: string_view 零拷贝</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;char&gt; v = {'h', 'e', 'l', 'l', 'o'};
+std::string_view sv(v.data(), v.size());
+
+// A: 从 sv 构造 string
+std::string s(sv);
+
+// B: 从 sv 切片
+std::string_view sub = sv.substr(1, 3);  // &quot;ell&quot;
+</code></pre>
+<blockquote>
+<p>A 和 B 各有没有拷贝？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<ul>
+<li><strong>A</strong>：有拷贝。<code class="c">string(sv)</code> 从 <code class="c">string_view</code> 拷贝数据构造新 <code class="c">string</code>。</li>
+<li><strong>B</strong>：零拷贝。<code class="c">substr</code> 返回新的 <code class="c">string_view</code>，只调整指针和长度，不拷贝数据。</li>
+</ul>
+<p><code class="c">string_view</code> 的切片/查找操作都是零拷贝的——这是它在 HFT 行情解析中的核心价值。</p>
+</details>
+<h3>Q3: string_view 生命周期</h3>
+<pre class="code" data-label="cpp"><code class="c">std::string_view get_prefix(const std::string&amp; s) {
+    return s.substr(0, 3);  // 返回指向 s 的 string_view
+}
+// 调用者
+std::string_view sv = get_prefix(&quot;hello&quot;);  // A
+std::cout &lt;&lt; sv;  // B
+</code></pre>
+<blockquote>
+<p>B 行安全吗？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>不安全</strong>。<code class="c">"hello"</code> 是临时 <code class="c">string</code>，<code class="c">get_prefix</code> 返回后临时对象析构，<code class="c">sv</code> 变悬空。</p>
+<p><strong>修正：</strong>
+1. 返回 <code class="c">std::string</code>（拷贝，安全）。
+2. 或让调用者持有原 string：</p>
+<pre class="code" data-label="cpp"><code class="c">std::string s = &quot;hello&quot;;
+std::string_view sv = get_prefix(s);  // s 仍然存活
+std::cout &lt;&lt; sv;  // ✅ 安全
+</code></pre>
+</details>
+<h3>Q4: 二进制数据处理</h3>
+<pre class="code" data-label="cpp"><code class="c">// 从 socket 读取二进制数据（可能含 '\0'）
+// A
+std::string data = read_socket();
+// B
+std::vector&lt;char&gt; data = read_socket();
+// C
+std::array&lt;char, 4096&gt; buf;
+int n = read(fd, buf.data(), buf.size());
+std::string_view data(buf.data(), n);
+</code></pre>
+<blockquote>
+<p>哪种方式最适合处理二进制数据？</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>C 最适合</strong>（固定缓冲 + string_view）。</p>
+<ul>
+<li><strong>A</strong>：❌ <code class="c">string</code> 的 <code class="c">c_str()</code> 在 <code class="c">\0</code> 截断，不适合二进制数据。</li>
+<li><strong>B</strong>：✅ 可以，但每次读取都动态分配。</li>
+<li><strong>C</strong>：✅ 最佳——固定缓冲零分配，<code class="c">string_view</code> 零拷贝切片/查找，不关心 <code class="c">\0</code>。</li>
+</ul>
+<p>HFT 行情解析的标准模式：预分配固定缓冲 + <code class="c">string_view</code> 零拷贝操作。</p>
+</details>
+<hr />
+<h2>参考与延伸</h2>
+<ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item16-pass-to-c-api.md">Item 16 传给 C API</a></li>
+<li>回到：<a href="#intro">第 2 章 vector 和 string</a></li>
+</ul>
       </section>
 
       <section class="section" id="quiz">

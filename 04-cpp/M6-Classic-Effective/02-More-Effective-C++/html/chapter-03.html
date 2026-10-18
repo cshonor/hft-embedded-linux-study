@@ -276,6 +276,13 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-item09"><span class="n">09</span>利用析构函数杜绝资源泄漏（RAII 核心思想）</a>
+          <a href="#s-item10"><span class="n">10</span>构造函数抛出异常时，如何防止内存资源泄漏</a>
+          <a href="#s-item11"><span class="n">11</span>杜绝资源管理函数内部发生异常造成泄漏</a>
+          <a href="#s-item12"><span class="n">12</span>抛出异常时，理解对象拷贝的完整流程与开销</a>
+          <a href="#s-item13"><span class="n">13</span>合理使用 catch(...) 全局捕获，谨慎兜底</a>
+          <a href="#s-item14"><span class="n">14</span>理解异常规范的局限与坑（动态异常规范 → noexcept 的演变）</a>
+          <a href="#s-item15"><span class="n">15</span>了解异常的成本开销，高性能场景下的取舍</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -298,7 +305,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Meyers《More Effective C++》· 按需查</div>
           <h1>第三部分 异常安全（Exceptions）</h1>
           <div class="meta">
-<span>book <b>M6-Classic-Effective · 02-More-Effective-C++</b></span><span>chapter <b>Ch 3</b></span><span>sections <b>1</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M6-Classic-Effective · 02-More-Effective-C++</b></span><span>chapter <b>Ch 3</b></span><span>sections <b>8</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -319,6 +326,886 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </ul>
 <h2>章节摘要</h2>
 <p>异常安全：析构防泄漏（RAII）、构造函数抛异常防泄漏、资源管理函数异常安全、异常对象拷贝、<code class="c">catch(...)</code> 使用、异常规范、异常成本。</p>
+      </section>
+      <section class="section" id="s-item09">
+        <div class="sec-head"><div class="sec-no">Item 9</div><h2>条款 09：利用析构函数杜绝资源泄漏（RAII 核心思想）</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Use destructors to prevent resource leaks.</strong> 这是 More Effective C++ 异常章的开篇，
+也是整个 C++ 资源管理的<strong>第一性原理</strong>：异常随时可能从任何一行飞出，
+靠人肉 <code class="c">delete</code>/<code class="c">release</code> 配对守不住——把资源的释放<strong>绑定到对象析构</strong>上，
+让栈展开（18.1 ① 实测）成为自动清理的引擎。这就是 RAII。</p>
+<p>← 上一章 <a href="chapter-02.html#ch-2">ch02 运算符</a>；下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item10-构造函数抛出异常时，如何防止内存资源泄漏.md">item10 构造函数抛异常</a>。</p>
+<hr />
+<h2>1. 问题：人肉配对的三个失守点</h2>
+<pre class="code" data-label="cpp"><code class="c">void process() {
+    Resource* r = acquire();
+    use(r);                 // 失守点①：use 抛异常 → delete 永远到不了
+    if (early) return;      // 失守点②：早退路径忘了 delete
+    delete r;               // 失守点③：重构时有人在这行前面加了新 return
+}
+</code></pre>
+<p>三个失守点的共同根源：<strong>释放责任依赖"执行流恰好经过 delete 那一行"</strong>——
+而异常和分支让执行流千变万化，人肉穷举所有路径注定失败。</p>
+<h2>2. RAII：把释放绑定到析构（解法本身）</h2>
+<pre class="code" data-label="cpp"><code class="c">class ResourceGuard {
+    Resource* r_;
+public:
+    explicit ResourceGuard(Resource* r) : r_(r) {}
+    ~ResourceGuard() { release(r_); }          // 释放写进析构
+    Resource* get() const { return r_; }
+    // 禁拷贝（或实现移动语义）——所有权必须唯一
+    ResourceGuard(const ResourceGuard&amp;) = delete;
+    ResourceGuard&amp; operator=(const ResourceGuard&amp;) = delete;
+};
+
+void process() {
+    ResourceGuard g(acquire());
+    use(g.get());           // 随便抛
+    if (early) return;      // 随便退
+}                           // g 析构 → release() 必然执行（栈展开也走这里，18.1 ①）
+</code></pre>
+<p><strong>RAII 的完整表述</strong>：资源获取即初始化（构造函数绑定资源），
+资源释放即析构（析构函数释放资源）——
+对象的<strong>生存期</strong>就是资源的<strong>生存期</strong>，而对象生存期由作用域/栈展开<strong>机械保证</strong>。</p>
+<h2>3. 从手写 Guard 到标准设施（别重复造）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>资源</th>
+<th>标准 RAII 设施</th>
+<th>替代手写</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>堆内存</td>
+<td><code class="c">std::unique_ptr</code> / <code class="c">shared_ptr</code></td>
+<td>✅ 永远别手写指针 Guard</td>
+</tr>
+<tr>
+<td>锁</td>
+<td><code class="c">std::lock_guard</code> / <code class="c">unique_lock</code> / <code class="c">scoped_lock</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>文件</td>
+<td><code class="c">std::fstream</code>（析构关文件）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>自定义资源（fd/句柄/网卡模式）</td>
+<td>手写轻 Guard 或 <code class="c">std::unique_ptr&lt;T, Deleter&gt;</code></td>
+<td>Deleter 定制释放逻辑</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>手写 Guard 的现代替代</strong>：<code class="c">unique_ptr&lt;void, void(*)(void*)&gt;</code> 配自定义 deleter，
+或 C++23 <code class="c">std::expected</code> 错误通道 + 作用域守卫库（<code class="c">gsl::finally</code>/<code class="c">scope_exit</code> 模式）。</p>
+<h2>4. 与异常安全的联动（item29 的根基）</h2>
+<ul>
+<li>RAII 是<strong>基本保证</strong>的实现手段（不泄漏）——没有 RAII 谈异常安全是空中楼阁</li>
+<li>析构函数<strong>必须不抛</strong>（18.1 ②：栈展开中再抛 = terminate）——
+  RAII 的析构里做"可能失败"的操作（flush/close 写盘）要 catch 住或记录后吞</li>
+<li>配对记忆：<strong>获得资源的那一刻就把它交给 RAII 对象</strong>——
+  "裸指针存活窗口"（acquire 到入 Guard 之间）越短越好，最好是零行</li>
+</ul>
+<h2>HFT 关联</h2>
+<ul>
+<li>热路径的 RAII 是<strong>零成本</strong>的：Guard 无堆分配（对象本体在栈上）、
+  析构是编译期确定的单条调用——比异常路径的 delete 快且确定</li>
+<li>冷路径资源（连接/文件/网卡混杂模式）全部 RAII 化：
+  重连逻辑里"旧连接的释放"交给析构，状态机只关心新连接——
+  人肉配对在重连风暴里必然漏</li>
+<li><code class="c">unique_ptr&lt;T, Deleter&gt;</code> 是池化资源的桥：deleter 写"归还池"而非 delete——
+  池化对象也能享受 RAII 的自动归还（→ 19.1 池化 + item49）</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> 为什么 RAII 能覆盖"人肉 delete"守不住的所有路径？</p>
+<details>
+<summary>参考答案</summary>
+<p>因为它把释放责任从"执行流经过 delete 行"转移到<strong>对象析构</strong>——
+而局部对象的析构由作用域规则<strong>机械保证</strong>：正常 return、早退 return、
+异常栈展开（18.1 ① 实测逐帧析构）——<strong>任何</strong>离开作用域的方式都会触发析构。
+人肉配对要穷举所有路径（异常路径还根本写不出来——
+<code class="c">delete</code> 无法放在"每处可能抛异常的调用"之后），
+RAII 只需写一次析构。这就是"机制保证"对"纪律保证"的碾压。</p>
+</details>
+<p><strong>题目 2：</strong> RAII 对象的析构里做"可能失败"的清理（如 flush 写盘）有什么风险？怎么处理？</p>
+<details>
+<summary>参考答案</summary>
+<p>风险：析构在<strong>栈展开中</strong>运行时（18.1 ②）——此时再抛异常 = <code class="c">std::terminate</code>。
+flush/close 这类操作是可能失败的（磁盘满/网络断）。
+处理三选一：① 析构里 try-catch 吞掉 + 记录（<code class="c">try { flush(); } catch (...) { log_fallback(); }</code>）；
+② 把"可能失败的收尾"提为显式方法（<code class="c">guard.commit()</code>），
+析构只做"绝不失败"的兜底（释放不提交）——用户忘了 commit 也不泄漏；
+③ noexcept 析构 + 错误经带外通道上报（原子错误标志）。
+交易系统选②的多：提交语义必须显式（落盘/发送是可失败的事务，不该藏在析构里）。</p>
+</details>
+<p><strong>题目 3：</strong> 池化对象（<code class="c">pool.acquire()</code> 获得，要 <code class="c">pool.release(p)</code> 归还）怎么用 RAII 管理？</p>
+<details>
+<summary>参考答案</summary>
+<p>用 <code class="c">unique_ptr&lt;T, Deleter&gt;</code> 定制删除器（→ item39 ③ 的 EBO 关联）：</p>
+<pre class="code" data-label="cpp"><code class="c">struct PoolDeleter {
+    Pool* pool;
+    void operator()(Order* p) const noexcept { p-&gt;~Order(); pool-&gt;release(p); }
+};
+using PooledOrder = std::unique_ptr&lt;Order, PoolDeleter&gt;;
+PooledOrder o{ pool.acquire(), PoolDeleter{&amp;pool} };
+</code></pre>
+<p>注意 deleter 的职责是<strong>先析构再归还池</strong>（池内存不 delete，→ 19.1 ③ 的铁律）。
+无状态 deleter 享受 EBO（unique_ptr 仍 8 字节，→ item39 实测）；
+带 Pool* 的版本涨到 16 字节——热路径大量持有时，把 Pool 设为全局/单例
+让 deleter 无状态化（item39 ③ 的尺寸账）。</p>
+</details>
+      </section>
+      <section class="section" id="s-item10">
+        <div class="sec-head"><div class="sec-no">Item 10</div><h2>条款 10：构造函数抛出异常时，如何防止内存资源泄漏</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Prevent resource leaks in constructors.</strong> 构造函数抛异常有一条特殊规则：
+<strong>对象没建成，析构函数不会被调用</strong>——但已经构造完成的<strong>成员</strong>会被析构。
+这条规则决定了：构造函数里的裸资源（裸 new 的成员）在异常路径上<strong>必漏</strong>，
+而 RAII 成员（unique_ptr 等）天然安全。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item09-利用析构函数杜绝资源泄漏（RAII核心思想）.md">item09 RAII 杜绝泄漏</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item11-杜绝资源管理函数内部发生异常造成泄漏.md">item11 资源管理函数内的异常</a>。</p>
+<hr />
+<h2>1. 规则：构造中断时，只有"已建成员"被清理</h2>
+<pre class="code" data-label="cpp"><code class="c">class Session {
+    Socket* sock_;       // 裸指针成员
+    Buffer* buf_;
+public:
+    Session() {
+        sock_ = new Socket;      // ① 成功
+        buf_ = new Buffer;       // ② 抛异常！
+        // Session 构造中断——~Session() 不会被调用
+        // sock_ 指向的 Socket **泄漏**（它是裸指针，&quot;成员&quot;只是指针值，不是对象）
+    }
+};
+</code></pre>
+<p><strong>规则的精确语义</strong>：构造函数抛异常 = 对象从未存在 → 不调析构。
+但<strong>已完成构造的成员对象</strong>（成员是类类型）会被逆序析构。
+裸指针 <code class="c">sock_</code> 只是"指针值"——它指向的堆对象<strong>不是成员对象</strong>，没人替它析构。</p>
+<p>对照安全版：</p>
+<pre class="code" data-label="cpp"><code class="c">class Session {
+    std::unique_ptr&lt;Socket&gt; sock_;   // 成员**对象**（unique_ptr 是类类型）
+    std::unique_ptr&lt;Buffer&gt; buf_;
+public:
+    Session() : sock_(std::make_unique&lt;Socket&gt;()),
+                buf_(std::make_unique&lt;Buffer&gt;()) {}   // buf_ 抛异常时，
+};                                                    // sock_（已建成员）被析构 → 不泄漏
+</code></pre>
+<p><strong>推论</strong>：构造函数可能抛异常的类，成员必须 RAII 化——
+"成员的析构替我善后"是构造异常路径上<strong>唯一</strong>的清理机制。</p>
+<h2>2. 初始化列表里的异常（函数 try 块的位置）</h2>
+<p>成员初始化列表抛异常，普通函数体 catch 接不住——要用<strong>函数 try 块</strong>（→ 18.1 ⑤）：</p>
+<pre class="code" data-label="cpp"><code class="c">class Session {
+    std::string name_;
+    Config cfg_;
+public:
+    Session(const std::string&amp; n) try
+        : name_(n), cfg_(load_config(n)) {   // load_config 抛异常 → 这里接
+    } catch (const std::exception&amp; e) {
+        log(&quot;Session 构造失败: &quot;, e.what());
+        // ⚠ 构造函数的 catch 块结束时**自动重抛**——
+        // 对象没建成，不能&quot;假装成功&quot;（资源由已建成员 name_ 的析构清理）
+    }
+};
+</code></pre>
+<p>要点：函数 try 块的 catch <strong>无法吞掉异常</strong>（结束自动重抛）——
+它的用途是<strong>记录/翻译</strong>异常，不是修复。这正好符合语义：构造失败的对象
+本来就不该存在。</p>
+<h2>3. 两阶段构造的批判（历史遗留模式）</h2>
+<p>老代码常用"构造 + init()" 两阶段（构造不做事，init 可能失败返回错误码）——
+理由就是"构造不能抛异常"。现代批判：</p>
+<ul>
+<li>对象存在"已构造未初始化"的<strong>僵尸状态</strong>——每个方法都要防御性检查 <code class="c">inited_</code></li>
+<li>C++ 的答案是反过来：<strong>构造函数该抛就抛</strong>（对象要么完整要么不存在），
+  配合 RAII 成员（本条）和工厂函数（返回 <code class="c">optional</code>/<code class="c">expected</code> 包裹结果）：</li>
+</ul>
+<pre class="code" data-label="cpp"><code class="c">static std::optional&lt;Session&gt; Session::create(const std::string&amp; n) {
+    try { return Session(n); }          // 构造可能抛——工厂接住转 optional
+    catch (...) { return std::nullopt; }
+}
+// 调用方拿不到&quot;半个对象&quot;——要么完整 Session，要么 nullopt
+</code></pre>
+<h2>HFT 关联</h2>
+<ul>
+<li>连接/会话对象的构造纪律：<strong>成员全 RAII + 构造函数只做不抛的组装</strong>，
+  可能失败的 IO（connect/handshake）挪到工厂/两阶段——
+  "对象存在 = 可用"是不变量，让 <code class="c">if (connected_)</code> 这类僵尸检查从代码里消失</li>
+<li>构造失败的<strong>部分成员清理</strong>是 RAII 的免费收益：
+  订单簿初始化到一半失败（档位数组建了、索引表没建）——
+  已建的 unique_ptr/vector 成员自动回滚，人肉管理早崩了</li>
+<li>工厂 + optional 的冷路径模式与热路径错误码（→ 18.1 HFT）互补：
+  启动/重连（冷）用工厂抛异常，热路径函数绝不抛</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> 构造函数抛异常时，为什么裸指针成员指向的堆对象必漏，而 unique_ptr 成员不漏？</p>
+<details>
+<summary>参考答案</summary>
+<p>构造中断时：<strong>对象本身</strong>从未存在 → 不调析构；
+但<strong>已构造完成的成员对象</strong>（类类型成员）会被逆序析构。
+裸指针成员只是一个"指针值"——指针指向的堆对象<strong>不是成员对象</strong>，
+它的析构没有任何人触发 → 泄漏。
+unique_ptr 成员本身是<strong>成员对象</strong>——它已构造完成，
+异常时被正常析构，其析构函数释放持有的堆对象 → 不泄漏。
+这就是"构造函数会抛异常的类，成员必须 RAII 化"的完整推理。</p>
+</details>
+<p><strong>题目 2：</strong> 函数 try 块的 catch 为什么不能"吞掉"异常让对象继续存在？</p>
+<details>
+<summary>参考答案</summary>
+<p>因为构造函数的 catch 块结束时<strong>自动重抛</strong>（语言强制，无法规避）——
+这是语义必然：构造函数没跑完 = 对象没建成，
+"没建成的对象"不该有生存权（它的不变量可能根本没建立，
+让你拿到它是把僵尸对象合法化）。
+函数 try 块的正确用途是<strong>记录/翻译</strong>（写日志、换异常类型），
+清理工作交给已建成员的析构（RAII）。
+想"构造失败还能用默认值"——那是工厂 + optional 的地盘（两阶段模式的现代版）。</p>
+</details>
+<p><strong>题目 3：</strong> 两阶段构造（<code class="c">new Session()</code> + <code class="c">init()</code> 返回错误码）在现代的三个反对理由？</p>
+<details>
+<summary>参考答案</summary>
+<p>① <strong>僵尸状态</strong>：对象存在"已构造未初始化"的中间态——
+每个成员函数都得防 <code class="c">if (!inited_) return E_NOT_INIT;</code>，防御代码病毒式扩散；
+② <strong>违反"构造即成立"的 C++ 契约</strong>：RAII 容器（vector<Session>）、
+异常安全（item29）、<code class="c">make_unique</code> 全部假设"对象存在即可用"——
+两阶段对象放进这些设施里全是地雷；
+③ <strong>现代替代品更好</strong>：构造函数该抛就抛（成员 RAII 化后异常路径自动清理），
+调用方要错误码语义就用<strong>工厂函数</strong>（<code class="c">optional&lt;Session&gt; create()</code>）——
+错误处理集中在工厂一处，对象本身永远"存在即可用"。</p>
+</details>
+      </section>
+      <section class="section" id="s-item11">
+        <div class="sec-head"><div class="sec-no">Item 11</div><h2>条款 11：杜绝资源管理函数内部发生异常造成泄漏</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Prevent exceptions from leaving resource-management functions.</strong>
+资源管理函数（分配/释放/加锁/解锁）是异常安全的<strong>最后防线</strong>——
+它们自己抛异常，泄漏的就是"正在管理中"的资源。
+本条处理三类高危函数：deleter、dispose/cleanup 类、以及"先申请后操作再归还"的流程函数。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item10-构造函数抛出异常时，如何防止内存资源泄漏.md">item10 构造函数异常</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item12-抛出异常时，理解对象拷贝的完整流程与开销.md">item12 抛异常的对象拷贝</a>。</p>
+<hr />
+<h2>1. 三类高危函数与各自的坑</h2>
+<p><strong>坑一：deleter/释放函数抛异常</strong></p>
+<pre class="code" data-label="cpp"><code class="c">void release(Resource* r) {
+    log_release(r);      // ← 这行抛异常（日志队列满）——
+    delete r;            //    delete 到不了：r 泄漏
+}
+</code></pre>
+<p>释放路径上的任何操作都可能让"释放本身"完不成——
+<strong>释放函数必须是异常-free 的</strong>（noexcept 是上策）。</p>
+<p><strong>坑二："先申请后操作再归还"的流程函数</strong></p>
+<pre class="code" data-label="cpp"><code class="c">void with_lock(Mutex&amp; m) {
+    m.lock();
+    do_work();           // 抛异常 → unlock 永远不到
+    m.unlock();
+}
+</code></pre>
+<p>这是 item09（RAII）的直接应用域——<code class="c">lock_guard</code> 存在就是为了这一坑。</p>
+<p><strong>坑三：清理代码依赖"当前没人在抛异常"</strong></p>
+<p>栈展开中调用清理函数，清理函数里再抛 → <code class="c">std::terminate</code>（18.1 ②）——
+清理路径必须 noexcept 免疫（<code class="c">catch(...)</code> 吞掉 + 记录）。</p>
+<h2>2. 三条防线</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>防线</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 资源管理函数标 <code class="c">noexcept</code></td>
+<td>编译期声明 + review 聚焦（→ item25 swap、18.1 析构同理）</td>
+</tr>
+<tr>
+<td>② 释放逻辑 RAII 化</td>
+<td>unique_ptr/lock_guard/Guard——释放不依赖执行流（item09）</td>
+</tr>
+<tr>
+<td>③ 清理路径的异常吞没</td>
+<td><code class="c">try { cleanup(); } catch (...) { /* 记带外日志 */ }</code>——清理失败 ≠ 新异常</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>noexcept 的连锁效应</strong>：标了 noexcept 的函数里调用非 noexcept 的函数，
+编译器<strong>不</strong>报错（语义检查是运行时的——真抛了就 terminate）——
+所以 noexcept 是<strong>契约声明</strong>，配套的是 review 时逐行确认调用链。</p>
+<h2>3. 自查：你的资源管理函数能过这三问吗</h2>
+<pre class="code" data-label="text"><code class="c">问①：释放/解锁/归还动作依赖&quot;执行流到达某行&quot;吗？→ 是则 RAII 化
+问②：管理函数里调用的每个函数都 noexcept 吗？→ 不确定则 try-catch 包
+问③：它可能在栈展开中被调用吗（析构/catch 块里）？→ 是则必须绝不抛
+</code></pre>
+<h2>HFT 关联</h2>
+<ul>
+<li>池的 <code class="c">release()</code> 必须 noexcept（→ item52 的 placement delete、
+  item49 的池语义）——归还槽位的路径上任何异常都是 freelist 流血</li>
+<li>风控前置的锁/网卡模式切换这类"系统级资源"：管理函数异常 =
+  交易系统处于<strong>未知状态</strong>（锁没解？模式没切回？）——比泄漏更可怕的是
+  "资源状态不确定"，这类函数的错误处理要显式到返回值/错误码</li>
+<li>与 item09 的分工：item09 管"业务函数里别泄漏"，本条管"<strong>管理函数自己</strong>
+  别成为泄漏源"——两层都守住，异常安全才闭合（→ Effective item29 的三级保证）</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> 为什么 deleter/释放函数内部的异常比业务函数的异常更危险？</p>
+<details>
+<summary>参考答案</summary>
+<p>业务函数的异常代价是<strong>本次操作失败</strong>（资源有 RAII 兜底，item09）；
+释放函数的异常代价是<strong>资源永久泄漏 + 状态不确定</strong>：
+① 释放动作本身没完成（delete 没执行到——申请的资源永远挂着）；
+② 它常在栈展开/析构路径上被调用（18.1 ②）——
+此时抛异常直接 <code class="c">std::terminate</code>，连"泄漏后继续跑"的机会都没有。
+所以资源管理函数是异常安全的最后防线：它们必须 noexcept 化，
+内部任何可疑调用都要 try-catch 吞掉（失败转带外日志，不转新异常）。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">noexcept</code> 标上之后，编译器会检查函数体内所有调用都不抛吗？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>不会</strong>。noexcept 是<strong>运行时的契约</strong>不是编译期的证明：
+函数体内调用非 noexcept 的函数，编译器一声不吭——
+运行期真的抛出来，当场 <code class="c">std::terminate</code>（没有展开、没有 catch 机会）。
+所以 noexcept 的正确用法是"<strong>声明 + 人工确认调用链</strong>"：
+标之前逐行过函数体（调用的每个函数都 noexcept 吗？分配吗？），
+配 <code class="c">static_assert(noexcept(expr))</code> 钉住关键调用（→ item25 ② 的实测手法）。
+把 noexcept 当"编译器会帮我验证"是最大的误解——它验的是
+"你承诺了，违约就 terminate"，不是"你写对了"。</p>
+</details>
+<p><strong>题目 3：</strong> 给池写 <code class="c">release(void* p) noexcept</code>，内部实现要做哪三件事？</p>
+<details>
+<summary>参考答案</summary>
+<p>① <strong>nullptr 免疫</strong>（→ Effective item51 常规：<code class="c">if (!p) return;</code>——
+delete 语义对齐，空调用无害）；
+② <strong>归还逻辑纯无锁/无分配</strong>（freelist 头插法这类 O(1) 无分配操作——
+分配异常在归还路径上没有容身之处）；
+③ <strong>可疑操作全吞</strong>（如果非要打日志/统计，全部
+<code class="c">try { ... } catch (...) {}</code>——统计失败不值得 terminate；
+更彻底的做法是统计走无锁原子计数，天然不抛）。
+bonus：配 <code class="c">static_assert(noexcept(release(p)))</code> 进单测——
+让"noexcept 被意外摘掉"成为编译错误（→ item25 的验收手法）。</p>
+</details>
+      </section>
+      <section class="section" id="s-item12">
+        <div class="sec-head"><div class="sec-no">Item 12</div><h2>条款 12：抛出异常时，理解对象拷贝的完整流程与开销</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Understand how throwing an exception differs from passing a parameter or calling a virtual function.</strong>
+<code class="c">throw obj;</code> 不是"把 obj 送出去"——异常对象会<strong>被拷贝</strong>到一个特殊的
+异常存储区（exception object），拷贝用<strong>静态类型</strong>的拷贝构造函数。
+这决定了：按值捕获会切片、按引用捕获才是正道、throw 的对象寿命与作用域无关。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item11-杜绝资源管理函数内部发生异常造成泄漏.md">item11 资源管理函数</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item13-合理使用catch%28...%29全局捕获，谨慎兜底.md">item13 catch(...) 兜底</a>。</p>
+<hr />
+<h2>1. throw 的完整流程（与函数调用三个本质区别）</h2>
+<pre class="code" data-label="cpp"><code class="c">void f() {
+    DerivedError e;
+    throw e;        // ① 用**静态类型**（DerivedError）的拷贝构造，
+                    //    把 e 拷到异常存储区（exception object）
+                    // ② e 本身随栈展开析构（正常局部对象）
+                    // ③ catch 拿到的是**存储区那份拷贝**
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>函数传参</th>
+<th>throw</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>拷贝构造用的类型</td>
+<td>实参动态类型可保留（引用/指针参数）</td>
+<td><strong>静态类型</strong>（<code class="c">throw</code> 表达式的声明类型）</td>
+</tr>
+<tr>
+<td>对象寿命</td>
+<td>参数随调用帧生灭</td>
+<td>异常对象活到<strong>最后一个 catch 结束</strong></td>
+</tr>
+<tr>
+<td>拷贝次数</td>
+<td>按值一次</td>
+<td><strong>可能两次</strong>（throw 一次 + 按值 catch 又一次）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>切片陷阱的根源</strong>：<code class="c">throw BaseError(...)</code> 即使实参是派生对象，
+按静态类型 BaseError 拷贝——派生部分当场切掉。
+（反过来：<code class="c">throw DerivedError(...)</code> 里存的是完整派生对象，
+catch 按 Base 引用拿也能保留多态——见下。）</p>
+<h2>2. catch 的三种形态（只有一种是对的）</h2>
+<pre class="code" data-label="cpp"><code class="c">try { risky(); }
+catch (Error e)        { /* ❌ 按值：又拷一次 + 若 e 是基类则切片 */ }
+catch (Error* e)       { /* ❌ 按指针：只能接 throw new Error(...)——
+                            谁来 delete？（item21 错误二同款泄漏） */ }
+catch (const Error&amp; e) { /* ✅ 按 const 引用：零拷贝 + 多态保留（动态类型完整） */ }
+</code></pre>
+<p><strong>按 const 引用捕获</strong>是本条与 18.1 ③ 的共同结论：
+- 零拷贝（直接用异常存储区那份）
+- 多态保留（<code class="c">catch (const std::exception&amp;)</code> 里 <code class="c">e.what()</code> 走虚函数，
+  调到派生实现——按值捕获时 what() 已被切成基类版）
+- <code class="c">throw;</code>（空 throw）在 catch 内<strong>原样重抛</strong>当前异常对象（不切片）；
+  <code class="c">throw e;</code> 会按 e 的静态类型<strong>重新拷贝</strong>（切片源之二）</p>
+<h2>3. 开销解剖（为什么异常"贵"）</h2>
+<pre class="code" data-label="code"><code class="c">throw 的总成本 = 拷贝构造异常对象（1-2 次）
+               + 查 LSDA/异常表（找到 landing pad）
+               + 栈展开（每帧：局部对象析构 + 清理表执行）
+               + catch 匹配（按 catch 链顺序做类型检查）
+</code></pre>
+<ul>
+<li>关键认知：<strong>不抛异常时</strong>这套机制零成本（表驱动，无异常时无运行时代码）——
+  这就是"异常给冷路径"的理论基础（→ 18.1 HFT）</li>
+<li>抛一次的成本在 <strong>µs 级</strong>（展开深度和析构复杂度决定），
+  且不可预测（表的 cache miss）——热路径永远不用它做流程控制</li>
+</ul>
+<h2>HFT 关联</h2>
+<ul>
+<li>冷路径错误统一基类 <code class="c">class AppError : public std::runtime_error</code>：
+  启动/配置/重连的错误按 const 引用捕获，保留完整错误信息</li>
+<li><code class="c">throw;</code> vs <code class="c">throw e;</code> 的区别在<strong>错误翻译层</strong>是高频坑：
+  网关层想"记一笔再往上抛"必须 <code class="c">throw;</code>——<code class="c">throw e;</code> 会把
+  派生错误切成 <code class="c">std::exception</code>，上层重试策略（按错误类型分派）全废</li>
+<li>异常对象的拷贝成本给了"-fno-exceptions 派"一个论据：
+  热路径库的错误通道用 <code class="c">expected&lt;T, ErrorCode&gt;</code>（C++23）——
+  值语义、零拷贝、编译期强制检查（→ 18.1 / item54 的 expected）</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> <code class="c">throw</code> 的拷贝构造为什么用静态类型？这导致什么经典陷阱？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">throw expr;</code> 的语义是"按 expr 的<strong>静态（声明）类型</strong>拷贝一份到异常存储区"——
+编译期就确定调用哪个拷贝构造，与实参的动态类型无关。
+陷阱：<code class="c">Base&amp; ref = derived_obj; throw ref;</code>——静态类型是 Base，
+派生部分当场切片，catch 里拿到的只是 Base 残骸
+（多态信息、派生字段全丢）。
+修法：throw 时<strong>显式构造</strong>（<code class="c">throw DerivedError(...)</code>）——
+让静态类型就是你想传的完整类型。</p>
+</details>
+<p><strong>题目 2：</strong> catch 块里"记完日志继续往上抛"，<code class="c">throw;</code> 和 <code class="c">throw e;</code> 有什么区别？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">throw;</code>（空 throw）：<strong>原样重抛</strong>当前异常对象——
+异常存储区那份原封不动继续向上传，动态类型/内容完整。
+<code class="c">throw e;</code>：按 <strong>e 的静态类型</strong>重新拷贝一个新异常对象——
+若 e 声明为基类引用（<code class="c">catch (const std::exception&amp; e)</code>），
+派生类型被切片：上层的 <code class="c">catch (const NetworkError&amp;)</code> 再也接不到，
+重试策略（按具体错误类型分派）静默失效。
+规则：翻译/记录层永远 <code class="c">throw;</code>——<code class="c">throw e;</code> 只在
+"确实要构造新异常"的场景（换错误类型）才写。</p>
+</details>
+<p><strong>题目 3：</strong> 为什么"不抛异常时异常机制零成本"，而热路径仍然禁用异常？</p>
+<details>
+<summary>参考答案</summary>
+<p>零成本指的是<strong>表驱动实现的静态面</strong>：无异常时，LSDA/展开表只是
+数据段里的表格，不执行任何额外指令（对比 setjmp 式实现的常驻开销）。
+但热路径禁异常的理由在<strong>动态面</strong>：
+① 一旦抛出，查表 + 逐帧展开 + 析构的成本是 µs 级且<strong>抖动不可预测</strong>
+（表冷 cache、展开深度不定——18.1 HFT 的延迟预算容不下）；
+② 异常作为<strong>控制流</strong>会破坏编译器对热路径的优化
+（可能的抛出点阻断指令调度/寄存器分配）；
+③ 团队纪律的简洁性：错误码/expected 的路径在代码里<strong>显式可见</strong>，
+异常路径是隐式的——热路径的可审计性压倒一切。
+"零成本"说的是没用到的时候，"禁用"管的是用到的时候——两者不矛盾。</p>
+</details>
+      </section>
+      <section class="section" id="s-item13">
+        <div class="sec-head"><div class="sec-no">Item 13</div><h2>条款 13：合理使用 catch(...) 全局捕获，谨慎兜底</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Use catch(...) judiciously.</strong> <code class="c">catch(...)</code> 捕获<strong>一切</strong>异常（含非 C++ 异常、
+未知类型）——它是最后的防线，也是最危险的大网：
+你接住了根本不知道是什么的东西，失去了按类型分派的可能。
+本条给出 catch(...) 的三个合法位置与一堆滥用警告。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item12-抛出异常时，理解对象拷贝的完整流程与开销.md">item12 异常拷贝流程</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item14-理解异常规范throw%28%29的运行时机制、局限性与坑.md">item14 异常规范的局限</a>。</p>
+<hr />
+<h2>1. catch(...) 的三个合法位置</h2>
+<p><strong>位置一：线程入口的防火堤</strong>——异常逃出线程函数 = <code class="c">std::terminate</code></p>
+<pre class="code" data-label="cpp"><code class="c">void worker_thread() {
+    try {
+        run();                      // 业务循环
+    } catch (const std::exception&amp; e) {
+        log_fatal(&quot;线程异常: &quot;, e.what());   // 先按类型拿到信息
+        notify_exit(e.what());
+    } catch (...) {                          // 兜底：防&quot;非 std 异常&quot;漏网
+        log_fatal(&quot;线程异常: 未知类型&quot;);
+        notify_exit(&quot;unknown&quot;);
+    }
+}
+</code></pre>
+<p>每个线程函数<strong>必须</strong>有这条防火堤——terminate 默认调 abort，
+交易系统的一个工作线程死了整个进程陪葬（→ M4 并发）。</p>
+<p><strong>位置二：库边界的异常翻译层</strong>——C++ 异常不能跨 C ABI/语言边界飞</p>
+<pre class="code" data-label="cpp"><code class="c">extern &quot;C&quot; int gateway_entry(const char* req, char* resp) {   // C 回调入口
+    try {
+        return handle(req, resp);
+    } catch (...) {                          // 一切异常都拦在边界
+        set_error(resp, &quot;internal error&quot;);
+        return -1;
+    }
+}
+</code></pre>
+<p>异常飞出 C 边界 = 未定义行为（C 侧没有展开机制）——catch(...) 是边界义务。</p>
+<p><strong>位置三：清理后的重抛</strong>——<code class="c">catch (...) { cleanup(); throw; }</code></p>
+<p>这里的 catch(...) 不为"处理"，只为"<strong>经过</strong>"：做完局部清理，
+<code class="c">throw;</code> 原样重抛（item12：不切片）——异常语义完全保留。</p>
+<h2>2. 滥用的四个警告</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>滥用</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>catch(...) 后<strong>吞掉</strong>（不记录不重抛）</td>
+<td>错误静默——OOM/逻辑错误全被吃，系统带病运行</td>
+</tr>
+<tr>
+<td>用 catch(...) 替代按类型 catch</td>
+<td>失去分派能力（重试策略按错误类型走，→ item12）</td>
+</tr>
+<tr>
+<td>在中间层 catch(...) "以防万一"</td>
+<td>异常路径变隐式——上层永远不知道发生过什么</td>
+</tr>
+<tr>
+<td>以为它能接<strong>所有</strong>错误</td>
+<td><strong>段错误/断言/整数除零接不住</strong>——那些是信号不是异常（→ 03.6 ch2）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>catch(...) 里能说的唯一信息是"出了某种异常"</strong>——
+没有 what()、没有类型、没有上下文。所以它只适合"防火堤/边界/过路清理"
+三种不依赖错误内容的角色。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li>交易系统每个线程入口的三件套：<code class="c">try { run(); } catch (const std::exception&amp;) {...}
+  catch (...) {...}</code> + <strong>致命错误的上报通道</strong>（监控进程，→ item48 的 OOM 预案同哲学）</li>
+<li>策略回调的引擎侧包装：引擎调 <code class="c">strategy.on_tick(t)</code> 时必须 catch(...) 兜底——
+  一个策略的异常不能拖垮整个引擎（策略隔离，→ 14-hft 引擎设计）</li>
+<li>C 回调边界（交易所 SDK 多数是 C ABI）的异常翻译是<strong>强制义务</strong>：
+  异常飞出 C 回调 = UB，crash 都算是好结局</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> 为什么线程函数必须有 catch(...) 防火堤？</p>
+<details>
+<summary>参考答案</summary>
+<p>异常逃出线程函数 = <code class="c">std::terminate</code> = 默认 <code class="c">abort()</code> 整个进程——
+工作线程（行情处理/订单执行）的一个未捕获异常，代价是<strong>全系统陪葬</strong>：
+主线程、其他策略线程、网关连接全死。
+防火堤（先按 std::exception 记日志，再 catch(...) 兜底未知类型）
+把"线程级事故"限制在线程级：记录、上报、决定该线程是重启还是系统优雅停机。
+这是 catch(...) 最无可争议的合法位置——
+它不处理错误内容，只防止错误升级为进程死亡。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">catch (...) { cleanup(); throw; }</code> 和 <code class="c">catch (...) { cleanup(); }</code> 差在哪？</p>
+<details>
+<summary>参考答案</summary>
+<p>一个 <code class="c">throw;</code> 之差是<strong>异常语义存亡</strong>之别：
+带 <code class="c">throw;</code>——清理完成后异常原样继续向上（item12：空 throw 不切片），
+上层的分派/重试/日志照常工作，你只是"路过清理"；
+不带——异常<strong>被吞</strong>：上层永远不知道发生过异常，
+重试策略失效、错误统计丢失、系统带病运行（错误的终态）。
+规则：catch(...) 里只允许三种结局——<strong>重抛</strong>（过路清理）、
+<strong>转化为明确动作</strong>（边界翻译、防火堤上报）、或<strong>进程终止</strong>——
+"吞掉后继续"永远不在选项里。</p>
+</details>
+<p><strong>题目 3：</strong> 为什么 catch(...) 接不住段错误？这暗示了什么工程实践？</p>
+<details>
+<summary>参考答案</summary>
+<p>段错误（SIGSEGV）、断言失败（SIGABRT）、整数除零（SIGFPE）是<strong>信号</strong>，
+不是 C++ 异常——它们由硬件/内核经信号机制投递，
+不经过 throw/catch 的展开机制（→ 03.6 ch2 的六种崩溃实测）。
+catch(...) 的"..."只管<strong>异常类型</strong>的任意性，管不了<strong>错误机制</strong>的不同。
+工程实践：生产系统的崩溃捕获要<strong>双通道</strong>——
+异常通道（try/catch 防火堤，本条）+ <strong>信号通道</strong>
+（sigaction 安装 SIGSEGV/SIGABRT handler，至少做到写最后一行日志 + 触发 core dump，
+→ 03.6 ch2 的 backtrace 实践）——两条通道各管一半，合起来才是完整的崩溃防线。</p>
+</details>
+      </section>
+      <section class="section" id="s-item14">
+        <div class="sec-head"><div class="sec-no">Item 14</div><h2>条款 14：理解异常规范的局限与坑（动态异常规范 → noexcept 的演变）</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Understand exception specifications.</strong> 原书（2005）讲的是<strong>动态异常规范</strong>
+（<code class="c">throw()</code>/<code class="c">throw(TypeA, TypeB)</code>）——那套机制已被证明是失败设计：
+C++11 废弃、C++17 <strong>彻底移除</strong>，由 <code class="c">noexcept</code> 取代。
+本条按 2026 视角重写：动态规范为什么失败、noexcept 的正确语义、
+以及读老代码时 <code class="c">throw()</code> 该翻译成什么。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item13-合理使用catch%28...%29全局捕获，谨慎兜底.md">item13 catch(...) 兜底</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item15-了解异常的成本开销，高性能场景下的取舍.md">item15 异常的成本</a>。</p>
+<hr />
+<h2>1. 动态异常规范的失败史（为什么被移除）</h2>
+<pre class="code" data-label="cpp"><code class="c">// C++98 的动态异常规范（已移除）：
+void f() throw(std::bad_alloc);      // 承诺只抛 bad_alloc
+void g() throw();                    // 承诺不抛——≠ noexcept！
+void h();                            // 无规范：可以抛任何异常
+</code></pre>
+<p><strong>失败原因</strong>：
+- <strong>运行期检查</strong>：违反规范时调 <code class="c">std::unexpected()</code>（默认 terminate）——
+  检查成本在每次调用，收益却几乎为零
+- <strong>不防</strong>"规范外的异常来自更深层"：f() 调用的函数抛了规范外异常，
+  拦截点在 f 的边界——出错时现场已经很难看
+- <strong>泛型不兼容</strong>：模板函数的异常集合依赖 T（<code class="c">T</code> 的构造可能抛什么）——
+  静态规范写不出来
+- <strong>阻碍优化</strong>：编译器无法从 throw() 推出"不抛"（仍要生成 unexpected 拦截代码）</p>
+<p>结论：静态类型系统管异常集合这条路走不通——
+C++11 起换思路：<strong>只回答"抛不抛"（noexcept），不回答"抛什么"</strong>。</p>
+<h2>2. noexcept 的正确语义（18.1 ② 的延伸）</h2>
+<pre class="code" data-label="cpp"><code class="c">void swap(Widget&amp; a, Widget&amp; b) noexcept;        // 承诺不抛——违约 = terminate
+void f() noexcept(false);                        // 显式声明&quot;可能抛&quot;（默认语义）
+template &lt;typename T&gt;
+void g() noexcept(noexcept(T()));                // 条件 noexcept：随 T 的特性走
+</code></pre>
+<ul>
+<li><strong>noexcept = "违约即 terminate"</strong>——编译器据此<strong>消掉展开代码</strong>：
+  noexcept 函数内 throw 直接 terminate，不需要准备 catch 现场——
+  代码更小、更快（这才是 noexcept 的性能价值，→ 18.1 ② vector 扩容实测）</li>
+<li><strong>条件 noexcept</strong> 是泛型世界的标准件：<code class="c">noexcept(noexcept(...))</code> 双层——
+  内层是"探测表达式"，外层是声明（→ item25 swap、19.8 traits 联动）</li>
+</ul>
+<h2>3. 老代码翻译表（读遗产代码必备）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>老写法（C++98/03）</th>
+<th>现代等价</th>
+<th>注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">void f() throw();</code></td>
+<td><code class="c">void f() noexcept;</code></td>
+<td><strong>语义近似但不同</strong>：throw() 违约调 unexpected（可自定义），noexcept 直接 terminate</td>
+</tr>
+<tr>
+<td><code class="c">void f() throw(A, B);</code></td>
+<td><strong>删除规范</strong>（写文档注释）</td>
+<td>没有等价物——异常集合只能靠文档</td>
+</tr>
+<tr>
+<td><code class="c">virtual ~Base() throw();</code></td>
+<td><code class="c">virtual ~Base() noexcept = default;</code>（其实析构默认 noexcept）</td>
+<td>析构/移动/swqp 天然 noexcept</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<ul>
+<li>noexcept 是<strong>性能注释</strong>不只是正确性注释：vector 扩容的移动/拷贝选择
+  （18.1 ② 实测）、移动构造的启用（→ M1）都由它驱动——
+  你的值类型"移动 + swap + 析构"三件套必须 noexcept</li>
+<li><code class="c">-fno-exceptions</code> 的热路径库里 noexcept 是<strong>默认状态</strong>——
+  但仍要显式标：库的边界（与异常世界的接口层）靠 noexcept 声明"不越界"</li>
+<li>读老代码（muduo/老 SDK）遇到 <code class="c">throw()</code> 直接脑内翻译 noexcept——
+  遇到 <code class="c">throw(SomeException)</code> 知道它没有现代等价物，
+  信息只能从文档/实现里挖（→ item54 的"熟悉标准库"同款：老接口的考古能力）</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> 动态异常规范（<code class="c">throw(A, B)</code>）为什么失败？noexcept 用什么思路替代它？</p>
+<details>
+<summary>参考答案</summary>
+<p>动态规范试图用<strong>静态类型系统</strong>管理"抛什么"——但运行期检查（unexpected）
+成本高、泛型不兼容（T 决定异常集合）、违反时的现场已经狼藉。
+noexcept 换思路：<strong>只答"抛不抛"，不答"抛什么"</strong>——
+异常的具体类型本来就是 catch 端的事（按类型分派，item12），
+函数签名只需承诺"我会不会成为异常源"。
+这个简化让编译器能真正利用它（消展开代码、移动语义启用），
+而"抛什么"回归文档和 catch 端处理。
+（Java 的 checked exceptions 是同一思路的另一个失败案例——
+异常集合不属于类型系统。）</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">noexcept</code> 函数里抛了异常会怎样？这和 <code class="c">throw()</code> 的老行为差在哪？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">noexcept</code> 函数抛出异常 → <strong><code class="c">std::terminate</code> 立即调用</strong>——
+无栈展开、无 catch 机会、默认 abort（可经 set_terminate 自定义终结动作，
+但也只能"死前做点事"，救不回来）。
+老 <code class="c">throw()</code> 违约调 <code class="c">std::unexpected()</code>——默认也是 terminate，
+但允许 set_unexpected 换处理器（理论上能转换异常类型重抛，实践中没人用）。
+语义近似，细节不同；真正重要的区别是<strong>编译器的利用</strong>：
+noexcept 让编译器<strong>消掉异常处理代码</strong>（更小更快），
+throw() 反而要生成 unexpected 拦截代码（更大更慢）——
+这就是新机制取代旧机制的根本原因。</p>
+</details>
+<p><strong>题目 3：</strong> <code class="c">template &lt;typename T&gt; void wrapper(T&amp; a, T&amp; b) noexcept(noexcept(a.swap(b)));</code>
+里两个 noexcept 各是什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>外层 <code class="c">noexcept(...)</code>：<strong>声明</strong>——wrapper 的 noexcept 属性由括号里的
+布尔表达式决定（编译期求值）。
+内层 <code class="c">noexcept(expr)</code>：<strong>探测运算符</strong>——编译期回答"表达式 expr 承诺不抛吗"
+（检查 a.swap(b) 这个调用的 noexcept 声明，不真的执行）。
+合起来的语义："wrapper 的不抛承诺 = 成员 swap 的不抛承诺"——
+T 的 swap 是 noexcept 则 wrapper 也是，T 的会抛则 wrapper 不承诺。
+这就是<strong>条件 noexcept</strong>：泛型代码的异常承诺随类型参数的特性走——
+swap/移动/容器的标准库实现里无处不在（→ item25、19.8 traits 的合体应用）。</p>
+</details>
+      </section>
+      <section class="section" id="s-item15">
+        <div class="sec-head"><div class="sec-no">Item 15</div><h2>条款 15：了解异常的成本开销，高性能场景下的取舍</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Understand the costs of exception handling.</strong> 异常的成本分<strong>静态</strong>（二进制体积、
+优化阻碍）和<strong>动态</strong>（抛出时的查表与展开）两面——
+"无异常时零成本"只说对了一半。本条把成本拆到可度量的层面，
+给出高性能场景的完整取舍框架（→ 18.1 HFT 的量化版）。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item14-理解异常规范throw%28%29的运行时机制、局限性与坑.md">item14 异常规范</a>；
+下一章 <a href="chapter-04.html#ch-4">ch04 效率</a>。</p>
+<hr />
+<h2>1. 成本一：静态面（不用异常也要付）</h2>
+<ul>
+<li><strong>二进制体积</strong>：每个可能抛出的函数都要生成 LSDA/展开表 + 清理动作表——
+  典型可执行文件增大 5-15%（表驱动实现的"表"本身）</li>
+<li><strong>优化阻碍</strong>：潜在的抛出点是优化的边界——
+  寄存器分配/指令调度/内联决策在"可能抛"的调用前都变保守
+  （noexcept 标注能把这些边界拆掉，→ item14）</li>
+<li><strong>I-cache 压力</strong>：冷代码（异常路径）与热代码在同一函数体里——
+  热循环的代码 footprint 被拉大（→ Effective item30 的 I-cache 讨论）</li>
+</ul>
+<h2>2. 成本二：动态面（抛出时才付，但付得狠）</h2>
+<pre class="code" data-label="code"><code class="c">throw 一次的典型成本构成（x86_64 Linux，libgcc 表驱动）：
+  ① 异常对象拷贝构造          ~几十 ns（对象复杂度决定）
+  ② __cxa_throw → _Unwind_RaiseException
+     查 LSDA 表（personality routine 逐帧问）  ~µs 级起
+  ③ 逐帧展开：每帧执行 landing pad + 局部对象析构
+     深度 N 帧 ≈ N × (几十~几百 ns)
+  ④ catch 匹配：RTTI 比较      ~几十 ns/catch
+─────────────────────────────────────
+  合计：µs 级，且**方差巨大**（表冷 cache、展开深度、析构复杂度）
+</code></pre>
+<p>对比：一次虚函数调用 ~1ns，一次错误码返回 ~0ns——
+<strong>一次 throw ≈ 几千次正常调用的成本，且不可预测</strong>。
+这就是为什么"tick-to-trade 预算里没有 throw 的位置"（18.1 HFT）。</p>
+<h2>3. "零成本"的精确含义（别被口号骗了）</h2>
+<p>表驱动实现（Itanium ABI，Linux/macOS 默认）的真实账本：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无异常抛出，正常运行</td>
+<td><strong>≈0</strong>（表不执行）——"零成本"指这个</td>
+</tr>
+<tr>
+<td>函数含 try/catch（即使不抛）</td>
+<td>微小（可能阻碍少量优化）</td>
+</tr>
+<tr>
+<td>noexcept 函数</td>
+<td>比零还少（展开代码被消掉）</td>
+</tr>
+<tr>
+<td><strong>抛出</strong></td>
+<td><strong>µs 级 + 高方差</strong>——成本全部集中在这里</td>
+</tr>
+</tbody>
+</table></div>
+<p>推论：异常的定价模型是<strong>"免费保险，天价理赔"</strong>——
+用不用它的判断标准是"这条路会抛吗、抛得起吗"，不是"异常好不好"。</p>
+<h2>4. 高性能场景的取舍框架（分层决策）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>错误机制</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>热路径</strong>（tick-to-trade）</td>
+<td>错误码 / <code class="c">expected&lt;T,E&gt;</code>（C++23）</td>
+<td>显式、零成本、可预测（→ item54 expected）</td>
+</tr>
+<tr>
+<td><strong>冷路径</strong>（启动/配置/重连）</td>
+<td>异常 + RAII + 三级保证（Effective item29）</td>
+<td>代码清晰，µs 级成本无所谓</td>
+</tr>
+<tr>
+<td><strong>边界</strong>（冷热交界）</td>
+<td>异常 → 错误码的<strong>翻译层</strong></td>
+<td>冷世界的异常在边界 catch 住，转成热世界的错误码</td>
+</tr>
+<tr>
+<td><strong>禁用场景</strong>（-fno-exceptions）</td>
+<td>全错误码 + new 的 nothrow 版（→ 19.1 ④）</td>
+<td>嵌入式/极致热路径库</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>边界层示例</strong>（交易系统标准形态）：</p>
+<pre class="code" data-label="cpp"><code class="c">int engine_reload_config() noexcept {          // 热世界入口承诺不抛
+    try {
+        auto cfg = load_config(path);          // 冷世界随便抛
+        return apply(cfg) ? 0 : -1;
+    } catch (const std::exception&amp; e) {
+        log_error(&quot;配置加载失败: {}&quot;, e.what());
+        return -2;                              // 异常在边界翻译为错误码
+    }
+}
+</code></pre>
+<h2>HFT 关联</h2>
+<ul>
+<li>本条的量化结论直接支撑 18.1 HFT 的"主路径零异常"——
+  预算 1-10µs 的 tick-to-trade 里，一次 throw 就是预算的几十倍</li>
+<li><code class="c">expected&lt;T, E&gt;</code>（C++23）把"错误的值语义"标准化：
+  热路径错误的现代答案——比异常便宜、比裸错误码安全（强制检查，→ item54）</li>
+<li>静态面成本（表体积）在<strong>嵌入式/内核旁路</strong>场景也要算账：
+  <code class="c">-fno-exceptions</code> 省的不只是运行期，还有二进制体积和 I-cache</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> "无异常时零成本"忽略了异常机制的哪些静态成本？</p>
+<details>
+<summary>参考答案</summary>
+<p>① <strong>二进制体积</strong>：LSDA/展开表 + 清理动作表让可执行文件典型增大 5-15%——
+表驱动实现把成本转移到了数据段；
+② <strong>优化阻碍</strong>：潜在抛出点是编译器优化的边界——寄存器分配、指令调度、
+内联决策在"可能抛"的调用前变保守（noexcept 能拆掉这些边界）；
+③ <strong>I-cache</strong>：异常路径的冷代码与热代码同函数体，拉大 footprint
+（→ Effective item30）。
+"零成本"只描述运行期无异常路径无额外指令——
+体积、优化、缓存的账一分没少。所以 noexcept（消展开代码）和
+-fno-exceptions（连表都不生成）都有<strong>即使不抛也真实存在</strong>的收益。</p>
+</details>
+<p><strong>题目 2：</strong> 一次 throw 的成本为什么"µs 级且高方差"？高方差为什么比高均值更致命？</p>
+<details>
+<summary>参考答案</summary>
+<p>成本构成：查 LSDA 表（personality 逐帧问）+ 逐帧展开（每帧 landing pad +
+局部对象析构）+ catch 的 RTTI 匹配——全部涉及<strong>数据结构的指针遍历</strong>：
+表冷 cache、展开深度不定、析构复杂度不定，所以方差大。
+高方差致命的原因：HFT 的延迟预算管的是 <strong>p99/p999</strong>（尾延迟，→ 06.6.5 ch02）——
+均值 1µs 但 p99 50µs 的机制，比均值 2µs 但确定的机制<strong>更不可接受</strong>：
+容量规划按尾延迟做，方差直接吃掉余量。
+这就是热路径错误通道必须"显式 + 可预测"（错误码/expected）的根本原因——
+不是异常平均慢，是异常<strong>不可预测地慢</strong>。</p>
+</details>
+<p><strong>题目 3：</strong> 设计"冷路径用异常、热路径用错误码"的系统，边界层怎么写？</p>
+<details>
+<summary>参考答案</summary>
+<p>边界层 = <strong>noexcept 入口 + try-catch 翻译</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">int engine_reload_config() noexcept {       // ① 对热世界承诺不抛
+    try {
+        auto cfg = load_config(path);       // ② 冷世界内部随便抛（RAII 兜底）
+        return apply(cfg) ? 0 : -1;
+    } catch (const std::exception&amp; e) {
+        log_error(&quot;配置加载失败: {}&quot;, e.what());
+        return -2;                          // ③ 异常→错误码翻译（信息进日志）
+    } catch (...) {
+        log_error(&quot;配置加载失败: 未知异常&quot;);
+        return -3;                          // ④ catch(...) 防火堤（→ item13）
+    }
+}
+</code></pre>
+<p>要点：① noexcept 是合同（违约 terminate，调用方敢 inline 敢优化）；
+② 冷世界内部享受异常的全部表达力（错误从深处自然冒泡）；
+③④ 两层 catch 保证<strong>任何异常都死在边界</strong>——热世界看到的只有错误码。
+这套边界是交易系统"冷热分层错误机制"的标准形态（→ 18.1 HFT 的落地）。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

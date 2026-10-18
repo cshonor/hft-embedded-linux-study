@@ -134,6 +134,9 @@ def chapter_no(name):
 SEC_NO_RE = re.compile(r"^(?:section[-_])?(\d+(?:\.\d+)*(?:\.[xX]+)?)[-_.](.+)$")
 SEC_NAME_RE = re.compile(r"^section[-_](.+)$")
 SUBSEC_DIR_RE = re.compile(r"^\d+(?:\.\d+)*[-_]")
+# Meyers 系列条款文件：item18-unique-ptr.md / item08a-nullptr的硬件路径.md
+# （Effective Modern C++/STL/C++/More Effective C++ 四本共用此命名，2026-10-18 前从未入站）
+ITEM_NO_RE = re.compile(r"^item(\d+)([a-z])?[-_].+$", re.I)
 
 def section_no(stem):
     """小节文件名(stem) → (anchor, label, sortkey)；非小节 → (None, None, None)。
@@ -154,6 +157,12 @@ def section_no(stem):
         if slug:
             # 无编号小节排在编号小节之后（key 用大数保证稳定）
             return "s-" + slug, m.group(1), (99, 99, 99)
+    m = ITEM_NO_RE.match(stem)
+    if m:
+        n = int(m.group(1))
+        suf = (m.group(2) or "").lower()
+        # key 用 3 元组；item08a 紧跟 item08 之后
+        return f"s-item{n:02d}{suf}", f"Item {n}{suf}", (n, ord(suf) if suf else 0, 0)
     return None, None, None
 
 def collect_sections(chapter_dir):
@@ -605,7 +614,7 @@ def build_chapter(book, chno, chapter_dir, secs, book_nav, all_books_nav):
         sections_html.append(render_section(sec_path, anchor, label, cur_rel))
         text = sec_path.read_text(encoding="utf-8")
         first = text.split("\n", 1)[0]
-        mm = re.match(r"^#\s+(\d+(?:\.\d+)*)\s*(.*)$", first)
+        mm = re.match(r"^#\s+(?:[Ii]tem\s*|条款\s*)?(\d+(?:\.\d+)*)\s*[:：]?\s*(.*)$", first)
         if mm:
             no, t = mm.group(1), mm.group(2).strip()
         else:

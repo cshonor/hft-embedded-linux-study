@@ -276,6 +276,12 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-item26"><span class="n">26</span>尽可能延后变量定义</a>
+          <a href="#s-item27"><span class="n">27</span>尽量减少类型转型（cast）</a>
+          <a href="#s-item28"><span class="n">28</span>不要返回指向对象内部成员的句柄</a>
+          <a href="#s-item29"><span class="n">29</span>编写异常安全的代码</a>
+          <a href="#s-item30"><span class="n">30</span>透彻理解内联（inline）的优缺点</a>
+          <a href="#s-item31"><span class="n">31</span>降低文件之间的编译依赖</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -300,7 +306,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Meyers《Effective C++》· pre-C++11 · 按需查</div>
           <h1>第五章 实现细节</h1>
           <div class="meta">
-<span>book <b>M6-Classic-Effective · 01-Effective-C++</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>1</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M6-Classic-Effective · 01-Effective-C++</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>7</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -320,6 +326,824 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </ul>
 <h2>章节摘要</h2>
 <p>实现细节：延后变量定义、减少类型转换、不返回内部成员句柄、异常安全、inline 优缺点、降低编译依赖（Pimpl）。</p>
+      </section>
+      <section class="section" id="s-item26">
+        <div class="sec-head"><div class="sec-no">Item 26</div><h2>条款 26：尽可能延后变量定义</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Postpone variable definitions as long as possible.</strong> 变量定义 = 构造 + 析构的成本。
+定义得早而用得晚（甚至没用上），就是为不存在的使用付费。三层处理：
+<strong>异常路径浪费 → 循环内 vs 循环外 → 默认构造的陷阱</strong>。这条与 item04（初始化）
+一体两面：不仅要初始化，还要<strong>在正确的时机</strong>初始化。</p>
+<p>← 上一条 <a href="chapter-04.html#ch-4">item25 不抛异常的 swap</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item27-尽量减少类型转型（cast）.md">item27 减少类型转型</a>。</p>
+<hr />
+<h2>1. 核心问题：早定义 = 为可能不走的路径付费</h2>
+<pre class="code" data-label="cpp"><code class="c">std::string encrypt_password(const std::string&amp; password) {
+    std::string encrypted;                 // ❌ 现在就构造（默认构造一次）
+
+    if (password.length() &lt; MIN_LENGTH) {
+        throw std::logic_error(&quot;too short&quot;);   // ← 异常路径：encrypted 白构造白析构
+    }
+    // ...真正加密...
+    return encrypted;
+}
+</code></pre>
+<p>异常抛出时，<code class="c">encrypted</code> 经历了<strong>默认构造 + 析构</strong>——完全浪费。
+延后到确定要用的地方：</p>
+<pre class="code" data-label="cpp"><code class="c">std::string encrypt_password(const std::string&amp; password) {
+    if (password.length() &lt; MIN_LENGTH) throw std::logic_error(&quot;too short&quot;);
+    std::string encrypted(password);       // ✅ 直接用值构造，连默认构造都省了
+    // ...
+    return encrypted;
+}
+</code></pre>
+<p>注意第二个收益：<code class="c">std::string encrypted;</code> + 后续赋值 = <strong>默认构造 + operator=</strong>；
+<code class="c">std::string encrypted(password);</code> = <strong>一次拷贝构造</strong>——延后的同时往往还能
+跳过默认构造（item04 的"初始化列表优于赋值"同款原理）。</p>
+<h2>2. 循环内 vs 循环外（Meyers 的原始分析）</h2>
+<pre class="code" data-label="cpp"><code class="c">// 方案 A：循环外定义——1 次构造 + 1 次析构 + n 次赋值
+Widget w;
+for (int i = 0; i &lt; n; ++i) { w = make(i); use(w); }
+
+// 方案 B：循环内定义——n 次构造 + n 次析构
+for (int i = 0; i &lt; n; ++i) { Widget w = make(i); use(w); }
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>成本对比</th>
+<th>选 A</th>
+<th>选 B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>赋值成本 ≤ 构造+析构</td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td>赋值成本 &gt; 构造+析构（常见！）</td>
+<td></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>要求变量不带出循环（作用域卫生）</td>
+<td></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Widget 含大缓冲（复用避免反复分配）</td>
+<td>✅（有意的）</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<p>经验法则：<strong>默认选 B</strong>（作用域干净、无残留状态），除非①赋值明显便宜、
+②或你在<strong>有意复用</strong>大缓冲（那就把意图写成注释/命名，如 <code class="c">reuse_buf</code>）。</p>
+<h2>3. "默认构造后再赋值"的隐蔽版本</h2>
+<pre class="code" data-label="cpp"><code class="c">// 隐蔽版：为了&quot;声明在一起&quot;而提前默认构造
+void process() {
+    Price p;                    // 默认构造（万一 Price 没有廉价默认构造呢？）
+    Qty q;
+    if (!decode_header(buf, p)) return;    // p 构造了却可能没用上
+    if (!decode_body(buf, q)) return;      // q 同理
+    match(p, q);
+}
+
+// 正解：解码函数按值返回，变量在拿到值的那一刻才出生
+void process() {
+    auto p = decode_header(buf);  if (!p) return;
+    auto q = decode_body(buf);    if (!q) return;
+    match(*p, *q);                // optional 或直接返回（→ item21 按值返回）
+}
+</code></pre>
+<p>热路径解码尤其如此：<strong>没有默认构造 + 可能早退 = 别提前定义</strong>。
+<code class="c">std::optional&lt;T&gt;</code> / 工厂返回值让"变量出生就有值"成为默认形态。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li>热循环里的临时对象：默认选循环内定义（B）——现代编译器对 POD 会直接
+  寄存器分配，成本为零；只有<strong>大 buffer 复用</strong>才值得循环外（且必须写明意图）</li>
+<li>早退密集的解析路径：变量延后到"校验通过"之后——失败路径零构造零析构，
+  失败率高的场景（防火墙式过滤）收益直接可见</li>
+<li>与 <code class="c">optional</code>/<code class="c">expected</code> 搭配：C++17 后"先判错再定义"可以写成
+  <code class="c">auto tick = decode(buf); if (!tick) return;</code>——错误处理与延后定义合一</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> "尽可能延后"和"循环外只构造一次"矛盾吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>不矛盾——本条款管的是"<strong>在使用前不要无谓构造</strong>"（异常路径/早退/默认构造浪费），
+循环外定义管的是"<strong>有意复用</strong>"（n 次赋值 &lt; n 次构造析构时）。
+判别：变量在循环每次迭代都需要<strong>全新状态</strong> → 循环内定义（顺便防残留 bug）；
+你就是要<strong>复用它的存储</strong>（大 buffer/池对象）→ 循环外定义，并把复用意图写明白。
+两者共同的敌人是"无意识的默认构造"——那才是本条款要消灭的。</p>
+</details>
+<p><strong>题目 2：</strong> 延后定义对异常安全有什么具体收益？</p>
+<details>
+<summary>参考答案</summary>
+<p>异常抛出路径上，<strong>已构造的局部对象都要析构</strong>——定义得越早，异常路径的
+析构清单越长（展开成本越大，见 18.1 ①）。延后定义 = 异常路径上还没出生的对象
+不用析构：① 省掉构造+析构的纯浪费；② 栈展开的帧更轻；
+③ 更重要的是<strong>异常安全推理更简单</strong>——"异常时哪些对象已存在"一眼可见。</p>
+</details>
+<p><strong>题目 3：</strong> 什么情况下"循环内定义"反而比"循环外定义"快？</p>
+<details>
+<summary>参考答案</summary>
+<p>当 <strong>构造+析构比赋值便宜</strong> 或<strong>赋值的旧值清理很贵</strong>时：
+典型例子是含堆内存的类型——循环外的 <code class="c">w = make(i)</code> 每次赋值要释放旧分配
+再新分配（或复用但 shrink 逻辑）；循环内的 <code class="c">Widget w = make(i)</code> 是移动构造，
+RVO 下常常连移动都省掉（→ item21 实测）。此外循环内定义让编译器确切知道
+变量的生存域，<strong>寄存器分配和死代码消除</strong>都更激进——POD 类型循环内定义
+经常编译成"根本没有这个变量"。</p>
+</details>
+      </section>
+      <section class="section" id="s-item27">
+        <div class="sec-head"><div class="sec-no">Item 27</div><h2>条款 27：尽量减少类型转型（cast）</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Minimize casting.</strong> 转型是"我对类型系统说谎"——每一次 cast 都是一处
+类型检查被关掉的窗口。本条款讲清：C 风格强转为什么危险、C++ 四种转型的
+分工与禁区、以及"想转型的时刻"通常暗示的设计缺陷。本机 g++ 13.3 实测切片与
+const_cast 边界。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item26-尽可能延后变量定义.md">item26 延后变量定义</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item28-不要返回指向对象内部成员的句柄（指针引用）.md">item28 别返回内部句柄</a>。</p>
+<hr />
+<h2>1. C 风格强转的问题：它什么都干得出来</h2>
+<pre class="code" data-label="cpp"><code class="c">Base b1 = (Base)d;      // 本机实测：悄悄切片（Derived 的 d 成员直接丢弃）
+</code></pre>
+<p><code class="c">(T)x</code> 这一个语法，编译器会<strong>按顺序尝试</strong> static_cast → const_cast →
+static_cast+const_cast → reinterpret_cast——<strong>其中任何一个成功就编译通过</strong>。
+你以为在做数值转换，实际可能命中 reinterpret_cast（把指针当整数）；
+你以为在向下转型，实际只是切片——<strong>没有任何一种意图被显式表达</strong>。</p>
+<p>C++ 四种转型把"意图"写进语法，让编译器和 reviewer 都能检查：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>转型</th>
+<th>干什么</th>
+<th>禁区</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">static_cast&lt;T&gt;(x)</code></td>
+<td>编译期已知安全的转换（数值、向上转、void* 来回）</td>
+<td>向下转型无检查（错就是 UB）</td>
+</tr>
+<tr>
+<td><code class="c">dynamic_cast&lt;T&gt;(x)</code></td>
+<td>运行期检查的向下/横向转型（RTTI）</td>
+<td>非多态类型；热路径（→ 18.4）</td>
+</tr>
+<tr>
+<td><code class="c">const_cast&lt;T&gt;(x)</code></td>
+<td><strong>只</strong>加/去 const</td>
+<td>改"本身就是 const"的对象 = UB（实测见下）</td>
+</tr>
+<tr>
+<td><code class="c">reinterpret_cast&lt;T&gt;(x)</code></td>
+<td>按位重解读（协议解析的日用工具）</td>
+<td>对齐/别名违规（→ 19.5 UB 边界）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>2. const_cast 的 UB 边界（本机实测）</h2>
+<pre class="code" data-label="cpp"><code class="c">const int x = 42;
+*const_cast&lt;int*&gt;(&amp;x) = 1;                       // UB！x 本体是 const——可能被放只读段/常量折叠
+
+int y = 42;
+*const_cast&lt;int*&gt;(static_cast&lt;const int*&gt;(&amp;y)) = 43;   // ✅ 合法：y 本体可变，只是途经 const 视图
+// 本机实测输出：y=43
+</code></pre>
+<p><strong>规则</strong>：const_cast 只能用于"对象本身可变，只是当前经过 const 引用/指针"——
+合法场景几乎都是：调用一个"忘了声明 const"的老接口，或给成员函数提供
+const/non-const 双版本时去重（const 版实现，non-const 版 const_cast 转发）。</p>
+<h2>3. 向下转型的两个陷阱（切片 + 假向下）</h2>
+<pre class="code" data-label="cpp"><code class="c">Base b2 = static_cast&lt;Base&gt;(d);          // 切片：b2 是纯粹的 Base，Derived 部分已消失
+Derived&amp; dr = dynamic_cast&lt;Derived&amp;&gt;(b2);
+// 本机实测：抛 std::bad_cast——切片后的对象&quot;骗不过&quot; dynamic_cast
+// （它的动态类型就是 Base，typeid 里没有 Derived 的痕迹）
+</code></pre>
+<p><strong>关键认知</strong>：切片发生在<strong>拷贝的那一刻</strong>，不是转型那一刻——
+<code class="c">static_cast&lt;Base&gt;(d)</code> 构造了一个新 Base 对象，Derived 的数据当场蒸发。
+之后的任何"恢复"都是徒劳。</p>
+<h2>4. "想转型"的设计信号（治本）</h2>
+<p>频繁想向下转型，通常是接口设计缺陷：</p>
+<pre class="code" data-label="cpp"><code class="c">// 味道：基类指针 + dynamic_cast 决定行为
+if (auto* s = dynamic_cast&lt;SnapMsg*&gt;(m)) { ... }
+else if (auto* t = dynamic_cast&lt;TradeMsg*&gt;(m)) { ... }
+
+// 治本①：虚函数——把行为放回类里（一次 vtable 跳转，无 RTTI）
+m-&gt;handle(engine);
+
+// 治本②：variant + visit（类型集合封闭时，编译期分发）
+std::visit(overloaded{
+    [](const SnapMsg&amp; s) { /*...*/ },
+    [](const TradeMsg&amp; t) { /*...*/ },
+}, msg);
+</code></pre>
+<p><strong>例外：reinterpret_cast 在协议解析是正当职业</strong>——
+<code class="c">reinterpret_cast&lt;const Header*&gt;(buf)</code> 把字节流映射成结构体，
+这是零拷贝解码的基石（→ 19.5）；它的问题不在"用了转型"，而在
+<strong>对齐/别名/字节序</strong>三个 UB 边界要人工守住（static_assert 三件套）。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li>热路径的转型预算：<strong>reinterpret_cast（协议解析）+ static_cast（数值/定宽）</strong> 是全部——
+  dynamic_cast 的继承链遍历和 RTTI 查询不进热路径（→ 18.4）</li>
+<li>协议解码的 <code class="c">reinterpret_cast</code> 必须配：对齐检查（<code class="c">alignof(Header)</code> 与 buf 对齐）、
+  <code class="c">is_trivially_copyable</code> 守卫（→ 19.8）、字节序转换（hton 系列，→ 03.5）</li>
+<li>const_cast 在<strong>回调注册</strong>里是常见必要恶：C 接口要求 <code class="c">void*</code> 用户数据，
+  传 const 对象进去回调再 cast 回来——合法但要把"对象本体可变"写成注释</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> C 风格强转 <code class="c">(T)x</code> 相比 C++ 四种转型，根本缺陷是什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>它把 static_cast/const_cast/reinterpret_cast 的<strong>选择权交给编译器</strong>——
+按固定顺序逐个尝试，任何一个合法就用哪个。后果：
+① 意图不可见（reviewer 不知道你想干哪种转换）；
+② 代码演进时 silently 换语义（T 的继承关系一变，static_cast 可能变成 reinterpret_cast 命中）；
+③ 无法被 grep（想找所有 reinterpret_cast 审计时，C 强转全漏网）。
+C++ 转型的啰嗦正是价值：每种意图有专属拼写。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">const int x = 42; *const_cast&lt;int*&gt;(&amp;x) = 1;</code> 为什么不是"行为良好但风格差"，而是 UB？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">x</code> 的本体是 const——编译器有权把它放进<strong>只读数据段</strong>，或直接<strong>常量折叠</strong>
+（所有 <code class="c">x</code> 的使用点替换成字面量 42，连存储都没有）。const_cast 只是移除了
+指针上的 const 限定，<strong>改变不了对象本体</strong>——对本体 const 的对象写入：
+走只读段 → 段错误；走常量折叠 → 写入无处发生、读到的还是 42。
+合法场景只有"对象本体可变、只是途经 const 视图"（本机实测 y=43 生效）。</p>
+</details>
+<p><strong>题目 3：</strong> 热路径上要按消息类型分发，为什么 dynamic_cast 链是坏选择？给两个更好方案。</p>
+<details>
+<summary>参考答案</summary>
+<p>dynamic_cast 沿继承链<strong>运行时遍历</strong>（MI/虚继承更慢），每次查询一次 cache miss
+起步——放在每包一次的分发热点上，延迟和抖动都不可接受（→ 18.4 ③）。
+更好方案：
+① <strong>虚函数分发</strong>：<code class="c">msg-&gt;handle(e)</code> 一次 vtable 间接跳转，O(1)；
+② <strong>协议字段查表</strong>：行情场景用 msg_type 直接索引 handler 数组（→ 19.3 成员指针表），
+间接跳转目标规律、分支预测友好；
+③ 类型集合封闭时 <strong>variant + visit</strong>：编译期分发，连间接跳转都可能被内联掉。</p>
+</details>
+      </section>
+      <section class="section" id="s-item28">
+        <div class="sec-head"><div class="sec-no">Item 28</div><h2>条款 28：不要返回指向对象内部成员的句柄</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Avoid returning "handles" to object internals.</strong> "句柄"（handle）=
+指针、引用、迭代器——任何能让用户<strong>绕过公共接口直接操纵内部</strong>的东西。
+返回它们会带来三类破坏：<strong>封装作废</strong>（比 public 成员更糟）、<strong>const 被架空</strong>、
+<strong>句柄悬垂</strong>（对象死了句柄还活着）。这条与 item22（private）、item23（最小接口）
+是同一道防线的三个面。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item27-尽量减少类型转型（cast）.md">item27 减少类型转型</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item29-编写异常安全的代码.md">item29 异常安全</a>。</p>
+<hr />
+<h2>1. 三类破坏</h2>
+<h3>① 非 const 引用返回成员 = 成员变量实质 public</h3>
+<pre class="code" data-label="cpp"><code class="c">class Order {
+    Qty qty_;
+public:
+    Qty&amp; qty() { return qty_; }        // ❌ qty() 成了&quot;可写的后门&quot;——
+};                                      //    用户 o.qty() = -100; 不变量裸奔
+</code></pre>
+<p>这违反了 item22 的精神却披着"用了函数接口"的外衣——
+<strong>private 成员 + 可写引用 getter = 最差的组合</strong>（比直接 public 更糟：
+public 至少诚实，这里用户还以为有封装）。</p>
+<h3>② const 成员函数返回非 const 句柄 = const 语义架空</h3>
+<pre class="code" data-label="cpp"><code class="c">class Book {
+    std::vector&lt;Level&gt; levels_;
+public:
+    const std::vector&lt;Level&gt;&amp; levels() const { return levels_; }   // ✅ const 引用，只读
+    std::vector&lt;Level&gt;&amp; levels() { return levels_; }               // ❌ const 对象也能调非 const 重载？
+};
+
+void audit(const Book&amp; b) {
+    // b.levels().push_back(...);      // 若只提供非 const 版本：编译通过，audit 能改 b！
+}
+</code></pre>
+<p><code class="c">const Book&amp;</code> 的 promise 是"我不改你"——返回非 const 句柄让这个 promise 形同虚设。</p>
+<h3>③ 句柄悬垂：句柄的寿命 ≤ 对象的寿命</h3>
+<pre class="code" data-label="cpp"><code class="c">const std::string&amp; name(const Order&amp; o) { return o.name_; }   // 返回成员引用
+
+const std::string&amp; bad = name(Order{});    // ❌ 临时 Order 行末析构，bad 悬垂
+auto good = name(order);                   // ✅ order 是长寿对象——但改名后 good 跟着变（别名耦合）
+</code></pre>
+<p>迭代器版本更隐蔽：<code class="c">auto it = book.levels().begin();</code> 之后 <code class="c">levels_</code> 任何
+扩容/修改都让 <code class="c">it</code> 失效——句柄不仅随对象死而悬，还随<strong>对象内部变化</strong>而悬。</p>
+<h2>2. 什么时候返回句柄是合法的（边界）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>合法形态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只读访问且对象长寿</td>
+<td><strong>const 引用/指针</strong>（<code class="c">const std::string&amp; name() const</code>）</td>
+</tr>
+<tr>
+<td>容器元素访问是本职</td>
+<td><code class="c">operator[]</code>/<code class="c">at</code>/<code class="c">begin</code>——容器的存在就是为了给元素句柄</td>
+</tr>
+<tr>
+<td>调用方需要可写但你要守不变量</td>
+<td><strong>写函数</strong>（<code class="c">set_qty(q)</code> 里校验），不给可写句柄</td>
+</tr>
+<tr>
+<td>性能关键的批量只读</td>
+<td>const 引用 + 文档写明"容器死/改则失效"（<code class="c">span</code>/string_view 同理念）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>判别口诀</strong>：句柄让用户做的事，<strong>公共接口愿意背书吗</strong>？
+只读观察 → const 句柄可以；改动内部 → 走写函数，句柄不给。</p>
+<h2>3. 与"输出参数"的关系（item21 的联动）</h2>
+<p>热路径常用的输出参数模式，本质就是"调用方提供句柄，函数往里写"——
+方向反过来（句柄由调用方持有并负责寿命），就避开了本条的所有坑：</p>
+<pre class="code" data-label="cpp"><code class="c">bool decode(const Buf&amp; b, Tick&amp; out);     // ✅ out 的寿命归调用方，无悬垂问题
+// vs
+const Tick&amp; decode(const Buf&amp; b);         // ❌ 返回谁内部的引用？静态的？上次调用的？
+</code></pre>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>订单簿给策略层的接口</strong>：只读视图（<code class="c">best_bid() const -&gt; Price</code> 按值）+
+  写操作走函数（<code class="c">add/cancel</code>）——给策略一个 <code class="c">Level&amp;</code> 等于让策略绕过撮合引擎的不变量</li>
+<li><code class="c">std::string_view</code>/<code class="c">std::span&lt;const T&gt;</code> 是"受控句柄"的现代形态：
+  明确"只读 + 寿命随源"语义，协议解析里大量使用（零拷贝字段视图，
+  → M7 C++17 ch15 string_view）</li>
+<li>缓存友好考虑：按值返回小 POD（<code class="c">Price</code>/<code class="c">Qty</code>，8B 走寄存器）通常<strong>比</strong>
+  返回引用还快（省一次间接）——热路径"按值小对象 + 句柄只给大对象"是经验法则</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> <code class="c">const std::string&amp; name() const { return name_; }</code> 有哪些潜在问题？</p>
+<details>
+<summary>参考答案</summary>
+<p>① <strong>悬垂</strong>：<code class="c">name(Order{})</code>——临时对象行末析构，引用成野引用；
+② <strong>别名耦合</strong>：<code class="c">auto&amp; n = o.name(); o.rename("x");</code>——n 的内容跟着变，
+调用方可能没预期"我存的引用会自己变"；
+③ <strong>线程</strong>：另一线程改 name_ 时，持有引用的线程读到撕裂数据（无同步）。
+改进：小对象按值返回（<code class="c">std::string name() const</code> 对短名 SSO 零分配）；
+或明确文档"引用寿命随对象"。</p>
+</details>
+<p><strong>题目 2：</strong> 为什么"const 成员函数返回非 const 引用"比"直接 public 成员变量"更糟？</p>
+<details>
+<summary>参考答案</summary>
+<p>public 成员变量至少<strong>诚实</strong>——用户看到 <code class="c">obj.qty_</code> 知道这是裸露数据。
+而 <code class="c">const Order&amp; o; o.qty() = x;</code> 能编译通过时，const 的契约被<strong>静默架空</strong>：
+review 代码的人看到 <code class="c">const Order&amp;</code> 参数，合理推断函数不会改它——
+但实际通过句柄改了。谎言比赤裸更危险：它破坏了团队对 const 语义的整体信任，
+让所有 const 标注的审计价值归零。</p>
+</details>
+<p><strong>题目 3：</strong> 订单簿要给策略层"只读看盘口"的能力，设计两个方案并比较。</p>
+<details>
+<summary>参考答案</summary>
+<p>方案一：<strong>按值快照</strong>——<code class="c">TopOfBook top() const { return {bids_[0], asks_[0]}; }</code>：
+小 POD 拷贝走寄存器/SSO，无句柄问题，策略看到的永远是"那一刻"的一致快照；
+代价是深度数据拷不起（只能给 top N 档）。
+方案二：<strong>只读句柄 + 寿命约定</strong>——<code class="c">std::span&lt;const Level&gt; bids() const</code>：
+零拷贝看全深，但策略必须接受"簿子一改 span 就失效"（回调内使用有效，
+跨回调持有非法）。
+热路径实践：同回调内用方案二（零拷贝），跨回调/跨线程用方案一（快照）——
+或上 RCU/seqlock 版本化视图（→ M4 并发 ch07）。</p>
+</details>
+      </section>
+      <section class="section" id="s-item29">
+        <div class="sec-head"><div class="sec-no">Item 29</div><h2>条款 29：编写异常安全的代码</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Strive for exception-safe code.</strong> 异常安全的代码满足两件事：<strong>不泄漏资源</strong>、
+<strong>不破坏数据结构</strong>。本条款给出三级保证的工程含义与两个标准实现手法
+（RAII、copy-and-swap）——这是 18.1（异常机制）的工程落地，也是 item25
+（noexcept swap）存在的原因。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item28-不要返回指向对象内部成员的句柄（指针引用）.md">item28 别返回内部句柄</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item30-透彻理解内联inline的优缺点.md">item30 内联的里里外外</a>。</p>
+<hr />
+<h2>1. 泄漏型 vs 破坏型（异常安全的两个敌人）</h2>
+<pre class="code" data-label="cpp"><code class="c">// 敌人一：资源泄漏
+void feed_handler(const Msg&amp; m) {
+    Tick* t = new Tick;
+    parse(m, t);             // 抛异常 → t 泄漏
+    publish(t);
+    delete t;
+}
+
+// 敌人二：数据结构破坏（更可怕）
+void OrderBook::insert(const Order&amp; o) {
+    levels_.push_back(o);        // 已插入
+    index_[o.id] = &amp;levels_.back();  // 若这步抛（map 分配失败）→
+}                                    // 簿子里有订单，索引里查不到——不变量已死
+</code></pre>
+<p>泄漏型用 <strong>RAII</strong> 解决；破坏型要按<strong>保证级别</strong>设计操作顺序。</p>
+<h2>2. 三级保证（复习 + 工程含义）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>级别</th>
+<th>承诺</th>
+<th>实现手法</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>基本保证</td>
+<td>不泄漏、不变量不破坏，但状态可能已变</td>
+<td>RAII + 操作顺序小心</td>
+<td>低——<strong>所有代码的底线</strong></td>
+</tr>
+<tr>
+<td>强保证</td>
+<td>要么全成功，要么完全回滚</td>
+<td><strong>copy-and-swap</strong>：先改副本，noexcept swap 提交</td>
+<td>一次拷贝的成本</td>
+</tr>
+<tr>
+<td>不抛保证</td>
+<td>永不抛</td>
+<td>全路径 noexcept（不许分配/不许抛）</td>
+<td>设计约束大——留给 swap/移动/析构</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>工程结论</strong>：<strong>所有函数至少基本保证</strong>；对外的"事务性"操作（配置切换、
+状态提交）给强保证；swap/移动/析构必须不抛（→ item25、18.1 ②）。</p>
+<h2>3. 手法一：RAII——泄漏型的通解</h2>
+<pre class="code" data-label="cpp"><code class="c">void feed_handler(const Msg&amp; m) {
+    auto t = std::make_unique&lt;Tick&gt;();   // 异常时 unique_ptr 自动释放
+    parse(m, t.get());                   // 随便抛
+    publish(t.get());
+}                                        // 离开作用域即释放（含异常路径——栈展开，18.1 ①）
+</code></pre>
+<p>RAII 清单（交易系统的日常）：<code class="c">unique_ptr</code>/<code class="c">shared_ptr</code>（内存）、
+<code class="c">lock_guard</code>/<code class="c">scoped_lock</code>（锁）、<code class="c">fstream</code>（文件）、
+以及自己写的守卫（网卡混杂模式开关、netem 规则——脚本层的 <code class="c">trap EXIT</code> 是同理念）。</p>
+<h2>4. 手法二：copy-and-swap——强保证的标准做法</h2>
+<pre class="code" data-label="cpp"><code class="c">class RiskConfig {
+    struct Impl { Limits l; Throttles t; };
+    std::unique_ptr&lt;Impl&gt; impl_;
+public:
+    RiskConfig&amp; operator=(RiskConfig tmp) noexcept {   // ① 参数按值传入：拷贝在调用前完成
+        swap(tmp);                                     // ② noexcept 交换：提交不可失败
+        return *this;
+    }
+    void swap(RiskConfig&amp; o) noexcept { std::swap(impl_, o.impl_); }   // → item25
+};
+
+// 用法：改配置
+RiskConfig new_cfg = current;      // 拷贝副本（这步可以抛——原配置未动）
+new_cfg.set_limit(SIDE_BUY, 1000); // 在副本上改（抛了也不影响线上）
+current = std::move(new_cfg);      // noexcept 提交：要么整个生效，要么不生效
+</code></pre>
+<p><strong>强保证的分解</strong>：可能抛的部分（拷贝/修改）在<strong>原对象之外</strong>完成；
+不能抛的部分（swap）只是一次指针过户（item25 ② 实测）。
+这就是为什么 item25 要求 swap noexcept——它是强保证的最后一环。</p>
+<h2>5. 异常安全的现实边界（诚实清单）</h2>
+<ul>
+<li><strong>强保证不是免费的</strong>：copy-and-swap 要付一次深拷贝——大对象/热路径用不起，
+  退而求其次：基本保证 + 显式两阶段提交（先 prepare 校验，后 commit 只做 noexcept 操作）</li>
+<li><strong>析构/swap/移动是"不抛区"</strong>：这三个 noexcept 失守，整个异常安全体系崩塌</li>
+<li><strong>异常 vs 错误码</strong>：热路径用错误码（异常开销不可预测，18.1 HFT），
+  冷路径用异常 + 本条手法——<strong>异常安全主要在冷路径发光</strong>（启动/配置/重连）</li>
+</ul>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>风控配置热更新</strong>是本条的教科书场景：copy-and-swap + shared_ptr 读侧
+  （读配置零锁：持有旧 shared_ptr，换配置换指针——RCU 思想，→ M4 并发 ch07）</li>
+<li>撮合引擎的"订单插入"只给<strong>基本保证</strong>（插入失败可重试，回滚语义反而危险——
+  已报给交易所的订单不能"撤回"），强保证用在<strong>状态快照</strong>（日终结算）</li>
+<li>异常路径的栈展开成本（18.1 ①）= 每帧的析构清单——RAII 对象越多展开越贵，
+  这是"热路径零异常"的另一层理由</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> 下面代码违反的是哪一级保证？</p>
+<pre class="code" data-label="cpp"><code class="c">void OrderBook::insert(const Order&amp; o) {
+    levels_.push_back(o);
+    index_[o.id] = &amp;levels_.back();   // map 分配失败抛异常
+}
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>基本保证</strong>——<code class="c">push_back</code> 成功后 <code class="c">index_</code> 插入失败：
+簿子里有订单但索引查不到，<strong>不变量已破坏</strong>（数据不一致，不只是泄漏）。
+修法取决于承诺级别：
+基本保证版——先插索引（可抛的操作放前面？不行，引用还没稳定）……
+实际上正确做法是<strong>先完成所有可能抛的准备工作再提交</strong>：
+<code class="c">auto* slot = &amp;levels_.emplace_back(o); try { index_[o.id] = slot; }
+catch (...) { levels_.pop_back(); throw; }</code>——手动回滚到一致状态；
+或重构为单数据源（索引只存 id→序号，插入一体完成）。
+核心原则：<strong>可能抛的操作要么全在"提交点"之前，要么配回滚</strong>。</p>
+</details>
+<p><strong>题目 2：</strong> copy-and-swap 的 <code class="c">operator=</code> 为什么参数按值传入？<code class="c">noexcept</code> 标在哪一步？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">T&amp; operator=(T tmp)</code> 按值传入 = <strong>拷贝构造在函数体外（调用方侧）完成</strong>——
+那一步抛异常时原对象分毫未动（强保证的前半）。
+进入函数体后只剩 <code class="c">swap(tmp)</code>——指针过户，必须 <code class="c">noexcept</code>（强保证的后半，
+→ item25 ② 实测 <code class="c">static_assert(noexcept(swap(a,b)))</code>）。
+所以 noexcept 标在 swap 和 operator= 上；<strong>不能</strong>标在拷贝构造上（它就是可能抛的那步）。</p>
+</details>
+<p><strong>题目 3：</strong> 为什么热路径的风控检查不用"异常 + 强保证"，而是用"错误码 + 两阶段"？</p>
+<details>
+<summary>参考答案</summary>
+<p>① 异常成本不可预测：throw 要查 LSDA 表 + 逐帧栈展开（µs 级且抖动大）——
+tick-to-trade 预算里没有它的位置（18.1 HFT）；
+② 强保证的 copy-and-swap 要付<strong>深拷贝</strong>——风控状态大，每笔检查拷一次不可行；
+③ 风控检查本质是<strong>只读判定</strong>（超限就拒单）——没有"改一半"的问题，
+基本保证都谈不上，直接返回错误码最诚实。
+两阶段模式留给"必须改状态"的场景：prepare（校验/分配，可失败）+
+commit（纯指针交换，noexcept）——把强保证的语义保留，把拷贝的成本砍掉。</p>
+</details>
+      </section>
+      <section class="section" id="s-item30">
+        <div class="sec-head"><div class="sec-no">Item 30</div><h2>条款 30：透彻理解内联（inline）的优缺点</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Understand the ins and outs of inlining.</strong> <code class="c">inline</code> 是 C++ 里被误解最深的关键字：
+它的<strong>语法语义</strong>是"允许同一函数在多个编译单元各有一份定义"（ODR 豁免），
+它的<strong>性能语义</strong>只是"建议编译器内联展开"——而编译器早就把这个建议当耳旁风。
+本条款讲清：inline 的真实语义、内联展开的成本与收益、以及为什么
+"在头文件写函数"和"写 inline"是两回事。本机 g++ 13.3 -O2 实测。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item29-编写异常安全的代码.md">item29 异常安全</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item31-降低文件之间的编译依赖.md">item31 降低编译依赖</a>。</p>
+<hr />
+<h2>1. inline 的第一语义：ODR 豁免，不是性能</h2>
+<pre class="code" data-label="cpp"><code class="c">// math.h
+inline int square(int x) { return x * x; }   // inline = 每个包含此头的 TU 都可有一份定义
+                                              // 链接器挑一份，其余丢弃——不违反 ODR
+</code></pre>
+<p><strong>没有 inline 时在头文件定义函数</strong>：两个 .cpp 都 include → 链接器报"重复定义"。
+所以：
+- <strong>头文件里写函数体 → 必须 inline</strong>（或 C++17 起的 <code class="c">constexpr</code>/<code class="c">consteval</code>，它们隐含 inline）
+- 类定义体内的成员函数<strong>隐含 inline</strong>（<code class="c">struct S { int f() { return 1; } };</code>）
+- 模板函数也隐含可多重定义（不需要 inline 标注）</p>
+<p><strong>推论</strong>：<code class="c">inline</code> 标注和"会不会内联展开"<strong>没有必然关系</strong>——
+编译器对 inline 函数可能不展开（太大/递归/取地址），对非 inline 函数
+同 TU 内照样展开（它有自己的启发式）。</p>
+<h2>2. 内联展开的收益与成本（Meyers 的里里外外）</h2>
+<p><strong>收益</strong>：① 消除调用开销（参数压栈/跳转/返回）；② 让编译器看到函数体——
+<strong>常量折叠、死代码消除、寄存器分配</strong>这些大优化都需要"看得见"（SRA/LTO 的基础）。</p>
+<p><strong>成本</strong>：
+1. <strong>代码膨胀</strong>：展开 N 处 = N 份函数体——I-cache 压力增大，
+   热循环外的冷代码膨胀反而变慢
+2. <strong>编译时间</strong>：头文件里的函数体改动 → 所有包含者重编（→ item31 编译依赖）
+3. <strong>二进制兼容性</strong>：库改了 inline 函数体，已编译的用户代码<strong>不会</strong>自动用新版本
+   （旧函数体已烙进它们的二进制）——inline 函数的 ABI 稳定性是假象</p>
+<p><strong>本机实测</strong>（g++ 13.3 -O2，1 亿次调用，inline vs <code class="c">__attribute__((noinline))</code>）：</p>
+<pre class="code" data-label="code"><code class="c">inline 版:   100.9 ms
+noinline 版:  96.9 ms     ← 差异在噪声内！
+</code></pre>
+<p>现代 CPU 对<strong>可预测目标的直接调用</strong>几乎零开销（BTB 命中 + 流水线）——
+"inline 为了快"在微基准里都可能测不出差异。内联的真实价值在②（让后续优化看见函数体），
+不在"省 call 指令"。</p>
+<h2>3. 内联的边界（编译器会拒绝展开的情况）</h2>
+<ul>
+<li><strong>虚函数</strong>（运行期才知道调谁——除非去虚拟化成功）</li>
+<li>函数<strong>被取地址</strong>（必须有实体供指针指向）</li>
+<li>太大/递归/含复杂控制流（编译器的成本模型说不划算）</li>
+<li><strong>跨 TU</strong>：没有 LTO 时，别的 .cpp 的函数体根本看不见——
+  这就是为什么"小函数放头文件（inline）"仍然是经验法则：
+  不是为了 inline 关键字，而是让函数体<strong>对调用方可见</strong></li>
+</ul>
+<h2>4. 现代语境下的使用准则</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>头文件必须定义的小函数（getter/包装）</td>
+<td>写 inline（或靠类内定义隐含 inline）——目的是 ODR</td>
+</tr>
+<tr>
+<td>追求"跨 TU 内联"的性能</td>
+<td><strong>LTO</strong>（<code class="c">-flto</code>）/ 统一构建，而不是到处贴 inline</td>
+</tr>
+<tr>
+<td>大函数/冷路径</td>
+<td>放 .cpp——别污染头文件（编译依赖 + I-cache）</td>
+</tr>
+<tr>
+<td>模板/constexpr</td>
+<td>本来就该在头文件，inline 多余</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<ul>
+<li>热路径的"内联"靠<strong>可见性</strong>管理：行情解码/订单簿的核心小函数放头文件
+  （或统一 TU），让编译器自由展开——<code class="c">inline</code> 关键字只是顺手的 ODR 门票</li>
+<li><strong>LTO 是更大的杠杆</strong>：<code class="c">-flto</code> 让跨库调用也能内联（策略调撮合引擎的封装函数）——
+  比手工 inline 标注有效一个数量级；代价是构建变慢、调试信息变模糊</li>
+<li>关注<strong>去虚拟化</strong>（devirtualization）：<code class="c">final</code> 类/final 方法让编译器把虚调用
+  变成直接调用进而内联——这比 inline 标注对热路径的意义大得多</li>
+<li>I-cache 是真实约束：无节制 inline 让热循环的代码 footprint 超 L1i（32K 典型）——
+  热路径代码"小"本身就是性能特性</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> <code class="c">inline</code> 关键字解决了什么链接问题？它和"编译器是否内联展开"是什么关系？</p>
+<details>
+<summary>参考答案</summary>
+<p>解决 <strong>ODR（单一定义规则）</strong>：inline 允许同一函数在多个编译单元各有定义，
+链接器合并保留一份（典型场景：头文件里定义的函数被多个 .cpp 包含）。
+与"是否展开"<strong>无必然关系</strong>：inline 是<strong>链接层语义</strong>，展开是<strong>优化层决策</strong>——
+编译器可以不展开 inline 函数（太大/递归/取地址），也可以展开非 inline 函数
+（同 TU 内它看得见函数体）。把 inline 当性能开关是对它的根本误解（本机实测：
+inline 与 noinline 在可预测调用下差异在噪声内）。</p>
+</details>
+<p><strong>题目 2：</strong> 为什么说"inline 函数的 ABI 稳定性是假象"？</p>
+<details>
+<summary>参考答案</summary>
+<p>inline 函数的函数体在<strong>编译用户代码时</strong>就被复制（或可能展开）进了用户的二进制——
+库后来改了函数体重新发布，已编译的用户程序里烙的还是<strong>旧版函数体</strong>：
+不重编译就永远用旧逻辑。普通（非 inline）函数的实现改动只影响库自己的 .so，
+用户重链即得新行为。
+推论：对外发布库的接口里，<strong>预期会演化的逻辑别放 inline</strong>（→ item31 pImpl 同理）。</p>
+</details>
+<p><strong>题目 3：</strong> 热路径想让 <code class="c">engine.risk_check(order)</code>（定义在另一个库）被内联，有哪些手段？</p>
+<details>
+<summary>参考答案</summary>
+<p>① <strong>LTO</strong>：<code class="c">-flto</code> 编译+链接（最省事，跨 TU 内联）；
+② <strong>头文件化</strong>：把 risk_check 的定义挪进头文件（inline/模板/constexpr）——
+可见性换内联机会，代价是编译依赖（item31）；
+③ <strong>去虚拟化</strong>：若是虚调用，把 RiskChecker 标 <code class="c">final</code>（类或方法）——
+编译器确定目标后才能谈内联；
+④ 统一 TU（unity build）：把相关 .cpp 合并编译。
+inline 关键字本身<strong>不在此列</strong>——它管 ODR 不管展开。</p>
+</details>
+      </section>
+      <section class="section" id="s-item31">
+        <div class="sec-head"><div class="sec-no">Item 31</div><h2>条款 31：降低文件之间的编译依赖</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Minimize compilation dependencies between files.</strong> C++ 的 <code class="c">#include</code> 是文本包含——
+头文件里任何改动（包括私有成员）都让所有包含者重编。本条款两件武器：
+<strong>能用声明就不用定义</strong>（前置声明的七种场景）、<strong>把实现藏到指针后面</strong>
+（pImpl / interface class）。这是 19.4（pImpl 机制）的工程总纲。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item30-透彻理解内联inline的优缺点.md">item30 内联的里里外外</a>；
+下一章 <a href="chapter-06.html#ch-6">ch06 继承与面向对象</a>。</p>
+<hr />
+<h2>1. 问题：C++ 的接口/实现不分离</h2>
+<pre class="code" data-label="cpp"><code class="c">// order.h
+#include &lt;string&gt;
+#include &quot;price.h&quot;          // price.h 改一个字 → 所有 include order.h 的文件重编
+#include &quot;qty.h&quot;
+
+class Order {
+    std::string symbol_;    // 私有成员的**定义**也在头文件里——
+    Price price_;           // 换个成员类型/加个成员，用户代码全部重编
+    Qty qty_;
+};
+</code></pre>
+<p>C/C++ 的编译模型决定了：<strong>类的定义必须包含成员的完整布局</strong>（sizeof 要在每个
+使用点算出来）——所以"私有实现"在编译期其实毫无隐私，改动传染面极大。
+大型项目里改一个底层头文件触发几千个 TU 重编，就是这条的代价。</p>
+<h2>2. 武器一：前置声明（forward declaration）的七种场景</h2>
+<p><strong>能用 <code class="c">class X;</code> 就不用 <code class="c">#include "x.h"</code></strong>——不完整类型（incomplete type）的合法用途：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>能用前置声明吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>声明指针/引用成员（<code class="c">X* p_; X&amp; r_;</code>）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>函数参数/返回值是 X（<strong>仅声明</strong>）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>函数参数/返回值是 X（<strong>定义函数体</strong>要用到 X 的成员）</td>
+<td>❌ 需要完整定义</td>
+</tr>
+<tr>
+<td><strong>按值</strong>成员变量（<code class="c">X x_;</code>——要算 sizeof）</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>继承自 X（要完整布局）</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>实例化以 X 为参数的模板（<code class="c">vector&lt;X&gt;</code>——保守起见需要）</td>
+<td>⚠️ 多数情况需要</td>
+</tr>
+<tr>
+<td><code class="c">sizeof(X)</code>、<code class="c">new X</code>、<code class="c">X::static_member</code></td>
+<td>❌</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实践</strong>：头文件里只 include"成员按值持有/继承"的——其余一律前置声明，
+把 <code class="c">#include</code> 挪到 .cpp。顺带收益：头文件变轻 → 编译更快。</p>
+<h2>3. 武器二：pImpl（handle class）——把实现整个藏到指针后</h2>
+<pre class="code" data-label="cpp"><code class="c">// order.h——稳定如石：加成员/改实现都不再触发重编
+class Order {
+    class Impl;                       // 前置声明嵌套类（→ 19.4 ③）
+    std::unique_ptr&lt;Impl&gt; impl_;
+public:
+    Order(); ~Order();                // 在 .cpp 定义（Impl 完整后才能析构）
+    Order(Order&amp;&amp;) noexcept;
+    void submit();
+};
+
+// order.cpp——实现细节的自由天地
+class Order::Impl {
+    std::string symbol_; Price price_; Qty qty_;   // 随便改，用户无感
+};
+</code></pre>
+<p><strong>代价</strong>：每次成员访问多一次指针间接 + 一次堆分配——
+所以 pImpl 用在<strong>接口边界/编译热点</strong>（被几百个文件包含的基础类），
+不用于热路径数据类型（→ 19.4 HFT 关联）。</p>
+<h2>4. 武器三：interface class（抽象基类）</h2>
+<pre class="code" data-label="cpp"><code class="c">class IOrderGateway {                  // 纯虚接口：头文件几乎永不变
+public:
+    virtual ~IOrderGateway() = default;
+    virtual void send(const Order&amp;) = 0;
+    virtual void cancel(uint64_t id) = 0;
+};
+// 用户依赖 IOrderGateway；实现类（FixGateway/BinaryGateway）在 .cpp 里——
+// 工厂函数返回 unique_ptr&lt;IOrderGateway&gt;
+</code></pre>
+<ul>
+<li>接口类没有数据成员 → 没有布局依赖 → <strong>终极编译防火墙</strong></li>
+<li>同时拿到运行期多态的可替换性（mock/多交易所适配）</li>
+<li>代价：虚调用间接 + 堆分配——同样留给冷路径边界</li>
+</ul>
+<h2>5. 三武器的选用（决策表）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>你的痛点</th>
+<th>武器</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>头文件 include 链太长、编译慢</td>
+<td>前置声明（成本最低，先做）</td>
+</tr>
+<tr>
+<td>基础类的实现经常改、牵连面广</td>
+<td>pImpl</td>
+</tr>
+<tr>
+<td>需要可替换实现（mock/多后端）</td>
+<td>interface class</td>
+</tr>
+<tr>
+<td>热路径数据类型（Tick/Order）</td>
+<td><strong>都不用</strong>——布局稳定 + static_assert 钉死（→ 19.5）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<ul>
+<li>交易系统的编译热点：<strong>协议结构体头文件</strong>（被全仓包含）——
+  这些头文件必须"布局稳定 + 零依赖"（只含 POD + static_assert），
+  任何辅助函数挪到 utils 头（→ item23 分头文件手法）</li>
+<li>策略框架的<strong>接口边界</strong>（Strategy/Engine 之间）用 interface class：
+  策略重编不触发引擎重编，回测/实盘共享同一策略二进制</li>
+<li>前置声明 + <code class="c">unique_ptr&lt;Impl&gt;</code> 是行情网关（FeedHandler）的标准形态：
+  协议升级只改 .cpp，策略层零重编（→ 18.2 inline namespace 版本化配套）</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> 为什么"只 include 你需要的，前置声明其余的"能显著降低编译依赖？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">#include</code> 是文本包含——被包含文件的任何改动（哪怕注释/私有成员）都让包含者的
+预处理结果变化，触发重编。前置声明 <code class="c">class X;</code> 不引入任何文本内容：
+X 的头文件再怎么改，依赖它的这个头文件<strong>纹丝不动</strong>——依赖被推迟到
+"真正需要完整定义"的那个 .cpp。把头文件的 include 最小化，等于把
+"重编传染面"从图论上的稠密图剪成稀疏图。</p>
+</details>
+<p><strong>题目 2：</strong> pImpl 的 <code class="c">unique_ptr&lt;Impl&gt;</code> 成员下，为什么析构函数必须在 .cpp 定义？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">unique_ptr&lt;Impl&gt;</code> 析构时要 <code class="c">delete impl_</code>——这要求 Impl 在析构点是<strong>完整类型</strong>。
+头文件里 Impl 只有前置声明（不完整），若析构在头文件 <code class="c">= default</code>，
+每个包含者编译到 <code class="c">~Order()</code> 时都面对不完整 Impl → 报错
+（"invalid application of sizeof to incomplete type"）。
+在 .cpp（Impl 完整定义处）定义析构，所有 TU 链接同一份。
+（同理：拷贝构造/赋值要自定义或禁用——默认版需要完整类型做深拷贝。）</p>
+</details>
+<p><strong>题目 3：</strong> 热路径的 <code class="c">Tick</code> 结构体为什么不适用 pImpl？该用什么策略管理它的编译依赖？</p>
+<details>
+<summary>参考答案</summary>
+<p>pImpl 的代价——每次访问一次指针间接（潜在 cache miss）+ 一次堆分配——
+在 tick-to-trade 预算里不可接受；且 Tick 的价值就是"布局 = 线上字节"，
+藏起来反而失去了零拷贝解码的前提（→ 19.5）。
+Tick 的编译依赖管理策略是<strong>稳定化</strong>而非隐藏化：
+① 布局钉死（static_assert 三件套，改动必须走协议评审）；
+② 头文件零依赖（只含 POD + 定宽类型，不 include 业务头）；
+③ 辅助函数（解析/格式化）挪到独立 utils 头——核心头文件永不变，
+"依赖"自然无从传染。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">

@@ -276,6 +276,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-item48"><span class="n">48</span>了解 new-handler 的行为</a>
+          <a href="#s-item49"><span class="n">49</span>了解 class-specific 的 new/delete</a>
+          <a href="#s-item50"><span class="n">50</span>了解 new 和 delete 的合理替换时机</a>
+          <a href="#s-item51"><span class="n">51</span>编写 new 和 delete 时需固守常规</a>
+          <a href="#s-item52"><span class="n">52</span>写了 placement new 也要写 placement delete</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -300,7 +305,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Meyers《Effective C++》· pre-C++11 · 按需查</div>
           <h1>第八章 定制 new 与 delete</h1>
           <div class="meta">
-<span>book <b>M6-Classic-Effective · 01-Effective-C++</b></span><span>chapter <b>Ch 8</b></span><span>sections <b>1</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M6-Classic-Effective · 01-Effective-C++</b></span><span>chapter <b>Ch 8</b></span><span>sections <b>6</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -319,6 +324,577 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </ul>
 <h2>章节摘要</h2>
 <p>定制 new/delete：理解各种 new/delete 含义、重载规则、placement new/delete 配对、谨慎重载全局 operator new。</p>
+      </section>
+      <section class="section" id="s-item48">
+        <div class="sec-head"><div class="sec-no">Item 48</div><h2>条款 48：了解 new-handler 的行为</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Understand the behavior of the new-handler.</strong> <code class="c">operator new</code> 分配失败时不是
+直接抛 <code class="c">bad_alloc</code>——它先调用 <strong>new-handler</strong>（<code class="c">std::set_new_handler</code> 注册），
+给你"抢救内存"的机会：释放应急池、重试、或者干脆换种死法。
+这条讲清 new-handler 的循环语义、注册方法、以及工程上该不该用它。</p>
+<p>← 上一条 <a href="chapter-07.html#ch-7">item47 traits classes</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item49-了解class-specific的new-delete.md">item49 类内 new/delete</a>。</p>
+<hr />
+<h2>1. new 失败时的完整决策链</h2>
+<pre class="code" data-label="code"><code class="c">operator new 分配失败
+  → 调用 new-handler（若已注册）
+      → handler 选择：
+          ① 释放内存（如应急池）→ **重试分配**（循环！成功就返回）
+          ② 注册另一个 new-handler（下次失败用新的）→ 重试
+          ③ 注销 new-handler（set_new_handler(nullptr)）→ 重试 → 抛 bad_alloc
+          ④ 自己抛 bad_alloc（或派生类异常）
+          ⑤ 不返回（abort/exit/log 后终止）
+  → 未注册 handler 或 handler 选择③ → 抛 std::bad_alloc
+</code></pre>
+<p><strong>关键点</strong>：new-handler 在<strong>循环</strong>里被调用——它若返回，分配会<strong>重试</strong>；
+只有 handler 抛异常/不返回/被注销，失败才最终落地为 <code class="c">bad_alloc</code>。</p>
+<h2>2. 注册与使用（最小骨架）</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;new&gt;
+#include &lt;cstdlib&gt;
+#include &lt;iostream&gt;
+
+void emergency_handler() {
+    static bool once = [] {
+        std::cerr &lt;&lt; &quot;内存耗尽：释放应急池并准备退出\n&quot;;
+        // release_emergency_pool();   // 做法一：释放预留内存，让重试成功
+        return true;
+    }();
+    // 做法二：抢救一次后终止（常见工程选择：宁可死得体面，不跑在缺氧状态）
+    std::abort();
+}
+
+int main() {
+    std::set_new_handler(emergency_handler);
+    // ...
+}
+</code></pre>
+<p><strong>设计纪律</strong>：
+- handler 里<strong>别分配内存</strong>（栈上日志/固定缓冲可以——再 new 就是递归失败）
+- 老代码的 <code class="c">set_new_handler</code> 返回旧 handler——需要链式保存恢复时自己接住
+- C 时代的 <code class="c">set_new_handler(0)</code> + 检查返回值模式 → 现代写法用 <code class="c">new (std::nothrow)</code>
+  （→ 19.1 ④）或直接用返回 optional 的分配函数</p>
+<h2>3. 工程上该不该用（诚实评估）</h2>
+<p><strong>适合</strong>：
+- <strong>应急池</strong>（emergency reserve）：启动时预留一块内存，OOM 时释放它换取
+  "有序降级"的时间窗（写完日志、平掉仓位、保存状态再死）——
+  这是 new-handler 唯一被反复验证的工业用法
+- 嵌入式/无异常环境的最后防线</p>
+<p><strong>不适合</strong>：
+- 指望它"解决"内存不足——handler 治标（释放点边角料），
+  真正的内存治理在预算/池化/监控（→ 06.6.5 ch07）
+- 库代码里注册全局 handler——它是<strong>进程全局</strong>的，库之间互相覆盖是灾难
+  （谁的 handler 生效取决于注册顺序，库 B 把库 A 的 handler 顶掉了）</p>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>交易系统的 OOM 预案</strong>就是这个模式：启动时 <code class="c">malloc</code> 一块应急池锁在内存里，
+  new-handler 触发时 → 释放应急池 + <strong>先撤单/平仓</strong>（比活着重要）→ 落盘状态 → 退出——
+  "内存耗尽时的行为"必须和"断线时的行为"一样被显式设计</li>
+<li>热路径库 <code class="c">-fno-exceptions</code> 时 bad_alloc 路径根本不存在：
+  运行期零分配的纪律（→ 19.1 HFT）让 new-handler 沦为纯冷路径设施</li>
+<li>全局 handler 与 LD_PRELOAD 分配器（jemalloc/tcmalloc）的相互作用要在
+  集成测试里过一遍——替换 operator new 的分配器可能改变失败语义</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> new-handler 返回后会发生什么？为什么它是"循环"？</p>
+<details>
+<summary>参考答案</summary>
+<p>new-handler 返回后，<code class="c">operator new</code> <strong>重试分配</strong>——若仍失败，<strong>再次调用</strong>
+new-handler……如此循环，直到：① 某次分配成功（handler 释放的内存生效了）；
+② handler 抛异常（bad_alloc 落地）；③ handler 被注销（默认抛 bad_alloc）；
+④ handler 不返回（abort/exit）。
+所以 handler 的每个动作都必须"让下一次重试更有可能成功"或"终结循环"——
+一个什么都不做就返回的 handler = <strong>死循环</strong>（分配永远失败，handler 永远被调）。</p>
+</details>
+<p><strong>题目 2：</strong> 为什么库不应该注册 new-handler？</p>
+<details>
+<summary>参考答案</summary>
+<p>new-handler 是<strong>进程级全局状态</strong>：<code class="c">set_new_handler</code> 直接覆盖前一个——
+库 A 注册的 OOM 应急逻辑，会被库 B 的注册<strong>静默顶掉</strong>（没有链式、没有警告）。
+两个库都"为自己好"注册 handler，结果是后加载的赢、先加载的失效——
+而且失效方完全不知道自己被顶了。
+handler 的注册权属于<strong>应用层</strong>（main 的早期）——库要抢救内存，
+用自己的内部分配器/池，别碰全局钩子。
+（同理的全局状态还有：errno 策略、信号 handler、locale——库的禁区清单。）</p>
+</details>
+<p><strong>题目 3：</strong> 设计交易系统"内存耗尽应急预案"，new-handler 里的动作顺序应该是什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>按"活着的价值排序"：
+① <strong>释放应急池</strong>（启动时预留的那块）——让后续抢救动作有内存可用；
+② <strong>撤单/平仓指令</strong>（比状态落盘优先——留在场上的敞口是最大风险，
+   注意这些指令通道不能依赖堆分配，要预分配好）；
+③ <strong>关键状态落盘</strong>（持仓/订单簿快照——固定缓冲区写，不调 new）；
+④ <strong>告警</strong>（带外通道：独立 socket/信号量，不走应用内日志队列）；
+⑤ <strong>终止</strong>（abort——core dump 留现场）。
+全程禁令：handler 路径上<strong>零堆分配</strong>——所有抢救资源必须启动时预分配。
+这套顺序的本质：OOM 时"先控制风险，再保存证据，最后死"——
+和断线预案是同构的风险哲学。</p>
+</details>
+      </section>
+      <section class="section" id="s-item49">
+        <div class="sec-head"><div class="sec-no">Item 49</div><h2>条款 49：了解 class-specific 的 new/delete</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Understand class-specific new and delete.</strong> 全局 <code class="c">operator new</code>（→ 19.1 ② 实测）
+影响面是全程序；类内重载则只作用于<strong>单个类型</strong>——
+它是"给某个高频小对象配专用池"的语言机制。本条讲清类内重载的形态、
+继承时的传播规则、以及与容器分配器的分工。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item48-了解new-handler的行为.md">item48 new-handler</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item50-了解new和delete的合理替换时机.md">item50 替换 new/delete 的时机</a>。</p>
+<hr />
+<h2>1. 类内重载的形态与效果</h2>
+<pre class="code" data-label="cpp"><code class="c">class Order {
+    // 类内 operator new/delete：new Order 时优先用它们（静态成员语义，不写 static 也是）
+public:
+    static void* operator new(std::size_t n) {
+        return order_pool().acquire();     // 专用池：freelist 弹出，O(1) 无锁（单线程域）
+    }
+    static void operator delete(void* p) noexcept {
+        order_pool().release(p);
+    }
+    static void operator delete(void* p, std::size_t) noexcept {   // C++14 sized delete
+        order_pool().release(p);           // 池不用存 size（→ 19.1 sized delete 的红利）
+    }
+    // ...
+};
+Order* o = new Order;      // → 走类内重载（池化）
+delete o;                  // → 归还池
+// int* p = new int;       // → 不受影响，仍走全局
+</code></pre>
+<p><strong>要点</strong>：
+- 类内重载是<strong>隐式静态</strong>的（写不写 <code class="c">static</code> 都是静态语义）——
+  它在构造函数运行<strong>之前</strong>执行（成员还不存在），同理 delete 在析构之后
+- <code class="c">new Order[n]</code> 走的是 <code class="c">operator new[]</code>——类内<strong>数组版要单独重载</strong>，否则数组分配漏回全局
+- 隐藏规则：类内声明 <code class="c">operator new</code> 会<strong>藏掉</strong>全局的所有重载（含 placement new——
+  要用 <code class="c">new (ptr) Order</code> 必须类内也声明 placement 版，→ item52）</p>
+<h2>2. 继承传播（容易踩的坑）</h2>
+<pre class="code" data-label="cpp"><code class="c">class IocOrder : public Order {};
+IocOrder* io = new IocOrder;    // → 也走 Order 的类内重载！（重载随继承传播）
+</code></pre>
+<ul>
+<li>类内 operator new <strong>被继承</strong>——派生类对象也进基类的池</li>
+<li>若派生类尺寸不同（<code class="c">sizeof(IocOrder) &gt; sizeof(Order)</code>），按 Order 尺寸设计的池
+  可能放不下——池要按<strong>最大尺寸</strong>分档，或派生类重载覆盖自己的版本</li>
+<li>判别：单类型池的成员必须<strong>尺寸一致</strong>——继承体系里尺寸会变的类型，
+  池化方案改走"按尺寸分档的池"或容器分配器</li>
+</ul>
+<h2>3. 与容器分配器的分工（别混用两套）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>粒度</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类内 operator new/delete</td>
+<td>单类型（+派生）</td>
+<td><strong>裸 new 的高频类型</strong>（Order/Tick 手工 new 的场景）</td>
+</tr>
+<tr>
+<td>容器 Allocator（ch12）</td>
+<td>单容器实例</td>
+<td><strong>容器内元素</strong>（<code class="c">vector&lt;T, PoolAlloc&lt;T&gt;&gt;</code>）</td>
+</tr>
+<tr>
+<td>全局重载 / LD_PRELOAD</td>
+<td>全程序</td>
+<td>统计/换分配器（jemalloc）</td>
+</tr>
+</tbody>
+</table></div>
+<p>常见错误：<code class="c">vector&lt;Order&gt;</code> 里的元素<strong>不走</strong> Order 的类内重载——
+vector 的元素内存是 vector 自己的 allocator 一次性分配的，
+元素的"new"根本不存在（placement new 构造，→ 19.1 ③）。
+想让容器元素池化，走 <strong>Allocator</strong> 而不是类内重载。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>订单/回报对象的池化</strong>是类内重载的标准场景：每tick成百上千的
+  <code class="c">new Order</code> 走 freelist 池（O(1) 无分配器锁）——运行期零 malloc 的第一步
+  （→ 19.1 HFT、06.6.5 ch07 分配器抖动）</li>
+<li>sized delete（19.1 实测）让池省掉 per-object 元数据头——类内重载时
+  记得<strong>两个 delete 版本都写</strong>（sized + 非 sized）</li>
+<li>类内重载 + 继承陷阱：订单类型族（IocOrder/LimitOrder…）尺寸不一——
+  要么禁继承池化（各类型各配池），要么统一基类池 + 按最大尺寸分档</li>
+<li>与 <code class="c">-fno-exceptions</code> 配套：池 <code class="c">acquire()</code> 失败返回 nullptr 还是 terminate
+  要在类内重载里显式定义——全局 bad_alloc 语义在池化世界不存在</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> 类内 <code class="c">operator new</code> 为什么必须是静态语义？它在什么时候运行？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">new Order</code> 的完整流程是：先 <code class="c">Order::operator new(sizeof(Order))</code> 拿内存，
+<strong>然后</strong>才在这块内存上运行构造函数（→ 19.1 ① 两层模型）。
+分配时<strong>对象还不存在</strong>——没有 this，没有成员，operator new 只能是静态的
+（类内声明写不写 <code class="c">static</code> 关键字，语义都是静态成员函数）。
+delete 同理镜像：先析构（对象死了），再 <code class="c">operator delete</code> 释放内存。
+这条时序决定了：operator new/delete 里<strong>不能访问任何非静态成员</strong>。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">class IocOrder : public Order {}</code> 且 Order 有类内 operator new——
+<code class="c">new IocOrder</code> 走哪里的分配？有什么坑？</p>
+<details>
+<summary>参考答案</summary>
+<p>走 <strong>Order 的类内 operator new</strong>——类内重载随 public 继承传播。
+坑：池通常按 <code class="c">sizeof(Order)</code> 设计块大小，而 <code class="c">sizeof(IocOrder)</code> 可能更大
+（加了成员）——按小块分配的内存装大对象 = 溢出/损坏。
+对策三选一：① 派生类重载自己的 operator new（各尺寸各池）；
+② 池按继承体系<strong>最大尺寸</strong>统一分档（浪费但简单）；
+③ 禁止池化类型被继承（<code class="c">final</code>）——尺寸钉死，池假设成立。
+池化的第一条戒律是"块尺寸可预期"，继承体系天然威胁这条戒律。</p>
+</details>
+<p><strong>题目 3：</strong> <code class="c">std::vector&lt;Order&gt;</code> 的元素会走 Order 的类内 operator new 吗？为什么？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>不会</strong>。vector 的内存管理是<strong>两层</strong>（→ 19.1 ①）：
+分配层——vector 用自己的 allocator 一次性申请 <code class="c">n * sizeof(Order)</code> 的裸缓冲；
+构造层——元素用 <strong>placement new</strong> 在缓冲上构造。
+整个过程中不存在 <code class="c">new Order</code> 表达式，类内 operator new 的钩子<strong>不会被触发</strong>。
+想让容器元素池化，正确机制是<strong>自定义 Allocator</strong>（<code class="c">vector&lt;Order, OrderPoolAlloc&gt;</code>，
+→ ch12）——它接管的是 vector 的分配层，与类内重载是两套独立机制。
+混用期望（"类内重载了，vector 也该走池"）是这套机制最常见的误解。</p>
+</details>
+      </section>
+      <section class="section" id="s-item50">
+        <div class="sec-head"><div class="sec-no">Item 50</div><h2>条款 50：了解 new 和 delete 的合理替换时机</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Understand when it makes sense to replace new and delete.</strong> 重载 operator new/delete
+的成本不低（正确性陷阱多，→ item51/52）——先想清楚<strong>为什么换</strong>。
+Meyers 给出五个正当理由，按价值排序：<strong>检测错误 &gt; 统计埋点 &gt; 性能 &gt;
+对齐 &gt; 定制行为</strong>。前两个几乎零风险该常备，性能理由要先有 profile 证据。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item49-了解class-specific的new-delete.md">item49 类内 new/delete</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item51-编写new和delete时需固守常规.md">item51 new/delete 的常规</a>。</p>
+<hr />
+<h2>1. 五个正当理由（按价值排序）</h2>
+<h3>① 检测使用错误（价值最高，风险最低）</h3>
+<pre class="code" data-label="cpp"><code class="c">void* operator new(std::size_t n) {
+    void* p = std::malloc(n + GUARD_SIZE);
+    write_guard_bytes(p, n);        // 首尾写魔数——delete 时校验越界写
+    log_allocation(p, n);           // 记日志：delete 时配对检查泄漏
+    return p;
+}
+</code></pre>
+<p>能抓：越界写（guard bytes）、泄漏（分配/释放对账）、重复释放（状态位）、
+new/delete 与 malloc/free 混用——<strong>调试期神器</strong>（ASan 的手工低配版；
+有 ASan 就用 ASan，→ 03.6 ch3，这招的价值在老代码库/特殊平台）。</p>
+<h3>② 统计与埋点</h3>
+<p>全局重载记录：分配总量/峰值、尺寸分布、调用点栈——
+回答"<strong>谁在热路径偷偷分配</strong>"（→ 19.1 HFT 的埋点用法）。
+配合 <code class="c">operator new(size_t, const char* file, int line)</code> 重载 + 宏
+（<code class="c">#define new new(__FILE__, __LINE__)</code>）可记录每处的调用点
+（慎用宏版 new——与 placement new 语法冲突，工程上多用栈回溯替代）。</p>
+<h3>③ 性能（必须有 profile 证据）</h3>
+<p>默认分配器是<strong>通用</strong>设计——你的分配模式（固定尺寸、单线程、批量释放）可能
+用专用池快一个量级。<strong>但</strong>：先测量证明 malloc 真的是瓶颈
+（<code class="c">perf record</code> 里 malloc/free 占比，→ 06.6.5 ch07），
+再池化（→ item49 类内重载优先于全局重载——影响面小）。
+LD_PRELOAD 换 jemalloc/tcmalloc 通常是<strong>比手写全局重载更好的第一步</strong>。</p>
+<h3>④ 对齐需求</h3>
+<p><code class="c">alignas(64)</code> 的类型在 C++17 前<strong>不保证</strong> new 返回对齐内存
+（默认只保证 max_align_t 通常 16B）——SSE/AVX/缓存行对齐的类型
+要重载 new 调 <code class="c">aligned_alloc</code>/<code class="c">posix_memalign</code>。
+<strong>C++17 起语言自带</strong>：<code class="c">new (std::align_val_t(64)) T</code>——这条理由在现代代码里
+已经半退役，知道历史才能读懂老代码。</p>
+<h3>⑤ 定制行为（集群/共享内存/NUMA）</h3>
+<p>共享内存段上的分配（<code class="c">shm_open</code> 区域内的池）、NUMA 节点本地分配、
+持久内存（pmem）——这些场景的"new"本来就不是默认语义，重载是必然。</p>
+<h2>2. 什么<strong>不是</strong>好理由</h2>
+<ul>
+<li>"我觉得 malloc 慢"（没 profile）——先测（06.6.5 的方法论：USE/下钻）</li>
+<li>"想让代码看起来高级"——重载 new 是<strong>正确性雷区</strong>（item51/52 的常规全要守）</li>
+<li>"统一所有分配"——库代码抢全局 new 会污染宿主程序（→ item48 同理：全局钩子是应用的）</li>
+</ul>
+<h2>HFT 关联</h2>
+<ul>
+<li>交易系统的正当理由排序实战：<strong>②统计</strong>（找偷分配的）常驻调试通道；
+  <strong>③性能</strong>走"池化 + 启动预分配"（运行期零分配，→ 19.1 HFT）；
+  <strong>④对齐</strong>在 C++17 用 <code class="c">alignas</code> + <code class="c">align_val_t</code>，自己重载的需求已消失</li>
+<li>全局重载的统计模式只在<strong>诊断构建</strong>开——生产构建恢复默认
+  （每分配一次的日志/栈回溯本身就成了延迟源，观测者效应，→ 06.6.5 ch04）</li>
+<li>NUMA 绑定的行情缓冲（网卡同节点内存）走 ⑤——
+  用池化 + <code class="c">mbind</code> 实现，别指望重载全局 new 能优雅做到</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> 五个替换理由中，哪两个"几乎零风险、应该常备"？为什么？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>①检测错误 和 ②统计埋点</strong>。
+它们的共同点：<strong>不改变分配语义</strong>——guard bytes/日志只是"附加观察"，
+内存照样来自 malloc，行为与默认分配器一致，错了最多是观察数据失真，
+不会破坏程序逻辑。
+而③④⑤都<strong>改变分配语义</strong>（内存从池/对齐分配器/共享内存来）——
+对齐、尺寸、释放配对的正确性全部自己扛（item51/52 的常规），
+写错就是堆损坏。先观察后改造：诊断通道常备，语义改造要 profile + 全套常规。</p>
+</details>
+<p><strong>题目 2：</strong> 想优化分配性能，为什么说"先 LD_PRELOAD 换 jemalloc，再考虑手写"？</p>
+<details>
+<summary>参考答案</summary>
+<p>① <strong>风险</strong>：jemalloc/tcmalloc 是十几年工业验证的分配器，
+手写的池/重载要自己对齐 item51/52 的全部常规（循环、nullptr、尺寸、
+placement 配对）——出错即堆损坏，且 bug 可能潜伏到特定尺寸/时序才爆；
+② <strong>覆盖</strong>：LD_PRELOAD 一次替换<strong>全程序</strong>（含第三方库）的分配路径，
+手写重载管不到没重编译的库；
+③ <strong>成本</strong>：换预加载库是运维动作，不改一行代码——还能 A/B 对比。
+手写重载的合理位置在<strong>通用分配器之后</strong>：profile 证明 jemalloc 仍不满足
+（如固定尺寸单线程池可再快 10 倍）时，对<strong>特定类型</strong>做类内池化（item49）——
+影响面最小、收益最集中。</p>
+</details>
+<p><strong>题目 3：</strong> C++17 的 <code class="c">new (std::align_val_t(64)) T</code> 解决了什么历史问题？</p>
+<details>
+<summary>参考答案</summary>
+<p>C++17 前，<code class="c">alignas(64)</code> 的类型用默认 <code class="c">operator new</code> 只保证
+<code class="c">max_align_t</code>（通常 16B）对齐——超对齐类型（缓存行 64B、AVX-512 的 64B）
+拿到的内存可能不对齐，重载 operator new 自己调 <code class="c">aligned_alloc</code> 是唯一解法
+（delete 也要配套，尺寸/对齐信息还得自己传）。
+C++17 起：重载决议认得 <code class="c">align_val_t</code>——编译器自动选带对齐参数的
+operator new/delete 版本，<strong>对齐成为语言级一等公民</strong>，
+"为了对齐而重载 new"这条理由基本退役。
+读老代码看到手写的对齐分配器，先问：这是前 C++17 的遗产，
+还是真有定制需求（NUMA/pmem）？</p>
+</details>
+      </section>
+      <section class="section" id="s-item51">
+        <div class="sec-head"><div class="sec-no">Item 51</div><h2>条款 51：编写 new 和 delete 时需固守常规</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Adhere to convention when writing operator new and operator delete.</strong>
+替换 new/delete 不只是"调 malloc 包一层"——语言对这组函数有一套
+<strong>行为常规</strong>（convention），违反任意一条都会让你的重载变成
+与用户代码的隐性冲突。本条列出全部常规与每条背后的合约。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item50-了解new和delete的合理替换时机.md">item50 替换时机</a>；
+下一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item52-写了placement-new也要写placement-delete.md">item52 placement new/delete 配对</a>。</p>
+<hr />
+<h2>1. operator new 的五条常规</h2>
+<pre class="code" data-label="cpp"><code class="c">void* operator new(std::size_t size) {
+    if (size == 0) size = 1;                 // 常规①：0 字节请求按 1 处理
+    while (true) {                           // 常规②：无限循环重试
+        void* p = my_alloc(size);
+        if (p) return p;
+        std::new_handler h = std::get_new_handler();   // 常规③：失败先调 new-handler
+        if (h) h();                          // （→ item48 的决策链）
+        else throw std::bad_alloc();         // 常规④：无 handler 抛 bad_alloc
+    }
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>常规</th>
+<th>合约</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 0 字节也返回<strong>合法可 delete 的指针</strong></td>
+<td><code class="c">new char[0]</code> 必须成功（标准允许但要求行为正确）</td>
+</tr>
+<tr>
+<td>② 失败→handler→<strong>重试</strong>的循环</td>
+<td>handler 可能释放内存，重试才有意义（→ item48 循环语义）</td>
+</tr>
+<tr>
+<td>③ 失败先调 <code class="c">new_handler</code></td>
+<td>跳过它 = 绕过应用的 OOM 预案（应急池失效，→ item48 HFT）</td>
+</tr>
+<tr>
+<td>④ 最终失败抛 <code class="c">std::bad_alloc</code></td>
+<td>用户代码 catch 的就是它——返回 nullptr 是非标准（nothrow 版除外）</td>
+</tr>
+<tr>
+<td>⑤ 返回值按默认<strong>对齐</strong></td>
+<td>至少 <code class="c">max_align_t</code> 对齐（C++17 起超对齐走 align_val_t 版）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>2. operator delete 的三条常规</h2>
+<pre class="code" data-label="cpp"><code class="c">void operator delete(void* p) noexcept {
+    if (!p) return;          // 常规①：delete nullptr 必须是无害 no-op
+    my_free(p);              // 常规②：释放的必须是&quot;自己分配器给出去的指针&quot;
+}
+// 常规③：noexcept——delete 不许抛（析构路径上抛异常 = terminate，→ 18.1 ②）
+</code></pre>
+<ul>
+<li><strong>delete nullptr 合法且必须什么都不做</strong>——<code class="c">if (p) delete p;</code> 的判空是用户的多余动作，
+  你的 delete 自己就得抗住 nullptr</li>
+<li><strong>配对原则</strong>：operator new 从哪拿（malloc/池/aligned_alloc），
+  operator delete 就还哪去——混用（new 池化、delete 走 free）= 堆损坏</li>
+<li>C++14 起记得<strong>sized delete 也写</strong>（→ 19.1 ②）——编译器在尺寸已知时优先选它，
+  只写非 sized 版会错过池化红利（且两个版本逻辑必须一致）</li>
+</ul>
+<h2>3. 类内重载的额外常规（item49 的补全）</h2>
+<ul>
+<li>类内 <code class="c">operator new</code> 会<strong>隐藏</strong>全局的所有重载形式（含 placement new）——
+  要用 placement 必须类内同样声明（→ item52 的配对）</li>
+<li>数组版 <code class="c">operator new[]/delete[]</code> <strong>独立于</strong>普通版——
+  只重载普通版，<code class="c">new T[n]</code> 静默走全局（常见泄漏源：数组绕过池）</li>
+<li>继承传播（item49 ②）：派生类尺寸可能更大，重载要么按最大尺寸设计、
+  要么派生类自己重写</li>
+</ul>
+<h2>HFT 关联</h2>
+<ul>
+<li>池分配器的"operator new 常规"在池语境的映射：池空了的语义必须显式定义——
+  返回 nullptr（调用方判空）还是 terminate（启动时按峰值预分配，池空=bug）——
+  HFT 选后者：<strong>运行期池空是容量规划事故，应当场爆炸而不是静默降级</strong></li>
+<li><code class="c">noexcept</code> 的 delete 与 <code class="c">-fno-exceptions</code> 库天然兼容——
+  池化世界里 delete 路径本来就该是纯 freelist 归还</li>
+<li>统计版重载（item50 ②）别忘了它自己也得守全部常规——
+  观测代码在分配路径上，一次违规递归分配就是死锁/递归崩溃</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> <code class="c">operator new</code> 的失败处理为什么是"循环 + new-handler"而不是直接抛异常？</p>
+<details>
+<summary>参考答案</summary>
+<p>因为 <strong>new-handler 存在的目的就是"抢救后重试"</strong>（→ item48 决策链）：
+应急池释放、GC 触发、缓存清页——这些动作只有"重试分配"才有意义。
+直接抛异常等于宣布"handler 白注册了"：应用的 OOM 预案（item48 的应急池）
+被你的重载静默绕过。
+所以标准形态是 <code class="c">while (true) { 尝试; 失败 → 调 handler; 再试; }</code>——
+handler 选择终止循环（抛异常/abort/注销自己）时，bad_alloc 才落地。
+你的重载可以不知道 handler 干什么，但必须<strong>把循环留给它</strong>。</p>
+</details>
+<p><strong>题目 2：</strong> 为什么 <code class="c">delete nullptr</code> 必须是 no-op？用户写 <code class="c">if (p) delete p;</code> 不是更清楚吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>因为<strong>语言保证 delete 接受 nullptr</strong>——所有标准容器、智能指针、
+以及不写判空的既有用户代码都依赖这个约定。
+你的自定义 operator delete 如果对 nullptr 不免疫（比如池的 release()
+拿 nullptr 查归属池时崩溃），破坏的是<strong>所有调用方</strong>，不只是"写判空的谨慎者"。
+反过来：<code class="c">if (p) delete p;</code> 在用户侧永远是多余的——
+写它是无害的风格问题，delete 实现不抗 nullptr 是<strong>正确性 bug</strong>。
+常规的存在就是为了"依赖者众多"的行为不被单个实现破坏。</p>
+</details>
+<p><strong>题目 3：</strong> 类内重载了 <code class="c">operator new</code> 后，<code class="c">new (buf) T</code>（placement new）为什么编译失败？</p>
+<details>
+<summary>参考答案</summary>
+<p>类内声明任何 <code class="c">operator new</code> 都触发<strong>名称遮掩</strong>（item33 同款规则）——
+类作用域里的 operator new 把全局的<strong>全部</strong>重载形式藏起来，
+包括全局的 placement new（<code class="c">void* operator new(size_t, void*)</code>）。
+用户写 <code class="c">new (buf) T</code> 时，候选集里只剩你类内的那版（签名不符）→ 编译错误。
+解法：类内同时声明 placement 版本——
+<code class="c">static void* operator new(std::size_t, void* p) noexcept { return p; }</code>。
+这正是 item52 的入口：placement new/delete 的配对常规，
+从"别让类内重载把 placement 藏掉"开始。</p>
+</details>
+      </section>
+      <section class="section" id="s-item52">
+        <div class="sec-head"><div class="sec-no">Item 52</div><h2>条款 52：写了 placement new 也要写 placement delete</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>Write placement delete if you write placement new.</strong> 自定义 placement new
+（带额外参数的分配形式）有一条隐藏的配对义务：<strong>构造函数抛异常时</strong>，
+编译器会找<strong>签名镜像的 placement delete</strong> 来回收内存——找不到就<strong>不回收</strong>（泄漏）。
+这条是 new/delete 配对原则最冷门也最容易漏的一环。</p>
+<p>← 上一条 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item51-编写new和delete时需固守常规.md">item51 new/delete 常规</a>；
+下一章 <a href="chapter-09.html#ch-9">ch09 杂项</a>。</p>
+<hr />
+<h2>1. 问题：构造抛异常时，内存去哪了</h2>
+<pre class="code" data-label="cpp"><code class="c">// 自定义 placement new：从自己的池分配
+void* operator new(std::size_t n, Pool&amp; pool) {
+    return pool.acquire(n);
+}
+
+Widget* w = new (my_pool) Widget;   // ① operator new 拿到内存
+                                    // ② Widget 构造函数抛异常！
+                                    // → 内存已分配但对象没建成——谁来归还 pool？
+</code></pre>
+<p><code class="c">new (pool) T</code> 的两层（→ 19.1 ①）：先调 placement new 拿内存，再在内存上构造。
+第二步抛异常时，运行库会尝试<strong>自动回收</strong>第一步的内存——
+但它不知道该调哪个释放函数，只能找<strong>签名与 placement new 镜像</strong>的
+placement delete：</p>
+<pre class="code" data-label="cpp"><code class="c">void operator delete(void* p, Pool&amp; pool) noexcept {   // 镜像：同样的额外参数
+    pool.release(p);
+}
+</code></pre>
+<p><strong>找到了</strong> → 调用它，内存归还；<strong>找不到</strong> → <strong>什么也不做，内存泄漏</strong>。
+这就是配对义务的来源：placement delete 在正常 delete 路径<strong>永远不会被调用</strong>——
+它只为"构造抛异常"这一条异常路径存在。</p>
+<h2>2. 配对规则速查</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>placement new 形态</th>
+<th>必须配对的 placement delete</th>
+<th>何时被调</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">operator new(size_t, Pool&amp;)</code></td>
+<td><code class="c">operator delete(void*, Pool&amp;)</code></td>
+<td>构造抛异常</td>
+</tr>
+<tr>
+<td><code class="c">operator new(size_t, Arena*, int)</code></td>
+<td><code class="c">operator delete(void*, Arena*, int)</code></td>
+<td>构造抛异常</td>
+</tr>
+<tr>
+<td>标准 placement new（<code class="c">void*</code> 缓冲）</td>
+<td>语言自带（<code class="c">operator delete(void*, void*)</code> 空操作）</td>
+<td>——无需你写</td>
+</tr>
+<tr>
+<td>普通 <code class="c">operator new(size_t)</code></td>
+<td>普通 <code class="c">operator delete(void*)</code></td>
+<td>正常 delete + 异常路径</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>额外参数的类型/个数/顺序必须完全镜像</strong>——差一个 const/引用都匹配不上，
+匹配不上就等于没写（静默泄漏）。</p>
+<h2>3. 类内版本的三重注意（与 item49/51 联动）</h2>
+<ol>
+<li>类内声明 <code class="c">operator new(size_t, Pool&amp;)</code> 同样<strong>遮掩</strong>全局 placement new
+   （→ item51 ③）——标准 placement（缓冲版）要用也得类内再声明</li>
+<li>类内 placement delete 也是<strong>静态</strong>语义（item49 ①：析构前运行，无 this）</li>
+<li>继承传播（item49 ②）：基类的 placement new/delete 对派生类同样生效，
+   尺寸不一致时池假设同样受威胁</li>
+</ol>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>无锁队列/池化订单对象</strong>的 emplace 惯用法（→ 19.1 ③ 的 ring buffer）：
+  <code class="c">new (&amp;slot) Order(args...)</code> 用的是<strong>标准 placement</strong>（语言自带空 delete）——
+  但带池参数的变体（<code class="c">new (pool, tag) Order</code>）必须手写镜像 delete，
+  否则构造抛异常 = 池槽位泄漏（freelist 越用越少，容量规划被静默侵蚀）</li>
+<li>异常路径的泄漏最阴险：正常压测永远触发不到"构造抛异常"——
+  只有生产事故当天（异常真的来了）泄漏才发生，
+  复盘时 freelist 计数对不上才知有这条路径（→ 19.1 的池监控）</li>
+<li>排查手法：池的 acquire/release 配对计数器（item50 ② 统计埋点）——
+  acquire &gt; release + live_objects 且差值随异常事件增长，就是这条在漏</li>
+</ul>
+<h2>代码自测</h2>
+<p><strong>题目 1：</strong> <code class="c">new (pool) Widget</code> 的构造函数抛异常后，运行库怎么决定内存是否回收？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">new (pool) Widget</code> 分两步：① <code class="c">operator new(size_t, Pool&amp;)</code> 分配；
+② 在所得内存上运行 Widget 构造函数。
+② 抛异常时，运行库要回收 ① 的内存——但它不认识你的 pool 协议，
+只能查找<strong>签名与 placement new 完全镜像</strong>的 <code class="c">operator delete(void*, Pool&amp;)</code>：
+找到 → 调用它回收；找不到 → <strong>放弃回收，内存泄漏</strong>。
+所以 placement delete 只为这条异常路径存在（正常 delete 永远调普通版）——
+"写了 placement new 就要写 placement delete"不是风格建议，是泄漏防线。</p>
+</details>
+<p><strong>题目 2：</strong> 为什么标准 placement new（<code class="c">new (buf) T</code>）不需要你写 placement delete？</p>
+<details>
+<summary>参考答案</summary>
+<p>因为语言<strong>自带</strong>它的镜像：标准库提供 <code class="c">operator delete(void*, void*) noexcept</code>，
+实现是<strong>空操作</strong>——缓冲内存不归 new 管（它是调用方的栈数组/mmap/池槽），
+"回收"本来就无事可做。
+构造抛异常时运行库调这个空 delete，语义正确（内存还在 buf 里，归调用方）。
+只有<strong>自定义 placement new</strong>（带 Pool&amp;/Arena* 等额外参数、内存由分配函数
+从某处"拿出"）才需要镜像 delete——有"拿出"就要有"归还"，
+语言替不了你的私有协议。</p>
+</details>
+<p><strong>题目 3：</strong> 池化订单系统的监控发现 freelist 缓慢下降但无对象泄漏报告，最可能的原因是什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>最可能是<strong>构造抛异常路径的 placement delete 缺失</strong>（或签名不镜像）：
+<code class="c">new (pool) Order(args...)</code> 在构造失败时池槽位没有归还——
+freelist 只减不增，但"活着的对象"计数正常（对象根本没建成），
+所以泄漏检测（基于对象生命周期）看不到，只有槽位计数在流血。
+验证：给池的 acquire/release 加配对计数，人为触发一次构造异常
+（mock 一个会抛的构造函数），观察 acquire - release 差值是否 +1。
+修复：补镜像 <code class="c">operator delete(void*, Pool&amp;) noexcept</code>，
+静态断言两个签名的参数列表一致（→ item52 配对规则速查表）。</p>
+</details>
       </section>
 
       <section class="section" id="quiz">
