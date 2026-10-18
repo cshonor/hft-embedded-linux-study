@@ -4,153 +4,276 @@
 
 ## 为什么要学这个（先建立直觉）
 
-C 用函数指针 + `void*` userdata 做回调：
+lambda 的捕获列表是它和 C 的「函数指针 + `void*` userdata」最本质的区别：编译器帮你把上下文打包进闭包。但 `[=]` 和 `[&]` 这两个「默认捕获模式」相当于对编译器说「我用了什么你就给我捕获什么」——**你放弃了对捕获清单的审查权**。问题在闭包**逃出作用域**时才爆发：`[&]` 捕获了局部变量的 lambda 被返回、被塞进任务队列、被注册成回调，等它真正执行时，当初捕获的局部变量早就随栈帧销毁了。引用不会延长对象的生命周期——它只是一个地址，对象死了，地址还在。
 
-```c
-// C 回调模式
-void on_tick(void* ctx, const Tick* t) {
-    Engine* self = (Engine*)ctx;
-    self->process(t);
-}
-register_callback(on_tick, engine);  // 传函数指针 + 上下文
-```
-
-C++ 的 lambda 可以"捕获"外层变量，比 C 的 `void*` 更方便。但默认捕获 `[=]`（按值）和 `[&]`（按引用）有隐蔽的陷阱：
-
-```cpp
-class Widget {
-    int data;
-    auto make_cb() {
-        return [=]{ return data; };  // 看着像"按值捕获 data"
-        // 实际捕获的是 this 指针！data 通过 this->data 访问
-        // Widget 析构后 → this 悬垂 → UB
-    }
-};
-```
-
-`[=]` 在成员函数中捕获成员变量时，实际捕获的是 `this` 指针（按引用！），不是成员的拷贝。这是 C++ lambda 最常见的坑。
+更隐蔽的是 `[=]`：在成员函数里写 `[=]`，字面上是「按值捕获我用到的一切」，但成员变量根本**不能被直接捕获**——闭包实际捕获的是 `this` 指针，每次访问成员都走 `this->data`。你以为拿到了一份**拷贝**，实际拿到的是一根**指针**。
 
 ---
 
 ## 这节讲什么
 
-默认捕获有两大问题：`[=]` 对成员变量的捕获语义反直觉（实际捕获 `this`）；`[&]` 的悬垂引用风险。
+1. `[&]` 按引用捕获的**悬垂实测**：局部变量销毁后调用闭包，普通编译读垃圾值，ASan 抓 `stack-use-after-scope`；
+2. `[=]` 的**假象**：捕获成员变量实际是捕获 `this` 指针，ASan 帧信息指出「访问落在已析构的 `w` 里」；
+3. **static 局部变量不被捕获**（`[&]` 也捕获不到），用地址和 `sizeof` 实测证明；C++20 的 `[=, this]` 显式化（编译器警告原文实测）。
 
 ---
 
-## 两大问题
+## [&] 悬垂：闭包比局部变量活得久
 
-### 1. [=] 捕获 this 而非成员拷贝
+经典反面教材——返回一个按引用捕获局部变量的 lambda：
 
 ```cpp
+#include <functional>
+#include <iostream>
+
+std::function<int()> getCounter() {
+    int count = 100;                    // 局部变量
+    return [&] { return ++count; };     // 按引用捕获 count —— return 后 count 销毁
+}
+
+int main() {
+    auto f = getCounter();   // 栈帧已销毁，count 不复存在，闭包里只剩悬垂地址
+    std::cout << "f() = " << f() << "\n";
+    std::cout << "f() = " << f() << "\n";
+}
+```
+
+本机实测（clang 23.1.0，`-std=c++17 -Wall`），正确输出应该是 `101 102`，实际却是：
+
+```
+f() = 2
+f() = 2
+```
+
+栈内存被后续调用覆写，读到的是垃圾值（加 `-fsanitize=address -g` 再跑垃圾值变成 `1807838081`，但 **ASan 没有报错**）。`std::function` 的类型擦除调用链让 use-after-scope 检测漏了过去——sanitizer 不一定救你，程序甚至可能「看起来能跑」。
+
+不经过 `std::function` 直接返回 lambda 时，编译器倒是会警觉（本机实测警告原文）：
+
+```
+warning: address of stack memory associated with local variable
+         'count' returned [-Wreturn-stack-address]
+note: implicitly captured by reference due to use here
+```
+
+编译器能看穿直接返回，但看不穿「存进 `std::function` / 任务队列 / 回调注册表」的间接逃逸——真实代码里闭包几乎都是间接逃逸的。**不要指望警告救你，要靠纪律：显式列出捕获变量。**
+
+---
+
+## [=] 的假象：捕获的是 this 指针
+
+成员变量不能单独出现在捕获列表里，`[=]` 用到成员时实际捕获 `this`：
+
+```cpp
+#include <functional>
+#include <iostream>
+
 class Widget {
     int data;
 public:
-    auto make_cb() {
-        return [=]{ return data; };  // 捕获的是 this，不是 data 的拷贝！
-        // 等价于：return [this]{ return this->data; };
+    explicit Widget(int d) : data(d) {}
+    std::function<int()> makeCallback() {
+        return [=] { return data; };   // 看着像"按值捕获 data"
+                                       // 实际等价于 [this]{ return this->data; }
     }
 };
-// Widget 销毁后闭包仍调 this->data → 悬垂 → UB
 
-// 正确做法：先拷贝到局部变量，再按值捕获
-auto make_cb_safe() {
-    int local_data = data;           // 先拷贝到局部
-    return [local_data]{ return local_data; };  // 按值捕获局部变量
-}
-
-// C++17：用 [*this] 按值捕获对象本身
-auto make_cb_cpp17() {
-    return [*this]{ return data; };  // 按值拷贝整个 *this
+int main() {
+    std::function<int()> cb;
+    {
+        Widget w{42};
+        cb = w.makeCallback();
+        std::cout << "对象存活时 cb() = " << cb() << "\n";
+    }   // w 析构，闭包里的 this 悬垂
+    std::cout << "对象销毁后 cb() = " << cb() << "\n";  // UB
 }
 ```
 
-`[=]` 看着像"按值捕获一切"，但成员变量实际捕获的是 `this` 指针——按引用！
+本机实测（clang 23.1.0，`-std=c++17 -Wall`）普通编译的输出是**最阴险的那种结果**：
 
-### 2. [&] 悬垂引用
+```
+对象存活时 cb() = 42
+对象销毁后 cb() = 42
+```
+
+两次都是 42——栈内存恰好没被覆写，UB「看起来完全正常」，能在测试环境潜伏很久。同一份代码用 `-fsanitize=address -g` 编译，ASan 立刻现形（实测输出节选）：
+
+```
+==85017==ERROR: AddressSanitizer: stack-use-after-scope on address 0x00016fae6e00
+READ of size 4 at 0x00016fae6e00 thread T0
+    #0 Widget::makeCallback()::'lambda'()::operator()() const
+    [96, 100) 'w' (line 24) <== Memory access at offset 96 is inside this variable
+```
+
+最后一行是铁证：闭包里的「`data`」访问落在了**已析构的 `w`** 的内存里——`[=]` 根本没有拷贝 `data`，它只是存了 `&w`。
+
+### 正确做法
 
 ```cpp
-std::function<int()> get_counter() {
-    int count = 0;
-    return [&] { return ++count; };  // 按引用捕获 count
-    // get_counter 返回后 count 销毁 → 引用悬垂 → UB
+// 方案一（C++11 起通用）：先拷贝到局部变量，再按值捕获局部变量
+std::function<int()> makeCallback() {
+    int local_data = data;                       // 拷贝发生在对象存活时
+    return [local_data] { return local_data; };  // 闭包持有真正的副本
 }
-auto f = get_counter();
-f();  // 访问已销毁的 count → UB
-
-// 正确做法：按值捕获
-std::function<int()> get_counter_safe() {
-    int count = 0;
-    return [count]() mutable { return ++count; };  // 按值捕获，mutable 允许修改
+// 方案二（C++14 起）：init capture，一步到位（Item 32 详讲）
+std::function<int()> makeCallback() {
+    return [d = data] { return d; };
+}
+// 方案三（C++17 起）：[*this] 按值捕获整个对象的副本
+std::function<int()> makeCallback() {
+    return [*this] { return data; };   // 闭包里存了一个 Widget 拷贝
 }
 ```
 
-按引用捕获的局部变量，闭包存活超过作用域时引用悬垂——UB。
+三种方案的共同点是**拷贝发生在对象还活着的时候**，闭包此后与原对象再无瓜葛。方案三拷的是**整个对象**，对象大时方案二（只拷需要的成员）更省。
+
+---
+
+## static 局部变量不被捕获
+
+`[&]` 的语义是「按引用捕获我用到的**自动存储期**变量」。`static` 局部变量不在栈上，根本不需要捕获——lambda 里写它的名字，用的就是静态区里那一份：
+
+```cpp
+#include <iostream>
+
+void demonstrate() {
+    static int s_count = 0;    // 静态区，不在栈上
+    int local = 0;             // 普通局部变量
+    auto lam = [&] {
+        ++s_count;             // 没被捕获！直接用静态区的那份
+        ++local;               // 这个才被 [&] 捕获
+        std::cout << "lambda 内  &s_count = " << static_cast<void*>(&s_count)
+                  << " 值 = " << s_count << "\n";
+    };
+    std::cout << "lambda 外  &s_count = " << static_cast<void*>(&s_count)
+              << " 值 = " << s_count << "\n";
+    lam();  lam();
+    std::cout << "两次调用后  s_count = " << s_count
+              << "  local = " << local << "\n";
+    std::cout << "sizeof(lambda) = " << sizeof(lam)
+              << "（只装了一个引用：local）\n";
+}
+
+int main() { demonstrate(); }
+```
+
+本机实测（clang 23.1.0）输出：
+
+```
+lambda 外  &s_count = 0x102ce0090 值 = 0
+lambda 内  &s_count = 0x102ce0090 值 = 1
+lambda 内  &s_count = 0x102ce0090 值 = 2
+两次调用后  s_count = 2  local = 2
+sizeof(lambda) = 8（只装了一个引用：local）
+```
+
+三个证据：lambda 内外 `&s_count` 完全相同，是同一份实体；`sizeof(lambda) == 8` 恰好一个指针大小，闭包里只装了 `local` 的引用；static 的递增全局可见。推论：**`[&]` 不会「冻结」static 变量的状态，也不让它进闭包**——它永远不悬垂，但多线程共享时要自行同步。
+
+---
+
+## C++20 的 [=, this] 显式化
+
+C++20 弃用了 `[=]` 对 `this` 的**隐式**捕获，要求你写明。本机实测（clang 23.1.0，`-std=c++20`）：
+
+```cpp
+return [=] { return data; };        // C++20 起：弃用警告
+return [=, this] { return data; };  // C++20：显式声明捕获 this
+```
+
+编译警告原文：
+
+```
+warning: implicit capture of 'this' with a capture default of '='
+         is deprecated [-Wdeprecated-this-capture]
+note: add an explicit capture of 'this' to capture '*this' by reference
+```
+
+措辞是 deprecated（弃用）而不是 error——老代码还能编译，但新标准逼你承认「我知道我捕获的是指针」。反过来 `[=, this]` 在 `-std=c++17` 下会得到 `... is a C++20 extension` 的扩展警告（clang 兼容放行）。一句话：**C++20 里要么 `[=, this]` 明示按指针捕获，要么 `[*this]` 按值捕获对象，别再用裸 `[=]` 糊过去。**
+
+---
+
+## 完整可运行例子
+
+安全写法汇总——临时对象造出的过滤器、逃逸出作用域的计数器，全部显式按值捕获：
+```cpp
+#include <functional>
+#include <iostream>
+
+class Engine {
+    int threshold;
+public:
+    explicit Engine(int t) : threshold(t) {}
+    std::function<bool(int)> makeFilter() const {
+        int t = threshold;                        // 拷贝发生在对象存活时
+        return [t](int price) { return price > t; };
+    }
+};
+
+std::function<int()> getCounter() {
+    int count = 0;
+    return [count]() mutable { return ++count; };  // 按值捕获 + mutable 允许改副本
+}
+
+int main() {
+    std::cout << std::boolalpha;
+    auto filter = Engine{100}.makeFilter();   // 临时 Engine 语句结束即析构
+    std::cout << "filter(150) = " << filter(150) << "\n";  // 闭包持有 t 副本，安全
+    std::cout << "filter(50)  = " << filter(50) << "\n";
+    auto c = getCounter();
+    std::cout << c() << " " << c() << " " << c() << "\n";  // 各改各的副本
+}
+```
+
+本机实测（clang 23.1.0，`-std=c++17 -Wall`）输出：
+
+```
+filter(150) = true
+filter(50)  = false
+1 2 3
+```
+
+临时 `Engine` 析构后过滤器依然正确——闭包持有的 `t` 是对象存活时拷出的副本。
 
 ---
 
 ## 常见错误（新手踩坑）
 
-**错误 1：成员函数中 [=] 捕获成员变量**
-```cpp
-class Engine {
-    Config config;
-public:
-    auto get_handler() {
-        return [=](const Tick& t) { return t.price > config.threshold; };
-        // config 实际通过 this->config 访问——this 可能悬垂！
-    }
-};
-```
-**修正：** `int threshold = config.threshold; return [threshold](const Tick& t) { ... };`
-
-**错误 2：[&] 捕获局部变量后异步使用**
-```cpp
-void start_async() {
-    int id = generate_id();
-    std::async([&]{ process(id); });  // id 在 start_async 返回后销毁！
-}
-```
-**修正：** `std::async([id]{ process(id); });`——按值捕获。
-
-**错误 3：忘记 mutable**
-```cpp
-int count = 0;
-auto counter = [count] { return ++count; };  // 编译失败！count 是 const
-auto counter2 = [count]() mutable { return ++count; };  // OK
-```
-**修正：** 按值捕获且需要修改时加 `mutable`。
-
----
-
-## 新手要点（和 C 的区别）
-
-| 维度 | C 怎么做 | C++ 怎么做 | 为什么 |
-|------|---------|-----------|--------|
-| 回调 | 函数指针 + void* | lambda 捕获 | 更类型安全 |
-| 捕获方式 | 手动传 userdata | `[=]`/`[&]`/`[x]` | 语法糖 |
-| 成员捕获 | 不适用 | `[this]`/`[*this]` | C++17 新增 |
-| 悬垂风险 | 手动管理 | `[&]` 有自动悬垂风险 | 需要注意生命周期 |
-
-**一句话总结：** C 程序员记住——显式列出捕获变量（`[x]`、`[&mtx]`），不用 `[=]`/`[&]` 默认模式。成员变量用 `[*this]`（C++17）或先拷贝到局部。
+1. **成员函数里用 `[=]` 以为按值捕获了成员**。实际捕获的是 `this` 指针，对象析构后闭包悬垂（上文 ASan 实测）。修正：`[d = data]`（C++14）或先拷到局部再 `[d]`，或 `[*this]`（C++17）。
+2. **`[&]` 捕获局部变量后让闭包逃逸**（返回、塞进队列、`std::async`）。局部变量销毁后引用悬垂，可能读到垃圾值也不一定被 ASan 抓到。修正：逃逸的闭包一律显式按值捕获。
+3. **以为 `[&]` 会捕获 static 局部变量**。static 变量不进闭包，lambda 用的是静态区那一份（地址实测相同），多线程共享时要自己加同步。
 
 ---
 
 ## HFT 关联
 
-- **策略回调**：`engine.on_tick([this](const Tick& t){ ... })` 注意 `this` 生命周期——策略销毁后引擎仍调闭包 = 悬垂。
-- **异步任务**：`std::async([config](const Tick& t){ ... })` 按值捕获配置，避免引用悬垂。
-- **线程安全**：按引用捕获共享变量需要确保锁的生命周期——`[&mtx]` 如果 `mtx` 先销毁则 UB。
+- **策略回调的 `this` 悬垂**：`engine.on_tick([=](const Tick& t){ ... })` 写在成员函数里，策略对象析构后引擎仍持有闭包——热重载策略、盘中切换实例时真实会炸。评审时把成员函数里的 `[=]` 当红旗 grep：`grep -n 'return \[=\]'`。
+- **UB「看起来正常」最致命**：本文实测析构后仍打印 42——性能测试环境一切正常、生产环境偶发错乱。逃逸闭包的捕获清单必须人工评审，不能靠测试通过背书。
+- **异步任务显式按值捕获**：`std::async([config](const Tick& t){ ... })` 捕获副本而非引用——配合 [Item 35](../ch07-concurrency-api/item35-async-vs-thread.md) 的任务制并发，每个任务自含全部上下文，无悬垂可能。
 
 ---
 
 ## 自测题
 
-1. `[=]` 在成员函数里捕获成员变量时，实际捕获的是什么？为什么是隐患？
-2. `[&]` 的悬垂风险是什么场景？
-3. 异步保存的闭包为什么不能用 `[&]`？该用什么替代？
-4. C++17 的 `[*this]` 解决了什么问题？
-5. 下面代码有什么问题？
+**1. `[=]` 在成员函数里捕获成员变量时，实际捕获的是什么？为什么这是隐患？**
+<details><summary>答案</summary>
+实际捕获的是 `this` 指针——成员变量不能单独被捕获，`[=]` 用到成员时等价于 `[this]`，闭包里每次访问都是 `this->data`。隐患有二：一是对象析构后 `this` 悬垂，闭包读写成员是 UB（本文 ASan 实测：访问落在已析构对象 `w` 的内存里）；二是「按值捕获」的字面语义误导读者以为拿到了副本，实际拿到的是裸指针。修正：`[d = data]` 或 `[*this]`。
+</details>
+
+**2. 为什么 `[&]` 悬垂有时 ASan 抓不到、普通运行甚至结果「正确」？**
+<details><summary>答案</summary>
+悬垂引用读的是已释放的栈内存，只要那段内存还没被覆写，读到的就是旧值——UB 不保证报错，只保证「行为无定义」。本文实测中普通编译的 `[=]`-this 版本析构后仍打印 42；而 `std::function` 类型擦除的间接调用链又让 ASan 的 use-after-scope 插桩失效，垃圾值照打不误。结论：sanitizer 是辅助，不是保险；逃逸闭包靠显式捕获清单防悬垂。
+</details>
+
+**3. static 局部变量会被 `[&]` 捕获吗？用什么方法可以实测验证？**
+<details><summary>答案</summary>
+不会。static 局部变量具有静态存储期，不在栈上，所有 lambda（包括 `[&]`）都直接引用静态区里那一份实体。验证方法：打印 lambda 内外的 `&s_count`（本文实测同为 `0x102ce0090`），再看 `sizeof(lambda)`——只有 8 字节，恰好是捕获的那个普通局部变量的引用大小，static 变量不占闭包空间。
+</details>
+
+**4. C++20 对 `[=]` 捕获 `this` 做了什么改动？**
+<details><summary>答案</summary>
+C++20 弃用了 `[=]` 对 `this` 的隐式捕获（`-Wdeprecated-this-capture`），要求显式写 `[=, this]` 表示「按指针捕获 this」，或写 `[*this]` 表示按值捕获整个对象。clang 23.1.0 实测：C++20 模式下裸 `[=]` 用成员变量给出弃用警告；`[=, this]` 在 C++17 模式下则是扩展警告。意图是让「捕获指针」这件事显式可见，堵住 `[=]` 的语义陷阱。
+</details>
+
+**5. 下面代码有什么问题？怎么修？**
 ```cpp
 std::function<void()> make_task() {
     int x = 42;
@@ -159,20 +282,13 @@ std::function<void()> make_task() {
 auto t = make_task();
 t();
 ```
+<details><summary>答案</summary>
+悬垂引用，UB。`x` 是 `make_task` 的局部变量，函数返回即销毁；闭包用 `[&]` 捕获了 `x` 的引用，`t()` 调用时读的是已销毁的栈对象——本文同类代码实测打印垃圾值，编译器对直接返回场景会给 `-Wreturn-stack-address` 警告，但经 `std::function` 间接逃逸时警告可能缺席。修正：显式按值捕获 `return [x] { std::cout << x; };`。
+</details>
 
-<details>
-<summary>参考答案</summary>
-
-1. `[=]` 捕获的不是成员变量本身，而是 **`this` 指针**（成员变量只能通过对象访问，`[=]` 实际按值拷贝了 `this`）。隐患是：闭包只持有一个裸 `this`，一旦对象在闭包执行前被销毁，`this` 就悬垂，闭包内访问成员是未定义行为；而且 `[=]` 的字面意思"按值捕获"会误导读者以为拿到了成员的副本，实际拿的是指针。正确做法是显式按值捕获需要的副本（C++14 起可写 `[x = this->x]` 或 `[x = this->x_]`）。
-
-2. `[&]` 按引用捕获所有被使用的自动变量，闭包只持有引用，不延长被捕获对象的生命周期。典型悬垂场景：闭包被返回、存进容器、传给 `std::async`/线程池、注册为异步回调——只要闭包的生存期超过被捕获的局部变量（或 `this`、局部锁、局部容器），之后执行时引用的对象已经销毁，读写即未定义行为。例如返回 `[&]` 的 lambda、把 `[&]` 闭包 push 到任务队列后函数返回。
-
-3. 因为异步任务通常在原函数返回之后才执行，此时 `[&]` 捕获的局部变量（以及可能的 `this`）早已销毁，闭包里的引用全部悬垂——表现为读到垃圾值、偶发崩溃，且极难复现。替代方案：①**按值捕获**（`[=]` 或显式 `[x]`），让闭包持有副本；②C++14 起用**初始化捕获**转移所有权（`[p = std::move(p)]`、`[data = std::make_shared<...>()]`）；③需要共享可变状态时用 `shared_ptr` 按值捕获，或用 `weak_ptr` 避免延长生命周期。
-
-4. `[*this]`（C++17）按值捕获 **`this` 所指对象的副本**，而不是 `this` 指针。它解决了 `[=]`/`[this]` 只捕获指针导致的悬垂问题：把异步/延迟执行的闭包拷出去时，闭包自带对象副本，即使原对象已销毁也能安全访问。它是对"我想按值捕获成员变量"这一直觉的正确表达（等价效果在 C++14 里可用初始化捕获 `[obj = *this]` 模拟）。
-
-5. 悬垂引用，未定义行为。`x` 是 `make_task()` 的局部变量，函数返回时销毁；但返回的 `std::function` 里保存的闭包用 `[&]` 捕获了 `x` 的引用。等 `t()` 被调用时，`x` 早已不存在，`std::cout << x` 读的是一个已销毁的栈对象——按标准是 UB，实际上通常打印出一个垃圾值。修正：按值捕获即可——`return [x] { std::cout << x; };`（或 `[=]`）。
-
+**6. 想按值捕获成员的副本，C++11 / C++14 / C++17 各推荐什么写法？**
+<details><summary>答案</summary>
+C++11：`int local = data; return [local]{ ... };`——先拷到局部变量再按值捕获。C++14：init capture 一步到位 `return [d = data]{ ... };`（见 [Item 32](item32-init-capture.md)）。C++17：`return [*this]{ ... };` 按值捕获整个对象副本——对象大、只需个别成员时优先 C++14 写法，避免整对象拷贝。
 </details>
 
 ---

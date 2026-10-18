@@ -1,106 +1,204 @@
 # Item 38：理解线程句柄的析构与联结行为
 
-> 第 7 章 · Item 38 · 上一节：[Item 37 thread joinable](item37-thread-joinable.md)
+> 第 7 章 并发 API · Item 38 · 上一节：[Item 37 thread joinable](item37-thread-joinable.md) · 下一节：[Item 39 单次事件](item39-one-shot-events.md)
 
 ## 为什么要学这个（先建立直觉）
 
-C 程序员管理线程句柄很简单——`pthread_t` 就是个整数 ID，析构（离开作用域）不做任何事：
-
-```c
-pthread_t tid;
-pthread_create(&tid, NULL, worker, NULL);
-// tid 离开作用域——什么都不会发生
-// 线程继续在后台跑，资源在进程结束时回收
-```
-
-C++ 的线程句柄有不同的析构行为，混用会出问题：
-
-- `std::thread` 析构时如果 joinable → **terminate**（进程崩溃）
-- `std::future` 析构时如果任务未完成 → **阻塞等待**（和 `get()` 类似）
-- `std::shared_future` 析构 → **不阻塞**（多个共享）
+`std::async` 的字面意思是"异步"——你发起一个任务，拿到一个 `future`，然后去忙别的。但下面这段代码的行为和直觉完全相反：
 
 ```cpp
 {
-    std::future<int> fut = std::async(std::launch::async, []{ long_task(); });
-}  // fut 析构 → 阻塞等 long_task 完成！
-// 以为是异步，实际在析构处同步阻塞
+    auto fut = std::async(std::launch::async, []{ long_task(); });
+    // 没调用 get()，没调用 wait()，你以为 fut 析构就是扔掉句柄
+}  // 实际：程序在这一行阻塞，直到 long_task 跑完
 ```
+
+你以为写了个"发射后不管"的异步调用，编译器却在 `fut` 的析构点悄悄帮你 `join` 了那个线程。这个阻塞出现在一个**完全没有任何函数调用痕迹**的地方——只是离开了一个作用域。在热路径上，这就是一次无法从代码表面看出来的同步卡顿。
+
+更麻烦的是，这条规则**不是**所有 `future` 都遵守：只有 `std::async`（非 deferred）创建的那一份共享状态才有"最后一个句柄析构时阻塞"的特殊待遇，`std::packaged_task` 和 `std::promise` 产生的 `future` 析构时抬腿就走。不搞清楚边界，你既会在不该卡的地方卡住，也会在以为有阻塞保证的地方失去保证。
 
 ---
 
 ## 这节讲什么
 
-不同线程句柄的析构行为不同——`thread` 析构会 `terminate`，`future` 析构会阻塞等待。
+`future` 析构的阻塞规则及其精确边界：**只对 `std::async`（`launch::async`）创建的共享状态生效，且只在最后一个引用该共享状态的句柄被释放时触发**——相当于隐式 join。本机实测用 chrono 计时证明：async 的 future 析构阻塞约等于任务时长，packaged_task / promise 的 future 析构零等待。
 
 ---
 
-## 析构行为对比
+## 规则本身：什么时候阻塞，什么时候不阻塞
 
-| 句柄类型 | 析构行为 | 类比 |
-|----------|----------|------|
-| `std::thread` | joinable 则 `terminate` | C：忘了 join 只是泄漏，C++ 直接崩 |
-| `std::future` | 阻塞等待（共享状态未就绪时） | C：无类比物 |
-| `std::shared_future` | 不阻塞（多个 shared_future 共享状态） | C：无类比物 |
+| 共享状态的来源 | 最后一个句柄析构时 | 类比 |
+|----------------|-------------------|------|
+| `std::async` + `launch::async` | **阻塞**，直到任务完成（隐式 join） | 隐形的 `t.join()` |
+| `std::async` + `launch::deferred` | 不阻塞（任务根本没启动） | 惰性求值被丢弃 |
+| `std::packaged_task::get_future()` | 不阻塞 | 普通句柄 |
+| `std::promise::get_future()` | 不阻塞 | 普通句柄 |
 
-### future 析构阻塞
+标准的措辞是：async（async 策略）创建的异步任务，其线程完成 synchronizes-with "第一个成功观察到共享状态就绪的函数的返回"或"**最后一个释放该共享状态的函数的返回**"，两者取先发生者。所以触发阻塞的不是"future 这个类"，而是"async 共享状态的最后一次释放"——调用 `get()`/`wait()` 已经观察到就绪的话，之后的析构自然不再等。
+
+这也解释了为什么阻塞存在：async 任务可能按引用捕获了调用者的局部变量，如果句柄析构时拍屁股走人，任务就变成了野线程。这个隐式 join 和 [Item 37](item37-thread-joinable.md) 的 terminate 是同一种思路——标准库不允许你"忘记"一个正在跑的线程。
+
+---
+
+## 实测：四种来源的 future 析构计时（本机实测 clang 23.1.0）
+
+任务固定 sleep 300ms，所有 future 都**不调 `get()`/`wait()`**，只在作用域结束处析构，用 chrono 量作用域退出时刻：
 
 ```cpp
-// future 析构会阻塞——反直觉
-{
-    auto fut = std::async(std::launch::async, []{
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        return 42;
-    });
-    // fut 在这里析构 → 阻塞等待 5 秒！
-}  // ← 程序在这里卡 5 秒
+#include <chrono>
+#include <cstdio>
+#include <future>
+#include <thread>
 
-// 对比：如果不需要结果，用 shared_future 不会阻塞
-{
-    auto fut = std::async(std::launch::async, long_task).share();
-    // shared_future 析构不阻塞
-}  // 不卡
+using Clock = std::chrono::steady_clock;
+using Ms = std::chrono::milliseconds;
+
+long long elapsed_ms(Clock::time_point t0) {
+    return std::chrono::duration_cast<Ms>(Clock::now() - t0).count();
+}
+
+int slow_task() {
+    std::this_thread::sleep_for(Ms(300));
+    return 42;
+}
+
+int main() {
+    // ---- 1. async(launch::async)：析构阻塞 ----
+    {
+        auto t0 = Clock::now();
+        {
+            std::future<int> fut = std::async(std::launch::async, slow_task);
+            std::printf("[async ] about to leave scope at t=%lldms\n", elapsed_ms(t0));
+        }  // fut 析构 → 阻塞等 slow_task 跑完
+        std::printf("[async ] scope exited at t=%lldms\n\n", elapsed_ms(t0));
+    }
+
+    // ---- 2. packaged_task：析构不阻塞 ----
+    {
+        auto t0 = Clock::now();
+        {
+            std::packaged_task<int()> pt(slow_task);
+            std::future<int> fut = pt.get_future();
+            std::thread t(std::move(pt));
+            t.detach();
+        }  // fut 析构 → 立即返回
+        std::printf("[ptask ] scope exited at t=%lldms\n\n", elapsed_ms(t0));
+    }
+
+    // ---- 3. promise：析构不阻塞 ----
+    {
+        auto t0 = Clock::now();
+        {
+            std::promise<int> p;
+            std::future<int> fut = p.get_future();
+            std::thread t([pr = std::move(p)]() mutable {
+                std::this_thread::sleep_for(Ms(300));
+                pr.set_value(42);
+            });
+            t.detach();
+        }
+        std::printf("[promis] scope exited at t=%lldms\n\n", elapsed_ms(t0));
+    }
+
+    // ---- 4. async 转 shared_future（最后一个引用）：仍然阻塞！----
+    {
+        auto t0 = Clock::now();
+        {
+            std::shared_future<int> sfut =
+                std::async(std::launch::async, slow_task).share();
+        }  // sfut 是该共享状态最后的引用 → 析构仍阻塞
+        std::printf("[shared] scope exited at t=%lldms\n\n", elapsed_ms(t0));
+    }
+
+    // ---- 5. 对照：get() 显式等待的耗时 ----
+    {
+        auto t0 = Clock::now();
+        int v = std::async(std::launch::async, slow_task).get();
+        std::printf("[get() ] got %d at t=%lldms\n", v, elapsed_ms(t0));
+    }
+
+    std::this_thread::sleep_for(Ms(500));  // 等后台 detached 线程收尾
+    return 0;
+}
 ```
 
-`future` 析构会阻塞——反直觉但有用：让你"忘了 `get` 也能拿到结果"。但也可能让程序在意外处卡住。
+clang 23.1.0 + `-std=c++17 -Wall` 实测输出：
 
-### 为什么 future 析构要阻塞？
+```
+[async ] about to leave scope at t=0ms
+[async ] scope exited at t=310ms
+
+[ptask ] scope exited at t=0ms
+
+[promis] scope exited at t=0ms
+
+[shared] scope exited at t=304ms
+
+[get() ] got 42 at t=301ms
+```
+
+四组对照把规则边界钉死了：
+
+1. **async 的 future 析构阻塞 310ms**——和 `get()` 的 301ms 一样，隐式 join 货真价实；
+2. **packaged_task / promise 的 future 析构 0ms**——线程还在后台跑，句柄先走了，互不等待；
+3. **shared_future 也阻塞了 304ms**——这是最容易记错的一点：阻塞规则挂在"共享状态的最后一次释放"上，`.share()` 只是换了句柄类型，共享状态还是 async 创建的，最后一个 `shared_future` 析构照样等。想真正躲开阻塞，办法不是换类型，而是**让句柄活得比当前作用域久**（存进成员变量、队列、后台收割线程）。
+
+---
+
+## 推论：临时 future 立即析构 = 假异步
 
 ```cpp
-// 场景：异步任务写了共享变量，future 析构保证任务完成
-int result;
-auto fut = std::async(std::launch::async, [&]{ result = compute(); });
-// fut 析构 → 等待 compute 完成 → result 已写入
-// 如果 future 析构不等待 → result 可能还没写入就被读取
+std::async(std::launch::async, long_task);   // 返回值被丢弃
+// 临时 future 在语句末尾立即析构 → 立即阻塞 → 完全同步，白 async 了
+```
+
+这是这条规则最坑的形态：丢弃返回值的 `std::async` 调用**等价于直接同步调用**，还额外付出了一次线程启动的开销。如果你真的想"发射后不管"，得用 `std::thread` + detach（并自担悬垂风险），或把 future 移交给他处保管。
+
+---
+
+## 完整可运行例子
+
+上方"实测"一节即完整可运行程序：五种来源各测一次，输出已给出。编译命令：
+
+```
+clang++ -std=c++17 -Wall test.cpp   # 本机实测 clang 23.1.0，线程代码无需 -pthread
 ```
 
 ---
 
 ## 常见错误（新手踩坑）
 
-**错误 1：在热路径析构 future 导致意外阻塞**
+**错误 1：在热路径析构 async 的 future**
+
 ```cpp
 void on_tick(const Tick& t) {
     auto fut = std::async(std::launch::async, check_risk, t);
-    // 处理 tick...
-    // fut 在函数末尾析构 → 阻塞等 check_risk 完成 → 热路径卡住！
-}
+    process(t);
+}   // fut 在函数末尾析构 → 阻塞等 check_risk 完成 → 热路径卡住
 ```
-**修正：** 把 `future` 存到后台线程，或用 `shared_future`。
 
-**错误 2：以为 future 和 thread 析构行为相同**
-```cpp
-// thread 析构 = terminate（如果 joinable）
-// future 析构 = 阻塞等待
-// 完全不同！
-```
-**修正：** 记住口诀——`thread` = 炸，`future` = 等。
+**修正：** 把 future 存进成员队列，由后台线程收割 `get()`。
 
-**错误 3：临时 future 析构立即阻塞**
+**错误 2：丢弃 `std::async` 返回值，以为实现了异步**
+
 ```cpp
-std::async(std::launch::async, long_task);  // 返回临时 future
-// 临时 future 立即析构 → 立即阻塞等 long_task 完成 → 变成同步！
+std::async(std::launch::async, long_task);   // 临时 future 立即析构 → 同步阻塞
 ```
-**修正：** 存到变量 `auto fut = std::async(...);` 延长生命周期。
+
+**修正：** `auto fut = std::async(...);` 存起来并妥善安排生命周期。
+
+**错误 3：以为所有 future 析构都阻塞（或都不阻塞）**
+
+```cpp
+// packaged_task 的 future 析构不阻塞——任务结果可能永远没人取
+// async 的 future 析构阻塞——"扔掉句柄"不等于"取消任务"
+```
+
+**修正：** 记住规则的精确边界：只有 async 共享状态的**最后一次释放**才阻塞。
+
+**错误 4：以为 `.share()` 成 shared_future 就能躲开析构阻塞**
+
+**修正：** 实测证明最后一个 `shared_future` 析构照样等任务跑完；要躲开阻塞得延长句柄生命周期，不是换类型。
 
 ---
 
@@ -108,58 +206,71 @@ std::async(std::launch::async, long_task);  // 返回临时 future
 
 | 维度 | C 怎么做 | C++ 怎么做 | 为什么 |
 |------|---------|-----------|--------|
-| 线程句柄 | `pthread_t`（整数 ID） | `thread`/`future`/`shared_future` | C++ 有 RAII |
-| 析构行为 | 不做任何事 | 各有不同 | C++ 对象语义 |
-| 异常路径 | 手动管理 | 析构自动处理 | RAII |
+| 异步任务句柄 | `pthread_t` 整数，离开作用域无效果 | `future` 析构可能隐式 join | RAII + 共享状态 |
+| "发射后不管" | 不 join 即可 | 丢弃 async 返回值反而同步阻塞 | 析构语义反直觉 |
+| 结果回收 | 全局变量 + 标志位轮询 | `future::get()` 一次性取走 | 共享状态自动管理 |
 
-**一句话总结：** C 程序员记住——`thread` 析构 = 炸（terminate），`future` 析构 = 等（阻塞）。别在热路径析构 future。
+**一句话总结：** `std::async` 的 future 析构 = 隐式 join（仅当它是该共享状态的最后一个引用且任务未就绪）；packaged_task / promise 的 future 析构无此待遇。
 
 ---
 
 ## HFT 关联
 
-- **异步风控**：异步风控任务用 `future`，但确保不在热路径析构 future——把 future 存到后台线程或用 `shared_future`。
-- **热路径阻塞**：`on_tick` 中 `async` 返回的 future 在函数末尾析构会阻塞——把 future 移到成员变量或队列。
-- **临时 future 陷阱**：`std::async(...)` 不存返回值 → 临时 future 立即析构 → 同步阻塞。
+- **热路径零隐式阻塞**：`on_tick` / `on_order` 回调里出现的任何 async future 都必须移交出去（队列、成员变量），否则析构阻塞直接变成逐笔延迟。
+- **异步风控 / 异步落盘**：发射即忘的任务别用 `std::async`（返回值一丢就同步），用线程池或 `std::thread`+detach+按值捕获。
+- **后台收割线程**：统一一个 reaper 线程对消费者队列里的 future 调 `get()`——既避开析构阻塞，也避免任务异常被静默吞掉。
+- **定位神秘卡顿**：热路径出现与某任务时长吻合的延迟尖刺时，grep 作用域内是否有 async future 的析构点。
 
 ---
 
 ## 自测题
 
-1. `std::thread` 和 `std::future` 的析构行为有何不同？
-2. 为什么 `future` 析构会阻塞？这有什么用？
-3. `shared_future` 析构为什么不阻塞？
-4. 下面代码有什么问题？
-```cpp
-void on_tick(const Tick& t) {
-    std::async(std::launch::async, check_risk, t);
-    process(t);
-}
-```
+**1. `std::future` 的析构什么时候会阻塞？精确的触发条件是什么？**
 
-<details>
-<summary>参考答案</summary>
+<details><summary>答案</summary>
+仅当同时满足：①共享状态由 `std::async` 以 `launch::async` 策略创建；②任务尚未就绪；③这是最后一个引用该共享状态的句柄（future 或 shared_future）被释放。此时析构相当于隐式 join，阻塞到任务完成。packaged_task / promise 的 future 永远不阻塞。
+</details>
 
-1. `std::thread` 析构时若仍 joinable，直接调用 `std::terminate()`（程序终止），它**不会**帮你等待线程。而 `std::future`（由 `std::async` 产生、且是最后一个引用共享状态的 future）析构时行为分两种：对 `launch::async` 且尚未 `get()`/`wait()` 的 future，析构函数会**隐式阻塞等待任务完成**；对 `launch::deferred` 任务（以及 `std::packaged_task`/`promise` 产生的 future），析构只是丢弃结果、不阻塞。也就是说 `future` 的析构可能"偷偷"同步等待，而 `thread` 的析构是崩溃——两者都不是"什么都不做"。
+**2. 实测中四种来源的 future 析构耗时各是多少？说明了什么？**
 
-2. 因为 `std::async` 创建的异步任务需要一个"存放结果/异常"的共享状态，而标准规定：由 `async` 返回的、**最后一个**引用该共享状态的 future 在析构时必须等待任务结束（相当于隐式 `join`）。这样设计可以避免"任务还在跑，其引用的资源（甚至主线程局部对象）已经消失"的悬垂问题——即防止异步任务悄悄变成野线程。代价是：这个隐式等待出现在完全不显眼的地方（一个临时 future 的析构点），容易在热路径造成不可预期的阻塞。
+<details><summary>答案</summary>
+async future 310ms（阻塞，≈任务时长 300ms）；packaged_task 0ms；promise 0ms；shared_future（最后引用）304ms。说明阻塞规则挂在"async 共享状态的最后一次释放"上，与句柄是 future 还是 shared_future 无关。
+</details>
 
-3. 因为 `std::shared_future` 可以被拷贝、多个对象共享同一状态，析构它并不代表"没有人在等这个结果了"——共享状态的生命周期由所有 `shared_future` 共同维持。标准只把"隐式等待"绑定在 `std::async` 返回的那个**唯一的 `std::future`** 上；`shared_future`（以及由 `packaged_task`/`promise` 得到的 future）析构时不承担这个等待义务，只释放自己对共享状态的引用。这也是笔记里"把 future 转成 `shared_future` 存起来"能避免析构阻塞的原因。
+**3. `std::async(std::launch::async, task);`（丢弃返回值）的实际行为是什么？**
 
-4. 问题在于 `std::async(...)` 的**返回值被丢弃**了：它产生的临时 `std::future` 在这一行结束时立即析构，而按标准，这个由 `launch::async` 产生、从未 `get()`/`wait()` 的 future 析构时会**阻塞直到 `check_risk` 执行完毕**。于是"异步风控"完全没异步——`on_tick` 在这一行同步卡住等风控跑完，然后才执行 `process(t)`，热路径被阻塞。修正：把 future 保存下来，转移到后台线程或成员变量/队列中处理（或转成 `shared_future`），确保它不在热路径析构：
-```cpp
-void on_tick(const Tick& t) {
-    futures_.push(std::async(std::launch::async, check_risk, t));  // 存起来，由后台线程收割
-    process(t);
-}
-```
-另需注意：任务里抛出的异常若不 `get()` 就会被静默丢弃，所以后台收割时要取结果。
+<details><summary>答案</summary>
+临时 future 在语句末尾立即析构，按规则阻塞到 task 完成——等价于同步调用，还白付一次线程启动开销。不是"发射后不管"。
+</details>
 
+**4. 为什么 `packaged_task` 和 `promise` 的 future 析构不阻塞？**
+
+<details><summary>答案</summary>
+阻塞是标准专门给 async（async 策略）共享状态加的"线程完成 synchronizes-with 最后一次释放"条款，目的是防止 async 任务变野线程。packaged_task / promise 的线程生命周期由你自己管理（你自己创建并 join/detach 了 `std::thread`），标准不再插手。
+</details>
+
+**5. 已经调用过 `get()` 的 async future，析构还阻塞吗？为什么？**
+
+<details><summary>答案</summary>
+不阻塞。`get()` 返回意味着共享状态已就绪——"第一个成功观察到就绪的函数"已经发生，按"两者取先"的规则，之后的释放不再承担等待义务（且 `get()` 后 future 已 `valid()==false`，不再引用共享状态）。
+</details>
+
+**6. 要真正避免 async future 的析构阻塞，正确做法是什么？**
+
+<details><summary>答案</summary>
+延长句柄生命周期：存进成员变量 / 队列 / 后台收割线程，让"最后一次释放"发生在不敏感的地方。换成 shared_future 无效——实测证明它作为最后引用照样阻塞。
+</details>
+
+**7. 这条析构阻塞规则与 Item 37 的 terminate 有什么共同的设计动机？**
+
+<details><summary>答案</summary>
+都是"不允许你忘记一个正在运行的线程"：Item 37 用 terminate 惩罚忘记 join 的 `std::thread`，Item 38 用隐式 join 防止 async 任务变成没人管的野线程（它可能按引用捕获了调用者的局部变量）。一个用崩溃保证，一个用阻塞保证。
 </details>
 
 ---
 
 ## 参考与延伸
 
+- 上一节：[Item 37 thread joinable](item37-thread-joinable.md)
 - 下一节：[Item 39 单次事件](item39-one-shot-events.md)
-- 回到：[第 7 章](README.md)
+- 回到：[第 7 章 并发 API](README.md)

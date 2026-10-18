@@ -413,158 +413,221 @@ public:
 <p>第 7 章 并发 API · Item 35 · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item36-launch-policy.md">Item 36 启动策略</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>C 程序员用 <code class="c">pthread</code> 手动管理线程：</p>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-
-void* worker(void* arg) {
-    int result = compute();
-    return (void*)(intptr_t)result;
-}
-
-pthread_t tid;
-pthread_create(&amp;tid, NULL, worker, NULL);
-// ... 无法直接拿返回值 ...
-void* retval;
-pthread_join(tid, &amp;retval);
-int result = (int)(intptr_t)retval;
-// 异常？pthread 里没有异常——如果 worker 崩溃，进程崩溃
-</code></pre>
-<p>C++ 有 <code class="c">std::thread</code>，但和 <code class="c">pthread</code> 一样是"手动管理"——拿不到返回值，异常会导致 <code class="c">terminate</code>。<code class="c">std::async</code> 是更高层的抽象：</p>
-<pre class="code" data-label="cpp"><code class="c">auto fut = std::async([]{ return compute(); });
-int result = fut.get();  // 拿返回值
-// 异常通过 future 传播，get() 时 rethrow——不会 terminate
-</code></pre>
+<p><code class="c">std::thread</code> 是「线程制」思维：你向操作系统<strong>要一个线程</strong>，自己管它的生（创建）死（join/detach），它跑什么、什么时候跑、跑完结果给谁，全得你自己搭管道。C 程序员对这个模型很熟——它就是 <code class="c">pthread_create</code> 的 C++ 包装，连缺点都原样继承：返回值要靠 <code class="c">void*</code> 强转，异常出了线程边界就是进程死刑。</p>
+<p><code class="c">std::async</code> 是「任务制」思维：你只声明「<strong>这件事</strong>要并发做」，返回一个 <code class="c">future</code> 作为结果的提货单。底层是新线程还是线程池、什么时候调度，由运行时操心。你关心的是任务和结果，不是线程这个硬件资源的账本。</p>
+<p>这不是风格之争。三个硬差异——<strong>返回值通道、异常传播、资源管理</strong>——每一个都能在真机上立刻演示出来：thread 里抛异常的进程退出码是 134（SIGABRT），async 里抛异常的进程正常结束。下面全部实测。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p><code class="c">std::thread</code> 是"手动管理线程"，<code class="c">std::async</code> 是"声明并发任务，让运行时管线程"。<code class="c">async</code> 返回 <code class="c">future</code>，异常通过 future 传播（<code class="c">thread</code> 里抛异常直接 <code class="c">terminate</code>）。</p>
+<ol>
+<li><strong>返回值</strong>：thread 没有任何返回值机制（要自己搭 <code class="c">promise</code>），async 直接 <code class="c">future::get()</code>；</li>
+<li><strong>异常</strong>：thread 里逃逸的异常 → <code class="c">std::terminate</code> → 进程 abort（实测退出码 134）；async 的异常穿透到 <code class="c">get()</code> 处 rethrow，可正常 try-catch；</li>
+<li><strong>资源管理</strong>：thread 是稀缺硬件资源（超订问题），async 把调度权交给运行时；</li>
+<li>任务制 vs 线程制心智模型对比表。</li>
+</ol>
 <hr />
-<h2>核心对比</h2>
-<h3>thread：手动管理</h3>
-<pre class="code" data-label="cpp"><code class="c">std::thread t([]{ return 42; });
-// 无法直接拿返回值！
-// 异常会 terminate
-t.join();  // 必须手动 join
-</code></pre>
-<h3>async：声明式</h3>
-<pre class="code" data-label="cpp"><code class="c">auto fut = std::async([]{ return 42; });
-int result = fut.get();  // 拿返回值
-// 异常通过 future 传播，get() 时 rethrow
+<h2>返回值：async 有通道，thread 没有</h2>
+<p><code class="c">std::async</code> 返回 <code class="c">std::future&lt;T&gt;</code>，<code class="c">get()</code> 直接拿到任务的返回值。<code class="c">std::thread</code> 的 lambda 返回值被直接丢弃——想拿结果得自己搭 <code class="c">std::promise</code> 管道，异常还得手动 <code class="c">set_exception</code>：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;future&gt;
+#include &lt;iostream&gt;
+#include &lt;thread&gt;
 
-// 线程管理交给运行时——不需要手动 join
-// 运行时可能用线程池，避免频繁创建/销毁线程
-</code></pre>
-<h3>异常处理对比</h3>
-<pre class="code" data-label="cpp"><code class="c">// thread：异常 = 灾难
-std::thread t([]{
-    throw std::runtime_error(&quot;oops&quot;);
-});
-// 异常未捕获 → std::terminate → 进程崩溃
-t.join();
+int compute() { return 42; }
 
-// async：异常安全
-auto fut = std::async([]{
-    throw std::runtime_error(&quot;oops&quot;);
-});
-try {
-    fut.get();  // 在这里 rethrow 异常
-} catch (const std::runtime_error&amp; e) {
-    std::cerr &lt;&lt; e.what() &lt;&lt; &quot;\n&quot;;  // 优雅处理
+int main() {
+    // async：一行搞定
+    auto fut = std::async(std::launch::async, compute);
+    std::cout &lt;&lt; &quot;async 返回值 = &quot; &lt;&lt; fut.get() &lt;&lt; &quot;\n&quot;;
+
+    // thread：promise/future 管道全手动
+    std::promise&lt;int&gt; p;
+    auto pfut = p.get_future();
+    std::thread t([pp = std::move(p)]() mutable {
+        try {
+            pp.set_value(compute());
+        } catch (...) {
+            pp.set_exception(std::current_exception());  // 异常也得手动传
+        }
+    });
+    std::cout &lt;&lt; &quot;thread+promise 拿到 = &quot; &lt;&lt; pfut.get() &lt;&lt; &quot;\n&quot;;
+    t.join();
+    return 0;
 }
 </code></pre>
+<p>本机实测（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">async 返回值 = 42
+thread+promise 拿到 = 42
+</code></pre>
+<p>两种写法结果相同，但 thread 版本多出 6 行管道代码，且每一处都是出错点（忘 <code class="c">set_exception</code>、promise 提前析构等）。async 把这些全部收进标准库。</p>
 <hr />
-<h2>常见错误（新手踩坑）</h2>
-<p><strong>错误 1：thread 里抛异常导致 terminate</strong></p>
-<pre class="code" data-label="cpp"><code class="c">std::thread t([]{
-    throw std::runtime_error(&quot;error&quot;);  // 进程崩溃！
-});
+<h2>异常：thread 判死刑，async 穿透到 get()</h2>
+<p>栈展开不跨线程。thread 里没被捕获的异常没有任何人能接住，运行后直接 <code class="c">std::terminate</code>：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
+#include &lt;stdexcept&gt;
+#include &lt;thread&gt;
+
+int main() {
+    std::thread t([]{
+        throw std::runtime_error(&quot;boom from thread&quot;);
+    });
+    t.join();
+    std::cout &lt;&lt; &quot;这行永远不会执行\n&quot;;
+    return 0;
+}
 </code></pre>
-<p><strong>修正：</strong> 用 <code class="c">std::async</code>，异常通过 <code class="c">future</code> 传播。</p>
-<p><strong>错误 2：thread 拿不到返回值</strong></p>
-<pre class="code" data-label="cpp"><code class="c">std::thread t([]{ return 42; });
-// 结果丢失——thread 没有返回值机制
+<p>本机实测（clang 23.1.0）stderr 原文与退出码：</p>
+<pre class="code" data-label="code"><code class="c">libc++abi: terminating due to uncaught exception of type std::runtime_error: boom from thread
 </code></pre>
-<p><strong>修正：</strong> 用 <code class="c">std::async</code> + <code class="c">future::get()</code>。</p>
-<p><strong>错误 3：忘了 fut.get() 导致 future 析构阻塞</strong></p>
-<pre class="code" data-label="cpp"><code class="c">{
-    auto fut = std::async(std::launch::async, []{ long_task(); });
-    // fut 析构时如果任务还没完成 → 阻塞等待
-}  // 这里会卡住直到 long_task 完成
+<pre class="code" data-label="code"><code class="c">exit=134
 </code></pre>
-<p><strong>修正：</strong> 理解 <code class="c">future</code> 析构会等待（Item 38），或用 <code class="c">std::launch::deferred</code>。</p>
+<p>退出码 134 = 128 + 6，即进程被 <strong>SIGABRT</strong> 杀死——不是优雅退出，是堕胎式终止。整个进程陪葬，包括所有无辜线程。</p>
+<p>async 版本同一个异常，命运完全不同：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;future&gt;
+#include &lt;iostream&gt;
+#include &lt;stdexcept&gt;
+
+int main() {
+    auto bad = std::async(std::launch::async, []() -&gt; int {
+        throw std::runtime_error(&quot;boom from async&quot;);
+    });
+    try {
+        (void)bad.get();   // 异常在这里 rethrow，被本线程 catch
+    } catch (const std::runtime_error&amp; e) {
+        std::cout &lt;&lt; &quot;捕获到异常: &quot; &lt;&lt; e.what() &lt;&lt; &quot;\n&quot;;
+    }
+    std::cout &lt;&lt; &quot;进程正常结束\n&quot;;
+    return 0;
+}
+</code></pre>
+<p>本机实测（clang 23.1.0）输出，退出码 0：</p>
+<pre class="code" data-label="code"><code class="c">捕获到异常: boom from async
+进程正常结束
+</code></pre>
+<p>机制：任务抛出的异常被 async 的实现捕获，存进 future 的共享状态；<code class="c">get()</code> 时在<strong>调用方线程</strong>重新抛出，走正常的 try-catch 路径。代价是要记得 <code class="c">get()</code>——没人 <code class="c">get()</code>，异常就被静默丢弃（顺带一提：clang 23 的 libc++ 给 <code class="c">get()</code> 标了 <code class="c">[[nodiscard]]</code>，忽略它会吃 <code class="c">-Wunused-result</code> 警告，实测如此）。</p>
 <hr />
-<h2>新手要点（和 C 的区别）</h2>
+<h2>资源管理：线程是稀缺资源</h2>
+<p><code class="c">std::thread</code> 直接对应 OS 线程：创建有内核开销，数量有上限，创建失败抛 <code class="c">std::system_error</code>。如果并发请求突然暴涨（行情风暴时风控任务激增），手动 <code class="c">std::thread</code> 的版本只有两个结局：超订（oversubscription——线程数远超核数，调度抖动摧毁延迟）或直接抛异常拒绝服务。<strong>不要真去试创建十万线程</strong>——文档层面理解即可：线程是硬件资源，像文件描述符一样会被耗尽。</p>
+<p><code class="c">std::async</code> 把「任务」和「线程」解耦：你提交任务，运行时可以新开线程、复用线程池、甚至（默认策略下）推迟执行（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item36-launch-policy.md">Item 36</a> 的陷阱在这里埋下伏笔）。理想实现下，任务制让并发度自动匹配硬件能力。</p>
+<p>心智模型对比：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>维度</th>
-<th>C 怎么做</th>
-<th>C++ 怎么做</th>
-<th>为什么</th>
+<th><code class="c">std::thread</code>（线程制）</th>
+<th><code class="c">std::async</code>（任务制）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>线程创建</td>
-<td><code class="c">pthread_create</code></td>
-<td><code class="c">std::thread</code> / <code class="c">std::async</code></td>
-<td>C++ 标准库</td>
+<td>抽象</td>
+<td>OS 线程的句柄</td>
+<td>异步任务的提货单（<code class="c">future</code>）</td>
 </tr>
 <tr>
 <td>返回值</td>
-<td><code class="c">pthread_join</code> + <code class="c">void*</code></td>
+<td>无机制，手动搭 <code class="c">promise</code></td>
 <td><code class="c">future::get()</code></td>
-<td>类型安全</td>
 </tr>
 <tr>
 <td>异常</td>
-<td>进程崩溃</td>
-<td><code class="c">future</code> 传播</td>
-<td>异常安全</td>
+<td>逃逸即 <code class="c">std::terminate</code>（实测 exit 134）</td>
+<td>存进 future，<code class="c">get()</code> 时 rethrow</td>
 </tr>
 <tr>
 <td>线程管理</td>
-<td>手动</td>
-<td><code class="c">async</code> 自动</td>
-<td>更高层抽象</td>
+<td>手动 join/detach，忘 join 析构即 terminate</td>
+<td>运行时托管</td>
+</tr>
+<tr>
+<td>资源控制</td>
+<td>程序员自行防超订</td>
+<td>实现可池化/延迟（默认策略下）</td>
+</tr>
+<tr>
+<td>适用</td>
+<td>需要精细控制线程本身（亲和性、栈大小、专用线程）</td>
+<td>绝大多数「并发做件事」的场景</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>一句话总结：</strong> C 程序员记住——<code class="c">std::async</code> 是 <code class="c">pthread_create</code> 的高层替代：返回值通过 <code class="c">future</code> 拿，异常通过 <code class="c">future</code> 传，线程管理交给运行时。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>async 的两大能力合在一个程序里：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;future&gt;
+#include &lt;iostream&gt;
+#include &lt;stdexcept&gt;
+
+int compute() { return 42; }
+
+int main() {
+    // 1. 返回值通道
+    auto fut = std::async(std::launch::async, compute);
+    std::cout &lt;&lt; &quot;async 返回值 = &quot; &lt;&lt; fut.get() &lt;&lt; &quot;\n&quot;;
+
+    // 2. 异常穿透：任务里 throw，get() 时 rethrow
+    auto bad = std::async(std::launch::async, []() -&gt; int {
+        throw std::runtime_error(&quot;boom from async&quot;);
+    });
+    try {
+        (void)bad.get();
+    } catch (const std::runtime_error&amp; e) {
+        std::cout &lt;&lt; &quot;捕获到异常: &quot; &lt;&lt; e.what() &lt;&lt; &quot;\n&quot;;
+    }
+    std::cout &lt;&lt; &quot;进程正常结束\n&quot;;
+    return 0;
+}
+</code></pre>
+<p>本机实测（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">async 返回值 = 42
+捕获到异常: boom from async
+进程正常结束
+</code></pre>
+<hr />
+<h2>常见错误（新手踩坑）</h2>
+<ol>
+<li><strong><code class="c">std::thread</code> 里让异常逃逸</strong>。实测进程直接被 SIGABRT 杀死（exit 134），<code class="c">libc++abi: terminating due to uncaught exception</code>——所有线程陪葬。修正：线程函数体内兜底 try-catch，或改用 <code class="c">std::async</code>。</li>
+<li><strong>以为 <code class="c">std::thread</code> 的 lambda 返回值能拿回来</strong>。返回值被直接丢弃。修正：要结果就用 <code class="c">std::async</code>；坚持用 thread 就自己搭 <code class="c">std::promise</code> 管道（含 <code class="c">set_exception</code>）。</li>
+<li><strong><code class="c">std::thread</code> 析构时忘记 join/detach</strong>。joinable 的 thread 析构即 <code class="c">std::terminate</code>（Item 37 详讲）。修正：RAII 封装或改用 async。</li>
+<li><strong><code class="c">async</code> 返回的 future 从不 <code class="c">get()</code></strong>。任务里的异常被静默丢弃，且默认/强制 async 策略下 future 析构会阻塞到任务完成（Item 38）。修正：结果和异常都要取。</li>
+</ol>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>异步风控检查</strong>：<code class="c">auto fut = std::async(std::launch::async, checkRisk, order);</code> 异步执行风控，主线程不阻塞。</li>
-<li><strong>后台日志</strong>：<code class="c">std::async(std::launch::async, []{ write_log(entries); });</code> 异步写日志，不阻塞热路径。</li>
-<li><strong>异常安全</strong>：HFT 守护进程用 <code class="c">async</code> 而非 <code class="c">thread</code>——任务抛异常不会拉崩进程。</li>
+<li><strong>守护任务的异常隔离</strong>：风控预检、日志落盘、快照上传这类后台任务用 <code class="c">std::async</code>——任务抛异常穿透到 <code class="c">get()</code>，守护进程捕获后继续跑；用裸 <code class="c">std::thread</code>，一次未捕获异常就是整个交易进程 SIGABRT（实测 exit 134），盘中事故。</li>
+<li><strong>热路径仍用专用 thread</strong>：<code class="c">async</code> 是「任务制」便利，但延迟关键的行情处理线程需要钉核（CPU affinity）、实时调度、自定义栈——这些是 <code class="c">std::thread</code>（或 <code class="c">pthread</code>）的领域。规则：<strong>后台任务用 async，热路径专用线程用 thread 并自己管好它</strong>。</li>
+<li><strong>防超订</strong>：行情风暴触发的瞬时任务洪峰，裸 thread 版本会超订拖垮全系统；async（尤其配合线程池实现）给出自然的并发上限。</li>
+<li><strong>future 即回执</strong>：<code class="c">std::async</code> 返回的 <code class="c">future</code> 天然是任务回执——下单网关异步确认、回测任务批量收集结果，<code class="c">get()</code>/<code class="c">wait_for()</code> 就是同步点。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">std::async</code> 相比 <code class="c">std::thread</code> 有什么优势？</li>
-<li><code class="c">thread</code> 里抛异常会怎样？<code class="c">async</code> 呢？</li>
-<li><code class="c">async</code> 如何拿返回值？</li>
-<li>下面代码有什么问题？</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">std::thread t([]{ return compute(); });
-t.join();
-// 怎么拿 compute() 的返回值？
-</code></pre>
+<p><strong>1. <code class="c">std::async</code> 相比 <code class="c">std::thread</code> 的三个核心优势是什么？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p>三点主要优势：①<strong>能拿返回值</strong>：<code class="c">std::async</code> 返回 <code class="c">std::future</code>，可以直接 <code class="c">get()</code> 拿到任务的返回值（也能传异常）；<code class="c">std::thread</code> 没有任何返回值通道，只能靠 <code class="c">std::promise</code> 或输出参数自己搭。②<strong>异常安全</strong>：任务里抛的异常会被捕获并存入 future 的共享状态，在 <code class="c">get()</code> 时重新抛出，由调用方处理；<code class="c">std::thread</code> 里逃逸的异常直接调用 <code class="c">std::terminate</code>，进程崩溃。③<strong>生命周期更简单</strong>：<code class="c">std::thread</code> 析构时若仍 joinable 会 <code class="c">terminate</code>，必须自己 join/detach（或用 RAII 封装）；<code class="c">async</code> 返回的 future 由库管理底层线程，不必手动 join。另外 <code class="c">async</code> 还能让运行时选择线程池等实现。</p>
-</li>
-<li>
-<p><code class="c">std::thread</code> 里抛出的异常若没被线程函数捕获，会调用 <code class="c">std::terminate()</code>——整个进程直接终止（栈展开不会跨线程传播，没有其他线程能 catch 到它）。<code class="c">std::async</code> 里抛的异常被库捕获并存储到 future 的共享状态中，等到调用 <code class="c">future::get()</code>/<code class="c">wait()</code> 时在<strong>调用方线程</strong>重新抛出，可以正常 try-catch 处理；如果没人调用 <code class="c">get()</code>，异常就被静默丢弃（这也是要记得取结果的原因）。</p>
-</li>
-<li>
-<p>通过返回的 <code class="c">std::future&lt;T&gt;</code>：<code class="c">auto fut = std::async(std::launch::async, f, args...);</code>，之后 <code class="c">T r = fut.get();</code>。<code class="c">get()</code> 会阻塞直到任务完成（若未完成），并<strong>只能调用一次</strong>（它是移动语义，调用后 future 失效）；可用 <code class="c">wait()</code>/<code class="c">wait_for()</code> 做非阻塞或超时等待。若不需要返回值，<code class="c">async</code> 返回的 <code class="c">std::future&lt;void&gt;</code> 仍要用 <code class="c">get()</code> 来同步与传播异常。</p>
-</li>
-<li>
-<p>拿不到——<code class="c">std::thread</code> 没有返回值的机制，lambda 的返回值被直接丢弃（甚至 <code class="c">[]{ return compute(); }</code> 这种写法本身没有意义）。可行的改法有两类：①改用 <code class="c">std::async</code>，直接 <code class="c">auto fut = std::async(std::launch::async, compute);</code> 然后 <code class="c">fut.get()</code>；②坚持用 <code class="c">thread</code> 则自己搭通道，例如 <code class="c">std::promise&lt;T&gt; p; auto fut = p.get_future();</code> 在线程里 <code class="c">p.set_value(compute());</code>，或用 <code class="c">std::packaged_task</code> 包住可调用对象再 <code class="c">get_future()</code>。异常路径下还要记得 <code class="c">set_exception</code>。推荐第 ① 种，代码最短且异常安全。</p>
-</li>
-</ol>
+<summary>答案</summary>
+<p>①返回值通道：<code class="c">async</code> 返回 <code class="c">std::future&lt;T&gt;</code>，<code class="c">get()</code> 直接拿结果；<code class="c">thread</code> 无任何机制，要自己搭 <code class="c">std::promise</code>。②异常安全：任务异常被存进 future，<code class="c">get()</code> 时在调用方线程 rethrow，可 try-catch；<code class="c">thread</code> 里逃逸的异常直接 <code class="c">std::terminate</code>（本文实测进程被 SIGABRT 杀死，exit 134）。③资源管理：<code class="c">async</code> 把线程生命周期和调度交给运行时（可池化）；<code class="c">thread</code> 要手动 join/detach，析构时 joinable 即 terminate，且线程是稀缺资源，手动管理有超订风险。</p>
+</details>
+<p><strong>2. <code class="c">std::thread</code> 的线程函数里抛出未捕获异常，会发生什么？退出码是多少？</strong></p>
+<details>
+<summary>答案</summary>
+<p>栈展开不跨线程，没有任何人能捕获这个异常，运行时调用 <code class="c">std::terminate()</code>，进程被 SIGABRT 杀死。本机实测 stderr 输出 <code class="c">libc++abi: terminating due to uncaught exception of type std::runtime_error: boom from thread</code>，退出码 134（= 128 + SIGABRT 的 6）。「这行永远不会执行」——<code class="c">t.join()</code> 之后的代码没有机会跑。</p>
+</details>
+<p><strong>3. <code class="c">std::async</code> 任务的异常如何到达调用方？如果没人调用 <code class="c">get()</code> 会怎样？</strong></p>
+<details>
+<summary>答案</summary>
+<p>任务抛出的异常被 async 实现捕获并存入 future 的共享状态；调用方 <code class="c">get()</code> 时异常在自己的线程里被 rethrow，走正常 try-catch（本文实测捕获到 <code class="c">boom from async</code>，进程 exit 0）。如果从不 <code class="c">get()</code>，异常被静默丢弃——任务失败无人知晓。另外 libc++ 给 <code class="c">get()</code> 标了 <code class="c">[[nodiscard]]</code>，忽略返回值会有编译警告。</p>
+</details>
+<p><strong>4. 坚持用 <code class="c">std::thread</code> 又想拿返回值，怎么办？代价是什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>自己搭 <code class="c">std::promise&lt;T&gt;</code>/<code class="c">std::future&lt;T&gt;</code> 通道：线程里 <code class="c">set_value(compute())</code>，异常路径还要 <code class="c">set_exception(std::current_exception())</code>，主线程 <code class="c">fut.get()</code>。本文实测该写法输出正确（42），但比 <code class="c">std::async</code> 多出约 6 行管道代码，每一处（promise 移动进线程、异常转发、join）都是出错点。本质上你手工重新实现了 async 已经提供的东西。</p>
+</details>
+<p><strong>5. 什么是超订（oversubscription）？为什么 <code class="c">std::async</code> 能缓解它？</strong></p>
+<details>
+<summary>答案</summary>
+<p>超订指并发线程数远超硬件核数：每个 <code class="c">std::thread</code> 直接对应 OS 线程，任务洪峰时线程暴涨，上下文切换和缓存抖动摧毁延迟，线程耗尽还会抛 <code class="c">std::system_error</code>。<code class="c">std::async</code> 把任务与线程解耦——实现可以用线程池让并发度匹配硬件，或（默认策略下）推迟执行；程序员只提交任务，不直接持有线程这个稀缺资源。</p>
+</details>
+<p><strong>6. 什么场景反而应该用 <code class="c">std::thread</code> 而不是 <code class="c">std::async</code>？</strong></p>
+<details>
+<summary>答案</summary>
+<p>需要控制<strong>线程本身</strong>而非只是并发执行任务时：钉核（CPU affinity）、实时调度策略、自定义栈大小、线程特定的 TLS 生命周期管理、长期存活的专用线程（如 HFT 热路径的行情处理线程）。<code class="c">async</code> 不暴露这些控制面。简记：要「一个听话的线程」用 thread，要「一件并发完成的事」用 async。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
@@ -576,273 +639,437 @@ t.join();
       <section class="section" id="s-item36">
         <div class="sec-head"><div class="sec-no">Item 36</div><h2>Item 36：明确指定启动策略</h2></div>
 <blockquote>
-<p>第 7 章 · Item 36 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item35-async-vs-thread.md">Item 35 async vs thread</a></p>
+<p>第 7 章 并发 API · Item 36 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item35-async-vs-thread.md">Item 35 async vs thread</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>C 程序员用 <code class="c">pthread_create</code> 时，线程<strong>一定</strong>立即创建并执行：</p>
-<pre class="code" data-label="C"><code class="c">pthread_t tid;
-pthread_create(&amp;tid, NULL, worker, NULL);  // 立即在新线程执行
-// worker 一定已经开始运行
-pthread_join(tid, NULL);  // 等待完成
-</code></pre>
-<p>C++ 的 <code class="c">std::async</code> 默认策略是 <code class="c">async | deferred</code>——运行时可能选择延迟到 <code class="c">get()</code> 才<strong>同步</strong>执行。这意味着你以为在异步执行，实际可能同步阻塞：</p>
-<pre class="code" data-label="cpp"><code class="c">auto fut = std::async([]{ return compute(); });
-// 可能已经开始异步执行
-// 也可能什么都没做——延迟到 get() 才同步执行
-auto result = fut.get();  // 如果是 deferred → 在这里同步执行！
-</code></pre>
-<p>这是 C++ 并发 API 最隐蔽的陷阱——你以为异步，实际同步。</p>
+<p>C 程序员的并发直觉来自 <code class="c">pthread_create</code>：调用返回时，新线程<strong>一定</strong>已经开始跑了。把这套直觉带进 <code class="c">std::async</code> 会踩到 C++ 并发 API 最隐蔽的坑：<code class="c">std::async(f)</code> 的默认启动策略不是「异步执行」，而是 <code class="c">std::launch::async | std::launch::deferred</code>——<strong>标准允许实现二选一</strong>，选哪个由运行时说了算。</p>
+<p>如果运行时选了 <code class="c">deferred</code>，你的任务根本不会在新线程上跑。它被推迟到你对 future 调用 <code class="c">get()</code> 或 <code class="c">wait()</code> 的那一刻，在<strong>调用方的线程</strong>里同步执行。你以为「这事在后台跑着呢」，实际它安安静静躺在 future 里睡大觉；如果始终没人 <code class="c">get()</code>，它就<strong>永远不执行</strong>。</p>
+<p>这个行为因平台、因负载而异，难以复现。防御方法只有一条：把策略写出来。要么 <code class="c">std::launch::async</code>（真异步），要么 <code class="c">std::launch::deferred</code>（明说我要延迟），别让运行时替你掷骰子。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p><code class="c">async</code> 默认策略是 <code class="c">async | deferred</code>——运行时可能延迟到 <code class="c">get()</code> 才同步执行，这违背"并发"初衷。</p>
+<ol>
+<li>默认策略 <code class="c">async | deferred</code> 的语义：实现可二选一；</li>
+<li><strong>deferred 实测</strong>：不 <code class="c">get()</code>/<code class="c">wait()</code> 就不执行，<code class="c">wait_for(0)</code> 返回 <code class="c">future_status::deferred</code>；</li>
+<li><strong>强制 <code class="c">launch::async</code></strong>：没 <code class="c">get()</code> 任务已在跑（实测）；</li>
+<li>deferred 在 GUI/事件循环里的<strong>饥饿陷阱</strong>，以及本机默认策略的实际选择。</li>
+</ol>
 <hr />
-<h2>核心问题</h2>
-<h3>默认策略的陷阱</h3>
-<pre class="code" data-label="cpp"><code class="c">auto fut = std::async([]{ 
-    heavy_computation(); 
-    return 42; 
-});
-// 默认策略：launch::async | launch::deferred
-// 运行时可能：
+<h2>默认策略：运行时可以二选一</h2>
+<pre class="code" data-label="cpp"><code class="c">auto fut = std::async([]{ return heavy_work(); });
+// 等价于 std::async(std::launch::async | std::launch::deferred, ...)
+// 标准允许实现：
 //   1. 立即在新线程执行（async）
-//   2. 延迟到 get() 才在当前线程同步执行（deferred）
-// 你无法控制是哪种！
+//   2. 推迟到 get()/wait() 才在调用方线程同步执行（deferred）
+// 你无法从调用代码看出选了哪条！
 </code></pre>
-<h3>显式指定策略</h3>
-<pre class="code" data-label="cpp"><code class="c">// 强制异步：一定在新线程执行
-auto fut = std::async(std::launch::async, []{ ... });
-// 如果系统资源不足 → 抛 std::system_error
+<p>两条路的行为差异是本质性的：async 下任务与调用方<strong>并发</strong>；deferred 下任务与调用方<strong>串行</strong>，且执行时机被推迟到 future 被取值的那一刻。「默认策略」把并发语义变成了实现细节——这正是要避开它的原因。</p>
+<hr />
+<h2>deferred 实测：不 get 就不跑</h2>
+<p>显式指定 <code class="c">launch::deferred</code>，用标志位观察任务是否真的执行过：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;chrono&gt;
+#include &lt;future&gt;
+#include &lt;iostream&gt;
+#include &lt;thread&gt;
 
-// 强制延迟：到 get() 才在当前线程执行
-auto fut2 = std::async(std::launch::deferred, []{ ... });
-auto result = fut2.get();  // 在当前线程同步执行
-// 适合 lazy evaluation 场景
+int main() {
+    bool ran = false;
+    auto fut = std::async(std::launch::deferred, [&amp;] {
+        ran = true;
+        std::cout &lt;&lt; &quot;任务体执行\n&quot;;
+        return 42;
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::cout &lt;&lt; &quot;创建 200ms 后 ran = &quot; &lt;&lt; ran &lt;&lt; &quot;（任务没跑）\n&quot;;
+
+    // wait_for(0) 检测 deferred
+    auto st = fut.wait_for(std::chrono::seconds(0));
+    std::cout &lt;&lt; &quot;wait_for(0) == future_status::deferred ? &quot;
+              &lt;&lt; (st == std::future_status::deferred) &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;检测后 ran = &quot; &lt;&lt; ran &lt;&lt; &quot;（wait_for 不触发执行）\n&quot;;
+
+    std::cout &lt;&lt; &quot;get() = &quot; &lt;&lt; fut.get() &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;get 之后 ran = &quot; &lt;&lt; ran &lt;&lt; &quot;\n&quot;;
+    return 0;
+}
 </code></pre>
+<p>本机实测（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">创建 200ms 后 ran = 0（任务没跑）
+wait_for(0) == future_status::deferred ? 1
+检测后 ran = 0（wait_for 不触发执行）
+get() = 任务体执行
+42
+get 之后 ran = 1
+</code></pre>
+<p>三个要点全被坐实：①创建后等了 200ms，<code class="c">ran</code> 仍是 0——任务根本没跑；②<code class="c">wait_for(0)</code> 返回 <code class="c">future_status::deferred</code>——这是检测 deferred 的标准手法，且 <code class="c">wait_for</code> <strong>不会</strong>触发执行；③<code class="c">get()</code> 的那一刻任务才在<strong>当前线程</strong>同步执行（注意输出顺序：<code class="c">get() =</code> 之后才是 <code class="c">任务体执行</code>，然后才是返回值 <code class="c">42</code>）。</p>
+<hr />
+<h2>强制 launch::async：真异步</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;chrono&gt;
+#include &lt;future&gt;
+#include &lt;iostream&gt;
+#include &lt;thread&gt;
+
+int main() {
+    bool ran = false;
+    auto fut = std::async(std::launch::async, [&amp;] {
+        ran = true;
+        return 42;
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::cout &lt;&lt; &quot;100ms 后 ran = &quot; &lt;&lt; ran &lt;&lt; &quot;（还没 get 就已执行）\n&quot;;
+    std::cout &lt;&lt; &quot;get() = &quot; &lt;&lt; fut.get() &lt;&lt; &quot;\n&quot;;
+
+    // 对照：本机默认策略实际选了哪条？
+    bool ran2 = false;
+    auto fut2 = std::async([&amp;] { ran2 = true; return 1; });   // 默认策略
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::cout &lt;&lt; &quot;默认策略 100ms 后 ran2 = &quot; &lt;&lt; ran2 &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;fut2.get() = &quot; &lt;&lt; fut2.get() &lt;&lt; &quot;\n&quot;;
+    return 0;
+}
+</code></pre>
+<p>本机实测（clang 23.1.0）输出：</p>
+<pre class="code" data-label="code"><code class="c">100ms 后 ran = 1（还没 get 就已执行）
+get() = 42
+默认策略 100ms 后 ran2 = 1
+fut2.get() = 1
+</code></pre>
+<p><code class="c">launch::async</code> 下任务在 100ms 内已在别的线程跑完，没等 <code class="c">get()</code>。本机（libc++）的默认策略这次选了 async（<code class="c">ran2 = 1</code>）——<strong>但这是实现的当前选择，不是标准保证</strong>。换 STL（MSVC）、换负载、换版本都可能选 deferred；依赖默认策略就是把正确性押在你控制不了的变量上。</p>
+<p>三种策略对比：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>策略</th>
 <th>行为</th>
+<th>任务何时执行</th>
 <th>适用场景</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code class="c">launch::async</code></td>
-<td>强制新线程/线程池执行</td>
-<td>并发任务</td>
+<td>强制新线程异步执行</td>
+<td><code class="c">async</code> 调用后立即</td>
+<td>真并发任务</td>
 </tr>
 <tr>
 <td><code class="c">launch::deferred</code></td>
-<td>延迟到 <code class="c">get()</code>/<code class="c">wait()</code> 同步执行</td>
-<td>延迟计算</td>
+<td>推迟到 <code class="c">get()</code>/<code class="c">wait()</code> 在调用方线程同步执行</td>
+<td>取值那一刻；无人取值则永不执行</td>
+<td>惰性求值</td>
 </tr>
 <tr>
 <td>默认（<code class="c">async \| deferred</code>）</td>
-<td>运行时决定</td>
-<td>不推荐——行为不确定</td>
+<td>实现二选一</td>
+<td>不确定</td>
+<td><strong>不要用</strong></td>
 </tr>
 </tbody>
 </table></div>
-<h3>检测 deferred</h3>
-<pre class="code" data-label="cpp"><code class="c">auto fut = std::async([]{ ... });
-// 检测是否 deferred
-if (fut.wait_for(std::chrono::seconds(0)) == std::future_status::deferred) {
-    // 是 deferred——get() 会同步执行
-    auto result = fut.get();  // 在当前线程执行
-} else {
-    // 是 async——已经在异步执行
-    auto result = fut.get();  // 等待异步完成
+<hr />
+<h2>deferred 的饥饿陷阱（场景描述）</h2>
+<p>deferred 最毒的用法是配 <code class="c">wait_for</code> 轮询：</p>
+<pre class="code" data-label="cpp"><code class="c">auto fut = std::async([]{ return heavy_work(); });   // 若被 deferred……
+while (fut.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready) {
+    do_ui_frame();   // GUI 主线程继续渲染
+}
+// 循环永远出不来：deferred 任务只有 get()/wait() 才执行，
+// wait_for 不算数（实测）→ ready 永远等不到 → 死循环
+</code></pre>
+<p>在 GUI / 事件循环线程上这就是饥饿：事件循环每转一圈都检查一次 future，future 永远不是 ready（deferred 任务在等待一个永远不会来的 <code class="c">get()</code>），界面卡死但 CPU 占用看起来正常。同类事故在交易系统的监控线程里同样成立：「等后台任务完成再上报」的轮询循环，遇到 deferred 就是无限等待。防御手法是检测后补救：</p>
+<pre class="code" data-label="cpp"><code class="c">if (fut.wait_for(std::chrono::seconds(0)) == std::future_status::deferred) {
+    // 被 deferred 了：要么就地同步执行，要么改用 launch::async 重发任务
+    fut.wait();   // wait() 会触发 deferred 任务执行
 }
 </code></pre>
+<p>但更干净的做法仍是源头控制：创建时就写 <code class="c">std::launch::async</code>。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>两种策略并排对照（上文两段实测代码的精简合体）：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;chrono&gt;
+#include &lt;future&gt;
+#include &lt;iostream&gt;
+#include &lt;thread&gt;
+
+int main() {
+    bool a = false, d = false;
+
+    auto fa = std::async(std::launch::async, [&amp;] { a = true; return 1; });
+    auto fd = std::async(std::launch::deferred, [&amp;] { d = true; return 2; });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::cout &lt;&lt; &quot;100ms 后：async 任务已执行?&quot; &lt;&lt; a
+              &lt;&lt; &quot;  deferred 任务已执行?&quot; &lt;&lt; d &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;fd.wait_for(0) 是 deferred? &quot;
+              &lt;&lt; (fd.wait_for(std::chrono::seconds(0))
+                  == std::future_status::deferred) &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;fa.get()=&quot; &lt;&lt; fa.get() &lt;&lt; &quot;  fd.get()=&quot; &lt;&lt; fd.get() &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;get 之后：d = &quot; &lt;&lt; d &lt;&lt; &quot;\n&quot;;
+    return 0;
+}
+</code></pre>
+<p>本机实测（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">100ms 后：async 任务已执行?1  deferred 任务已执行?0
+fd.wait_for(0) 是 deferred? 1
+fa.get()=1  fd.get()=2
+get 之后：d = 1
+</code></pre>
+<p>同一行时间点上两个任务状态相反：<code class="c">async</code> 已跑完，<code class="c">deferred</code> 纹丝未动——直到 <code class="c">fd.get()</code> 才执行。</p>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
-<p><strong>错误 1：用默认策略以为一定异步</strong></p>
-<pre class="code" data-label="cpp"><code class="c">auto fut = std::async([]{ heavy_work(); });
-// 可能 deferred → get() 时同步阻塞 → 热路径卡住
-do_something_else();  // 以为 heavy_work 在后台跑
-fut.get();  // 如果 deferred → 这里才执行 heavy_work！
-</code></pre>
-<p><strong>修正：</strong> 显式 <code class="c">std::launch::async</code>。</p>
-<p><strong>错误 2：wait_for(0) 检测 deferred 的用法搞错</strong></p>
-<pre class="code" data-label="cpp"><code class="c">auto fut = std::async([]{ ... });
-if (fut.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-    // ready 表示已完成——但 deferred 也返回 deferred 不是 ready
-}
-</code></pre>
-<p><strong>修正：</strong> 检查 <code class="c">== std::future_status::deferred</code>。</p>
-<p><strong>错误 3：launch::async 资源不足抛异常未处理</strong></p>
-<pre class="code" data-label="cpp"><code class="c">auto fut = std::async(std::launch::async, []{ ... });
-// 如果线程数超限 → 抛 std::system_error
-</code></pre>
-<p><strong>修正：</strong> <code class="c">try-catch</code> 或确保系统资源充足。</p>
-<hr />
-<h2>新手要点（和 C 的区别）</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>维度</th>
-<th>C 怎么做</th>
-<th>C++ 怎么做</th>
-<th>为什么</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>线程创建</td>
-<td><code class="c">pthread_create</code> 立即执行</td>
-<td><code class="c">async</code> 默认可能延迟</td>
-<td>C++ 给运行时灵活性</td>
-</tr>
-<tr>
-<td>策略控制</td>
-<td>不适用</td>
-<td><code class="c">launch::async</code>/<code class="c">deferred</code></td>
-<td>C++ 标准库</td>
-</tr>
-<tr>
-<td>行为确定性</td>
-<td>一定异步</td>
-<td>默认不确定</td>
-<td>需要显式指定</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>一句话总结：</strong> C 程序员记住——C++ 的 <code class="c">async</code> 默认策略可能延迟到 <code class="c">get()</code> 才同步执行。<strong>永远显式写 <code class="c">launch::async</code></strong>。</p>
+<ol>
+<li><strong>用默认策略以为「一定在后台跑」</strong>。默认是 <code class="c">async | deferred</code>，实现可二选一；若被 deferred，<code class="c">fut.get()</code> 那一刻任务在<strong>你的线程</strong>同步执行，热路径当场阻塞一次完整计算。修正：显式写 <code class="c">std::launch::async</code>。</li>
+<li><strong>用 <code class="c">wait_for(0) == ready</code> 检测 deferred</strong>。deferred 任务永远不报 ready——检测值应是 <code class="c">std::future_status::deferred</code>（实测返回的正是它）。<code class="c">wait_for</code>/<code class="c">wait_for(0)</code> 都不会触发 deferred 任务执行（实测）。</li>
+<li><strong>deferred 任务配 <code class="c">wait_for</code> 轮询</strong>。循环条件 <code class="c">wait_for(...) != ready</code> 永远成立——死循环（GUI 饥饿陷阱，见上节）。修正：检测到 deferred 后 <code class="c">wait()</code>（会触发执行），或源头改用 <code class="c">launch::async</code>。</li>
+<li><strong>显式 <code class="c">launch::async</code> 后忽略资源失败</strong>。强制 async 在系统线程资源耗尽时抛 <code class="c">std::system_error</code>；高并发场景要 catch 住并降级（比如回落到同步执行）。</li>
+</ol>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>热路径意外阻塞</strong>：HFT 异步任务若用默认 <code class="c">async</code> 策略，可能被延迟到 <code class="c">get()</code> 同步执行，热路径意外阻塞。务必 <code class="c">launch::async</code>。</li>
-<li><strong>延迟计算</strong>：配置加载用 <code class="c">launch::deferred</code>——用到时才计算，启动快。</li>
-<li><strong>线程池</strong>：<code class="c">launch::async</code> 可能由运行时用线程池实现——避免频繁创建线程的开销。</li>
+<li><strong>延迟确定性</strong>：HFT 最怕「不可预测的同步阻塞」——默认策略下一个本该后台跑的风控检查可能被推迟到 <code class="c">get()</code> 时在关键线程同步执行，造成延迟尖峰。规则：<strong>所有 <code class="c">std::async</code> 调用必须带显式策略</strong>，代码评审 grep <code class="c">std::async(</code> 后面跟的不是 <code class="c">std::launch</code> 的全部打回。</li>
+<li><strong>后台任务用 <code class="c">launch::async</code></strong>：日志落盘、快照上传、异步风控——<code class="c">std::async(std::launch::async, ...)</code> 保证调用后立刻离开当前线程。</li>
+<li><strong>配置懒加载可用 <code class="c">launch::deferred</code></strong>：启动时不算、第一次用到才算的开销（如非关键路径的模型参数），用 deferred 明说「惰性求值」意图——但必须确保取值点不在热路径上。</li>
+<li><strong>事件循环线程警惕 deferred</strong>：网关的 epoll 循环、GUI 监控线程里若用 future 轮询等待默认策略的 async 任务，撞上 deferred 就是死等——检测 <code class="c">future_status::deferred</code> 或干脆只在事件循环外用 async。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">std::async</code> 的默认启动策略是什么？为什么可能导致"以为是异步实际是同步"？</li>
-<li><code class="c">launch::async</code> 和 <code class="c">launch::deferred</code> 分别是什么行为？</li>
-<li>为什么 HFT 必须显式指定 <code class="c">launch::async</code>？</li>
-<li>如何检测 <code class="c">async</code> 返回的 future 是否被 deferred？</li>
-<li>下面代码有什么问题？</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">auto fut = std::async([]{ return heavy_work(); });
-process_other();
-int result = fut.get();
-</code></pre>
+<p><strong>1. <code class="c">std::async(f)</code> 的默认启动策略是什么？为什么它危险？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p>默认策略是 <code class="c">std::launch::async | std::launch::deferred</code>——标准允许实现<strong>二选一</strong>，由运行时按负载自行决定。如果它选了 <code class="c">deferred</code>，任务根本不会立即在新线程上跑，而是被推迟到你对 future 调用 <code class="c">get()</code>/<code class="c">wait()</code> 时才<strong>同步执行</strong>（在调用 <code class="c">get()</code> 的那个线程上）。于是你以为"已经异步跑起来了"的计算，实际是在 <code class="c">get()</code> 那一刻才同步完成的——这就是"以为是异步实际是同步"的来源，而且它因平台、负载而异，极难复现。</p>
-</li>
-<li>
-<p><code class="c">std::launch::async</code>：任务<strong>必须</strong>在新的执行线程上异步执行，调用 <code class="c">async</code> 后立即开始（不等待 <code class="c">get()</code>）。<code class="c">std::launch::deferred</code>：任务<strong>延迟</strong>执行，直到对返回的 future 调用 <code class="c">get()</code> 或 <code class="c">wait()</code> 时才在<strong>调用者线程</strong>上同步执行；如果始终没人调用 <code class="c">get()</code>/<code class="c">wait()</code>，任务就<strong>永远不会执行</strong>。二者可以组合（<code class="c">async | deferred</code> 即默认策略），也可以只给其中一个来固定行为。</p>
-</li>
-<li>
-<p>因为 HFT 对延迟有确定性要求：默认策略下，一段本该在后台跑的重活（风控检查、日志落盘）可能被推迟到 <code class="c">get()</code> 时同步执行，让热路径在不可预测的时点被阻塞，造成延迟尖峰。显式写 <code class="c">std::async(std::launch::async, ...)</code> 才能保证"调用后立即在另一个线程上执行"，把耗时真正移出关键路径；反过来，若确实想延迟计算（如配置懒加载），就显式写 <code class="c">std::launch::deferred</code> 以表明意图。核心是<strong>不要依赖默认策略</strong>。</p>
-</li>
-<li>
-<p>用 <code class="c">future::wait_for(std::chrono::seconds(0))</code> 判断：<code class="c">deferred</code> 任务的 future 在没被调用 <code class="c">get()</code>/<code class="c">wait()</code> 之前永远不会开始，因此 <code class="c">wait_for(0)</code> 必然返回 <code class="c">std::future_status::deferred</code>；而真正异步执行的任务会返回 <code class="c">ready</code>（已完成）或 <code class="c">timeout</code>（还在跑）。示例：</p>
-</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">if (fut.wait_for(std::chrono::seconds(0)) == std::future_status::deferred) {
-    // 该任务是 deferred，只有在 get() 时才会同步执行
-}
-</code></pre>
-<p>注意这只是"事后检测"，正确做法仍是在创建时就显式指定 <code class="c">launch::async</code>。</p>
-<ol start="5">
-<li>问题在于<strong>没有指定启动策略</strong>，用了默认的 <code class="c">async | deferred</code>。于是 <code class="c">heavy_work()</code> 有可能根本没有在后台执行，而是在 <code class="c">fut.get()</code> 时才同步跑完——<code class="c">process_other()</code> 与它并没有真正并行，最后那行 <code class="c">fut.get()</code> 可能在热路径上突然阻塞一次完整计算。修正：显式指定策略——</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">auto fut = std::async(std::launch::async, []{ return heavy_work(); });
-</code></pre>
-<p>若本意就是延迟计算（不用就不算），则应写 <code class="c">std::launch::deferred</code> 并明确注释。</p>
+<summary>答案</summary>
+<p>默认策略是 <code class="c">std::launch::async | std::launch::deferred</code>——标准允许实现<strong>二选一</strong>，由运行时决定。若选了 deferred，任务不立即执行，而是推迟到 <code class="c">get()</code>/<code class="c">wait()</code> 时在调用方线程同步执行；始终不取值则永不执行。危险在于并发语义变成了实现细节：因平台、负载而异，难以复现，「以为在后台跑实际同步阻塞」的 bug 无法从调用代码看出。</p>
+</details>
+<p><strong>2. 如何检测一个 future 对应的任务被 deferred 了？检测本身会触发任务执行吗？</strong></p>
+<details>
+<summary>答案</summary>
+<p>用 <code class="c">fut.wait_for(std::chrono::seconds(0))</code>，返回 <code class="c">std::future_status::deferred</code> 即为 deferred（真异步任务会返回 <code class="c">ready</code> 或 <code class="c">timeout</code>）。本文实测：deferred 任务创建 200ms 后仍未执行，<code class="c">wait_for(0)</code> 返回 deferred，且检测后任务依然没跑——<code class="c">wait_for</code> 不会触发执行，只有 <code class="c">get()</code>/<code class="c">wait()</code> 会。</p>
+</details>
+<p><strong>3. deferred 任务在什么确切时机执行？在哪个线程？</strong></p>
+<details>
+<summary>答案</summary>
+<p>在对返回的 future 首次调用 <code class="c">get()</code> 或 <code class="c">wait()</code> 的那一刻执行，在<strong>发起该调用的线程</strong>上同步执行（不是新线程）。本文实测输出顺序 <code class="c">get() = 任务体执行 → 42</code> 证明执行夹在 <code class="c">get()</code> 调用之中。若始终无人 <code class="c">get()</code>/<code class="c">wait()</code>，任务永不执行。</p>
+</details>
+<p><strong>4. 为什么 GUI/事件循环里 deferred 会导致饥饿？</strong></p>
+<details>
+<summary>答案</summary>
+<p>典型写法是 <code class="c">while (fut.wait_for(...) != ready) { 继续处理事件; }</code>。deferred 任务只有 <code class="c">get()</code>/<code class="c">wait()</code> 才执行，<code class="c">wait_for</code> 不算——所以 future 永远不会变成 ready，循环永远出不来：事件循环卡死，任务也永远没跑，界面冻结但 CPU 占用正常。本文实测确认 <code class="c">wait_for</code> 不触发 deferred 任务。修正：检测到 deferred 后用 <code class="c">wait()</code>，或源头显式 <code class="c">launch::async</code>。</p>
+</details>
+<p><strong>5. 强制真异步的正确写法是什么？它可能抛什么异常？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">auto fut = std::async(std::launch::async, f, args...);</code>——保证任务在新线程异步执行（本文实测：100ms 后未 <code class="c">get()</code> 任务已执行完）。若系统线程资源耗尽导致无法创建新执行上下文，抛 <code class="c">std::system_error</code>；高并发场景应 catch 并降级（如回落到同步执行）。</p>
+</details>
+<p><strong>6. 本机实测默认策略选了 async，能否据此在代码里放心用默认策略？</strong></p>
+<details>
+<summary>答案</summary>
+<p>不能。本机（clang 23.1.0 + libc++）这次默认策略选了 async（实测 <code class="c">ran2 = 1</code>），但这只是该实现的当前选择——标准明文允许二选一，换标准库实现（libstdc++、MSVC STL）、换版本、换负载都可能变成 deferred。把正确性押在实现细节上是隐患；显式写出策略才能让行为成为代码的一部分。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item35-async-vs-thread.md">Item 35 async vs thread</a></li>
 <li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item37-thread-joinable.md">Item 37 thread joinable</a></li>
-<li>回到：<a href="#intro">第 7 章</a></li>
+<li>回到：<a href="#intro">第 7 章 并发 API</a></li>
 </ul>
       </section>
       <section class="section" id="s-item37">
         <div class="sec-head"><div class="sec-no">Item 37</div><h2>Item 37：让 std::thread 在所有路径都不可联结（joinable）</h2></div>
 <blockquote>
-<p>第 7 章 · Item 37 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item36-launch-policy.md">Item 36 启动策略</a></p>
+<p>第 7 章 并发 API · Item 37 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item36-launch-policy.md">Item 36 启动策略</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item38-handle-destruction.md">Item 38 句柄析构行为</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>C 程序员用 <code class="c">pthread</code> 时，忘了 <code class="c">join</code> 只是资源泄漏——进程不会崩：</p>
+<p>C 程序员用 <code class="c">pthread</code> 时，忘了 <code class="c">pthread_join</code> 只是资源泄漏——进程不会崩，顶多少几个线程槽：</p>
 <pre class="code" data-label="C"><code class="c">pthread_t tid;
 pthread_create(&amp;tid, NULL, worker, NULL);
 // 忘了 pthread_join → 线程资源泄漏，但进程不崩
-// 或者提前 return → 线程可能还在跑
 </code></pre>
-<p>C++ 的 <code class="c">std::thread</code> 更严格——<strong>析构时如果仍 <code class="c">joinable</code>（既未 <code class="c">join</code> 也未 <code class="c">detach</code>），直接 <code class="c">std::terminate</code> 拉崩整个进程</strong>：</p>
-<pre class="code" data-label="cpp"><code class="c">void f() {
-    std::thread t(work);
-    // 如果这里抛异常或 return ...
-}  // t 析构时仍 joinable → std::terminate！进程崩溃！
-</code></pre>
-<p>这是 C++ 比 C 更严格的安全检查——强制你处理线程的生命周期。</p>
+<p>C++ 的 <code class="c">std::thread</code> 把这条"忘了也没关系"的路径直接封死了：<strong>只要 <code class="c">thread</code> 对象析构时还处于 <code class="c">joinable</code> 状态（既没 <code class="c">join</code> 也没 <code class="c">detach</code>），标准规定调用 <code class="c">std::terminate</code>——整个进程当场死亡</strong>，不只是这个线程出事。</p>
+<p>这不是标准委员会吓唬人。没人 join 的线程几乎必然意味着：函数返回后它还在访问已销毁的栈变量，或在你以为"程序已干净退出"时还在写全局状态。与其让你悄悄拿到 UB 定时炸弹，不如当场炸给你看。核心纪律一句话：<strong><code class="c">std::thread</code> 析构前必须 unjoinable</strong>——<code class="c">join()</code>、<code class="c">detach()</code>、move 走、或没启动过，四选一。难点在"所有路径"：正常 return 你记得 join，异常路径、中间 return 呢？</p>
 <hr />
 <h2>这节讲什么</h2>
-<p><code class="c">std::thread</code> 析构时若仍 <code class="c">joinable</code>（既未 <code class="c">join</code> 也未 <code class="c">detach</code>）→ <strong><code class="c">std::terminate</code></strong>。用 RAII 保证所有路径安全。</p>
+<p><code class="c">joinable</code> 的精确定义；<strong>本机实测</strong> joinable 析构 → <code class="c">std::terminate</code> 的真实报错与退出码；五种安全写法逐条跑通（join / detach / 默认构造 / move / RAII 守卫）；RAII 析构的两种策略（join 派 vs detach 派）与各自风险。</p>
 <hr />
-<h2>核心问题</h2>
-<h3>析构时 joinable = terminate</h3>
-<pre class="code" data-label="cpp"><code class="c">void f() {
-    std::thread t(work);
-    // ... 如果这里抛异常或 return ...
-}  // t 析构时仍 joinable → std::terminate！
+<h2>joinable 的精确定义</h2>
+<p>一个 <code class="c">std::thread</code> 对象 <code class="c">joinable() == true</code>，当且仅当它<strong>关联着一个活跃的、尚未结束的执行线程</strong>。以下四种情况 <code class="c">joinable()</code> 为 <code class="c">false</code>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>状态</th>
+<th><code class="c">joinable()</code></th>
+<th>析构行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>关联了活跃线程，未 join 未 detach</td>
+<td><code class="c">true</code></td>
+<td><strong><code class="c">std::terminate</code></strong></td>
+</tr>
+<tr>
+<td>已 <code class="c">join()</code></td>
+<td><code class="c">false</code></td>
+<td>安全</td>
+</tr>
+<tr>
+<td>已 <code class="c">detach()</code></td>
+<td><code class="c">false</code></td>
+<td>安全</td>
+</tr>
+<tr>
+<td>默认构造（从未关联线程）</td>
+<td><code class="c">false</code></td>
+<td>安全</td>
+</tr>
+<tr>
+<td>被 move 走（所有权已转移）</td>
+<td><code class="c">false</code></td>
+<td>安全</td>
+</tr>
+</tbody>
+</table></div>
+<p>析构规则一句话：<strong>析构时 <code class="c">joinable()</code> 为真 → terminate；为假 → 什么都不做</strong>。注意 <code class="c">join()</code>/<code class="c">detach()</code> 对已 unjoinable 的线程调用同样是错误（抛 <code class="c">std::system_error</code>），所以守卫代码里必须先判断 <code class="c">joinable()</code>。</p>
+<hr />
+<h2>实测 1：joinable 析构 → terminate（本机实测 clang 23.1.0）</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;thread&gt;
+#include &lt;cstdio&gt;
+
+void work() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+}
+
+int main() {
+    std::puts(&quot;main: creating thread...&quot;);
+    {
+        std::thread t(work);
+        std::puts(&quot;main: leaving scope WITHOUT join/detach&quot;);
+    }  // t 析构时仍 joinable → std::terminate
+    std::puts(&quot;main: you should never see this line&quot;);
+    return 0;
+}
 </code></pre>
-<h3>RAII 守卫</h3>
-<pre class="code" data-label="cpp"><code class="c">class ThreadGuard {
-    std::thread t;
+<p>clang 23.1.0 + <code class="c">-std=c++17 -Wall</code> 编译零警告，运行结果：</p>
+<pre class="code" data-label="code"><code class="c">main: creating thread...
+main: leaving scope WITHOUT join/detach
+libc++abi: terminating
+exit code: 134
+</code></pre>
+<p>最后一行 <code class="c">you should never see this line</code> 果然没打印。退出码 <strong>134 = 128 + 6</strong>，即进程收到 <strong>SIGABRT</strong> 自杀——<code class="c">std::terminate</code> 默认调用 <code class="c">std::abort</code>，libc++ 在 stderr 留下一句 <code class="c">libc++abi: terminating</code> 就算遗言了。注意它<strong>不会</strong>告诉你"是哪个 thread 没 join"，生产环境排查只能靠 core dump 或日志。</p>
+<hr />
+<h2>实测 2：五条安全路径逐一验证（本机实测 clang 23.1.0）</h2>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;thread&gt;
+#include &lt;cstdio&gt;
+
+void work(int id) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::printf(&quot;worker %d done\n&quot;, id);
+}
+
+// RAII 守卫：析构里 join（等线程跑完才放行）
+class ThreadGuardJoin {
+    std::thread t_;
 public:
-    explicit ThreadGuard(std::thread&amp;&amp; th) : t(std::move(th)) {}
-    ~ThreadGuard() { if (t.joinable()) t.join(); }  // 析构时自动 join
-    ThreadGuard(const ThreadGuard&amp;) = delete;       // 禁止拷贝
-    ThreadGuard&amp; operator=(const ThreadGuard&amp;) = delete;
+    explicit ThreadGuardJoin(std::thread&amp;&amp; t) : t_(std::move(t)) {}
+    ~ThreadGuardJoin() { if (t_.joinable()) t_.join(); }
+    ThreadGuardJoin(const ThreadGuardJoin&amp;) = delete;
+    ThreadGuardJoin&amp; operator=(const ThreadGuardJoin&amp;) = delete;
 };
 
-void f() {
-    ThreadGuard g(std::thread(work));
-    // 即使抛异常，g 析构 → join → 安全
+int main() {
+    {   // 路径 1：join 后析构
+        std::thread t(work, 1);
+        std::printf(&quot;before join: joinable() = %d\n&quot;, t.joinable());
+        t.join();
+        std::printf(&quot;after join:  joinable() = %d\n&quot;, t.joinable());
+    }
+    std::puts(&quot;path 1 (join): survived&quot;);
+
+    {   // 路径 2：detach 后析构
+        std::thread t(work, 2);
+        t.detach();
+        std::printf(&quot;after detach: joinable() = %d\n&quot;, t.joinable());
+    }
+    std::puts(&quot;path 2 (detach): survived&quot;);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    {   // 路径 3：默认构造，从未关联线程
+        std::thread t;
+        std::printf(&quot;default ctor: joinable() = %d\n&quot;, t.joinable());
+    }
+    std::puts(&quot;path 3 (default): survived&quot;);
+
+    {   // 路径 4：move 转移所有权，源对象不再 joinable
+        std::thread t1(work, 3);
+        std::thread t2 = std::move(t1);
+        std::printf(&quot;after move: t1.joinable() = %d, t2.joinable() = %d\n&quot;,
+                    t1.joinable(), t2.joinable());
+        t2.join();
+    }
+    std::puts(&quot;path 4 (move): survived&quot;);
+
+    {   // 路径 5：RAII 守卫，离开作用域自动 join
+        ThreadGuardJoin g(std::thread(work, 4));
+        std::puts(&quot;guard scope: about to leave&quot;);
+    }
+    std::puts(&quot;path 5 (RAII guard): survived&quot;);
+    return 0;
 }
 </code></pre>
-<h3>detach 的风险</h3>
-<pre class="code" data-label="cpp"><code class="c">void f() {
-    std::thread t([]{
-        // 引用了局部变量
-        do_something(local_var);  // local_var 可能已销毁！
-    });
-    t.detach();  // 分离——线程在后台跑，但 f 返回后 local_var 销毁
-}
-// 比 join 更危险——detach 后线程的生命周期不受控
+<p>实测输出（关键看 <code class="c">joinable()</code> 的翻转时机）：</p>
+<pre class="code" data-label="code"><code class="c">before join: joinable() = 1
+worker 1 done
+after join:  joinable() = 0
+path 1 (join): survived
+after detach: joinable() = 0
+path 2 (detach): survived
+worker 2 done
+default ctor: joinable() = 0
+path 3 (default): survived
+after move: t1.joinable() = 0, t2.joinable() = 1
+worker 3 done
+path 4 (move): survived
+guard scope: about to leave
+worker 4 done
+path 5 (RAII guard): survived
+exit code: 0
 </code></pre>
+<p>三条要点被输出直接证实：<code class="c">join()</code>/<code class="c">detach()</code> 后 <code class="c">joinable()</code> 立即变 0；move 之后<strong>源对象</strong> <code class="c">t1</code> 变 0、目标 <code class="c">t2</code> 为 1（责任跟着所有权走）；RAII 守卫里 worker 4 的 <code class="c">done</code> 打印在 <code class="c">path 5 survived</code> <strong>之前</strong>——说明析构里的 <code class="c">join</code> 是真的在等线程跑完。</p>
+<hr />
+<h2>RAII 守卫：join 派 vs detach 派</h2>
+<p><code class="c">ThreadGuard</code> 析构里到底调 <code class="c">join()</code> 还是 <code class="c">detach()</code>？这是两种设计哲学：</p>
+<p><strong>join 派（等线程跑完）：</strong> 安全、语义确定，但析构会<strong>阻塞</strong>——线程是死循环或长任务时守卫所在作用域退不出去，异常栈展开期间阻塞尤其危险。</p>
+<p><strong>detach 派（放手不管）：</strong> 不阻塞，但线程完全失控——若按引用捕获了局部变量，守卫放行后线程访问的是已销毁的栈内存，UB。</p>
+<p><strong>C++20 的标准答案：</strong> 标准库替你做了选择——<code class="c">std::jthread</code> 析构时先 <code class="c">request_stop()</code> 再 <code class="c">join()</code>，线程体只要定期检查 <code class="c">std::stop_token</code> 就能被协作式打断，兼顾了"不泄漏"和"不死等"。C++17 及以前就自己写 <code class="c">ThreadGuard</code>，绝大多数场景选 join 派。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>"实测 2"即完整可运行例子（五条路径 + RAII 守卫 + <code class="c">joinable()</code> 观察），输出见上；最小复现 terminate 用"实测 1"。</p>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
 <p><strong>错误 1：异常路径忘了 join</strong></p>
 <pre class="code" data-label="cpp"><code class="c">void process() {
     std::thread t(work);
-    if (error) throw std::runtime_error(&quot;error&quot;);  // 异常 → t 析构 → terminate
-    t.join();
+    if (error) throw std::runtime_error(&quot;error&quot;);  // 栈展开 → t 析构仍 joinable → terminate
+    t.join();   // 只有正常路径能走到这
 }
 </code></pre>
-<p><strong>修正：</strong> 用 <code class="c">ThreadGuard</code> 或 <code class="c">try-catch + join</code>。</p>
-<p><strong>错误 2：detach 后引用局部变量</strong></p>
+<p><strong>修正：</strong> 用 RAII 守卫（或 C++20 <code class="c">std::jthread</code>），析构自动 join，异常路径也安全。</p>
+<p><strong>错误 2：detach 后线程引用局部变量</strong></p>
 <pre class="code" data-label="cpp"><code class="c">void start() {
     int id = 42;
     std::thread t([&amp;id]{ use(id); });  // 按引用捕获 id
-    t.detach();  // start 返回后 id 销毁 → 线程访问悬垂引用 → UB
+    t.detach();                        // start 返回后 id 销毁 → 悬垂引用 → UB
 }
 </code></pre>
-<p><strong>修正：</strong> 按值捕获或用 <code class="c">shared_ptr</code>。</p>
-<p><strong>错误 3：ThreadGuard 可拷贝导致多次 join</strong></p>
-<pre class="code" data-label="cpp"><code class="c">ThreadGuard g1(std::thread(work));
-ThreadGuard g2 = g1;  // 如果允许拷贝 → 两个 guard 持有同一个 thread
-// g1 析构 → join；g2 析构 → join 同一个 thread → UB
+<p><strong>修正：</strong> 按值捕获 <code class="c">[id]</code>，或用 <code class="c">shared_ptr</code> 共享生命周期，或干脆别 detach。</p>
+<p><strong>错误 3：对已 unjoinable 的线程再 join</strong></p>
+<pre class="code" data-label="cpp"><code class="c">std::thread t(work);
+t.join();
+t.join();   // joinable() 已为 false → 抛 std::system_error
 </code></pre>
-<p><strong>修正：</strong> <code class="c">delete</code> 拷贝构造和拷贝赋值。</p>
+<p><strong>修正：</strong> 调 <code class="c">join()</code>/<code class="c">detach()</code> 前先判 <code class="c">joinable()</code>——这正是守卫类析构里那行 <code class="c">if</code> 存在的原因。</p>
+<p><strong>错误 4：守卫类允许拷贝，导致责任不唯一</strong></p>
+<pre class="code" data-label="cpp"><code class="c">ThreadGuard g1(std::thread(work));
+ThreadGuard g2 = g1;   // 若能拷贝：两个守卫管同一个线程，析构 join 两次 → UB
+</code></pre>
+<p><strong>修正：</strong> <code class="c">= delete</code> 拷贝构造与拷贝赋值，只允许 move（责任随所有权唯一转移）。</p>
 <hr />
 <h2>新手要点（和 C 的区别）</h2>
 <div class="tbl-wrap"><table>
@@ -859,45 +1086,64 @@ ThreadGuard g2 = g1;  // 如果允许拷贝 → 两个 guard 持有同一个 thr
 <td>线程创建</td>
 <td><code class="c">pthread_create</code></td>
 <td><code class="c">std::thread</code></td>
-<td>C++ 标准库</td>
+<td>RAII 对象，不是裸 ID</td>
 </tr>
 <tr>
 <td>忘了 join</td>
 <td>资源泄漏</td>
-<td><code class="c">terminate</code> 进程崩溃</td>
-<td>C++ 更严格</td>
+<td><strong><code class="c">terminate</code> 进程崩溃</strong></td>
+<td>C++ 强制生命周期纪律</td>
 </tr>
 <tr>
-<td>异常安全</td>
-<td>手动 <code class="c">try-catch</code></td>
-<td>RAII 守卫</td>
-<td>自动</td>
+<td>异常路径清理</td>
+<td>手动 <code class="c">pthread_cleanup_*</code></td>
+<td>RAII 守卫析构自动 join</td>
+<td>栈展开也会触发析构</td>
 </tr>
 <tr>
-<td>detach</td>
-<td>风险相同</td>
-<td>风险相同</td>
-<td>都需注意生命周期</td>
+<td>所有权</td>
+<td><code class="c">pthread_t</code> 随便拷</td>
+<td><code class="c">thread</code> 只能 move</td>
+<td>一个线程一个责任人</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>一句话总结：</strong> C 程序员记住——<code class="c">std::thread</code> 析构时如果仍 joinable 会 <code class="c">terminate</code> 拉崩进程。用 RAII 守卫保证所有路径（含异常路径）都 <code class="c">join</code> 或 <code class="c">detach</code>。</p>
+<p><strong>一句话总结：</strong> <code class="c">std::thread</code> 析构前必须 unjoinable，RAII 守卫（或 C++20 <code class="c">std::jthread</code>）是覆盖异常路径的标准做法。</p>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>守护进程崩溃</strong>：HFT 守护进程里 <code class="c">std::thread</code> 析构时若仍 joinable 会 <code class="c">terminate</code> 拉崩整个进程——用 RAII 守卫或显式 <code class="c">join</code>/<code class="c">detach</code>。</li>
-<li><strong>异常安全</strong>：HFT 进程在异常路径中必须保证线程安全 join——<code class="c">ThreadGuard</code> 是标准做法。</li>
-<li><strong>热卸载</strong>：策略热卸载时后台线程必须安全 join，不能 detach 后访问已销毁的策略对象。</li>
+<li><strong>守护进程崩溃纪律</strong>：任何一条异常路径漏掉 join，后果不是泄漏而是<strong>整个交易进程 terminate</strong>——风控、行情线程的创建处一律 RAII 化。</li>
+<li><strong>热路径不 join</strong>：行情回调里绝不创建需 join 的短线程（join 阻塞 = 延迟抖动）；要么线程池预创建，要么 detach 但严格按值捕获。</li>
+<li><strong>退出码监控</strong>：进程以 134（SIGABRT）退出且日志有 <code class="c">terminating</code>，优先怀疑 <code class="c">std::thread</code> 的 terminate，而非段错误（139）。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">std::thread</code> 析构时仍 joinable 会发生什么？</li>
-<li>如何用 RAII 规避这个问题？</li>
-<li>为什么 <code class="c">ThreadGuard</code> 要 <code class="c">delete</code> 拷贝构造？</li>
-<li><code class="c">detach</code> 后线程引用局部变量有什么风险？</li>
-<li>下面代码有什么问题？</li>
-</ol>
+<p><strong>1. <code class="c">std::thread</code> 析构时仍 joinable 会发生什么？退出码大概是什么样？</strong></p>
+<details>
+<summary>答案</summary>
+<p>调用 <code class="c">std::terminate</code>，默认进而调用 <code class="c">std::abort</code>，整个进程以 SIGABRT 终止。本机实测退出码 134（128+6），stderr 输出 <code class="c">libc++abi: terminating</code>。不会自动帮你 join，也不会只杀那个线程。</p>
+</details>
+<p><strong>2. 哪四种情况下 <code class="c">joinable()</code> 为 false？</strong></p>
+<details>
+<summary>答案</summary>
+<p>已 <code class="c">join()</code>、已 <code class="c">detach()</code>、默认构造从未关联线程、被 move 走（所有权已转移给另一个 <code class="c">thread</code> 对象）。这四种状态下析构都是安全的。</p>
+</details>
+<p><strong>3. 为什么 <code class="c">ThreadGuard</code> 析构里写的是 <code class="c">if (t.joinable()) t.join();</code> 而不是直接 <code class="c">t.join();</code>？</strong></p>
+<details>
+<summary>答案</summary>
+<p>对 unjoinable 的线程调 <code class="c">join()</code> 会抛 <code class="c">std::system_error</code>（invalid argument）。守卫对象可能被 move 过、或构造时拿到了空 thread，析构里必须先判 <code class="c">joinable()</code>。而且析构函数里再抛异常（栈展开中）会直接 terminate，所以这层保护是双重的。</p>
+</details>
+<p><strong>4. RAII 守卫析构里选 join 还是 detach，各自的风险是什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>join 派：析构阻塞，线程不结束作用域就退不出去（死循环线程 = 挂死），但语义安全。detach 派：不阻塞，但线程失控，若按引用捕获了局部变量，守卫放行后线程访问的是已销毁内存（UB）。C++20 <code class="c">std::jthread</code> 用 <code class="c">request_stop()</code> + join 的协作式取消给出了标准答案。</p>
+</details>
+<p><strong>5. move 一个 <code class="c">std::thread</code> 之后，源对象析构安全吗？实测中 <code class="c">t1</code>/<code class="c">t2</code> 的 <code class="c">joinable()</code> 各是多少？</strong></p>
+<details>
+<summary>答案</summary>
+<p>安全。实测输出 <code class="c">after move: t1.joinable() = 0, t2.joinable() = 1</code>——所有权（和 join 责任）转移到 <code class="c">t2</code>，源对象 <code class="c">t1</code> 变为 unjoinable，析构什么都不做。</p>
+</details>
+<p><strong>6. 下面代码有什么问题？</strong></p>
 <pre class="code" data-label="cpp"><code class="c">void work() {
     int data = 42;
     std::thread t([&amp;data]{ process(data); });
@@ -905,131 +1151,196 @@ ThreadGuard g2 = g1;  // 如果允许拷贝 → 两个 guard 持有同一个 thr
 }
 </code></pre>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p>会调用 <code class="c">std::terminate()</code>，整个程序直接终止。<code class="c">std::thread</code> 的析构函数要求对象处于 non-joinable 状态（已 <code class="c">join()</code> 或已 <code class="c">detach()</code>、或被移动走、或从未关联线程）；若析构时 <code class="c">joinable()</code> 为真，标准规定调用 <code class="c">std::terminate</code>——不会因为异常栈展开而"顺手"帮你 join，也不会泄漏线程。这意味着任何一条提前 return / 抛异常的分支漏掉 join，程序就会崩。</p>
-</li>
-<li>
-<p>用一个 RAII 的线程包装类（笔记里的 <code class="c">ThreadGuard</code>、C++20 的 <code class="c">std::jthread</code>）：在它的析构函数里判断 <code class="c">t.joinable()</code> 并调用 <code class="c">t.join()</code>（析构里必须 join 而不能 detach，否则线程可能仍引用已销毁的对象）。这样无论函数是正常返回还是因异常栈展开，<code class="c">thread</code> 对象的析构都会保证被 join，不会 <code class="c">terminate</code>。C++20 起直接用 <code class="c">std::jthread</code>：析构时自动 request_stop + join，并支持协作式取消。注意包装类作为成员/局部变量的声明顺序——它必须在被线程引用的对象<strong>之后</strong>销毁（或确保 join 先发生），否则 join 时线程可能已访问到销毁中的对象。</p>
-</li>
-<li>
-<p>因为 <code class="c">ThreadGuard</code> 的语义是"独占地负责一个线程的 join"。如果允许拷贝，两个 guard 会持有同一个 <code class="c">std::thread</code> 引用，析构时两次 join 同一个线程（第二次对已 non-joinable 的线程 join 是未定义行为/抛异常），或者其中一个被拷贝走后原对象仍在析构时 join。删除拷贝构造/拷贝赋值后，谁持有 guard 谁负责 join，责任唯一、语义清晰；需要转移所有权时可只提供移动构造（移动后源对象不再负责）。</p>
-</li>
-<li>
-<p><code class="c">detach()</code> 之后线程独立运行，你再也无法 join 它、也无法知道它何时结束，编译器和标准都不会帮你延长它捕获的引用目标的生命周期。因此若线程按引用（<code class="c">[&amp;]</code>）捕获了局部变量、<code class="c">this</code>、局部锁或局部容器，创建线程的函数一返回，这些东西就被销毁，而线程可能仍在访问它们——变成<strong>悬垂引用</strong>，读写已销毁对象是未定义行为（读到垃圾值、偶发崩溃，且极难复现）。安全做法：按值捕获（拷贝一份数据进线程）、用 <code class="c">shared_ptr</code> 共享所有权、或改用 join/RAII 保证线程先于数据销毁。</p>
-</li>
-<li>
-<p>严重 bug：<code class="c">t.detach()</code> 后 <code class="c">work()</code> 立即返回，局部变量 <code class="c">data</code> 随即销毁；而线程体用 <code class="c">[&amp;data]</code> 按引用捕获了它，线程可能还在运行并访问那块已失效的栈内存——未定义行为。修正方案（按推荐程度）：①按值捕获 <code class="c">std::thread t([data]{ process(data); });</code>；②改用 RAII + join，让 <code class="c">work()</code> 在线程结束后才返回（C++20 用 <code class="c">std::jthread</code> 即可）；③若确实要 detach，则把数据共享为 <code class="c">shared_ptr</code>（<code class="c">[p = std::make_shared&lt;int&gt;(42)]{ process(*p); }</code>），让生命周期独立于创建者。另外 detach 的线程还会引用已销毁的进程资源，程序退出时应有明确的停止协议，不能靠"反正进程要退了"。</p>
-</li>
-</ol>
+<summary>答案</summary>
+<p><code class="c">detach()</code> 后 <code class="c">work()</code> 立即返回，<code class="c">data</code> 销毁，而线程按引用捕获了它——悬垂引用，UB。修正按推荐顺序：① 按值捕获 <code class="c">[data]</code>；② 改用 RAII/jthread 让 <code class="c">work()</code> 等线程结束；③ 数据用 <code class="c">shared_ptr</code> 共享生命周期。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
-<li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item38-handle-destruction.md">Item 38 句柄析构行为</a></li>
-<li>回到：<a href="#intro">第 7 章</a></li>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item36-launch-policy.md">Item 36 启动策略</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item38-handle-destruction.md">Item 38 句柄析构行为</a></li>
+<li>回到：<a href="#intro">第 7 章 并发 API</a></li>
 </ul>
       </section>
       <section class="section" id="s-item38">
         <div class="sec-head"><div class="sec-no">Item 38</div><h2>Item 38：理解线程句柄的析构与联结行为</h2></div>
 <blockquote>
-<p>第 7 章 · Item 38 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item37-thread-joinable.md">Item 37 thread joinable</a></p>
+<p>第 7 章 并发 API · Item 38 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item37-thread-joinable.md">Item 37 thread joinable</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item39-one-shot-events.md">Item 39 单次事件</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>C 程序员管理线程句柄很简单——<code class="c">pthread_t</code> 就是个整数 ID，析构（离开作用域）不做任何事：</p>
-<pre class="code" data-label="C"><code class="c">pthread_t tid;
-pthread_create(&amp;tid, NULL, worker, NULL);
-// tid 离开作用域——什么都不会发生
-// 线程继续在后台跑，资源在进程结束时回收
-</code></pre>
-<p>C++ 的线程句柄有不同的析构行为，混用会出问题：</p>
-<ul>
-<li><code class="c">std::thread</code> 析构时如果 joinable → <strong>terminate</strong>（进程崩溃）</li>
-<li><code class="c">std::future</code> 析构时如果任务未完成 → <strong>阻塞等待</strong>（和 <code class="c">get()</code> 类似）</li>
-<li><code class="c">std::shared_future</code> 析构 → <strong>不阻塞</strong>（多个共享）</li>
-</ul>
+<p><code class="c">std::async</code> 的字面意思是"异步"——你发起一个任务，拿到一个 <code class="c">future</code>，然后去忙别的。但下面这段代码的行为和直觉完全相反：</p>
 <pre class="code" data-label="cpp"><code class="c">{
-    std::future&lt;int&gt; fut = std::async(std::launch::async, []{ long_task(); });
-}  // fut 析构 → 阻塞等 long_task 完成！
-// 以为是异步，实际在析构处同步阻塞
+    auto fut = std::async(std::launch::async, []{ long_task(); });
+    // 没调用 get()，没调用 wait()，你以为 fut 析构就是扔掉句柄
+}  // 实际：程序在这一行阻塞，直到 long_task 跑完
 </code></pre>
+<p>你以为写了个"发射后不管"的异步调用，编译器却在 <code class="c">fut</code> 的析构点悄悄帮你 <code class="c">join</code> 了那个线程。这个阻塞出现在一个<strong>完全没有任何函数调用痕迹</strong>的地方——只是离开了一个作用域。在热路径上，这就是一次无法从代码表面看出来的同步卡顿。</p>
+<p>更麻烦的是，这条规则<strong>不是</strong>所有 <code class="c">future</code> 都遵守：只有 <code class="c">std::async</code>（非 deferred）创建的那一份共享状态才有"最后一个句柄析构时阻塞"的特殊待遇，<code class="c">std::packaged_task</code> 和 <code class="c">std::promise</code> 产生的 <code class="c">future</code> 析构时抬腿就走。不搞清楚边界，你既会在不该卡的地方卡住，也会在以为有阻塞保证的地方失去保证。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p>不同线程句柄的析构行为不同——<code class="c">thread</code> 析构会 <code class="c">terminate</code>，<code class="c">future</code> 析构会阻塞等待。</p>
+<p><code class="c">future</code> 析构的阻塞规则及其精确边界：<strong>只对 <code class="c">std::async</code>（<code class="c">launch::async</code>）创建的共享状态生效，且只在最后一个引用该共享状态的句柄被释放时触发</strong>——相当于隐式 join。本机实测用 chrono 计时证明：async 的 future 析构阻塞约等于任务时长，packaged_task / promise 的 future 析构零等待。</p>
 <hr />
-<h2>析构行为对比</h2>
+<h2>规则本身：什么时候阻塞，什么时候不阻塞</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>句柄类型</th>
-<th>析构行为</th>
+<th>共享状态的来源</th>
+<th>最后一个句柄析构时</th>
 <th>类比</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">std::thread</code></td>
-<td>joinable 则 <code class="c">terminate</code></td>
-<td>C：忘了 join 只是泄漏，C++ 直接崩</td>
+<td><code class="c">std::async</code> + <code class="c">launch::async</code></td>
+<td><strong>阻塞</strong>，直到任务完成（隐式 join）</td>
+<td>隐形的 <code class="c">t.join()</code></td>
 </tr>
 <tr>
-<td><code class="c">std::future</code></td>
-<td>阻塞等待（共享状态未就绪时）</td>
-<td>C：无类比物</td>
+<td><code class="c">std::async</code> + <code class="c">launch::deferred</code></td>
+<td>不阻塞（任务根本没启动）</td>
+<td>惰性求值被丢弃</td>
 </tr>
 <tr>
-<td><code class="c">std::shared_future</code></td>
-<td>不阻塞（多个 shared_future 共享状态）</td>
-<td>C：无类比物</td>
+<td><code class="c">std::packaged_task::get_future()</code></td>
+<td>不阻塞</td>
+<td>普通句柄</td>
+</tr>
+<tr>
+<td><code class="c">std::promise::get_future()</code></td>
+<td>不阻塞</td>
+<td>普通句柄</td>
 </tr>
 </tbody>
 </table></div>
-<h3>future 析构阻塞</h3>
-<pre class="code" data-label="cpp"><code class="c">// future 析构会阻塞——反直觉
-{
-    auto fut = std::async(std::launch::async, []{
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        return 42;
-    });
-    // fut 在这里析构 → 阻塞等待 5 秒！
-}  // ← 程序在这里卡 5 秒
+<p>标准的措辞是：async（async 策略）创建的异步任务，其线程完成 synchronizes-with "第一个成功观察到共享状态就绪的函数的返回"或"<strong>最后一个释放该共享状态的函数的返回</strong>"，两者取先发生者。所以触发阻塞的不是"future 这个类"，而是"async 共享状态的最后一次释放"——调用 <code class="c">get()</code>/<code class="c">wait()</code> 已经观察到就绪的话，之后的析构自然不再等。</p>
+<p>这也解释了为什么阻塞存在：async 任务可能按引用捕获了调用者的局部变量，如果句柄析构时拍屁股走人，任务就变成了野线程。这个隐式 join 和 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item37-thread-joinable.md">Item 37</a> 的 terminate 是同一种思路——标准库不允许你"忘记"一个正在跑的线程。</p>
+<hr />
+<h2>实测：四种来源的 future 析构计时（本机实测 clang 23.1.0）</h2>
+<p>任务固定 sleep 300ms，所有 future 都<strong>不调 <code class="c">get()</code>/<code class="c">wait()</code></strong>，只在作用域结束处析构，用 chrono 量作用域退出时刻：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;chrono&gt;
+#include &lt;cstdio&gt;
+#include &lt;future&gt;
+#include &lt;thread&gt;
 
-// 对比：如果不需要结果，用 shared_future 不会阻塞
-{
-    auto fut = std::async(std::launch::async, long_task).share();
-    // shared_future 析构不阻塞
-}  // 不卡
+using Clock = std::chrono::steady_clock;
+using Ms = std::chrono::milliseconds;
+
+long long elapsed_ms(Clock::time_point t0) {
+    return std::chrono::duration_cast&lt;Ms&gt;(Clock::now() - t0).count();
+}
+
+int slow_task() {
+    std::this_thread::sleep_for(Ms(300));
+    return 42;
+}
+
+int main() {
+    // ---- 1. async(launch::async)：析构阻塞 ----
+    {
+        auto t0 = Clock::now();
+        {
+            std::future&lt;int&gt; fut = std::async(std::launch::async, slow_task);
+            std::printf(&quot;[async ] about to leave scope at t=%lldms\n&quot;, elapsed_ms(t0));
+        }  // fut 析构 → 阻塞等 slow_task 跑完
+        std::printf(&quot;[async ] scope exited at t=%lldms\n\n&quot;, elapsed_ms(t0));
+    }
+
+    // ---- 2. packaged_task：析构不阻塞 ----
+    {
+        auto t0 = Clock::now();
+        {
+            std::packaged_task&lt;int()&gt; pt(slow_task);
+            std::future&lt;int&gt; fut = pt.get_future();
+            std::thread t(std::move(pt));
+            t.detach();
+        }  // fut 析构 → 立即返回
+        std::printf(&quot;[ptask ] scope exited at t=%lldms\n\n&quot;, elapsed_ms(t0));
+    }
+
+    // ---- 3. promise：析构不阻塞 ----
+    {
+        auto t0 = Clock::now();
+        {
+            std::promise&lt;int&gt; p;
+            std::future&lt;int&gt; fut = p.get_future();
+            std::thread t([pr = std::move(p)]() mutable {
+                std::this_thread::sleep_for(Ms(300));
+                pr.set_value(42);
+            });
+            t.detach();
+        }
+        std::printf(&quot;[promis] scope exited at t=%lldms\n\n&quot;, elapsed_ms(t0));
+    }
+
+    // ---- 4. async 转 shared_future（最后一个引用）：仍然阻塞！----
+    {
+        auto t0 = Clock::now();
+        {
+            std::shared_future&lt;int&gt; sfut =
+                std::async(std::launch::async, slow_task).share();
+        }  // sfut 是该共享状态最后的引用 → 析构仍阻塞
+        std::printf(&quot;[shared] scope exited at t=%lldms\n\n&quot;, elapsed_ms(t0));
+    }
+
+    // ---- 5. 对照：get() 显式等待的耗时 ----
+    {
+        auto t0 = Clock::now();
+        int v = std::async(std::launch::async, slow_task).get();
+        std::printf(&quot;[get() ] got %d at t=%lldms\n&quot;, v, elapsed_ms(t0));
+    }
+
+    std::this_thread::sleep_for(Ms(500));  // 等后台 detached 线程收尾
+    return 0;
+}
 </code></pre>
-<p><code class="c">future</code> 析构会阻塞——反直觉但有用：让你"忘了 <code class="c">get</code> 也能拿到结果"。但也可能让程序在意外处卡住。</p>
-<h3>为什么 future 析构要阻塞？</h3>
-<pre class="code" data-label="cpp"><code class="c">// 场景：异步任务写了共享变量，future 析构保证任务完成
-int result;
-auto fut = std::async(std::launch::async, [&amp;]{ result = compute(); });
-// fut 析构 → 等待 compute 完成 → result 已写入
-// 如果 future 析构不等待 → result 可能还没写入就被读取
+<p>clang 23.1.0 + <code class="c">-std=c++17 -Wall</code> 实测输出：</p>
+<pre class="code" data-label="code"><code class="c">[async ] about to leave scope at t=0ms
+[async ] scope exited at t=310ms
+
+[ptask ] scope exited at t=0ms
+
+[promis] scope exited at t=0ms
+
+[shared] scope exited at t=304ms
+
+[get() ] got 42 at t=301ms
+</code></pre>
+<p>四组对照把规则边界钉死了：</p>
+<ol>
+<li><strong>async 的 future 析构阻塞 310ms</strong>——和 <code class="c">get()</code> 的 301ms 一样，隐式 join 货真价实；</li>
+<li><strong>packaged_task / promise 的 future 析构 0ms</strong>——线程还在后台跑，句柄先走了，互不等待；</li>
+<li><strong>shared_future 也阻塞了 304ms</strong>——这是最容易记错的一点：阻塞规则挂在"共享状态的最后一次释放"上，<code class="c">.share()</code> 只是换了句柄类型，共享状态还是 async 创建的，最后一个 <code class="c">shared_future</code> 析构照样等。想真正躲开阻塞，办法不是换类型，而是<strong>让句柄活得比当前作用域久</strong>（存进成员变量、队列、后台收割线程）。</li>
+</ol>
+<hr />
+<h2>推论：临时 future 立即析构 = 假异步</h2>
+<pre class="code" data-label="cpp"><code class="c">std::async(std::launch::async, long_task);   // 返回值被丢弃
+// 临时 future 在语句末尾立即析构 → 立即阻塞 → 完全同步，白 async 了
+</code></pre>
+<p>这是这条规则最坑的形态：丢弃返回值的 <code class="c">std::async</code> 调用<strong>等价于直接同步调用</strong>，还额外付出了一次线程启动的开销。如果你真的想"发射后不管"，得用 <code class="c">std::thread</code> + detach（并自担悬垂风险），或把 future 移交给他处保管。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>上方"实测"一节即完整可运行程序：五种来源各测一次，输出已给出。编译命令：</p>
+<pre class="code" data-label="code"><code class="c">clang++ -std=c++17 -Wall test.cpp   # 本机实测 clang 23.1.0，线程代码无需 -pthread
 </code></pre>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
-<p><strong>错误 1：在热路径析构 future 导致意外阻塞</strong></p>
+<p><strong>错误 1：在热路径析构 async 的 future</strong></p>
 <pre class="code" data-label="cpp"><code class="c">void on_tick(const Tick&amp; t) {
     auto fut = std::async(std::launch::async, check_risk, t);
-    // 处理 tick...
-    // fut 在函数末尾析构 → 阻塞等 check_risk 完成 → 热路径卡住！
-}
+    process(t);
+}   // fut 在函数末尾析构 → 阻塞等 check_risk 完成 → 热路径卡住
 </code></pre>
-<p><strong>修正：</strong> 把 <code class="c">future</code> 存到后台线程，或用 <code class="c">shared_future</code>。</p>
-<p><strong>错误 2：以为 future 和 thread 析构行为相同</strong></p>
-<pre class="code" data-label="cpp"><code class="c">// thread 析构 = terminate（如果 joinable）
-// future 析构 = 阻塞等待
-// 完全不同！
+<p><strong>修正：</strong> 把 future 存进成员队列，由后台线程收割 <code class="c">get()</code>。</p>
+<p><strong>错误 2：丢弃 <code class="c">std::async</code> 返回值，以为实现了异步</strong></p>
+<pre class="code" data-label="cpp"><code class="c">std::async(std::launch::async, long_task);   // 临时 future 立即析构 → 同步阻塞
 </code></pre>
-<p><strong>修正：</strong> 记住口诀——<code class="c">thread</code> = 炸，<code class="c">future</code> = 等。</p>
-<p><strong>错误 3：临时 future 析构立即阻塞</strong></p>
-<pre class="code" data-label="cpp"><code class="c">std::async(std::launch::async, long_task);  // 返回临时 future
-// 临时 future 立即析构 → 立即阻塞等 long_task 完成 → 变成同步！
+<p><strong>修正：</strong> <code class="c">auto fut = std::async(...);</code> 存起来并妥善安排生命周期。</p>
+<p><strong>错误 3：以为所有 future 析构都阻塞（或都不阻塞）</strong></p>
+<pre class="code" data-label="cpp"><code class="c">// packaged_task 的 future 析构不阻塞——任务结果可能永远没人取
+// async 的 future 析构阻塞——&quot;扔掉句柄&quot;不等于&quot;取消任务&quot;
 </code></pre>
-<p><strong>修正：</strong> 存到变量 <code class="c">auto fut = std::async(...);</code> 延长生命周期。</p>
+<p><strong>修正：</strong> 记住规则的精确边界：只有 async 共享状态的<strong>最后一次释放</strong>才阻塞。</p>
+<p><strong>错误 4：以为 <code class="c">.share()</code> 成 shared_future 就能躲开析构阻塞</strong></p>
+<p><strong>修正：</strong> 实测证明最后一个 <code class="c">shared_future</code> 析构照样等任务跑完；要躲开阻塞得延长句柄生命周期，不是换类型。</p>
 <hr />
 <h2>新手要点（和 C 的区别）</h2>
 <div class="tbl-wrap"><table>
@@ -1043,74 +1354,77 @@ auto fut = std::async(std::launch::async, [&amp;]{ result = compute(); });
 </thead>
 <tbody>
 <tr>
-<td>线程句柄</td>
-<td><code class="c">pthread_t</code>（整数 ID）</td>
-<td><code class="c">thread</code>/<code class="c">future</code>/<code class="c">shared_future</code></td>
-<td>C++ 有 RAII</td>
+<td>异步任务句柄</td>
+<td><code class="c">pthread_t</code> 整数，离开作用域无效果</td>
+<td><code class="c">future</code> 析构可能隐式 join</td>
+<td>RAII + 共享状态</td>
 </tr>
 <tr>
-<td>析构行为</td>
-<td>不做任何事</td>
-<td>各有不同</td>
-<td>C++ 对象语义</td>
+<td>"发射后不管"</td>
+<td>不 join 即可</td>
+<td>丢弃 async 返回值反而同步阻塞</td>
+<td>析构语义反直觉</td>
 </tr>
 <tr>
-<td>异常路径</td>
-<td>手动管理</td>
-<td>析构自动处理</td>
-<td>RAII</td>
+<td>结果回收</td>
+<td>全局变量 + 标志位轮询</td>
+<td><code class="c">future::get()</code> 一次性取走</td>
+<td>共享状态自动管理</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>一句话总结：</strong> C 程序员记住——<code class="c">thread</code> 析构 = 炸（terminate），<code class="c">future</code> 析构 = 等（阻塞）。别在热路径析构 future。</p>
+<p><strong>一句话总结：</strong> <code class="c">std::async</code> 的 future 析构 = 隐式 join（仅当它是该共享状态的最后一个引用且任务未就绪）；packaged_task / promise 的 future 析构无此待遇。</p>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>异步风控</strong>：异步风控任务用 <code class="c">future</code>，但确保不在热路径析构 future——把 future 存到后台线程或用 <code class="c">shared_future</code>。</li>
-<li><strong>热路径阻塞</strong>：<code class="c">on_tick</code> 中 <code class="c">async</code> 返回的 future 在函数末尾析构会阻塞——把 future 移到成员变量或队列。</li>
-<li><strong>临时 future 陷阱</strong>：<code class="c">std::async(...)</code> 不存返回值 → 临时 future 立即析构 → 同步阻塞。</li>
+<li><strong>热路径零隐式阻塞</strong>：<code class="c">on_tick</code> / <code class="c">on_order</code> 回调里出现的任何 async future 都必须移交出去（队列、成员变量），否则析构阻塞直接变成逐笔延迟。</li>
+<li><strong>异步风控 / 异步落盘</strong>：发射即忘的任务别用 <code class="c">std::async</code>（返回值一丢就同步），用线程池或 <code class="c">std::thread</code>+detach+按值捕获。</li>
+<li><strong>后台收割线程</strong>：统一一个 reaper 线程对消费者队列里的 future 调 <code class="c">get()</code>——既避开析构阻塞，也避免任务异常被静默吞掉。</li>
+<li><strong>定位神秘卡顿</strong>：热路径出现与某任务时长吻合的延迟尖刺时，grep 作用域内是否有 async future 的析构点。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">std::thread</code> 和 <code class="c">std::future</code> 的析构行为有何不同？</li>
-<li>为什么 <code class="c">future</code> 析构会阻塞？这有什么用？</li>
-<li><code class="c">shared_future</code> 析构为什么不阻塞？</li>
-<li>下面代码有什么问题？</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">void on_tick(const Tick&amp; t) {
-    std::async(std::launch::async, check_risk, t);
-    process(t);
-}
-</code></pre>
+<p><strong>1. <code class="c">std::future</code> 的析构什么时候会阻塞？精确的触发条件是什么？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p><code class="c">std::thread</code> 析构时若仍 joinable，直接调用 <code class="c">std::terminate()</code>（程序终止），它<strong>不会</strong>帮你等待线程。而 <code class="c">std::future</code>（由 <code class="c">std::async</code> 产生、且是最后一个引用共享状态的 future）析构时行为分两种：对 <code class="c">launch::async</code> 且尚未 <code class="c">get()</code>/<code class="c">wait()</code> 的 future，析构函数会<strong>隐式阻塞等待任务完成</strong>；对 <code class="c">launch::deferred</code> 任务（以及 <code class="c">std::packaged_task</code>/<code class="c">promise</code> 产生的 future），析构只是丢弃结果、不阻塞。也就是说 <code class="c">future</code> 的析构可能"偷偷"同步等待，而 <code class="c">thread</code> 的析构是崩溃——两者都不是"什么都不做"。</p>
-</li>
-<li>
-<p>因为 <code class="c">std::async</code> 创建的异步任务需要一个"存放结果/异常"的共享状态，而标准规定：由 <code class="c">async</code> 返回的、<strong>最后一个</strong>引用该共享状态的 future 在析构时必须等待任务结束（相当于隐式 <code class="c">join</code>）。这样设计可以避免"任务还在跑，其引用的资源（甚至主线程局部对象）已经消失"的悬垂问题——即防止异步任务悄悄变成野线程。代价是：这个隐式等待出现在完全不显眼的地方（一个临时 future 的析构点），容易在热路径造成不可预期的阻塞。</p>
-</li>
-<li>
-<p>因为 <code class="c">std::shared_future</code> 可以被拷贝、多个对象共享同一状态，析构它并不代表"没有人在等这个结果了"——共享状态的生命周期由所有 <code class="c">shared_future</code> 共同维持。标准只把"隐式等待"绑定在 <code class="c">std::async</code> 返回的那个<strong>唯一的 <code class="c">std::future</code></strong> 上；<code class="c">shared_future</code>（以及由 <code class="c">packaged_task</code>/<code class="c">promise</code> 得到的 future）析构时不承担这个等待义务，只释放自己对共享状态的引用。这也是笔记里"把 future 转成 <code class="c">shared_future</code> 存起来"能避免析构阻塞的原因。</p>
-</li>
-<li>
-<p>问题在于 <code class="c">std::async(...)</code> 的<strong>返回值被丢弃</strong>了：它产生的临时 <code class="c">std::future</code> 在这一行结束时立即析构，而按标准，这个由 <code class="c">launch::async</code> 产生、从未 <code class="c">get()</code>/<code class="c">wait()</code> 的 future 析构时会<strong>阻塞直到 <code class="c">check_risk</code> 执行完毕</strong>。于是"异步风控"完全没异步——<code class="c">on_tick</code> 在这一行同步卡住等风控跑完，然后才执行 <code class="c">process(t)</code>，热路径被阻塞。修正：把 future 保存下来，转移到后台线程或成员变量/队列中处理（或转成 <code class="c">shared_future</code>），确保它不在热路径析构：</p>
-</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">void on_tick(const Tick&amp; t) {
-    futures_.push(std::async(std::launch::async, check_risk, t));  // 存起来，由后台线程收割
-    process(t);
-}
-</code></pre>
-<p>另需注意：任务里抛出的异常若不 <code class="c">get()</code> 就会被静默丢弃，所以后台收割时要取结果。</p>
+<summary>答案</summary>
+<p>仅当同时满足：①共享状态由 <code class="c">std::async</code> 以 <code class="c">launch::async</code> 策略创建；②任务尚未就绪；③这是最后一个引用该共享状态的句柄（future 或 shared_future）被释放。此时析构相当于隐式 join，阻塞到任务完成。packaged_task / promise 的 future 永远不阻塞。</p>
+</details>
+<p><strong>2. 实测中四种来源的 future 析构耗时各是多少？说明了什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>async future 310ms（阻塞，≈任务时长 300ms）；packaged_task 0ms；promise 0ms；shared_future（最后引用）304ms。说明阻塞规则挂在"async 共享状态的最后一次释放"上，与句柄是 future 还是 shared_future 无关。</p>
+</details>
+<p><strong>3. <code class="c">std::async(std::launch::async, task);</code>（丢弃返回值）的实际行为是什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>临时 future 在语句末尾立即析构，按规则阻塞到 task 完成——等价于同步调用，还白付一次线程启动开销。不是"发射后不管"。</p>
+</details>
+<p><strong>4. 为什么 <code class="c">packaged_task</code> 和 <code class="c">promise</code> 的 future 析构不阻塞？</strong></p>
+<details>
+<summary>答案</summary>
+<p>阻塞是标准专门给 async（async 策略）共享状态加的"线程完成 synchronizes-with 最后一次释放"条款，目的是防止 async 任务变野线程。packaged_task / promise 的线程生命周期由你自己管理（你自己创建并 join/detach 了 <code class="c">std::thread</code>），标准不再插手。</p>
+</details>
+<p><strong>5. 已经调用过 <code class="c">get()</code> 的 async future，析构还阻塞吗？为什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>不阻塞。<code class="c">get()</code> 返回意味着共享状态已就绪——"第一个成功观察到就绪的函数"已经发生，按"两者取先"的规则，之后的释放不再承担等待义务（且 <code class="c">get()</code> 后 future 已 <code class="c">valid()==false</code>，不再引用共享状态）。</p>
+</details>
+<p><strong>6. 要真正避免 async future 的析构阻塞，正确做法是什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>延长句柄生命周期：存进成员变量 / 队列 / 后台收割线程，让"最后一次释放"发生在不敏感的地方。换成 shared_future 无效——实测证明它作为最后引用照样阻塞。</p>
+</details>
+<p><strong>7. 这条析构阻塞规则与 Item 37 的 terminate 有什么共同的设计动机？</strong></p>
+<details>
+<summary>答案</summary>
+<p>都是"不允许你忘记一个正在运行的线程"：Item 37 用 terminate 惩罚忘记 join 的 <code class="c">std::thread</code>，Item 38 用隐式 join 防止 async 任务变成没人管的野线程（它可能按引用捕获了调用者的局部变量）。一个用崩溃保证，一个用阻塞保证。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item37-thread-joinable.md">Item 37 thread joinable</a></li>
 <li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item39-one-shot-events.md">Item 39 单次事件</a></li>
-<li>回到：<a href="#intro">第 7 章</a></li>
+<li>回到：<a href="#intro">第 7 章 并发 API</a></li>
 </ul>
       </section>
       <section class="section" id="s-item39">
@@ -1274,35 +1588,17 @@ t.join();
       <section class="section" id="s-item40">
         <div class="sec-head"><div class="sec-no">Item 40</div><h2>Item 40：std::atomic 用于并发，volatile 用于特殊内存——别混用</h2></div>
 <blockquote>
-<p>第 7 章 · Item 40 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item39-one-shot-events.md">Item 39 单次事件</a></p>
+<p>第 7 章 并发 API · Item 40 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item39-one-shot-events.md">Item 39 单次事件</a> · 下一节：<a href="chapter-08.html#ch-8">Item 41 按值传递</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>C 嵌入式程序员常用 <code class="c">volatile</code> 做线程间同步——这是<strong>错误的</strong>，但在单核时代"碰巧能用"：</p>
-<pre class="code" data-label="C"><code class="c">volatile int ready = 0;
-
-// 线程 A
-ready = 1;
-
-// 线程 B
-while (!ready) { }  // 单核时代&quot;碰巧能用&quot;
-// 多核时代：可能永远循环！
-// 因为 volatile 不保证跨核可见性
-</code></pre>
-<p>C++ 程序员也常犯同样的错误——以为 <code class="c">volatile</code> 和 Java 的 <code class="c">volatile</code> 一样能做线程同步。<strong>C/C++ 的 <code class="c">volatile</code> 和 Java 的 <code class="c">volatile</code> 完全不同！</strong></p>
-<p>C++ 的 <code class="c">std::atomic</code> 才是正确的线程同步工具：</p>
-<pre class="code" data-label="cpp"><code class="c">std::atomic&lt;bool&gt; ready{false};
-
-// 线程 A
-ready.store(true);  // 原子写 + 内存屏障 → 跨核可见
-
-// 线程 B
-while (!ready.load()) { }  // 原子读 → 保证看到 A 的写入
-</code></pre>
+<p>这可能是 C++ 里被误解最深的两个关键字。很多从 C / 嵌入式转来的程序员有个根深蒂固的习惯：线程间共享的标志位用 <code class="c">volatile</code>——"告诉编译器别优化，每次都从内存读，这样另一个线程的修改就能被看见"。这个习惯在单核 + 中断的年代碰巧能用，搬到多核多线程就是一颗定时炸弹。</p>
+<p>问题的根源是名字撞车：Java 和 C# 里的 <code class="c">volatile</code> 确实有跨线程可见性语义，而 C/C++ 的 <code class="c">volatile</code> <strong>和线程一点关系都没有</strong>——它只对编译器说"这块内存可能被程序之外的东西（硬件、信号处理器）改写，不许优化我的读写"。它不管原子性，不管指令重排，不管 CPU 缓存一致性。</p>
+<p>C++ 里表达"别的线程也会碰这个变量"的正确工具是 <code class="c">std::atomic</code>：原子性、内存序、跨核可见性，一应俱全。本节用两组硬实测把这件事钉死：双线程各加 100 万次，<code class="c">volatile int</code> 会丢将近一半更新，而 <code class="c">atomic&lt;int&gt;</code> 精确等于 200 万；再用汇编对比展示 <code class="c">volatile</code> 真正的本职——MMIO 寄存器轮询。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p><code class="c">std::atomic</code> 和 <code class="c">volatile</code> <strong>完全不同</strong>——这是 C++ 程序员最普遍的误解之一。混用是经典数据竞争来源。</p>
+<p><code class="c">std::atomic</code> 与 <code class="c">volatile</code> 是两个<strong>正交</strong>的工具：atomic 面向并发（管别的线程），volatile 面向特殊内存（管编译器优化）。用数据竞争实测证明 volatile 做不了并发，用汇编实测证明 volatile 拦得住编译器优化——以及为什么反过来用 atomic 访问硬件寄存器也不合适。</p>
 <hr />
-<h2>本质区别</h2>
+<h2>本质区别：一张表</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1313,87 +1609,132 @@ while (!ready.load()) { }  // 原子读 → 保证看到 A 的写入
 </thead>
 <tbody>
 <tr>
-<td>目的</td>
-<td>多线程数据竞争</td>
-<td>告诉编译器"别优化此内存访问"（MMIO）</td>
-</tr>
-<tr>
-<td>可见性</td>
-<td>保证（内存屏障）</td>
-<td><strong>不保证</strong>跨线程可见性</td>
+<td>服务对象</td>
+<td>多线程并发</td>
+<td>程序之外的改写者（硬件 / 信号）</td>
 </tr>
 <tr>
 <td>原子性</td>
 <td>保证</td>
-<td>不保证</td>
+<td><strong>不保证</strong></td>
 </tr>
 <tr>
-<td>指令重排</td>
-<td>阻止相关重排</td>
-<td><strong>不阻止</strong></td>
+<td>跨线程可见性 / 内存序</td>
+<td>保证（memory order）</td>
+<td><strong>不保证</strong></td>
 </tr>
 <tr>
-<td>适用场景</td>
-<td>多线程共享变量</td>
-<td>硬件寄存器/mmap 内存</td>
+<td>阻止编译器优化读写</td>
+<td>顺带做到</td>
+<td><strong>唯一本职</strong></td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>共享计数器、无锁队列、停止标志</td>
+<td>MMIO 寄存器、<code class="c">sig_atomic_t</code> 标志</td>
 </tr>
 </tbody>
 </table></div>
-<h3>volatile 在 C++ 里不是线程同步工具</h3>
-<pre class="code" data-label="cpp"><code class="c">volatile bool ready = false;
-// 线程 A: ready = true;
-// 线程 B: while (!ready) {}  // 可能永远循环！
+<p>关键认知：<strong>它们解决的是两个不同维度的问题，谁也不含谁。</strong> 一个变量完全可以既 <code class="c">atomic</code> 又不需要 <code class="c">volatile</code>（普通共享变量），也可以只需要 <code class="c">volatile</code> 而不需要原子性（单线程轮询硬件寄存器），极少数场景两者都要。</p>
+<hr />
+<h2>实测 1：volatile 做并发的下场（本机实测 clang 23.1.0）</h2>
+<p>两个线程各对同一个计数器自增 100 万次，分别用 <code class="c">volatile int</code> 和 <code class="c">std::atomic&lt;int&gt;</code>：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;atomic&gt;
+#include &lt;cstdio&gt;
+#include &lt;thread&gt;
+
+constexpr int N = 1'000'000;
+
+volatile int v_counter = 0;          // 数据竞争：volatile 不提供原子性
+std::atomic&lt;int&gt; a_counter{0};
+
+void inc_volatile() {
+    for (int i = 0; i &lt; N; ++i) ++v_counter;   // 读-改-写三步，多线程交错
+}
+
+void inc_atomic() {
+    for (int i = 0; i &lt; N; ++i)
+        a_counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+int main() {
+    for (int round = 1; round &lt;= 3; ++round) {
+        v_counter = 0;
+        a_counter = 0;
+        std::thread t1(inc_volatile), t2(inc_volatile);
+        t1.join(); t2.join();
+        std::printf(&quot;round %d: volatile = %d (期望 2000000)\n&quot;, round, v_counter);
+
+        std::thread t3(inc_atomic), t4(inc_atomic);
+        t3.join(); t4.join();
+        std::printf(&quot;round %d: atomic   = %d (期望 2000000)\n&quot;, round, a_counter.load());
+    }
+    return 0;
+}
 </code></pre>
-<p><code class="c">volatile</code> 只防编译器把读写优化掉（如硬件寄存器、mmap 内存），<strong>不保证</strong>：
-1. 跨核可见性（CPU 缓存一致性）
-2. 原子性（读-改-写操作可能被中断）
-3. 指令重排（编译器和 CPU 都可能重排 volatile 变量周围的指令）</p>
-<h3>std::atomic 保证什么</h3>
-<pre class="code" data-label="cpp"><code class="c">std::atomic&lt;int&gt; counter{0};
-
-// 原子读-改-写
-counter.fetch_add(1);  // 原子递增，不会被打断
-
-// 内存序控制
-counter.store(42, std::memory_order_release);  // 之前的写入对其他线程可见
-counter.load(std::memory_order_acquire);        // 看到 release 之前的所有写入
-
-// compare-and-swap（无锁编程基础）
-int expected = 0;
-bool success = counter.compare_exchange_strong(expected, 1);
-// 如果 counter == 0，设为 1，返回 true
-// 否则 expected = counter 的当前值，返回 false
+<p>clang 23.1.0 + <code class="c">-std=c++17 -Wall -O2</code> 实测输出：</p>
+<pre class="code" data-label="code"><code class="c">round 1: volatile = 1013244 (期望 2000000)
+round 1: atomic   = 2000000 (期望 2000000)
+round 2: volatile = 1000000 (期望 2000000)
+round 2: atomic   = 2000000 (期望 2000000)
+round 3: volatile = 1008677 (期望 2000000)
+round 3: atomic   = 2000000 (期望 2000000)
 </code></pre>
-<h3>volatile 的正确用途</h3>
-<pre class="code" data-label="cpp"><code class="c">// 硬件寄存器映射（MMIO）
-volatile uint32_t* reg = (volatile uint32_t*)0x40021000;
-*reg = 0x01;        // 写硬件寄存器——volatile 防止编译器优化掉
-uint32_t val = *reg; // 读硬件寄存器——volatile 防止编译器缓存上次的值
+<p>volatile 组三轮分别丢了 98.7 万、100 万、99.1 万次更新——<code class="c">++</code> 是"读-改-写"三步，两个线程交错执行时互相覆盖，<code class="c">volatile</code> 对此完全无能为力（它只保证每次读写真的落到内存，不保证这三步不被打断）。atomic 组三轮全部精确 200 万。注意这还是在<strong>内存模型较严格的 arm64</strong> 上的结果；而且按 C++ 标准，对非原子变量的并发读写是 data race，属于未定义行为——"结果偏小"只是它碰巧的一种表现，编译器理论上可以做任何事情。</p>
+<hr />
+<h2>实测 2：volatile 的本职——阻止编译器优化（汇编对比）</h2>
+<p>模拟 MMIO 轮询：循环读一个"会被硬件改写"的地址直到非零。对比加不加 <code class="c">volatile</code>：</p>
+<pre class="code" data-label="cpp"><code class="c">int reg_storage = 0;   // 模拟寄存器映射的地址
 
-// 信号处理函数
-volatile sig_atomic_t flag = 0;
-void handler(int) { flag = 1; }  // 信号处理函数中安全
+int poll_plain(int* reg) {
+    while (*reg == 0) { }   // 编译器认为 *reg 不会变 → 提升出循环
+    return *reg;
+}
+
+int poll_volatile(volatile int* reg) {
+    while (*reg == 0) { }   // 每次迭代都真实读内存
+    return *reg;
+}
 </code></pre>
-<p>多线程共享变量必须用 <code class="c">std::atomic</code> 或 mutex。</p>
+<p>clang 23.1.0 + <code class="c">-O2 -S</code> 生成的汇编（本机实测）：</p>
+<pre class="code" data-label="asm"><code class="c">_poll_plain:                        ; 不带 volatile
+    ldr     w0, [x0]                ; 只读了一次……
+    ret                             ; ……然后直接返回！循环被整个优化掉
+
+_poll_volatile:                     ; 带 volatile
+LBB1_1:                             ; 真正的循环
+    ldr     w8, [x0]                ; 每次迭代都重新从内存加载
+    cbz     w8, LBB1_1              ; 为 0 就继续转
+    ldr     w0, [x0]
+    ret
+</code></pre>
+<p>对比触目惊心：<code class="c">poll_plain</code> 的循环被编译器<strong>整个删除</strong>——只读一次、直接返回（等价于 <code class="c">if (*reg==0) 死循环; else return *reg;</code> 被进一步简化成"反正不会变，读了直接返回"）。这就是不带 <code class="c">volatile</code> 轮询硬件寄存器的下场：硬件把寄存器改了一万次，你的代码还停在第一次读到的值。加上 <code class="c">volatile</code> 后，每次迭代都有真实的 <code class="c">ldr</code>——这才是 MMIO 轮询该有的样子。</p>
+<p>所以 <code class="c">volatile</code> 的语义精确地说只有一条：<strong>"每次访问都必须真正读/写内存，编译器不许缓存、不许提升、不许删除。"</strong> 它是说给编译器听的，不是说给 CPU 或其他线程听的。</p>
+<hr />
+<h2>两个方向的错配</h2>
+<p><strong>用 volatile 做并发（实测 1 已证伪）：</strong> 不保证原子性（<code class="c">++</code> 丢更新）、不插入内存屏障（不阻止 CPU/编译器对周边指令重排）、不建立 happens-before 关系。多线程共享变量请用 <code class="c">std::atomic</code> 或互斥锁。</p>
+<p><strong>用 atomic 访问硬件寄存器（同样错）：</strong> <code class="c">std::atomic</code> 的语义对象是"内存里的变量"，标准不保证它落在某个具体地址上的单次读写在总线层面是什么样子；某些平台上 <code class="c">atomic</code> 操作可能带锁（<code class="c">is_lock_free()</code> 为假），MMIO 场景下既无必要也不合适。寄存器映射就用 <code class="c">volatile</code>，它精确表达"逐字逐句照我说的读写"。</p>
+<p>嵌入式里的真实代码经常两者都要：一个被 DMA 改写、又被多个线程读的缓冲区描述符，地址本身是 <code class="c">volatile</code> 的，并发计数用 <code class="c">atomic</code>——<strong>正交需求，各用各的</strong>。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>"实测 1"即完整可运行程序（编译：<code class="c">clang++ -std=c++17 -Wall -O2</code>，本机实测 clang 23.1.0，无需 <code class="c">-pthread</code>）；"实测 2"用 <code class="c">-O2 -S</code> 生成汇编即可复现对比。</p>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
-<p><strong>错误 1：用 volatile 做线程同步</strong></p>
+<p><strong>错误 1：用 volatile 做线程停止标志</strong></p>
 <pre class="code" data-label="cpp"><code class="c">volatile bool stop = false;
 // 线程 A: stop = true;
-// 线程 B: while (!stop) { work(); }  // 可能永远循环！
+// 线程 B: while (!stop) { work(); }   // 无同步保证，可能永远看不到
 </code></pre>
-<p><strong>修正：</strong> <code class="c">std::atomic&lt;bool&gt; stop{false};</code></p>
-<p><strong>错误 2：用 volatile 保证原子性</strong></p>
+<p><strong>修正：</strong> <code class="c">std::atomic&lt;bool&gt; stop{false};</code>——保证跨核可见性和顺序。</p>
+<p><strong>错误 2：以为 volatile 能保证原子性</strong></p>
 <pre class="code" data-label="cpp"><code class="c">volatile int counter = 0;
-// 多线程: counter++;  // 不是原子操作！读-改-写三步可能被打断
+// 多线程: ++counter;   // 读-改-写三步交错 → 丢更新（实测丢一半）
 </code></pre>
 <p><strong>修正：</strong> <code class="c">std::atomic&lt;int&gt; counter{0}; counter.fetch_add(1);</code></p>
-<p><strong>错误 3：用 atomic 访问硬件寄存器</strong></p>
-<pre class="code" data-label="cpp"><code class="c">std::atomic&lt;uint32_t&gt;* reg = ...;
-// atomic 可能用锁（如果平台不支持原子操作），对 MMIO 不安全
-// volatile 保证每次都真正读写内存，不被优化
-</code></pre>
-<p><strong>修正：</strong> 硬件寄存器用 <code class="c">volatile</code>，不用 <code class="c">atomic</code>。</p>
+<p><strong>错误 3：从 Java/C# 带来的直觉——以为 volatile 有跨线程语义</strong></p>
+<p><strong>修正：</strong> C++ 的 <code class="c">volatile</code> 只管编译器优化。语言间同名关键字语义完全不同，这是面试和代码评审的高频坑。</p>
+<p><strong>错误 4：用 atomic 访问 MMIO 寄存器</strong></p>
+<p><strong>修正：</strong> 硬件寄存器用 <code class="c">volatile</code>；<code class="c">atomic</code> 可能不 lock-free，且语义上不针对设备内存。</p>
 <hr />
 <h2>新手要点（和 C 的区别）</h2>
 <div class="tbl-wrap"><table>
@@ -1408,81 +1749,83 @@ void handler(int) { flag = 1; }  // 信号处理函数中安全
 <tbody>
 <tr>
 <td>线程同步</td>
-<td>误用 <code class="c">volatile</code>（错误）</td>
-<td><code class="c">std::atomic</code>（正确）</td>
-<td>C++ 有标准原子操作</td>
+<td>误用 <code class="c">volatile</code>（单核时代碰巧能用）</td>
+<td><code class="c">std::atomic</code></td>
+<td>C++11 标准内存模型</td>
 </tr>
 <tr>
 <td>硬件寄存器</td>
 <td><code class="c">volatile</code></td>
-<td><code class="c">volatile</code>（相同）</td>
-<td>防优化</td>
+<td><code class="c">volatile</code>（完全相同）</td>
+<td>防编译器优化</td>
 </tr>
 <tr>
 <td>原子操作</td>
-<td>平台相关（GCC __sync）</td>
-<td><code class="c">std::atomic</code></td>
-<td>跨平台标准</td>
+<td>平台内建（<code class="c">__sync_*</code>）</td>
+<td><code class="c">std::atomic</code> / <code class="c">fetch_add</code> / CAS</td>
+<td>跨平台可移植</td>
 </tr>
 <tr>
 <td>内存序</td>
-<td>不适用</td>
-<td><code class="c">memory_order_*</code></td>
-<td>精细控制</td>
+<td>无概念</td>
+<td><code class="c">memory_order_relaxed/acquire/release/...</code></td>
+<td>精细控制可见性</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>一句话总结：</strong> C 程序员记住——多线程共享变量 → <code class="c">std::atomic</code>；硬件寄存器/mmap → <code class="c">volatile</code>。两者不可互换。C 嵌入式代码用 <code class="c">volatile</code> 做线程同步是历史遗留错误。</p>
+<p><strong>一句话总结：</strong> 多线程共享变量 → <code class="c">std::atomic</code>；硬件寄存器 / 信号标志 → <code class="c">volatile</code>。两者是正交工具，谁也不是谁的子集。</p>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>行情计数器</strong>：<code class="c">std::atomic&lt;uint64_t&gt;</code> 保证跨核可见性 + 原子性。</li>
-<li><strong>DPDK 寄存器映射</strong>：<code class="c">volatile</code> 只用于 mmap 的硬件寄存器映射（PMD 配置寄存器）。</li>
-<li><strong>无锁队列</strong>：<code class="c">std::atomic</code> 的 <code class="c">compare_exchange</code> 是无锁编程的基础——HFT 用无锁队列减少锁竞争。</li>
-<li><strong>停止标志</strong>：<code class="c">std::atomic&lt;bool&gt; running{true}</code> 替代 <code class="c">volatile bool</code>——保证跨核可见性和指令不重排。</li>
+<li><strong>竞争计数器</strong>：行情包计数、订单序列号用 <code class="c">std::atomic&lt;uint64_t&gt;</code>（relaxed 足够时别上 seq_cst，省屏障开销）——volatile 版本在实测里直接丢一半更新。</li>
+<li><strong>停止标志</strong>：<code class="c">std::atomic&lt;bool&gt; running{true}</code> 替代 <code class="c">volatile bool</code>，保证所有核及时看到停机指令。</li>
+<li><strong>DPDK / 网卡寄存器</strong>：mmap 的 PMD 配置与状态寄存器轮询用 <code class="c">volatile</code>（或 DPDK 自己的 <code class="c">rte_read32</code> 封装），不用 <code class="c">atomic</code>。</li>
+<li><strong>无锁队列</strong>：SPSC/MPMC 队列的 head/tail 指针用 <code class="c">atomic</code> + 恰当的 memory order；<code class="c">volatile</code> 在这里连编译器屏障都算不上（它管不了 CPU 重排）。</li>
+<li><strong>混合场景</strong>：FPGA/网卡 DMA 写的描述符环——描述符内存 <code class="c">volatile</code>，消费者索引 <code class="c">atomic</code>，各管各的。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">std::atomic</code> 和 <code class="c">volatile</code> 的本质区别是什么？</li>
-<li>为什么 <code class="c">volatile</code> 不能用于线程同步？它不保证什么？</li>
-<li><code class="c">volatile</code> 的正确用途是什么？</li>
-<li>为什么很多 C 嵌入式代码用 volatile 做线程同步是错的？</li>
-<li>下面代码有什么问题？</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">volatile int counter = 0;
-// thread A: counter++;
-// thread B: counter++;
-</code></pre>
+<p><strong>1. <code class="c">std::atomic</code> 和 <code class="c">volatile</code> 的本质区别是什么？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p><code class="c">std::atomic</code> 是<strong>并发</strong>工具：它保证对该对象的读写是原子的（不会出现撕裂/半写状态），并提供内存序（memory order）来约束指令重排与跨线程可见性，因此适合线程间通信与无锁编程。<code class="c">volatile</code> 是<strong>面向编译器优化与硬件</strong>的工具：它告诉编译器"这个对象可能被程序之外的东西改变"，因此禁止把对它的读写优化掉或缓存到寄存器、每次访问都必须真正落到内存——它与线程、原子性、内存序<strong>完全无关</strong>。简言之：atomic 管"别的线程"，volatile 管"别的东西（硬件/信号）"。</p>
-</li>
-<li>
-<p><code class="c">volatile</code> 不保证三件并发必需的东西：①<strong>原子性</strong>——<code class="c">volatile int</code> 的 <code class="c">++</code> 仍是"读-改-写"三步，多线程交错会丢更新；②<strong>内存序/可见性顺序</strong>——它不插入任何屏障，不阻止 CPU 或编译器把相邻访问重排，别的线程可能观察到乱序结果；③<strong>同步关系</strong>——它不建立 happens-before，一个线程写完 volatile 变量后，另一个线程看到新值没有标准层面的保证。所以 <code class="c">volatile</code> 只能保证"每次访问都真正读写内存"，用它做线程同步是错误的。</p>
-</li>
-<li>
-<p>正确的用途是访问<strong>程序控制流之外</strong>会被修改的内存：内存映射 I/O（MMIO）的硬件寄存器（如 DPDK PMD 的配置/状态寄存器）、被信号处理器修改的 <code class="c">volatile sig_atomic_t</code>、被 <code class="c">setjmp/longjmp</code> 跨越的变量、以及某些调试场景防止变量被优化掉。凡是"编译器看不到写者"的地方才需要 <code class="c">volatile</code>。</p>
-</li>
-<li>
-<p>因为 C 嵌入式代码里 <code class="c">volatile</code> 的直觉来自"防止编译器把轮询变量的读优化掉"，在单核或抢占式单线程（如中断 + 主循环）场景下确实有效——没有真正的并行执行，也不需要内存序。但把这个习惯搬到多核多线程 C++ 就错了：多核下真正的难点是<strong>CPU 乱序执行、store buffer、cache 一致性带来的可见性顺序</strong>，<code class="c">volatile</code> 对此无能为力，也不提供原子性；两个核同时 <code class="c">++</code> 一个 <code class="c">volatile int</code> 照样丢更新。C11/C++11 引入内存模型后，正确的工具是 <code class="c">std::atomic</code>（或锁）。</p>
-</li>
-<li>
-<p>数据竞争，未定义行为。<code class="c">counter++</code> 在 <code class="c">volatile int</code> 上会被编译成"读 → 加 1 → 写"三条指令且没有任何原子性或同步保证：两个线程交错执行会丢失更新（两次 <code class="c">++</code> 可能只加一次），并且按 C++ 内存模型，对同一非原子对象的并发读写本身就是 data race，属于未定义行为（不只是"结果偶尔不对"）。修正：</p>
-</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">std::atomic&lt;int&gt; counter{0};      // 或 std::atomic&lt;int&gt; counter = 0;
-// thread A/B: counter.fetch_add(1, std::memory_order_relaxed);  // 只计数、无同步需求时可用 relaxed
-</code></pre>
-<p>若需要更强的顺序约束（如同时发布数据），应配合 <code class="c">memory_order_release/acquire</code>；若涉及多个变量的复合不变量，则用 <code class="c">std::mutex</code>。</p>
+<summary>答案</summary>
+<p>atomic 面向并发：保证读写的原子性，通过 memory order 提供跨线程可见性与顺序保证。volatile 面向编译器优化：保证每次访问真实落到内存，不被缓存/提升/删除。一个管"别的线程"，一个管"程序之外的改写者"，正交。</p>
+</details>
+<p><strong>2. 实测中双线程对 <code class="c">volatile int</code> 各加 100 万次的结果是多少？为什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>约 101 万（三轮：1013244 / 1000000 / 1008677），丢了近一半更新。因为 <code class="c">++</code> 是读-改-写三步，volatile 不提供原子性，两个线程交错时互相覆盖；且按标准这是 data race，本就是未定义行为。同测试的 atomic 组精确等于 2000000。</p>
+</details>
+<p><strong>3. <code class="c">volatile</code> 做线程同步缺哪三样东西？</strong></p>
+<details>
+<summary>答案</summary>
+<p>①原子性——复合操作可被打断；②内存序——不插屏障，不阻止 CPU/编译器对周边访问重排；③happens-before——一个线程的写对另一个线程何时可见没有标准保证。</p>
+</details>
+<p><strong>4. 汇编实测里 <code class="c">poll_plain</code> 和 <code class="c">poll_volatile</code> 的区别说明了什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>-O2 下 <code class="c">poll_plain</code> 的循环被整个优化成一次 <code class="c">ldr</code> + <code class="c">ret</code>（编译器认定 *reg 不会变）；<code class="c">poll_volatile</code> 保留了每次迭代真实加载的循环。说明 volatile 的唯一本职就是阻止编译器优化内存访问——这正是 MMIO 轮询需要的，也正是它对并发无能为力的原因。</p>
+</details>
+<p><strong>5. 为什么不该用 <code class="c">std::atomic</code> 访问硬件寄存器？</strong></p>
+<details>
+<summary>答案</summary>
+<p>atomic 的语义对象是"内存变量"，不针对设备内存；某些平台上 atomic 操作可能带锁（非 lock-free），对 MMIO 既无必要也可能出错。寄存器读写用 volatile 精确表达"逐次真实访问"。</p>
+</details>
+<p><strong>6. 为什么单核嵌入式时代的 <code class="c">volatile</code> 同步"碰巧能用"，多核时代就崩了？</strong></p>
+<details>
+<summary>答案</summary>
+<p>单核 + 中断场景没有真正的并行执行，唯一问题是编译器把轮询读优化掉——volatile 恰好解决这个。多核的真正难点是 CPU 乱序、store buffer、缓存一致性带来的可见性与顺序问题，volatile 对这些一概不管。</p>
+</details>
+<p><strong>7. 一个变量能否同时需要 <code class="c">atomic</code> 和 <code class="c">volatile</code>？举例。</strong></p>
+<details>
+<summary>答案</summary>
+<p>能，两者正交。例：被 DMA 引擎异步改写、又被多个工作线程并发读取的描述符环——描述符内存本身要 volatile（硬件在改），消费者/生产者索引要 atomic（多线程在争）。嵌入式驱动里这种组合很常见。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
-<li>下一章：<a href="chapter-08.html#intro">第 8 章 微调</a></li>
-<li>回到：<a href="#intro">第 7 章</a></li>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item39-one-shot-events.md">Item 39 单次事件</a></li>
+<li>下一节：<a href="chapter-08.html#ch-8">Item 41 按值传递</a></li>
+<li>回到：<a href="#intro">第 7 章 并发 API</a></li>
 </ul>
       </section>
 

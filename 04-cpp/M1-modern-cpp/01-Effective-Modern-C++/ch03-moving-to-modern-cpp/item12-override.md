@@ -4,7 +4,7 @@
 
 ## 为什么要学这个（先建立直觉）
 
-C 没有继承和虚函数，但 C 程序员理解"函数指针表"（vtable 的 C 模拟）：
+C 没有继承和虚函数，但 C 程序员一定理解"函数指针表"——那正是 vtable 的手工版本：
 
 ```c
 // C 的"多态"模拟
@@ -14,135 +14,219 @@ struct Strategy {
 };
 ```
 
-C++ 的虚函数就是这个模式的语言级支持。但 C++ 有一个 C 没有的坑：**你以为重写了基类虚函数，实际可能没有**。
+C++ 的虚函数就是这个模式的语言级支持。但 C++ 有一个 C 没有的坑：**你以为重写了基类虚函数，实际可能没有**。基类参数是 `int`，你写成了 `double`；基类带 `const`，你漏了——这两种情况在 C++11 之前编译器**一声不吭**，代码能编译、能链接、能运行，只是运行时多态不生效。
 
-```cpp
-class Base {
-public:
-    virtual void on_tick(int x) {}  // 注意参数是 int
-};
-
-class Derived : public Base {
-public:
-    virtual void on_tick(double x) {}  // 参数是 double——签名不匹配！
-    // 这不是重写，是创建了一个新虚函数！Base::on_tick 没被覆盖
-};
-```
-
-C++11 之前，编译器不会告诉你这个错误——代码能编译，但运行时多态不生效。C++11 的 `override` 关键字让编译器**检查**是否真的重写了：
-
-```cpp
-class Derived : public Base {
-public:
-    virtual void on_tick(double x) override;  // 编译报错！签名不匹配
-};
-```
+关键在于：这类 bug **只在基类虚函数提供了默认实现时才会静默**。如果基类是纯虚函数，漏实现会让派生类仍是抽象类，一实例化就编译报错。真正危险的是那些"有默认实现、改了也不会崩、只是行为不对"的虚函数——`override` 正是为它们发明的：它让编译器**检查**是否真的重写了，检查不通过直接编译报错。
 
 ---
 
 ## 这节讲什么
 
-`override` 关键字让编译器**检查**是否真的重写了基类虚函数——签名不匹配会编译报错，而非静默创建一个新虚函数。这是 C++11 最具性价比的防 bug 特性之一。
+1. 不加 `override` 时虚函数"静默失效"的现场，以及它为什么只在基类有默认实现时才静默；
+2. 加 `override` 后的真实报错原文，逐条对照四种签名不匹配（参数类型 / `const` / 引用限定符 / 基类非虚）；
+3. `final`：既挡住重写，又给编译器去虚化（devirtualization）的机会；
+4. 引用限定符 `&` / `&&`——`override` 检查里最容易忽略的一项。
 
 ---
 
-## 核心问题
+## 现场：不加 override 时虚函数静默失效
 
-### 签名不匹配的隐蔽 bug
+clang 23.1.0，`-std=c++17 -Wall`，完整可编译：
 
 ```cpp
+#include <iostream>
+
 class Base {
 public:
-    virtual void doWork(int x);       // 基类虚函数
+    virtual void on_tick(int x) { std::cout << "Base::on_tick(int) " << x << "\n"; }
+    virtual ~Base() = default;
 };
 
 class Derived : public Base {
 public:
-    // 没有 override：编译器不检查，静默创建新虚函数
-    virtual void doWork(double x);    // 签名不匹配！Base::doWork 没被重写
-    // 运行时：Base* p = &derived; p->doWork(42); 调的是 Base::doWork，不是 Derived！
+    // 没有 override：参数写成 double，签名不匹配，但编译通过
+    virtual void on_tick(double x) { std::cout << "Derived::on_tick(double) " << x << "\n"; }
 };
 
-// 加 override：编译器检查，签名不匹配直接报错
-class Derived2 : public Base {
-public:
-    virtual void doWork(double x) override;  // 编译报错！int vs double
-};
+int main() {
+    Derived d;
+    Base* p = &d;
+    p->on_tick(42);      // 期望 Derived，实际 Base
+    d.on_tick(3.14);     // 直接调派生类对象 → Derived::on_tick(double)
+    return 0;
+}
 ```
 
-### 签名不匹配的常见原因
+真实输出：
+
+```
+Base::on_tick(int) 42
+Derived::on_tick(double) 3.14
+```
+
+第一行的 `Base::on_tick(int)` 就是事故本身——通过基类指针分发，居然落回了基类。`Derived::on_tick(double)` 并没有消失，它成了 `Derived` 自己的新虚函数，只是不在 `Base::on_tick` 的 vtable 槽位上。于是代码"看起来对了、编译过了、单测直接调派生类对象也能过"，只有走多态分发时才暴露。
+
+编译器确实给了一条告警（`-Wall` 下）：
+
+```
+warning: 'Derived::on_tick' hides overloaded virtual function [-Woverloaded-virtual]
+note: hidden overloaded virtual function 'Base::on_tick' declared here:
+      type mismatch at 1st parameter ('int' vs 'double')
+```
+
+但告警**不会拦住你**，`override` 会。
+
+---
+
+## 加上 override：把运行时 bug 提前到编译期
 
 ```cpp
-class Base {
-public:
-    virtual void f(int x);
-    virtual void g() const;           // const 成员函数
-    virtual void h() &;               // 左值引用限定
-};
-
 class Derived : public Base {
 public:
-    virtual void f(double x) override;     // 错误：int vs double
-    virtual void g() override;             // 错误：缺 const
-    virtual void h() && override;          // 错误：& vs &&
+    void on_tick(double x) override { std::cout << "Derived::on_tick(double) " << x << "\n"; }
 };
 ```
 
-### override + final
+本机实测 clang 23.1.0 报错原文：
+
+```
+error: non-virtual member function marked 'override' hides virtual member function
+   11 |     void on_tick(double x) override { ... }
+      |                            ^
+note: hidden overloaded virtual function 'Base::on_tick' declared here:
+      type mismatch at 1st parameter ('int' vs 'double')
+```
+
+| 版本 | 编译 | 运行 | 排查成本 |
+|------|------|------|---------|
+| 不加 `override` | 通过（仅一条告警） | 多态静默失效 | 高：需线上定位"为什么没生效" |
+| 加 `override` | **报错** | — | 低：编译器直接写出 `int` vs `double` |
+
+---
+
+## 四种签名不匹配（逐一实测）
+
+| # | 不匹配类型 | `override` 报错关键信息（clang 23.1.0 实测） |
+|---|-----------|------------------------------------------|
+| ① | 参数类型 | `type mismatch at 1st parameter ('int' vs 'double')` |
+| ② | 缺 `const` | `different qualifiers ('const' vs unqualified)` |
+| ③ | 引用限定符 | `hides virtual member function` / `cannot overload a member function without a ref-qualifier with a member function with ref-qualifier '&'` |
+| ④ | 基类非虚 | `error: only virtual member functions can be marked 'override'` |
+
+②③ 的实测代码：`virtual void process() const;` 配 `void process() override;`（缺 `const`）、`virtual void h() &;` 配 `void h() && override;`（`&` vs `&&`）。
+
+不做 `override` 的对照组（②）：编译通过，程序输出 `Base::process() const`——多态失效。① 最容易踩的变体是 `int` vs `int64_t`、`size_t` vs `uint32_t`：64 位 Linux 上位宽不同，但很多人凭直觉以为"反正都是整数"。
+
+---
+
+## final：override 的搭档
+
+`override` 说"我是重写"，`final` 说"到此为止"。二者正交，可同时写：
 
 ```cpp
-class Base {
-public:
-    virtual void f();
-};
+class Base    { public: virtual void f() { } };
+class Derived : public Base { public: void f() override final { } };
+class Deep    : public Derived { public: void f() override { } };   // 编译失败
+```
 
-class Derived : public Base {
-public:
-    void f() override final;  // 重写了 Base::f，且子类不能再重写
-};
+实测报错：
 
-class DeepDerived : public Derived {
-    // void f() override;  // 编译失败！f 被 final 了
+```
+error: declaration of 'f' overrides a 'final' function
+note: overridden virtual function is here
+```
+
+`final` 修饰类时：`class Base final { };` → 继承尝试报 `error: base 'Base' is marked 'final'`。
+
+---
+
+## 引用限定符 & 和 &&
+
+成员函数可在参数表后加 `&`（只在左值对象上调）或 `&&`（只在右值对象上调），它和 `const` 一样**属于函数签名**，因此也在 `override` 检查范围内：
+
+```cpp
+class Quote {
+    double px_ = 0.0;
+public:
+    explicit Quote(double p) : px_(p) {}
+    double& px() &  { return px_; }            // 左值对象：返回引用，还能接着用
+    double  px() && { return std::move(px_); }  // 右值对象：可以放心搬走内部数据
 };
 ```
+
+实测输出：
+
+```
+lvalue object:     px() &  -> 100.5
+rvalue object:     px() && -> 200.25     // Quote(200.25).px()
+explicit move:     px() && -> 100.5      // std::move(q).px()
+```
+
+---
+
+## 完整可运行例子
+
+HFT 里典型的事件分发点：纯虚的 `on_tick`（漏了直接编译失败）＋ 有默认实现的 `on_reset`（漏了会静默）：
+
+```cpp
+#include <iostream>
+#include <memory>
+#include <vector>
+
+class Handler {
+public:
+    virtual void on_tick(int px) = 0;      // 纯虚：子类必须重写
+    virtual void on_reset() {}             // 有默认实现：写错签名编译器不拦
+    virtual ~Handler() = default;
+};
+
+class Logger : public Handler {
+public:
+    void on_tick(int px) override { std::cout << "  Logger::on_tick " << px << "\n"; }
+    void on_reset() override { std::cout << "  Logger::on_reset\n"; }
+};
+
+class Aggregator : public Handler {
+public:
+    void on_tick(int px) override { sum += px; }
+    void on_reset() override { sum = 0; }
+    int sum = 0;
+};
+
+int main() {
+    std::vector<std::unique_ptr<Handler>> hs;
+    hs.push_back(std::make_unique<Logger>());
+    hs.push_back(std::make_unique<Aggregator>());
+    std::cout << "dispatch on_tick:\n";
+    for (auto& h : hs) h->on_tick(100);
+    std::cout << "dispatch on_reset:\n";
+    for (auto& h : hs) h->on_reset();
+    std::cout << "agg->sum after reset = "
+              << static_cast<Aggregator*>(hs[1].get())->sum << "\n";
+    return 0;
+}
+```
+
+clang 23.1.0 实测输出：
+
+```
+dispatch on_tick:
+  Logger::on_tick 100
+dispatch on_reset:
+  Logger::on_reset
+agg->sum after reset = 0
+```
+
+把 `Aggregator::on_reset` 的 `override` 去掉并写错签名（比如 `on_reset(int)`），代码依旧能编译——只是 `reset` 永远不会被调用，累计值一直涨。**这就是 `override` 存在的全部理由。**
 
 ---
 
 ## 常见错误（新手踩坑）
 
-**错误 1：忘了加 const 导致重写失败**
-```cpp
-class Base {
-    virtual void process() const;  // const 版本
-};
-class Derived : public Base {
-    virtual void process() override;  // 编译失败！缺 const
-    // 不加 override → 静默创建新虚函数，运行时多态不生效
-};
-```
-**修正：** `void process() const override;`
-
-**错误 2：参数类型写错**
-```cpp
-class Base {
-    virtual void on_event(const Event& e);
-};
-class Derived : public Base {
-    virtual void on_event(Event& e) override;  // 编译失败！缺 const
-};
-```
-**修正：** 参数类型必须完全一致，包括 `const`。
-
-**错误 3：基类函数忘了写 virtual**
-```cpp
-class Base {
-    void f();  // 不是虚函数！
-};
-class Derived : public Base {
-    void f() override;  // 编译失败！Base::f 不是虚函数
-};
-```
-**修正：** 基类函数必须声明为 `virtual`。
+1. **只在纯虚函数上加 `override`**。纯虚函数漏实现时派生类变抽象类，编译器本来就会拦（实测 `error: variable type 'Impl' is an abstract class`）。真正的风险在有默认实现的虚函数上。
+2. **把 `-Woverloaded-virtual` 当保险**。它只是告警，且管不到"基类函数压根不是 virtual"的情况——那种写法不构成 hiding，一条告警都不会有。
+3. **以为在派生类写 `virtual` 就够了**。`virtual` 在派生类里是冗余的（重写自动为虚），不提供任何检查；`override` 才检查。
+4. **改基类签名后靠全局替换**。全局替换能改掉名字，改不掉"语义上这里不该改"。加了 `override` 后编译器会把所有受影响点一次性列出来，这才是安全重构的正确姿势。
 
 ---
 
@@ -152,52 +236,59 @@ class Derived : public Base {
 |------|---------|-----------|--------|
 | 多态 | 函数指针表（手动） | 虚函数（自动） | C++ 语言级支持 |
 | 重写检查 | 手动对照（容易出错） | `override` 编译器检查 | 防签名不匹配 |
-| 阻止重写 | 不适用 | `final` | 设计封闭类 |
-| 重写错误后果 | 编译期不可发现 | 不加 `override` 时运行时静默失败 | C++ 的历史包袱 |
+| 阻止重写 | 不适用 | `final` | 设计封闭类 + 去虚化 |
+| 值类别重载 | 不存在 | `&` / `&&` 引用限定符 | 区分"还要用"和"马上死" |
 
-**一句话总结：** C 程序员学 C++ 面向对象时，`override` 是第一条该养成的习惯——每写一个重写虚函数必加 `override`，让编译器帮你查签名。
+**一句话总结：** C 程序员学 C++ 面向对象时，`override` 是第一条该养成的习惯——它同时检查派生类的签名和基类的 `virtual`，两头都堵。不加它，重写错误就是编译期不可发现的运行时静默失败。
 
 ---
 
 ## HFT 关联
 
-- **策略基类**：`class Strategy { virtual void on_tick(const Tick&) = 0; };` 子类 `void on_tick(const Tick&) override;` 加 `override` 后签名写错编译期暴露，避免"策略不生效"的隐蔽 bug。
-- **事件处理器**：行情网关的事件回调如果签名写错（如缺 `const`），不加 `override` 会导致回调不被调用，行情丢失。
-- **final 优化**：`final` 让编译器去掉虚函数调用的间接跳转（devirtualization），减少一个 vtable 查找——HFT 热路径可以受益。
+- **策略基类**：`class Strategy { virtual void on_tick(const Tick&) = 0; };` 子类加 `override` 后签名写错编译期暴露，避免"策略不生效"——这类 bug 在回测里常表现为"收益为 0"而不是"崩溃"，极难察觉。
+- **事件处理器**：行情网关回调签名写错（如缺 `const`），不加 `override` 会导致回调不被调用。在 UDP 组播场景下等同于**静默丢包**，无任何告警。
+- **`final` 优化**：`final` 让编译器去掉虚调用的间接跳转（devirtualization），省掉一次 vtable 查找和一次潜在的 i-cache miss——HFT 热路径可以受益。
 
 ---
 
 ## 自测题
 
-1. `override` 关键字的作用是什么？不加 `override` 会有什么后果？
-2. 列举三种导致"签名不匹配"的常见原因。
-3. `final` 和 `override` 可以同时用吗？各自表达什么意思？
-4. 为什么说 `override` 是"C++11 最具性价比的防 bug 特性"？
-5. 下面代码有什么问题？
-```cpp
-class Base {
-public:
-    virtual void on_tick(const Tick&) const;
-};
-class Strategy : public Base {
-public:
-    void on_tick(const Tick&) override;  // 能编译吗？
-};
-```
+**1. 不加 `override` 时签名写错，代码能编译吗？运行时会发生什么？**
+<details><summary>答案</summary>
+能编译（clang 23.1.0 下仅一条 `-Woverloaded-virtual` 告警）。派生类函数不覆盖基类虚函数，而是成为一个**新的**虚函数，占新的 vtable 槽位。通过基类指针调用时执行基类版本，表现为"改了子类代码却没生效"。实测输出第一行是 `Base::on_tick(int) 42`——事故现场。
+</details>
 
-<details>
-<summary>参考答案</summary>
+**2. 加上 `override` 后四类签名不匹配，clang 23.1.0 的报错关键信息分别是什么？**
+<details><summary>答案</summary>
 
-1. `override` 是给编译器的**显式契约**：它声明"这个函数必须重写基类的某个虚函数"。编译器会去基类查找签名完全匹配的虚函数，找不到就报编译错误。不加 `override` 时，如果签名其实不匹配（或基类函数不是 virtual），编译器只会把它当成派生类的一个**新函数**（同名隐藏/重载），编译通过但多态失效——通过基类指针调用时执行的仍是基类版本，表现为"改了子类代码却没生效"的运行时静默 bug。
+| 类型 | 报错关键信息 |
+|------|-------------|
+| ① 参数类型 | `hides virtual member function` + `type mismatch at 1st parameter ('int' vs 'double')` |
+| ② 缺 `const` | `hides virtual member function` + `different qualifiers ('const' vs unqualified)` |
+| ③ 引用限定符 | `hides virtual member function`；无限定符版另报 `cannot overload a member function without a ref-qualifier with a member function with ref-qualifier '&'` |
+| ④ 基类非虚 | `error: only virtual member functions can be marked 'override'` |
 
-2. 常见的三种：①**基类函数忘了写 `virtual`**（此时 `override` 直接编译失败，强制你修正基类）；②**签名不完全一致**——参数类型不同（如 `int` vs `int64_t`）、少/多一个参数、参数顺序不同；③**常量性或引用限定不同**——基类是 `void f() const`，派生类写成 `void f()`（缺 `const`），或基类带 `&`/`&&` 限定而派生类没有。此外返回类型协变写错、基类函数名拼错也属于同一类。
+④ 这条最有价值：它把"基类的设计意图"也纳入检查——你以为那是虚函数，但基类作者并没打算让你重写；去掉 `override` 后连告警都不会有。
+</details>
 
-3. 可以同时用，写作 `void f() override final;`。二者表达的东西正交：`override` 表示"我是重写基类的虚函数"（编译期校验签名）；`final` 表示"到此为止，任何派生类不能再重写这个函数"（也可用于类：`class D final : public B` 表示 D 不能被继承）。`final` 还给了编译器去虚化（devirtualization）的机会，可省掉一次 vtable 间接跳转。
+**3. 基类是 `virtual void process() const`，派生类写成 `void process() override` 会怎样？去掉 `override` 呢？**
+<details><summary>答案</summary>
+带 `override` 编译失败：`error: non-virtual member function marked 'override' hides virtual member function` / `note: ... different qualifiers ('const' vs unqualified')`。去掉 `override` 则编译通过（带 `-Woverloaded-virtual` 告警），但通过基类指针调用执行的是 `Base::process() const`——多态失效。`const` 是签名的一部分，漏写等于写了另一个函数。
+</details>
 
-4. 因为它成本极低（每个重写函数加一个关键字）却能在**编译期**捕获一类最难查的运行时 bug：虚函数签名不匹配导致的多态静默失效。这类 bug 不会崩溃、不会报错，只是"行为不对"，在线上排查代价极高；`override` 把它从运行时提前到编译期，几乎零运行开销。对策略回调、事件处理器这类依赖多态的分发逻辑尤其值钱。
+**4. 引用限定符 `&` / `&&` 的用途是什么？为什么它会影响 `override` 匹配？**
+<details><summary>答案</summary>
+用途是按调用对象的值类别重载：左值对象（还要继续用）走 `&` 版本，通常返回引用；右值对象（马上销毁）走 `&&` 版本，可以放心把内部资源搬走。实测 `Quote(200.25).px()` 与 `std::move(q).px()` 都走 `&&` 版本。因为 `&` / `&&` 和 `const` 一样属于函数签名，重写要求签名完全匹配，所以基类 `void h() &` 与派生类 `void h() &&`（或无限定符的 `void h()`）不构成重写。
+</details>
 
-5. 不能编译。基类的 `on_tick` 带 `const` 限定（`void on_tick(const Tick&) const`），派生类版本没有 `const`，二者是**不同的函数签名**，派生类并没有重写任何基类虚函数，加上 `override` 后编译器会报"marked override but does not override"。因为基类函数是虚函数，若不加 `override` 这段代码会静默编译通过——派生类定义了一个新的非重写函数，通过 `Base*` 调用的仍是 `Base::on_tick`，策略不会生效。修正：`void on_tick(const Tick&) const override;`。
+**5. `override` 和 `final` 能同时用吗？`final` 除了挡重写还有什么作用？**
+<details><summary>答案</summary>
+能，写作 `void f() override final;`。二者正交：`override` = "我重写了基类虚函数"（编译期校验签名）；`final` = "到此为止，派生类不能再重写"（也可修饰类：`class D final : public B`，此时报 `error: base 'Base' is marked 'final'`）。额外作用：给编译器提供去虚化依据，静态绑定后省掉一次 vtable 间接跳转。
+</details>
 
+**6. 为什么"纯虚函数漏实现"反而不是 `override` 的主要战场？**
+<details><summary>答案</summary>
+因为纯虚函数漏实现（或签名写错导致没覆盖到）时，派生类仍是抽象类，一实例化编译器立刻报硬错误（实测 `error: variable type 'Impl' is an abstract class` + `note: unimplemented pure virtual method 'on_tick' in 'Impl'`），跑不掉。真正的风险在基类提供了默认实现的虚函数上：签名写错后代码完全合法，只是默认实现被悄悄沿用，往往要到生产环境才被发现。
 </details>
 
 ---

@@ -359,150 +359,214 @@ auto cb = [up = std::move(pw)]{ up-&gt;doSomething(); };  // 把 unique_ptr 移�
 <p>第 6 章 Lambda 表达式 · Item 31 · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item32-init-capture.md">Item 32 初始化捕获</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>C 用函数指针 + <code class="c">void*</code> userdata 做回调：</p>
-<pre class="code" data-label="C"><code class="c">// C 回调模式
-void on_tick(void* ctx, const Tick* t) {
-    Engine* self = (Engine*)ctx;
-    self-&gt;process(t);
-}
-register_callback(on_tick, engine);  // 传函数指针 + 上下文
-</code></pre>
-<p>C++ 的 lambda 可以"捕获"外层变量，比 C 的 <code class="c">void*</code> 更方便。但默认捕获 <code class="c">[=]</code>（按值）和 <code class="c">[&amp;]</code>（按引用）有隐蔽的陷阱：</p>
-<pre class="code" data-label="cpp"><code class="c">class Widget {
-    int data;
-    auto make_cb() {
-        return [=]{ return data; };  // 看着像&quot;按值捕获 data&quot;
-        // 实际捕获的是 this 指针！data 通过 this-&gt;data 访问
-        // Widget 析构后 → this 悬垂 → UB
-    }
-};
-</code></pre>
-<p><code class="c">[=]</code> 在成员函数中捕获成员变量时，实际捕获的是 <code class="c">this</code> 指针（按引用！），不是成员的拷贝。这是 C++ lambda 最常见的坑。</p>
+<p>lambda 的捕获列表是它和 C 的「函数指针 + <code class="c">void*</code> userdata」最本质的区别：编译器帮你把上下文打包进闭包。但 <code class="c">[=]</code> 和 <code class="c">[&amp;]</code> 这两个「默认捕获模式」相当于对编译器说「我用了什么你就给我捕获什么」——<strong>你放弃了对捕获清单的审查权</strong>。问题在闭包<strong>逃出作用域</strong>时才爆发：<code class="c">[&amp;]</code> 捕获了局部变量的 lambda 被返回、被塞进任务队列、被注册成回调，等它真正执行时，当初捕获的局部变量早就随栈帧销毁了。引用不会延长对象的生命周期——它只是一个地址，对象死了，地址还在。</p>
+<p>更隐蔽的是 <code class="c">[=]</code>：在成员函数里写 <code class="c">[=]</code>，字面上是「按值捕获我用到的一切」，但成员变量根本<strong>不能被直接捕获</strong>——闭包实际捕获的是 <code class="c">this</code> 指针，每次访问成员都走 <code class="c">this-&gt;data</code>。你以为拿到了一份<strong>拷贝</strong>，实际拿到的是一根<strong>指针</strong>。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p>默认捕获有两大问题：<code class="c">[=]</code> 对成员变量的捕获语义反直觉（实际捕获 <code class="c">this</code>）；<code class="c">[&amp;]</code> 的悬垂引用风险。</p>
+<ol>
+<li><code class="c">[&amp;]</code> 按引用捕获的<strong>悬垂实测</strong>：局部变量销毁后调用闭包，普通编译读垃圾值，ASan 抓 <code class="c">stack-use-after-scope</code>；</li>
+<li><code class="c">[=]</code> 的<strong>假象</strong>：捕获成员变量实际是捕获 <code class="c">this</code> 指针，ASan 帧信息指出「访问落在已析构的 <code class="c">w</code> 里」；</li>
+<li><strong>static 局部变量不被捕获</strong>（<code class="c">[&amp;]</code> 也捕获不到），用地址和 <code class="c">sizeof</code> 实测证明；C++20 的 <code class="c">[=, this]</code> 显式化（编译器警告原文实测）。</li>
+</ol>
 <hr />
-<h2>两大问题</h2>
-<h3>1. [=] 捕获 this 而非成员拷贝</h3>
-<pre class="code" data-label="cpp"><code class="c">class Widget {
+<h2>[&amp;] 悬垂：闭包比局部变量活得久</h2>
+<p>经典反面教材——返回一个按引用捕获局部变量的 lambda：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;functional&gt;
+#include &lt;iostream&gt;
+
+std::function&lt;int()&gt; getCounter() {
+    int count = 100;                    // 局部变量
+    return [&amp;] { return ++count; };     // 按引用捕获 count —— return 后 count 销毁
+}
+
+int main() {
+    auto f = getCounter();   // 栈帧已销毁，count 不复存在，闭包里只剩悬垂地址
+    std::cout &lt;&lt; &quot;f() = &quot; &lt;&lt; f() &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;f() = &quot; &lt;&lt; f() &lt;&lt; &quot;\n&quot;;
+}
+</code></pre>
+<p>本机实测（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>），正确输出应该是 <code class="c">101 102</code>，实际却是：</p>
+<pre class="code" data-label="code"><code class="c">f() = 2
+f() = 2
+</code></pre>
+<p>栈内存被后续调用覆写，读到的是垃圾值（加 <code class="c">-fsanitize=address -g</code> 再跑垃圾值变成 <code class="c">1807838081</code>，但 <strong>ASan 没有报错</strong>）。<code class="c">std::function</code> 的类型擦除调用链让 use-after-scope 检测漏了过去——sanitizer 不一定救你，程序甚至可能「看起来能跑」。</p>
+<p>不经过 <code class="c">std::function</code> 直接返回 lambda 时，编译器倒是会警觉（本机实测警告原文）：</p>
+<pre class="code" data-label="code"><code class="c">warning: address of stack memory associated with local variable
+         'count' returned [-Wreturn-stack-address]
+note: implicitly captured by reference due to use here
+</code></pre>
+<p>编译器能看穿直接返回，但看不穿「存进 <code class="c">std::function</code> / 任务队列 / 回调注册表」的间接逃逸——真实代码里闭包几乎都是间接逃逸的。<strong>不要指望警告救你，要靠纪律：显式列出捕获变量。</strong></p>
+<hr />
+<h2>[=] 的假象：捕获的是 this 指针</h2>
+<p>成员变量不能单独出现在捕获列表里，<code class="c">[=]</code> 用到成员时实际捕获 <code class="c">this</code>：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;functional&gt;
+#include &lt;iostream&gt;
+
+class Widget {
     int data;
 public:
-    auto make_cb() {
-        return [=]{ return data; };  // 捕获的是 this，不是 data 的拷贝！
-        // 等价于：return [this]{ return this-&gt;data; };
+    explicit Widget(int d) : data(d) {}
+    std::function&lt;int()&gt; makeCallback() {
+        return [=] { return data; };   // 看着像&quot;按值捕获 data&quot;
+                                       // 实际等价于 [this]{ return this-&gt;data; }
     }
 };
-// Widget 销毁后闭包仍调 this-&gt;data → 悬垂 → UB
 
-// 正确做法：先拷贝到局部变量，再按值捕获
-auto make_cb_safe() {
-    int local_data = data;           // 先拷贝到局部
-    return [local_data]{ return local_data; };  // 按值捕获局部变量
-}
-
-// C++17：用 [*this] 按值捕获对象本身
-auto make_cb_cpp17() {
-    return [*this]{ return data; };  // 按值拷贝整个 *this
+int main() {
+    std::function&lt;int()&gt; cb;
+    {
+        Widget w{42};
+        cb = w.makeCallback();
+        std::cout &lt;&lt; &quot;对象存活时 cb() = &quot; &lt;&lt; cb() &lt;&lt; &quot;\n&quot;;
+    }   // w 析构，闭包里的 this 悬垂
+    std::cout &lt;&lt; &quot;对象销毁后 cb() = &quot; &lt;&lt; cb() &lt;&lt; &quot;\n&quot;;  // UB
 }
 </code></pre>
-<p><code class="c">[=]</code> 看着像"按值捕获一切"，但成员变量实际捕获的是 <code class="c">this</code> 指针——按引用！</p>
-<h3>2. [&amp;] 悬垂引用</h3>
-<pre class="code" data-label="cpp"><code class="c">std::function&lt;int()&gt; get_counter() {
-    int count = 0;
-    return [&amp;] { return ++count; };  // 按引用捕获 count
-    // get_counter 返回后 count 销毁 → 引用悬垂 → UB
+<p>本机实测（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>）普通编译的输出是<strong>最阴险的那种结果</strong>：</p>
+<pre class="code" data-label="code"><code class="c">对象存活时 cb() = 42
+对象销毁后 cb() = 42
+</code></pre>
+<p>两次都是 42——栈内存恰好没被覆写，UB「看起来完全正常」，能在测试环境潜伏很久。同一份代码用 <code class="c">-fsanitize=address -g</code> 编译，ASan 立刻现形（实测输出节选）：</p>
+<pre class="code" data-label="code"><code class="c">==85017==ERROR: AddressSanitizer: stack-use-after-scope on address 0x00016fae6e00
+READ of size 4 at 0x00016fae6e00 thread T0
+    #0 Widget::makeCallback()::'lambda'()::operator()() const
+    [96, 100) 'w' (line 24) &lt;== Memory access at offset 96 is inside this variable
+</code></pre>
+<p>最后一行是铁证：闭包里的「<code class="c">data</code>」访问落在了<strong>已析构的 <code class="c">w</code></strong> 的内存里——<code class="c">[=]</code> 根本没有拷贝 <code class="c">data</code>，它只是存了 <code class="c">&amp;w</code>。</p>
+<h3>正确做法</h3>
+<pre class="code" data-label="cpp"><code class="c">// 方案一（C++11 起通用）：先拷贝到局部变量，再按值捕获局部变量
+std::function&lt;int()&gt; makeCallback() {
+    int local_data = data;                       // 拷贝发生在对象存活时
+    return [local_data] { return local_data; };  // 闭包持有真正的副本
 }
-auto f = get_counter();
-f();  // 访问已销毁的 count → UB
-
-// 正确做法：按值捕获
-std::function&lt;int()&gt; get_counter_safe() {
-    int count = 0;
-    return [count]() mutable { return ++count; };  // 按值捕获，mutable 允许修改
+// 方案二（C++14 起）：init capture，一步到位（Item 32 详讲）
+std::function&lt;int()&gt; makeCallback() {
+    return [d = data] { return d; };
+}
+// 方案三（C++17 起）：[*this] 按值捕获整个对象的副本
+std::function&lt;int()&gt; makeCallback() {
+    return [*this] { return data; };   // 闭包里存了一个 Widget 拷贝
 }
 </code></pre>
-<p>按引用捕获的局部变量，闭包存活超过作用域时引用悬垂——UB。</p>
+<p>三种方案的共同点是<strong>拷贝发生在对象还活着的时候</strong>，闭包此后与原对象再无瓜葛。方案三拷的是<strong>整个对象</strong>，对象大时方案二（只拷需要的成员）更省。</p>
+<hr />
+<h2>static 局部变量不被捕获</h2>
+<p><code class="c">[&amp;]</code> 的语义是「按引用捕获我用到的<strong>自动存储期</strong>变量」。<code class="c">static</code> 局部变量不在栈上，根本不需要捕获——lambda 里写它的名字，用的就是静态区里那一份：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
+
+void demonstrate() {
+    static int s_count = 0;    // 静态区，不在栈上
+    int local = 0;             // 普通局部变量
+    auto lam = [&amp;] {
+        ++s_count;             // 没被捕获！直接用静态区的那份
+        ++local;               // 这个才被 [&amp;] 捕获
+        std::cout &lt;&lt; &quot;lambda 内  &amp;s_count = &quot; &lt;&lt; static_cast&lt;void*&gt;(&amp;s_count)
+                  &lt;&lt; &quot; 值 = &quot; &lt;&lt; s_count &lt;&lt; &quot;\n&quot;;
+    };
+    std::cout &lt;&lt; &quot;lambda 外  &amp;s_count = &quot; &lt;&lt; static_cast&lt;void*&gt;(&amp;s_count)
+              &lt;&lt; &quot; 值 = &quot; &lt;&lt; s_count &lt;&lt; &quot;\n&quot;;
+    lam();  lam();
+    std::cout &lt;&lt; &quot;两次调用后  s_count = &quot; &lt;&lt; s_count
+              &lt;&lt; &quot;  local = &quot; &lt;&lt; local &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;sizeof(lambda) = &quot; &lt;&lt; sizeof(lam)
+              &lt;&lt; &quot;（只装了一个引用：local）\n&quot;;
+}
+
+int main() { demonstrate(); }
+</code></pre>
+<p>本机实测（clang 23.1.0）输出：</p>
+<pre class="code" data-label="code"><code class="c">lambda 外  &amp;s_count = 0x102ce0090 值 = 0
+lambda 内  &amp;s_count = 0x102ce0090 值 = 1
+lambda 内  &amp;s_count = 0x102ce0090 值 = 2
+两次调用后  s_count = 2  local = 2
+sizeof(lambda) = 8（只装了一个引用：local）
+</code></pre>
+<p>三个证据：lambda 内外 <code class="c">&amp;s_count</code> 完全相同，是同一份实体；<code class="c">sizeof(lambda) == 8</code> 恰好一个指针大小，闭包里只装了 <code class="c">local</code> 的引用；static 的递增全局可见。推论：<strong><code class="c">[&amp;]</code> 不会「冻结」static 变量的状态，也不让它进闭包</strong>——它永远不悬垂，但多线程共享时要自行同步。</p>
+<hr />
+<h2>C++20 的 [=, this] 显式化</h2>
+<p>C++20 弃用了 <code class="c">[=]</code> 对 <code class="c">this</code> 的<strong>隐式</strong>捕获，要求你写明。本机实测（clang 23.1.0，<code class="c">-std=c++20</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">return [=] { return data; };        // C++20 起：弃用警告
+return [=, this] { return data; };  // C++20：显式声明捕获 this
+</code></pre>
+<p>编译警告原文：</p>
+<pre class="code" data-label="code"><code class="c">warning: implicit capture of 'this' with a capture default of '='
+         is deprecated [-Wdeprecated-this-capture]
+note: add an explicit capture of 'this' to capture '*this' by reference
+</code></pre>
+<p>措辞是 deprecated（弃用）而不是 error——老代码还能编译，但新标准逼你承认「我知道我捕获的是指针」。反过来 <code class="c">[=, this]</code> 在 <code class="c">-std=c++17</code> 下会得到 <code class="c">... is a C++20 extension</code> 的扩展警告（clang 兼容放行）。一句话：<strong>C++20 里要么 <code class="c">[=, this]</code> 明示按指针捕获，要么 <code class="c">[*this]</code> 按值捕获对象，别再用裸 <code class="c">[=]</code> 糊过去。</strong></p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>安全写法汇总——临时对象造出的过滤器、逃逸出作用域的计数器，全部显式按值捕获：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;functional&gt;
+#include &lt;iostream&gt;
+
+class Engine {
+    int threshold;
+public:
+    explicit Engine(int t) : threshold(t) {}
+    std::function&lt;bool(int)&gt; makeFilter() const {
+        int t = threshold;                        // 拷贝发生在对象存活时
+        return [t](int price) { return price &gt; t; };
+    }
+};
+
+std::function&lt;int()&gt; getCounter() {
+    int count = 0;
+    return [count]() mutable { return ++count; };  // 按值捕获 + mutable 允许改副本
+}
+
+int main() {
+    std::cout &lt;&lt; std::boolalpha;
+    auto filter = Engine{100}.makeFilter();   // 临时 Engine 语句结束即析构
+    std::cout &lt;&lt; &quot;filter(150) = &quot; &lt;&lt; filter(150) &lt;&lt; &quot;\n&quot;;  // 闭包持有 t 副本，安全
+    std::cout &lt;&lt; &quot;filter(50)  = &quot; &lt;&lt; filter(50) &lt;&lt; &quot;\n&quot;;
+    auto c = getCounter();
+    std::cout &lt;&lt; c() &lt;&lt; &quot; &quot; &lt;&lt; c() &lt;&lt; &quot; &quot; &lt;&lt; c() &lt;&lt; &quot;\n&quot;;  // 各改各的副本
+}
+</code></pre>
+<p>本机实测（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">filter(150) = true
+filter(50)  = false
+1 2 3
+</code></pre>
+<p>临时 <code class="c">Engine</code> 析构后过滤器依然正确——闭包持有的 <code class="c">t</code> 是对象存活时拷出的副本。</p>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
-<p><strong>错误 1：成员函数中 [=] 捕获成员变量</strong></p>
-<pre class="code" data-label="cpp"><code class="c">class Engine {
-    Config config;
-public:
-    auto get_handler() {
-        return [=](const Tick&amp; t) { return t.price &gt; config.threshold; };
-        // config 实际通过 this-&gt;config 访问——this 可能悬垂！
-    }
-};
-</code></pre>
-<p><strong>修正：</strong> <code class="c">int threshold = config.threshold; return [threshold](const Tick&amp; t) { ... };</code></p>
-<p><strong>错误 2：[&amp;] 捕获局部变量后异步使用</strong></p>
-<pre class="code" data-label="cpp"><code class="c">void start_async() {
-    int id = generate_id();
-    std::async([&amp;]{ process(id); });  // id 在 start_async 返回后销毁！
-}
-</code></pre>
-<p><strong>修正：</strong> <code class="c">std::async([id]{ process(id); });</code>——按值捕获。</p>
-<p><strong>错误 3：忘记 mutable</strong></p>
-<pre class="code" data-label="cpp"><code class="c">int count = 0;
-auto counter = [count] { return ++count; };  // 编译失败！count 是 const
-auto counter2 = [count]() mutable { return ++count; };  // OK
-</code></pre>
-<p><strong>修正：</strong> 按值捕获且需要修改时加 <code class="c">mutable</code>。</p>
-<hr />
-<h2>新手要点（和 C 的区别）</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>维度</th>
-<th>C 怎么做</th>
-<th>C++ 怎么做</th>
-<th>为什么</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>回调</td>
-<td>函数指针 + void*</td>
-<td>lambda 捕获</td>
-<td>更类型安全</td>
-</tr>
-<tr>
-<td>捕获方式</td>
-<td>手动传 userdata</td>
-<td><code class="c">[=]</code>/<code class="c">[&amp;]</code>/<code class="c">[x]</code></td>
-<td>语法糖</td>
-</tr>
-<tr>
-<td>成员捕获</td>
-<td>不适用</td>
-<td><code class="c">[this]</code>/<code class="c">[*this]</code></td>
-<td>C++17 新增</td>
-</tr>
-<tr>
-<td>悬垂风险</td>
-<td>手动管理</td>
-<td><code class="c">[&amp;]</code> 有自动悬垂风险</td>
-<td>需要注意生命周期</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>一句话总结：</strong> C 程序员记住——显式列出捕获变量（<code class="c">[x]</code>、<code class="c">[&amp;mtx]</code>），不用 <code class="c">[=]</code>/<code class="c">[&amp;]</code> 默认模式。成员变量用 <code class="c">[*this]</code>（C++17）或先拷贝到局部。</p>
+<ol>
+<li><strong>成员函数里用 <code class="c">[=]</code> 以为按值捕获了成员</strong>。实际捕获的是 <code class="c">this</code> 指针，对象析构后闭包悬垂（上文 ASan 实测）。修正：<code class="c">[d = data]</code>（C++14）或先拷到局部再 <code class="c">[d]</code>，或 <code class="c">[*this]</code>（C++17）。</li>
+<li><strong><code class="c">[&amp;]</code> 捕获局部变量后让闭包逃逸</strong>（返回、塞进队列、<code class="c">std::async</code>）。局部变量销毁后引用悬垂，可能读到垃圾值也不一定被 ASan 抓到。修正：逃逸的闭包一律显式按值捕获。</li>
+<li><strong>以为 <code class="c">[&amp;]</code> 会捕获 static 局部变量</strong>。static 变量不进闭包，lambda 用的是静态区那一份（地址实测相同），多线程共享时要自己加同步。</li>
+</ol>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>策略回调</strong>：<code class="c">engine.on_tick([this](const Tick&amp; t){ ... })</code> 注意 <code class="c">this</code> 生命周期——策略销毁后引擎仍调闭包 = 悬垂。</li>
-<li><strong>异步任务</strong>：<code class="c">std::async([config](const Tick&amp; t){ ... })</code> 按值捕获配置，避免引用悬垂。</li>
-<li><strong>线程安全</strong>：按引用捕获共享变量需要确保锁的生命周期——<code class="c">[&amp;mtx]</code> 如果 <code class="c">mtx</code> 先销毁则 UB。</li>
+<li><strong>策略回调的 <code class="c">this</code> 悬垂</strong>：<code class="c">engine.on_tick([=](const Tick&amp; t){ ... })</code> 写在成员函数里，策略对象析构后引擎仍持有闭包——热重载策略、盘中切换实例时真实会炸。评审时把成员函数里的 <code class="c">[=]</code> 当红旗 grep：<code class="c">grep -n 'return \[=\]'</code>。</li>
+<li><strong>UB「看起来正常」最致命</strong>：本文实测析构后仍打印 42——性能测试环境一切正常、生产环境偶发错乱。逃逸闭包的捕获清单必须人工评审，不能靠测试通过背书。</li>
+<li><strong>异步任务显式按值捕获</strong>：<code class="c">std::async([config](const Tick&amp; t){ ... })</code> 捕获副本而非引用——配合 <a href="chapter-07.html#ch-7">Item 35</a> 的任务制并发，每个任务自含全部上下文，无悬垂可能。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">[=]</code> 在成员函数里捕获成员变量时，实际捕获的是什么？为什么是隐患？</li>
-<li><code class="c">[&amp;]</code> 的悬垂风险是什么场景？</li>
-<li>异步保存的闭包为什么不能用 <code class="c">[&amp;]</code>？该用什么替代？</li>
-<li>C++17 的 <code class="c">[*this]</code> 解决了什么问题？</li>
-<li>下面代码有什么问题？</li>
-</ol>
+<p><strong>1. <code class="c">[=]</code> 在成员函数里捕获成员变量时，实际捕获的是什么？为什么这是隐患？</strong></p>
+<details>
+<summary>答案</summary>
+<p>实际捕获的是 <code class="c">this</code> 指针——成员变量不能单独被捕获，<code class="c">[=]</code> 用到成员时等价于 <code class="c">[this]</code>，闭包里每次访问都是 <code class="c">this-&gt;data</code>。隐患有二：一是对象析构后 <code class="c">this</code> 悬垂，闭包读写成员是 UB（本文 ASan 实测：访问落在已析构对象 <code class="c">w</code> 的内存里）；二是「按值捕获」的字面语义误导读者以为拿到了副本，实际拿到的是裸指针。修正：<code class="c">[d = data]</code> 或 <code class="c">[*this]</code>。</p>
+</details>
+<p><strong>2. 为什么 <code class="c">[&amp;]</code> 悬垂有时 ASan 抓不到、普通运行甚至结果「正确」？</strong></p>
+<details>
+<summary>答案</summary>
+<p>悬垂引用读的是已释放的栈内存，只要那段内存还没被覆写，读到的就是旧值——UB 不保证报错，只保证「行为无定义」。本文实测中普通编译的 <code class="c">[=]</code>-this 版本析构后仍打印 42；而 <code class="c">std::function</code> 类型擦除的间接调用链又让 ASan 的 use-after-scope 插桩失效，垃圾值照打不误。结论：sanitizer 是辅助，不是保险；逃逸闭包靠显式捕获清单防悬垂。</p>
+</details>
+<p><strong>3. static 局部变量会被 <code class="c">[&amp;]</code> 捕获吗？用什么方法可以实测验证？</strong></p>
+<details>
+<summary>答案</summary>
+<p>不会。static 局部变量具有静态存储期，不在栈上，所有 lambda（包括 <code class="c">[&amp;]</code>）都直接引用静态区里那一份实体。验证方法：打印 lambda 内外的 <code class="c">&amp;s_count</code>（本文实测同为 <code class="c">0x102ce0090</code>），再看 <code class="c">sizeof(lambda)</code>——只有 8 字节，恰好是捕获的那个普通局部变量的引用大小，static 变量不占闭包空间。</p>
+</details>
+<p><strong>4. C++20 对 <code class="c">[=]</code> 捕获 <code class="c">this</code> 做了什么改动？</strong></p>
+<details>
+<summary>答案</summary>
+<p>C++20 弃用了 <code class="c">[=]</code> 对 <code class="c">this</code> 的隐式捕获（<code class="c">-Wdeprecated-this-capture</code>），要求显式写 <code class="c">[=, this]</code> 表示「按指针捕获 this」，或写 <code class="c">[*this]</code> 表示按值捕获整个对象。clang 23.1.0 实测：C++20 模式下裸 <code class="c">[=]</code> 用成员变量给出弃用警告；<code class="c">[=, this]</code> 在 C++17 模式下则是扩展警告。意图是让「捕获指针」这件事显式可见，堵住 <code class="c">[=]</code> 的语义陷阱。</p>
+</details>
+<p><strong>5. 下面代码有什么问题？怎么修？</strong></p>
 <pre class="code" data-label="cpp"><code class="c">std::function&lt;void()&gt; make_task() {
     int x = 42;
     return [&amp;] { std::cout &lt;&lt; x; };
@@ -511,24 +575,13 @@ auto t = make_task();
 t();
 </code></pre>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p><code class="c">[=]</code> 捕获的不是成员变量本身，而是 <strong><code class="c">this</code> 指针</strong>（成员变量只能通过对象访问，<code class="c">[=]</code> 实际按值拷贝了 <code class="c">this</code>）。隐患是：闭包只持有一个裸 <code class="c">this</code>，一旦对象在闭包执行前被销毁，<code class="c">this</code> 就悬垂，闭包内访问成员是未定义行为；而且 <code class="c">[=]</code> 的字面意思"按值捕获"会误导读者以为拿到了成员的副本，实际拿的是指针。正确做法是显式按值捕获需要的副本（C++14 起可写 <code class="c">[x = this-&gt;x]</code> 或 <code class="c">[x = this-&gt;x_]</code>）。</p>
-</li>
-<li>
-<p><code class="c">[&amp;]</code> 按引用捕获所有被使用的自动变量，闭包只持有引用，不延长被捕获对象的生命周期。典型悬垂场景：闭包被返回、存进容器、传给 <code class="c">std::async</code>/线程池、注册为异步回调——只要闭包的生存期超过被捕获的局部变量（或 <code class="c">this</code>、局部锁、局部容器），之后执行时引用的对象已经销毁，读写即未定义行为。例如返回 <code class="c">[&amp;]</code> 的 lambda、把 <code class="c">[&amp;]</code> 闭包 push 到任务队列后函数返回。</p>
-</li>
-<li>
-<p>因为异步任务通常在原函数返回之后才执行，此时 <code class="c">[&amp;]</code> 捕获的局部变量（以及可能的 <code class="c">this</code>）早已销毁，闭包里的引用全部悬垂——表现为读到垃圾值、偶发崩溃，且极难复现。替代方案：①<strong>按值捕获</strong>（<code class="c">[=]</code> 或显式 <code class="c">[x]</code>），让闭包持有副本；②C++14 起用<strong>初始化捕获</strong>转移所有权（<code class="c">[p = std::move(p)]</code>、<code class="c">[data = std::make_shared&lt;...&gt;()]</code>）；③需要共享可变状态时用 <code class="c">shared_ptr</code> 按值捕获，或用 <code class="c">weak_ptr</code> 避免延长生命周期。</p>
-</li>
-<li>
-<p><code class="c">[*this]</code>（C++17）按值捕获 <strong><code class="c">this</code> 所指对象的副本</strong>，而不是 <code class="c">this</code> 指针。它解决了 <code class="c">[=]</code>/<code class="c">[this]</code> 只捕获指针导致的悬垂问题：把异步/延迟执行的闭包拷出去时，闭包自带对象副本，即使原对象已销毁也能安全访问。它是对"我想按值捕获成员变量"这一直觉的正确表达（等价效果在 C++14 里可用初始化捕获 <code class="c">[obj = *this]</code> 模拟）。</p>
-</li>
-<li>
-<p>悬垂引用，未定义行为。<code class="c">x</code> 是 <code class="c">make_task()</code> 的局部变量，函数返回时销毁；但返回的 <code class="c">std::function</code> 里保存的闭包用 <code class="c">[&amp;]</code> 捕获了 <code class="c">x</code> 的引用。等 <code class="c">t()</code> 被调用时，<code class="c">x</code> 早已不存在，<code class="c">std::cout &lt;&lt; x</code> 读的是一个已销毁的栈对象——按标准是 UB，实际上通常打印出一个垃圾值。修正：按值捕获即可——<code class="c">return [x] { std::cout &lt;&lt; x; };</code>（或 <code class="c">[=]</code>）。</p>
-</li>
-</ol>
+<summary>答案</summary>
+<p>悬垂引用，UB。<code class="c">x</code> 是 <code class="c">make_task</code> 的局部变量，函数返回即销毁；闭包用 <code class="c">[&amp;]</code> 捕获了 <code class="c">x</code> 的引用，<code class="c">t()</code> 调用时读的是已销毁的栈对象——本文同类代码实测打印垃圾值，编译器对直接返回场景会给 <code class="c">-Wreturn-stack-address</code> 警告，但经 <code class="c">std::function</code> 间接逃逸时警告可能缺席。修正：显式按值捕获 <code class="c">return [x] { std::cout &lt;&lt; x; };</code>。</p>
+</details>
+<p><strong>6. 想按值捕获成员的副本，C++11 / C++14 / C++17 各推荐什么写法？</strong></p>
+<details>
+<summary>答案</summary>
+<p>C++11：<code class="c">int local = data; return [local]{ ... };</code>——先拷到局部变量再按值捕获。C++14：init capture 一步到位 <code class="c">return [d = data]{ ... };</code>（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item32-init-capture.md">Item 32</a>）。C++17：<code class="c">return [*this]{ ... };</code> 按值捕获整个对象副本——对象大、只需个别成员时优先 C++14 写法，避免整对象拷贝。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
@@ -540,166 +593,213 @@ t();
       <section class="section" id="s-item32">
         <div class="sec-head"><div class="sec-no">Item 32</div><h2>Item 32：用初始化捕获将对象移入闭包（C++14）</h2></div>
 <blockquote>
-<p>第 6 章 · Item 32 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item31-avoid-default-capture.md">Item 31 避免默认捕获</a></p>
+<p>第 6 章 Lambda 表达式 · Item 32 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item31-avoid-default-capture.md">Item 31 避免默认捕获</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>C 的回调通过 <code class="c">void*</code> 传递上下文，可以传任何东西（包括 <code class="c">malloc</code> 的内存）：</p>
-<pre class="code" data-label="C"><code class="c">void callback(void* ctx) {
-    Widget* w = (Widget*)ctx;
-    w-&gt;do_work();
-}
-void* ctx = malloc(sizeof(Widget));
-widget_init((Widget*)ctx);
-register_callback(callback, ctx);  // 传递堆分配的对象
-</code></pre>
-<p>C++11 的 lambda 捕获只能拷贝或引用，<strong>不能移动</strong>：</p>
-<pre class="code" data-label="cpp"><code class="c">auto pw = std::make_unique&lt;Widget&gt;();
-// C++11：无法把 pw 移动进闭包！
-auto cb = [pw]{ pw-&gt;do_work(); };  // 编译失败！unique_ptr 不可拷贝
-auto cb2 = [&amp;pw]{ pw-&gt;do_work(); };  // 能编译但 pw 可能悬垂
-</code></pre>
-<p>C++14 的初始化捕获（init capture）解决了这个问题——允许在捕获时执行表达式并命名，包括 <code class="c">std::move</code>：</p>
-<pre class="code" data-label="cpp"><code class="c">auto pw = std::make_unique&lt;Widget&gt;();
-auto cb = [up = std::move(pw)]{ up-&gt;do_work(); };  // 移动进闭包！
-</code></pre>
+<p>C++11 的 lambda 捕获只有两种姿势：按值拷贝、按引用。这对 <code class="c">int</code>、<code class="c">double</code> 够用，但遇到 <strong>move-only 类型</strong>就死锁了——<code class="c">std::unique_ptr</code>、<code class="c">std::future</code>、<code class="c">std::promise</code>、包装了大 buffer 的对象，全都不可拷贝。<code class="c">[pw]</code> 编译失败，<code class="c">[&amp;pw]</code> 能编译但闭包逃逸后 <code class="c">pw</code> 悬垂（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item31-avoid-default-capture.md">Item 31</a> 刚踩过这个坑）。你真正想要的是「把这个对象<strong>移动</strong>进闭包」，C++11 做不到。</p>
+<p>C++14 的初始化捕获（init capture，也叫 generalized lambda capture）把捕获列表从「列变量名」升级成「写初始化语句」：<code class="c">[up = std::move(pw)]</code>——等号右边是任意表达式，在 lambda <strong>创建时</strong>求值；左边是闭包里新数据成员的名字。移动捕获只是它能做的事情之一，它还能给捕获改名、捕获计算结果、捕获 <code class="c">*this</code> 的副本。</p>
+<p>这一节短，但它是现代 lambda 的分水岭：有了 init capture，lambda 的捕获能力才追平了（实际超越了）<code class="c">std::bind</code>，Item 34 才能理直气壮地说「别用 bind 了」。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p>初始化捕获（init capture）能在捕获时执行表达式并命名——彻底解决"想捕获移动语义"的需求，C++11 做不到。</p>
+<ol>
+<li><strong>移动捕获</strong> <code class="c">[up = std::move(pw)]</code> 实测：<code class="c">unique_ptr</code> 移入闭包，原指针变 <code class="c">nullptr</code>；</li>
+<li><strong>表达式捕获</strong> <code class="c">[n = compute()]</code>：求值时机在 lambda <strong>创建时</strong>而非调用时，用打印实测证明；</li>
+<li><strong>C++11 的历史变通</strong>：用 <code class="c">std::bind</code> 模拟移动捕获（展示即可，C++14 后淘汰）；</li>
+<li>init capture 的语法语义：右边在<strong>外围作用域</strong>求值，左边是闭包的<strong>新成员</strong>。</li>
+</ol>
 <hr />
-<h2>核心用法</h2>
-<h3>移动捕获</h3>
-<pre class="code" data-label="cpp"><code class="c">auto pw = std::make_unique&lt;Widget&gt;();
-auto cb = [up = std::move(pw)]{ up-&gt;doSomething(); };
-// up = std::move(pw) 在闭包里创建 up（按值，即移动），pw 被掏空
-// up 是闭包成员，类型推导为 unique_ptr&lt;Widget&gt;
-// pw 现在是 nullptr
+<h2>移动捕获：unique_ptr 进闭包</h2>
+<p>本机实测（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
+#include &lt;memory&gt;
+
+struct Widget {
+    int id;
+    void work() const { std::cout &lt;&lt; &quot;Widget &quot; &lt;&lt; id &lt;&lt; &quot; working\n&quot;; }
+};
+
+int main() {
+    auto pw = std::make_unique&lt;Widget&gt;(Widget{7});
+    auto cb = [up = std::move(pw)] { up-&gt;work(); };
+    std::cout &lt;&lt; &quot;移动后 pw == nullptr ? &quot; &lt;&lt; (pw == nullptr) &lt;&lt; &quot;\n&quot;;
+    cb();
+    return 0;
+}
 </code></pre>
-<p><code class="c">[up = std::move(pw)]</code> 的含义：在闭包里创建 <code class="c">up</code>，用 <code class="c">std::move(pw)</code> 初始化它。<code class="c">up</code> 是闭包成员，类型推导为 <code class="c">unique_ptr&lt;Widget&gt;</code>。</p>
-<h3>表达式捕获</h3>
-<pre class="code" data-label="cpp"><code class="c">// 捕获表达式的结果
-auto cb = [x = compute_value()]{ return x * 2; };
-// compute_value() 的结果被存在闭包里
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">移动后 pw == nullptr ? 1
+Widget 7 working
+</code></pre>
+<p>语义拆解：<code class="c">[up = std::move(pw)]</code> 在闭包类型里声明了一个名为 <code class="c">up</code> 的数据成员，用 <code class="c">std::move(pw)</code> 初始化它——<code class="c">up</code> 的类型按 <code class="c">auto</code> 规则推导为 <code class="c">std::unique_ptr&lt;Widget&gt;</code>。移动发生后，外层 <code class="c">pw</code> 被掏空（实测为 <code class="c">nullptr</code>），所有权进入闭包。闭包随 <code class="c">std::function</code>、任务队列走到哪里，<code class="c">Widget</code> 就活到哪里——这正是异步回调需要的所有权语义。</p>
+<p>注意语法对称性的陷阱：<code class="c">[up = std::move(pw)]</code> 里等号<strong>右边在外围作用域求值</strong>（所以 <code class="c">pw</code> 指外层的 <code class="c">pw</code>），<strong>左边是闭包内部的新名字</strong>（和外层没有任何关系，只是恰好可以同名）。</p>
+<hr />
+<h2>表达式捕获：创建时求值，不是调用时</h2>
+<p><code class="c">=</code> 右边可以是任意表达式。一个必须钉死的直觉：<strong>表达式在 lambda 创建的那一刻求值一次</strong>，之后每次调用用的都是那个已存好的值：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
 
-// 捕获 this 的拷贝（C++17 更好的方式是 [*this]）
-auto cb2 = [self = *this]{ return self.data; };
+int compute() {
+    std::cout &lt;&lt; &quot;compute() 被调用\n&quot;;
+    return 42;
+}
 
-// 捕获 shared_ptr
+int main() {
+    std::cout &lt;&lt; &quot;--- 创建 lambda 前 ---\n&quot;;
+    auto cb2 = [n = compute()] { return n * 2; };
+    std::cout &lt;&lt; &quot;--- lambda 已创建，尚未调用 ---\n&quot;;
+    std::cout &lt;&lt; &quot;cb2() = &quot; &lt;&lt; cb2() &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;cb2() = &quot; &lt;&lt; cb2() &lt;&lt; &quot;（compute 没有再次执行）\n&quot;;
+    return 0;
+}
+</code></pre>
+<p>本机实测（clang 23.1.0）输出：</p>
+<pre class="code" data-label="code"><code class="c">--- 创建 lambda 前 ---
+compute() 被调用
+--- lambda 已创建，尚未调用 ---
+cb2() = 84
+cb2() = 84（compute 没有再次执行）
+</code></pre>
+<p><code class="c">compute()</code> 只在创建时跑了一次——「<code class="c">compute() 被调用</code>」出现在「lambda 已创建」<strong>之前</strong>，两次 <code class="c">cb2()</code> 都没有触发新的计算。这和函数参数「调用时求值」的直觉相反，写错时机（比如把本该每次调用都重算的表达式放进 init capture）会悄悄拿到过期值。</p>
+<p>更多形态：</p>
+<pre class="code" data-label="cpp"><code class="c">// 捕获 this 所指对象的副本（C++17 起更推荐 [*this]）
+auto cb = [self = *this] { return self.data; };
+
+// 按值捕获 shared_ptr：引用计数 +1，闭包保活共享对象
 auto sp = std::make_shared&lt;Config&gt;();
-auto cb3 = [config = sp]{ return config-&gt;get(&quot;key&quot;); };
+auto cb2 = [config = sp] { return config-&gt;get(&quot;key&quot;); };
+
+// 捕获引用（少见，等价于 [&amp;timer]）
+auto cb3 = [&amp;timer = timer] { return timer.elapsed(); };
 </code></pre>
-<h3>C++11 变通：std::bind</h3>
-<pre class="code" data-label="cpp"><code class="c">// C++11 没有 init capture，用 bind 变通
-auto pw = std::make_unique&lt;Widget&gt;();
-auto cb = std::bind([](std::unique_ptr&lt;Widget&gt;&amp; w){ w-&gt;doSomething(); },
-                    std::move(pw));
-// 更绕，且 bind 的值传递语义对 unique_ptr 有其他问题
+<hr />
+<h2>C++11 的历史变通：std::bind</h2>
+<p>C++11 没有 init capture，想把 <code class="c">unique_ptr</code> 塞进可调用对象只能用 <code class="c">std::bind</code>：把要移动的对象作为实参移进 bind 对象，lambda 按引用接收：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;functional&gt;
+#include &lt;iostream&gt;
+#include &lt;memory&gt;
+
+struct Widget {
+    int id;
+    void work() const { std::cout &lt;&lt; &quot;Widget &quot; &lt;&lt; id &lt;&lt; &quot; working\n&quot;; }
+};
+
+int main() {
+    std::unique_ptr&lt;Widget&gt; pw(new Widget{7});   // C++11 没有 make_unique
+    auto cb = std::bind([](std::unique_ptr&lt;Widget&gt;&amp; w) { w-&gt;work(); },
+                        std::move(pw));
+    std::cout &lt;&lt; &quot;移动后 pw == nullptr ? &quot; &lt;&lt; (pw == nullptr) &lt;&lt; &quot;\n&quot;;
+    cb();
+    return 0;
+}
 </code></pre>
-<p>C++11 的变通是 <code class="c">std::bind</code>，但更绕。</p>
+<p>本机实测（clang 23.1.0，<code class="c">-std=c++11 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">移动后 pw == nullptr ? 1
+Widget 7 working
+</code></pre>
+<p>能跑，但写法绕：要理解 bind 的实参存储语义、占位符规则（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item34-lambda-vs-bind.md">Item 34</a> 细讲），还引入了 bind 自身的坑（默认拷贝、不可内联）。顺带实测：C++11 模式下直接写 init capture，clang 23.1.0 报（<code class="c">-std=c++11 -pedantic-errors</code>）：</p>
+<pre class="code" data-label="code"><code class="c">error: initialized lambda captures are a C++14 extension
+      [-Werror,-Wc++14-extensions]
+    auto cb = [y = x * 2] { return y; };
+               ^
+</code></pre>
+<p>（不加 <code class="c">-pedantic-errors</code> 时 clang 只给扩展警告并放行——这是编译器兼容行为，不是标准许可。）C++14 之后，bind 的这个历史使命正式结束。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>把两个核心用法放一个程序里（就是上文两段实测代码的合体）：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
+#include &lt;memory&gt;
+
+struct Widget {
+    int id;
+    void work() const { std::cout &lt;&lt; &quot;Widget &quot; &lt;&lt; id &lt;&lt; &quot; working\n&quot;; }
+};
+
+int compute() {
+    std::cout &lt;&lt; &quot;compute() 被调用\n&quot;;
+    return 42;
+}
+
+int main() {
+    // 1. 移动捕获 unique_ptr
+    auto pw = std::make_unique&lt;Widget&gt;(Widget{7});
+    auto cb = [up = std::move(pw)] { up-&gt;work(); };
+    std::cout &lt;&lt; &quot;移动后 pw == nullptr ? &quot; &lt;&lt; (pw == nullptr) &lt;&lt; &quot;\n&quot;;
+    cb();
+
+    // 2. 表达式捕获：创建时求值
+    std::cout &lt;&lt; &quot;--- 创建 lambda 前 ---\n&quot;;
+    auto cb2 = [n = compute()] { return n * 2; };
+    std::cout &lt;&lt; &quot;--- lambda 已创建，尚未调用 ---\n&quot;;
+    std::cout &lt;&lt; &quot;cb2() = &quot; &lt;&lt; cb2() &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; &quot;cb2() = &quot; &lt;&lt; cb2() &lt;&lt; &quot;（compute 没有再次执行）\n&quot;;
+    return 0;
+}
+</code></pre>
+<p>本机实测（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">移动后 pw == nullptr ? 1
+Widget 7 working
+--- 创建 lambda 前 ---
+compute() 被调用
+--- lambda 已创建，尚未调用 ---
+cb2() = 84
+cb2() = 84（compute 没有再次执行）
+</code></pre>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
-<p><strong>错误 1：C++11 代码尝试移动捕获</strong></p>
-<pre class="code" data-label="cpp"><code class="c">// C++11：编译失败
-auto pw = std::make_unique&lt;Widget&gt;();
-auto cb = [pw = std::move(pw)]{ ... };  // C++14 才支持
-</code></pre>
-<p><strong>修正：</strong> 升级到 C++14 或用 <code class="c">std::bind</code> 变通。</p>
-<p><strong>错误 2：移动后还用原对象</strong></p>
-<pre class="code" data-label="cpp"><code class="c">auto pw = std::make_unique&lt;Widget&gt;();
-auto cb = [up = std::move(pw)]{ up-&gt;doSomething(); };
-pw-&gt;doSomething();  // pw 是 nullptr！UB
-</code></pre>
-<p><strong>修正：</strong> 移动后不要用原对象。</p>
-<p><strong>错误 3：忘了 init capture 是按值存储</strong></p>
-<pre class="code" data-label="cpp"><code class="c">int x = 42;
-auto cb = [x = x]{ return x; };  // 拷贝 x 到闭包
-// 外部 x 改变不影响闭包内的 x
-x = 100;
-cb();  // 返回 42，不是 100
-</code></pre>
-<p><strong>修正：</strong> 理解 init capture 是按值存储（除非显式用引用 <code class="c">&amp;x = x</code>）。</p>
-<hr />
-<h2>新手要点（和 C 的区别）</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>维度</th>
-<th>C 怎么做</th>
-<th>C++ 怎么做</th>
-<th>为什么</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>回调上下文</td>
-<td><code class="c">void*</code> userdata</td>
-<td>lambda 捕获</td>
-<td>类型安全</td>
-</tr>
-<tr>
-<td>移动捕获</td>
-<td>手动 <code class="c">malloc</code>+传递</td>
-<td><code class="c">[up = std::move(pw)]</code></td>
-<td>C++14</td>
-</tr>
-<tr>
-<td>表达式捕获</td>
-<td>不适用</td>
-<td><code class="c">[x = expr]</code></td>
-<td>C++14</td>
-</tr>
-<tr>
-<td>所有权转移</td>
-<td>手动管理</td>
-<td>unique_ptr + init capture</td>
-<td>RAII</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>一句话总结：</strong> C 程序员记住——C++14 的 init capture 让你把 <code class="c">unique_ptr</code> 等不可拷贝的对象移动进闭包。语法是 <code class="c">[name = expression]</code>。</p>
+<ol>
+<li><strong>移动后继续使用原对象</strong>。<code class="c">[up = std::move(pw)]</code> 之后 <code class="c">pw</code> 是 <code class="c">nullptr</code>（实测），再 <code class="c">pw-&gt;work()</code> 是 UB，实际通常直接崩溃。修正：移动后把原变量当不存在。</li>
+<li><strong>以为表达式在调用时求值</strong>。<code class="c">[n = compute()]</code> 的 <code class="c">compute()</code> 只在创建 lambda 时跑一次（实测打印顺序为证）。需要每次调用重算的逻辑要放进 lambda 体内，而不是捕获列表。</li>
+<li><strong>给捕获起和外层相同的名字后以为改的是外层变量</strong>。<code class="c">[x = x]{ ++x; }</code>（需 <code class="c">mutable</code>）改的是闭包里的副本，外层 <code class="c">x</code> 纹丝不动——init capture 是按值存储的，除非显式 <code class="c">[&amp;x = x]</code>。</li>
+<li><strong>在 C++11 代码里写 init capture</strong>。编译报 <code class="c">initialized lambda captures are a C++14 extension</code>（实测原文）；要么升级标准，要么退回 <code class="c">std::bind</code> 变通。</li>
+</ol>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>移动资源进闭包</strong>：策略对象 <code class="c">move</code> 进闭包，避免拷贝大对象。</li>
-<li><strong>异步配置</strong>：<code class="c">auto cb = [config = std::move(strategy_config)]{ ... }</code> 移动配置进异步任务。</li>
-<li><strong>unique_ptr 回调</strong>：<code class="c">[up = std::move(widget_ptr)]{ up-&gt;on_tick(tick); }</code> 移动智能指针进闭包，确保生命周期。</li>
+<li><strong>把重资源移进异步任务</strong>：<code class="c">std::async([buf = std::move(large_buffer)] { flush(buf); })</code>——日志缓冲、行情快照这类大对象零拷贝进入后台任务，主线程交出所有权后继续跑热路径。</li>
+<li><strong>策略对象生命周期托管给闭包</strong>：<code class="c">[engine = std::move(engine_ptr)] { engine-&gt;on_tick(t); }</code> 让回调持有策略的 <code class="c">unique_ptr</code>，配合 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item31-avoid-default-capture.md">Item 31</a> 的教训，彻底消除 <code class="c">this</code> 悬垂。</li>
+<li><strong>捕获时固定快照</strong>：<code class="c">[threshold = risk.current_threshold()]</code> 在创建闭包时冻结风控阈值——创建时求值的语义恰好是「快照」，盘中改配置不影响已派发的任务。</li>
+<li><strong>shared_ptr 按值捕获的代价</strong>：<code class="c">[sp]</code> 引用计数 +1 是原子操作，热路径上每微秒都计数；能 move 就 move，能拷裸值就别拷智能指针。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">[up = std::move(pw)]</code> 的语义是什么？</li>
-<li>初始化捕获解决了 C++11 的什么限制？</li>
-<li>C++11 没有 init capture 时怎么变通？</li>
-<li>下面代码有什么问题？</li>
-</ol>
+<p><strong>1. <code class="c">[up = std::move(pw)]</code> 的语义是什么？等号两边分别在哪个作用域求值/生效？</strong></p>
+<details>
+<summary>答案</summary>
+<p>这是 C++14 的初始化捕获：等号右边 <code class="c">std::move(pw)</code> 是在<strong>外围作用域</strong>求值的初始化表达式（在 lambda 创建时执行一次）；等号左边 <code class="c">up</code> 是闭包类型的<strong>新数据成员</strong>的名字，类型按 <code class="c">auto</code> 规则推导（此处为 <code class="c">std::unique_ptr&lt;Widget&gt;</code>）。语义是把外层 <code class="c">unique_ptr</code> 的所有权转移进闭包——实测移动后外层 <code class="c">pw == nullptr</code>。</p>
+</details>
+<p><strong>2. init capture 解决了 C++11 lambda 的哪些限制？</strong></p>
+<details>
+<summary>答案</summary>
+<p>三个：①<strong>移动捕获</strong>——C++11 只有按值拷贝和按引用两种捕获，<code class="c">unique_ptr</code> 等 move-only 类型进不了闭包；②<strong>捕获任意表达式的结果</strong>——<code class="c">[n = compute()]</code>、<code class="c">[p = std::make_shared&lt;T&gt;()]</code>，不必先在外层造一个具名变量；③<strong>给捕获改名</strong>——<code class="c">[d = this-&gt;data]</code>，绕开 <code class="c">[=]</code> 实际捕获 <code class="c">this</code> 的陷阱（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item31-avoid-default-capture.md">Item 31</a>）。</p>
+</details>
+<p><strong>3. <code class="c">[n = compute()]</code> 的 <code class="c">compute()</code> 什么时候执行？每次调用 lambda 都会重算吗？</strong></p>
+<details>
+<summary>答案</summary>
+<p>在 lambda <strong>创建时</strong>求值一次，结果存为闭包的数据成员；之后每次调用用的都是这个存好的值，不会重算。本文实测：<code class="c">compute()</code> 的打印出现在「lambda 已创建，尚未调用」之前，两次 <code class="c">cb2()</code> 都返回 84 且没有新的 <code class="c">compute()</code> 打印。这和函数参数「调用时求值」的直觉相反。</p>
+</details>
+<p><strong>4. C++11 没有 init capture 时，怎么把 <code class="c">unique_ptr</code> 移进可调用对象？</strong></p>
+<details>
+<summary>答案</summary>
+<p>用 <code class="c">std::bind</code>：<code class="c">std::bind([](std::unique_ptr&lt;Widget&gt;&amp; w){ w-&gt;work(); }, std::move(pw))</code>——把 <code class="c">unique_ptr</code> 移进 bind 对象的实参存储，lambda 按引用接收它。本机 <code class="c">-std=c++11</code> 实测可行（移动后 <code class="c">pw == nullptr</code>，<code class="c">cb()</code> 正常输出）。但写法绕、有 bind 自身的坑，C++14 起被 init capture 全面取代（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item34-lambda-vs-bind.md">Item 34</a>）。</p>
+</details>
+<p><strong>5. 下面代码有什么问题？</strong></p>
 <pre class="code" data-label="cpp"><code class="c">auto sp = std::make_shared&lt;Widget&gt;();
 auto cb = [sp = std::move(sp)]{ sp-&gt;do_work(); };
 sp-&gt;do_work();
 </code></pre>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p>这是 C++14 的<strong>初始化捕获</strong>（init capture / generalized lambda capture）：等号左边 <code class="c">sp</code> 是闭包类型的一个新数据成员的名字，右边 <code class="c">std::move(sp)</code> 是在<strong>外围作用域</strong>求值的初始化表达式。语义是：用 <code class="c">std::move(sp)</code> 初始化闭包的成员 <code class="c">sp</code>，即把外层 <code class="c">shared_ptr</code> 的所有权<strong>转移进闭包</strong>（只移动，不增加引用计数），闭包持有它直到闭包销毁。这样闭包能安全地在异步场景里延长对象生命周期，且避免了引用计数递增的原子开销。</p>
-</li>
-<li>
-<p>它解决了 C++11 捕获列表只能"按值拷贝"或"按引用"的两种固定形式，无法做到：①<strong>移动捕获</strong>（把 <code class="c">unique_ptr</code>、大对象、<code class="c">std::string</code> 移进闭包而不拷贝）；②<strong>捕获任意表达式的结果</strong>（<code class="c">[x = compute()]</code>、<code class="c">[p = std::make_shared&lt;T&gt;()]</code>），不必先在外层定义一个具名变量；③给捕获成员起一个与外层不同的名字（<code class="c">[name = this-&gt;name_]</code>），从而避免 <code class="c">[=]</code> 实际只捕获 <code class="c">this</code> 的陷阱。</p>
-</li>
-<li>
-<p>常用变通是"<strong>bind + 按值传参</strong>"：用 <code class="c">std::bind</code> 把要移动的对象作为实参塞进 bind 对象，再让 lambda 接收它——</p>
-</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">auto cb = std::bind([](std::unique_ptr&lt;Widget&gt;&amp; p){ p-&gt;do_work(); }, std::move(pw));
-</code></pre>
-<p>或者更直观地：在外层先 <code class="c">auto tmp = std::move(pw);</code>，再用一个 <code class="c">shared_ptr</code> 或按值捕获的容器把资源"包"起来交给 lambda（代价是引用计数或额外拷贝）。C++14 引入初始化捕获后，这些变通都不再需要。</p>
-<ol start="4">
-<li>崩溃（未定义行为）。<code class="c">[sp = std::move(sp)]</code> 把外层 <code class="c">sp</code> 的所有权<strong>移进闭包</strong>，外层的 <code class="c">sp</code> 变成空的 <code class="c">shared_ptr</code>（移动后的 shared_ptr 保证为空）。紧接着的 <code class="c">sp-&gt;do_work()</code> 就是对一个空 <code class="c">shared_ptr</code> 解引用——未定义行为，实际通常直接段错误。修正：如果想两边都能用，就按值<strong>拷贝</strong>捕获一份（<code class="c">[sp]</code> 或 <code class="c">[sp = sp]</code>，引用计数 +1）；如果本意就是把所有权交给闭包，则删掉后面那行，只在闭包内使用 <code class="c">sp</code>。</li>
-</ol>
+<summary>答案</summary>
+<p>崩溃/UB。<code class="c">[sp = std::move(sp)]</code> 把外层 <code class="c">shared_ptr</code> 的所有权<strong>转移</strong>进闭包（移动后的 <code class="c">shared_ptr</code> 保证为空），紧接着的 <code class="c">sp-&gt;do_work()</code> 对空 <code class="c">shared_ptr</code> 解引用——未定义行为，实际通常段错误。修正：想两边都用就按值<strong>拷贝</strong>捕获（<code class="c">[sp]</code>，引用计数 +1）；本意是移交所有权就删掉最后一行。</p>
+</details>
+<p><strong>6. init capture 和 <code class="c">[*this]</code>（C++17）都能捕获对象的副本，怎么选？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">[*this]</code> 拷贝<strong>整个对象</strong>进闭包，一行搞定但粒度粗；<code class="c">[d = data]</code> 只拷需要的成员，对象大时更省。成员少/对象小用 <code class="c">[*this]</code> 最简洁；只缺一两个成员、或想给捕获改个不与成员冲突的名字时用 init capture。C++14/11 代码没有 <code class="c">[*this]</code>，只能用 <code class="c">[self = *this]</code>（C++14）或先拷局部（C++11）。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
 <li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item33-generic-lambda.md">Item 33 泛型 lambda</a></li>
-<li>回到：<a href="#intro">第 6 章</a></li>
+<li>回到：<a href="#intro">第 6 章 Lambda 表达式</a></li>
 </ul>
       </section>
       <section class="section" id="s-item33">
@@ -817,171 +917,224 @@ public:
       <section class="section" id="s-item34">
         <div class="sec-head"><div class="sec-no">Item 34</div><h2>Item 34：优先 lambda 而非 std::bind</h2></div>
 <blockquote>
-<p>第 6 章 · Item 34 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item33-generic-lambda.md">Item 33 泛型 lambda</a></p>
+<p>第 6 章 Lambda 表达式 · Item 34 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item33-generic-lambda.md">Item 33 泛型 lambda</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>C 程序员用函数指针做回调：</p>
-<pre class="code" data-label="C"><code class="c">// C：函数指针 + 手动绑定参数
-void on_event(int priority, const char* msg, void* ctx) { ... }
-
-// 想绑定 priority = 1 → C 做不到，得写包装函数
-void on_event_priority1(const char* msg, void* ctx) {
-    on_event(1, msg, ctx);
-}
-register_callback(on_event_priority1, ctx);
-</code></pre>
-<p>C++11 引入了 <code class="c">std::bind</code>——可以绑定参数到函数对象：</p>
-<pre class="code" data-label="cpp"><code class="c">auto handler = std::bind(on_event, 1, std::placeholders::_1, ctx);
-register_callback(handler);
-</code></pre>
-<p>但 <code class="c">std::bind</code> 有很多问题：无法内联、占位符晦涩、对重载函数不友好。C++14 的 lambda 几乎在所有场景都更优：</p>
-<pre class="code" data-label="cpp"><code class="c">auto handler = [ctx](const char* msg) { on_event(1, msg, ctx); };
-// 清晰、可内联、支持 move-only 类型
-</code></pre>
+<p><code class="c">std::bind</code> 是 C++11 的产物，解决的是「把函数的部分实参先固定下来，剩下的以后再传」——C 程序员要做同样的事得手写包装函数。2011 年它是个进步，因为那一年 lambda 还不能移动捕获、没有泛型形参，有些活只有 bind 能干。</p>
+<p>但 C++14 之后形势翻转：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item32-init-capture.md">Item 32</a> 的 init capture 补齐了移动捕获，<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item33-generic-lambda.md">Item 33</a> 的泛型 lambda 补齐了延迟参数——bind 的每一项能力 lambda 都有，而且 lambda 可读、可内联、报错友好。bind 剩下的只有一堆坑：占位符 <code class="c">_1</code>/<code class="c">_2</code> 和实参的映射要靠脑补、实参在 bind 时就求值、重载函数要 <code class="c">static_cast</code> 消歧、默认拷贝实参想用引用得包 <code class="c">std::ref</code>。</p>
+<p>你还会在大量 2011–2014 年的老代码（和老面试题）里见到 bind，所以要能读懂它；但新代码没有理由再写它。这一节用四个实测把 bind 的坑逐个坐实，然后给出结论。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p>C++14 起几乎所有 <code class="c">std::bind</code> 场景都该用 lambda 替代——lambda 可内联、参数清晰、支持 move-only 类型。</p>
+<ol>
+<li>bind 的<strong>占位符语义</strong>：<code class="c">_1</code> 是「调用时再传」的第 1 个实参，可以重排（反直觉）；</li>
+<li><strong>求值时机</strong>实测：bind 的实参在 bind 时求值，lambda 的 init capture 同样在创建时求值，lambda 体内才是调用时求值；</li>
+<li><strong>重载函数</strong>交给 bind 必须 <code class="c">static_cast</code> 消歧（报错原文实测）；</li>
+<li>bind <strong>默认拷贝实参</strong>，要引用得 <code class="c">std::ref</code>（实测对比）；</li>
+<li>结论：lambda 全面胜出，bind 仅历史价值。</li>
+</ol>
 <hr />
-<h2>bind 的缺陷</h2>
-<h3>1. 无法内联</h3>
-<pre class="code" data-label="cpp"><code class="c">// bind：函数调用间接跳转，编译器难以内联
-auto f = std::bind(&amp;Widget::process, &amp;w, _1);
-f(data);  // 运行时通过函数指针调用
+<h2>占位符语义：_1 是「洞」</h2>
+<p><code class="c">std::bind(f, a, _1)</code> 的含义：造一个可调用对象，调用它时把第 1 个实参填进 <code class="c">_1</code> 这个「洞」，其余位置用 bind 时存的值。本机实测（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;functional&gt;
+#include &lt;iostream&gt;
+#include &lt;string&gt;
 
-// lambda：编译器可内联
-auto f2 = [&amp;w](auto&amp; data) { w.process(data); };
-f2(data);  // 可能直接内联，零函数调用开销
+void report(int pri, const std::string&amp; msg) {
+    std::cout &lt;&lt; &quot;[&quot; &lt;&lt; pri &lt;&lt; &quot;] &quot; &lt;&lt; msg &lt;&lt; &quot;\n&quot;;
+}
+
+int main() {
+    using namespace std::placeholders;
+    auto r = std::bind(report, 1, _1);   // pri 固定为 1，msg 留洞
+    r(&quot;hello&quot;);                          // report(1, &quot;hello&quot;)
+
+    // 占位符还能重排——调用时的第 2 个实参填进函数的第 1 个形参
+    auto swap2 = std::bind(
+        [](int a, int b){ std::cout &lt;&lt; a &lt;&lt; &quot;,&quot; &lt;&lt; b &lt;&lt; &quot;\n&quot;; }, _2, _1);
+    swap2(1, 2);                         // 输出 2,1 —— 反直觉！
+    return 0;
+}
 </code></pre>
-<h3>2. 参数占位符晦涩</h3>
-<pre class="code" data-label="cpp"><code class="c">// bind：_1, _2 不直观
-auto f = std::bind(std::less&lt;double&gt;(), _1, 3.14);
-f(2.0);  // 2.0 &lt; 3.14 → true，但读 bind 表达式很难看出
-
-// lambda：一目了然
-auto f2 = [](double x) { return x &lt; 3.14; };
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">[1] hello
+2,1
 </code></pre>
-<h3>3. 重载/模板函数</h3>
-<pre class="code" data-label="cpp"><code class="c">// bind：传重载函数需要显式类型转换
-void process(int x);
-void process(double x);
-auto f = std::bind(static_cast&lt;void(*)(int)&gt;(&amp;process), _1);  // 难读
-
-// lambda：不需要
-auto f2 = [](int x) { process(x); };  // 清晰
+<p><code class="c">swap2(1, 2)</code> 输出 <code class="c">2,1</code>——<code class="c">_2</code> 写在前面就把调用方的第 2 个实参放到了函数的第 1 个位置。读 bind 表达式要在脑子里跑一遍「占位符编号 → 调用方实参序号 → 目标函数形参位置」的两级映射，这就是它晦涩的根源。lambda 版本一眼见底：</p>
+<pre class="code" data-label="cpp"><code class="c">auto swap2 = [](int a, int b) { return std::invoke(目标, b, a); };
+// 或者直接：
+auto swap2 = [](int a, int b){ std::cout &lt;&lt; b &lt;&lt; &quot;,&quot; &lt;&lt; a &lt;&lt; &quot;\n&quot;; };
 </code></pre>
-<h3>4. move-only 类型</h3>
-<pre class="code" data-label="cpp"><code class="c">// bind：对 unique_ptr 不友好
-auto pw = std::make_unique&lt;Widget&gt;();
-auto f = std::bind(&amp;Widget::process, std::move(pw), _1);  // 能编译但语义绕
+<hr />
+<h2>求值时机：bind 时 vs 调用时</h2>
+<p>bind 的实参（非占位符部分）在 <strong>bind 那一刻</strong>求值并存进 bind 对象；lambda 的 init capture 同样在<strong>创建时</strong>求值；只有 lambda <strong>体内</strong>的表达式才是调用时求值。实测（带打印的 <code class="c">compute()</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;functional&gt;
+#include &lt;iostream&gt;
 
-// lambda：直接 init capture
-auto f2 = [pw = std::move(pw)](auto&amp; data) { pw-&gt;process(data); };
+int compute() {
+    std::cout &lt;&lt; &quot;compute() 执行\n&quot;;
+    return 42;
+}
+void show(const char* tag, int v) { std::cout &lt;&lt; tag &lt;&lt; &quot;: &quot; &lt;&lt; v &lt;&lt; &quot;\n&quot;; }
+
+int main() {
+    using namespace std::placeholders;
+    std::cout &lt;&lt; &quot;== bind 版本 ==\n&quot;;
+    auto f = std::bind(show, &quot;bind&quot;, compute());    // compute() 现在就跑
+    std::cout &lt;&lt; &quot;-- bind 对象已创建 --\n&quot;;
+    f();
+
+    std::cout &lt;&lt; &quot;== lambda 版本 ==\n&quot;;
+    auto g = [v = compute()] { show(&quot;lambda&quot;, v); }; // init capture 也是创建时
+    std::cout &lt;&lt; &quot;-- lambda 已创建 --\n&quot;;
+    g();
+
+    auto h = [] { show(&quot;lambda-延迟&quot;, compute()); }; // 体内调用：调用时求值
+    std::cout &lt;&lt; &quot;-- h 已创建 --\n&quot;;
+    h();
+    return 0;
+}
+</code></pre>
+<p>本机实测（clang 23.1.0）输出：</p>
+<pre class="code" data-label="code"><code class="c">== bind 版本 ==
+compute() 执行
+-- bind 对象已创建 --
+bind: 42
+== lambda 版本 ==
+compute() 执行
+-- lambda 已创建 --
+lambda: 42
+-- h 已创建 --
+compute() 执行
+lambda-延迟: 42
+</code></pre>
+<p>bind 和 init capture 的 <code class="c">compute()</code> 都在对象创建<strong>之前</strong>打印——两者语义相同；只有 lambda 体内的 <code class="c">compute()</code> 延迟到了 <code class="c">h()</code> 调用时。所以「bind 在 bind 时求值、lambda 在调用时求值」的流行说法<strong>只对 lambda 体成立</strong>，对 init capture 不成立——这一点 Item 32 的实测也印证了。</p>
+<hr />
+<h2>重载函数：bind 必须 static_cast 消歧</h2>
+<p>重载函数名在表达式里没有唯一类型，bind 推导不出来。本机实测报错原文（clang 23.1.0）：</p>
+<pre class="code" data-label="cpp"><code class="c">int value(int x) { return x; }
+double value(double x) { return x; }
+auto f = std::bind(&amp;value, _1);
+</code></pre>
+<pre class="code" data-label="code"><code class="c">error: no matching function for call to 'bind'
+note: candidate template ignored: couldn't infer template argument '_Fp'
+</code></pre>
+<p>必须手动消歧：</p>
+<pre class="code" data-label="cpp"><code class="c">auto vi = std::bind(static_cast&lt;int(*)(int)&gt;(&amp;value), _1);
+std::cout &lt;&lt; vi(5) &lt;&lt; &quot;\n&quot;;   // 实测输出：50
+</code></pre>
+<p>lambda 天然免疫——重载决议发生在 lambda 体内正常的函数调用点，编译器按实参类型自动选：</p>
+<pre class="code" data-label="cpp"><code class="c">auto vi = [](int x) { return value(x); };   // 自动选中 int 版本，无需 cast
+</code></pre>
+<hr />
+<h2>默认拷贝实参：std::ref 的坑</h2>
+<p>bind 把非占位符实参<strong>按值拷贝</strong>进 bind 对象（准确说是 decay-copy）。想改到原件必须显式 <code class="c">std::ref</code>：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Counter {
+    int n = 0;
+    void bump() { ++n; }
+};
+
+Counter c;
+auto b1 = std::bind(&amp;Counter::bump, c);            // 拷了一份 c
+auto b2 = std::bind(&amp;Counter::bump, std::ref(c));  // 持有引用
+b1();  b1();
+std::cout &lt;&lt; &quot;b1 两次后 c.n = &quot; &lt;&lt; c.n &lt;&lt; &quot;\n&quot;;
+b2();  b2();
+std::cout &lt;&lt; &quot;b2 两次后 c.n = &quot; &lt;&lt; c.n &lt;&lt; &quot;\n&quot;;
+</code></pre>
+<p>本机实测（clang 23.1.0）输出：</p>
+<pre class="code" data-label="code"><code class="c">b1 两次后 c.n = 0（拷贝，没改到原件）
+b2 两次后 c.n = 2（std::ref，改到原件）
+</code></pre>
+<p><code class="c">b1</code> 改的是 bind 对象内部那份拷贝，原件纹丝不动——忘了 <code class="c">std::ref</code> 的 bug 不报错、不警告，静默无效。lambda 的捕获列表把「拷贝还是引用」写在明面上：<code class="c">[c]</code> 拷贝、<code class="c">[&amp;c]</code> 引用、<code class="c">[c = std::move(c)]</code> 移动，没有第三种隐藏规则。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>同一任务两种写法对照：固定优先级上报消息。</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;functional&gt;
+#include &lt;iostream&gt;
+#include &lt;memory&gt;
+#include &lt;string&gt;
+
+void report(int pri, const std::string&amp; msg) {
+    std::cout &lt;&lt; &quot;[&quot; &lt;&lt; pri &lt;&lt; &quot;] &quot; &lt;&lt; msg &lt;&lt; &quot;\n&quot;;
+}
+
+int main() {
+    using namespace std::placeholders;
+
+    // bind 版本：pri 固定 1，msg 留洞
+    auto b = std::bind(report, 1, _1);
+    b(&quot;from bind&quot;);
+
+    // lambda 版本：一目了然，可内联
+    auto l = [](const std::string&amp; msg) { report(1, msg); };
+    l(&quot;from lambda&quot;);
+
+    // lambda 还能做 bind 做不到/很绕的事：移动捕获（Item 32）
+    auto pw = std::make_unique&lt;std::string&gt;(&quot;owned&quot;);
+    auto m = [pw = std::move(pw)] { report(9, *pw); };
+    m();
+    return 0;
+}
+</code></pre>
+<p>本机实测（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>）输出：</p>
+<pre class="code" data-label="code"><code class="c">[1] from bind
+[1] from lambda
+[9] owned
 </code></pre>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
-<p><strong>错误 1：用 bind 绑定成员函数时忘了传 this</strong></p>
-<pre class="code" data-label="cpp"><code class="c">auto f = std::bind(&amp;Widget::process, _1);  // 缺 this！
-// 调用时需要传对象：f(widget, data) 但只设计了一个参数
-</code></pre>
-<p><strong>修正：</strong> <code class="c">auto f = std::bind(&amp;Widget::process, &amp;widget, _1);</code> 或用 lambda。</p>
-<p><strong>错误 2：bind 占位符搞混参数顺序</strong></p>
-<pre class="code" data-label="cpp"><code class="c">auto f = std::bind(func, _2, _1);  // 第二个参数传给 func 的第一个参数
-f(a, b);  // func(b, a)——反直觉
-</code></pre>
-<p><strong>修正：</strong> 用 lambda：<code class="c">auto f = [func](auto a, auto b) { func(b, a); };</code></p>
-<p><strong>错误 3：bind 传值导致不必要的拷贝</strong></p>
-<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; big_data(10000);
-auto f = std::bind(process, big_data);  // 拷贝 big_data！
-// lambda 可以按引用或移动
-auto f2 = [&amp;big_data]{ process(big_data); };
-auto f3 = [data = std::move(big_data)]{ process(data); };
-</code></pre>
-<p><strong>修正：</strong> 用 lambda 按引用或移动捕获。</p>
-<hr />
-<h2>新手要点（和 C 的区别）</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>维度</th>
-<th>C 怎么做</th>
-<th>C++ 怎么做</th>
-<th>为什么</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>回调</td>
-<td>函数指针 + 包装函数</td>
-<td>lambda</td>
-<td>内联 + 类型安全</td>
-</tr>
-<tr>
-<td>参数绑定</td>
-<td>手写包装函数</td>
-<td><code class="c">std::bind</code> 或 lambda</td>
-<td>lambda 更优</td>
-</tr>
-<tr>
-<td>内联</td>
-<td>函数指针不可内联</td>
-<td>lambda 可内联</td>
-<td>性能</td>
-</tr>
-<tr>
-<td>move-only</td>
-<td>不适用</td>
-<td>lambda + init capture</td>
-<td>C++14</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>一句话总结：</strong> C 程序员记住——新代码别用 <code class="c">bind</code>，用 lambda。lambda 更易读、可内联、支持 move-only 类型。<code class="c">bind</code> 是 C++11 过渡期的产物。</p>
+<ol>
+<li><strong>占位符重排后读错参数顺序</strong>。<code class="c">std::bind(f, _2, _1)</code> 调用 <code class="c">g(1, 2)</code> 实际是 <code class="c">f(2, 1)</code>（实测输出 <code class="c">2,1</code>）。占位符编号指「调用方的第几个实参」，不是「目标函数的第几个形参」。</li>
+<li><strong>忘了 <code class="c">std::ref</code> 导致静默拷贝</strong>。<code class="c">std::bind(&amp;Counter::bump, c)</code> 拷了一份 <code class="c">c</code>，调用改了副本，原件不变（实测 <code class="c">c.n</code> 仍为 0）。不报错不警告。</li>
+<li><strong>重载函数直接交给 bind</strong>。<code class="c">std::bind(&amp;value, _1)</code> 报 <code class="c">couldn't infer template argument '_Fp'</code>（实测原文），必须 <code class="c">static_cast&lt;int(*)(int)&gt;(&amp;value)</code>；lambda 写法 <code class="c">[](int x){ return value(x); }</code> 无需消歧。</li>
+<li><strong>bind 成员函数忘了传对象</strong>。<code class="c">std::bind(&amp;Widget::process, _1)</code> 漏了 <code class="c">this</code>，调用签名对不上；正确是 <code class="c">std::bind(&amp;Widget::process, &amp;w, _1)</code>。lambda 写 <code class="c">[&amp;w](auto&amp; d){ w.process(d); }</code> 不会犯这个错。</li>
+</ol>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>lambda 内联</strong>：STL 算法传 lambda 比 <code class="c">bind</code>/函数指针更易内联——回测里对 tick 数组批量处理时，内联 lambda 性能显著优于函数指针。</li>
-<li><strong>热路径回调</strong>：HFT 热路径中用 lambda 做回调，编译器内联后零函数调用开销。</li>
-<li><strong>配置绑定</strong>：<code class="c">[config](const Tick&amp; t){ check(t, config); }</code> 比 <code class="c">bind(check, _1, config)</code> 更清晰且可内联。</li>
+<li><strong>热路径回调必须可内联</strong>：lambda 的闭包类型编译期已知，<code class="c">std::sort(v.begin(), v.end(), [](auto&amp; a, auto&amp; b){ ... })</code> 比较器直接内联进排序循环；bind/函数指针是间接调用，每 tick 成千上万次比较时差距可观。回测引擎、订单簿遍历全部用 lambda。</li>
+<li><strong>bind 的隐藏拷贝是延迟地雷</strong>：<code class="c">std::bind(process, big_config)</code> 在 bind 时拷贝整个配置对象，还可能是 decay-copy 丢掉 const/引用——热路径上这种「看不见的拷贝」比显式拷贝更难排查。lambda 捕获列表把拷贝/引用/移动写在明面上。</li>
+<li><strong>老代码迁移</strong>：2015 年前的策略框架里 <code class="c">bind</code> 常见，迁移时逐条换成 lambda，顺手把 <code class="c">std::ref</code> 语义改成显式 <code class="c">[&amp;c]</code>，代码评审时捕获清单一目了然。</li>
+<li><strong>占位符重排是事故源</strong>：<code class="c">bind(f, _2, _1)</code> 这类参数对调写法在 lambda 里是 <code class="c">[](auto a, auto b){ f(b, a); }</code>——参数名让意图显式，code review 不用解码 <code class="c">_N</code>。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">std::bind</code> 相比 lambda 有哪些缺陷？</li>
-<li>为什么 C++14 起几乎都该用 lambda？</li>
-<li>lambda 可内联为什么对 HFT 重要？</li>
-<li>下面代码有什么问题？</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">auto pw = std::make_unique&lt;Widget&gt;();
-auto f = std::bind(&amp;Widget::process, pw, _1);
-</code></pre>
+<p><strong>1. <code class="c">std::bind(report, 1, _1)</code> 中 <code class="c">_1</code> 的含义是什么？<code class="c">std::bind(f, _2, _1)</code> 调用 <code class="c">g(1, 2)</code> 时实参如何传递？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p>主要缺陷：①<strong>可读性差</strong>：<code class="c">_1</code>、<code class="c">_2</code> 占位符与实际参数没有名字关联，读代码要先在脑子里做一遍"占位符 ↔ 形参"映射，远不如 <code class="c">[config](const Tick&amp; t){ check(t, config); }</code> 直白。②<strong>难以内联</strong>：bind 返回一个类型擦除的、通过 <code class="c">operator()</code> 间接调用的对象，编译器通常无法看到最终调用目标，从而阻止内联与后续优化。③<strong>捕获语义反直觉</strong>：默认把实参<strong>按值拷贝</strong>进 bind 对象（想要引用必须显式 <code class="c">std::ref</code>/<code class="c">std::cref</code>，想要移动必须 <code class="c">std::move</code>），而且这些拷贝在 bind 时就发生。④<strong>转发不完美</strong>：调用时把存储的实参一律按左值传出，原始值类别丢失（C++11 的 bind 不保留右值性）。⑤嵌套 bind 会被"立即求值"，需要额外包装才能延迟求值，行为容易搞错；重载函数名/成员函数取地址还要 <code class="c">static_cast</code> 消歧义。</p>
-</li>
-<li>
-<p>因为 C++14 补齐了 lambda 相对 bind 的最后两个短板：<strong>初始化捕获</strong>（可以移动捕获，bind 也能做但要 <code class="c">std::move</code> 且写法更绕）和 <strong><code class="c">auto</code> 形参的泛型 lambda</strong>（bind 的"延迟绑定/泛型"能力被覆盖）。在此之后 lambda 在可读性、可内联性、编译错误友好度、捕获控制上全面优于 bind，bind 剩下的适用场景基本只有 C++11 代码库、以及需要"部分应用 + 重排参数"的极少数场合。</p>
-</li>
-<li>
-<p>因为 HFT 热路径（每 tick 的过滤、聚合、回调分发）对每一次函数调用开销都敏感：lambda 的闭包类型在编译期完全已知，编译器能把它<strong>内联</strong>进调用点，消除函数调用与间接跳转，并进一步做常量传播、循环展开、寄存器分配优化，指令与分支预测都更友好；而 <code class="c">bind</code>/<code class="c">std::function</code> 通常是不可内联的间接调用（甚至有一次类型擦除的动态分派），在每 tick 执行成千上万次时会累积成可观的延迟。所以在回测/撮合循环里传 lambda 而不是 bind 或函数指针。</p>
-</li>
-<li>
-<p>编译失败。<code class="c">std::bind</code> 会把实参<strong>按值</strong>存进 bind 对象，而 <code class="c">pw</code> 是左值 <code class="c">std::unique_ptr&lt;Widget&gt;</code>——不可拷贝，bind 内部对 <code class="c">unique_ptr</code> 的 decay-copy 无法通过编译。必须显式移动：</p>
-</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">auto f = std::bind(&amp;Widget::process, std::move(pw), _1);  // OK，但要意识到 pw 外部已空
-</code></pre>
-<p>不过更推荐的现代写法是用初始化捕获的 lambda，语义清晰、可内联、还能按需 <code class="c">mutable</code>：</p>
-<pre class="code" data-label="cpp"><code class="c">auto f = [pw = std::move(pw)](auto&amp;&amp; x){ pw-&gt;process(std::forward&lt;decltype(x)&gt;(x)); };
-</code></pre>
-<p>另外要注意：无论哪种写法，<code class="c">std::move</code> 之后外层的 <code class="c">pw</code> 就变为空，再使用它是未定义行为。</p>
+<summary>答案</summary>
+<p><code class="c">_1</code> 是一个「洞」：表示调用 bind 返回的对象时传入的第 1 个实参。<code class="c">std::bind(report, 1, _1)</code> 固定了第一个形参 <code class="c">pri=1</code>，<code class="c">msg</code> 留给调用方。占位符编号指<strong>调用方的实参序号</strong>而非目标函数的形参位置，所以 <code class="c">std::bind(f, _2, _1)</code> 被 <code class="c">g(1, 2)</code> 调用时执行的是 <code class="c">f(2, 1)</code>——本文实测输出 <code class="c">2,1</code>，反直觉，是 bind 可读性差的主要原因。</p>
+</details>
+<p><strong>2. bind 的非占位符实参与 lambda 的 init capture，求值时机各是什么？「lambda 在调用时求值」的说法哪里不准确？</strong></p>
+<details>
+<summary>答案</summary>
+<p>bind 的非占位符实参在 <strong>bind 时</strong>求值并存入 bind 对象；lambda 的 init capture 在 <strong>lambda 创建时</strong>求值——两者时机相同（本文实测：<code class="c">compute()</code> 的打印都在「对象已创建」之前）。「lambda 在调用时求值」只对 lambda <strong>体内</strong>的表达式成立，对捕获列表不成立；要延迟到调用时计算，得把表达式写进 lambda 体。</p>
+</details>
+<p><strong>3. 为什么重载函数不能直接交给 <code class="c">std::bind</code>？怎么处理？lambda 为什么没有这个问题？</strong></p>
+<details>
+<summary>答案</summary>
+<p>重载函数名不对应唯一类型，<code class="c">bind</code> 的模板形参 <code class="c">_Fp</code> 推导失败（clang 实测报 <code class="c">couldn't infer template argument '_Fp'</code>）。处理办法是 <code class="c">static_cast</code> 消歧：<code class="c">std::bind(static_cast&lt;int(*)(int)&gt;(&amp;value), _1)</code>。lambda 里重载决议发生在 lambda 体内的普通调用点，编译器按实参类型自动选重载，<code class="c">[](int x){ return value(x); }</code> 无需任何 cast。</p>
+</details>
+<p><strong>4. <code class="c">std::bind(&amp;Counter::bump, c)</code> 调用后 <code class="c">c</code> 会变吗？为什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>不会。bind 对实参做 decay-copy，<code class="c">c</code> 被<strong>拷贝</strong>进 bind 对象，<code class="c">bump()</code> 改的是那份拷贝（本文实测：调用两次后 <code class="c">c.n</code> 仍为 0）。要改原件必须 <code class="c">std::ref(c)</code>——实测 <code class="c">std::ref</code> 版本两次调用后 <code class="c">c.n == 2</code>。lambda 的对应语义是显式的：<code class="c">[c]</code> 拷贝、<code class="c">[&amp;c]</code> 引用，不会静默选错。</p>
+</details>
+<p><strong>5. 既然 lambda 全面胜出，bind 还有什么存在价值？</strong></p>
+<details>
+<summary>答案</summary>
+<p>历史价值为主：读懂和维护 C++11 时代的老代码（当时 lambda 没有 init capture 和泛型形参，移动捕获、延迟参数只能靠 bind）；以及极少数「多态函数对象的部分应用」场景 bind 更紧凑。Meyers 的结论是：C++14 起新代码一律 lambda——可读性、可内联性、错误信息、捕获控制全面占优。</p>
+</details>
+<p><strong>6. lambda 可内联为什么对 HFT 重要？bind 为什么不行？</strong></p>
+<details>
+<summary>答案</summary>
+<p>lambda 的闭包类型在编译期完全已知，调用点能看到函数体，编译器可内联并进一步做常量传播、循环展开；bind 返回的对象通过内部函数指针/类型擦除间接调用目标，编译器通常看不到最终调用目标，无法内联。HFT 热路径每 tick 成千上万次调用（比较器、过滤器、回调分发），每次间接调用的分支预测失败和调用开销会累积成可观延迟。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item33-generic-lambda.md">Item 33 泛型 lambda</a></li>
 <li>下一章：<a href="chapter-07.html#intro">第 7 章 并发 API</a></li>
-<li>回到：<a href="#intro">第 6 章</a></li>
+<li>回到：<a href="#intro">第 6 章 Lambda 表达式</a></li>
 </ul>
       </section>
 

@@ -348,103 +348,154 @@ v.emplace_back(42);          // 直接在 v 的内存里构造 Widget
       <section class="section" id="s-item41">
         <div class="sec-head"><div class="sec-no">Item 41</div><h2>Item 41：可拷贝参数考虑按值传递</h2></div>
 <blockquote>
-<p>第 8 章 微调 · Item 41 · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item42-emplace-vs-insert.md">Item 42 emplace vs insert</a></p>
+<p>第 8 章 微调 · Item 41 · 上一节：<a href="chapter-07.html#ch-7">Item 40 atomic vs volatile</a> · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item42-emplace-vs-insert.md">Item 42 emplace vs insert</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>C 的参数传递很简单——要么按值（拷贝），要么传指针：</p>
-<pre class="code" data-label="C"><code class="c">// C：按值传递（拷贝）
-void process(int x) { ... }
-
-// C：传指针（不拷贝）
-void process_large(const BigStruct* s) { ... }
+<p>假设你要写一个函数，把名字存进容器。C++98 时代的老规矩是传 <code class="c">const&amp;</code>，进容器时拷贝一次：</p>
+<pre class="code" data-label="cpp"><code class="c">void addName(const std::string&amp; name) { names.push_back(name); }   // 左值右值都拷贝
 </code></pre>
-<p>C++ 有了引用和移动语义，参数传递方式变多了。传统 C++ 做法：</p>
-<pre class="code" data-label="cpp"><code class="c">// 传统：const 引用 + 拷贝
-void add(const std::string&amp; name) {
-    names.push_back(name);  // 1 次拷贝
-}
-
-// 加右值重载：避免拷贝
-void add(std::string&amp;&amp; name) {
-    names.push_back(std::move(name));  // 1 次移动
-}
-</code></pre>
-<p>但如果函数<strong>总是要拷贝</strong>参数，且移动廉价，可以简化为按值传递：</p>
-<pre class="code" data-label="cpp"><code class="c">// 按值传递 + move 进容器
-void add(std::string name) {
-    names.push_back(std::move(name));  // 左值：拷贝+移动；右值：移动+移动
-}
-</code></pre>
-<p>一个函数替代两个重载，代码更简洁。</p>
+<p>后来学了移动语义，你发现传右值时那次拷贝是冤枉的，于是加成两个重载——一个接左值、一个接右值，各用最省的构造方式。代码对了，但每个这样的函数都要写两遍。</p>
+<p>这一节给出第三种写法：<strong>按值传参，进容器时 <code class="c">std::move</code></strong>。一个函数替代两个重载，左值来就"拷贝 + 移动"，右值来就"移动 + 移动"，每种情况只比最优方案多付一次廉价的移动。这是 C++11 之后社区里广泛流行的惯用法（<code class="c">std::string</code>、容器、智能指针的参数经常这么写），但它的适用边界非常清晰——搞不清边界，省下的代码行会加倍在性能上还回去。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p>对于"会被拷贝的可拷贝形参"，传统做法是传 <code class="c">const T&amp;</code> 再拷贝。但如果函数总是要拷贝，且移动廉价，按值传递能简化代码。</p>
+<p>按值传参 + <code class="c">std::move</code> 进容器，用<strong>一个函数</strong>替代 <code class="c">const&amp;</code> + <code class="c">&amp;&amp;</code> 两个重载。代价模型：左值多付一次移动，右值多付一次移动。用带计数器的类实测四种组合的构造次数，给出三条适用前提（可移动、move 廉价、参数总会被拷一份），以及不适用场景（只读参数、多参数重载爆炸、基类切片）。</p>
 <hr />
-<h2>三种方式对比</h2>
-<pre class="code" data-label="cpp"><code class="c">// 方式 1：两个重载（最优性能，代码多）
-void add(const T&amp; x) { v.push_back(x); }           // 左值：1 次拷贝
-void add(T&amp;&amp; x)      { v.push_back(std::move(x)); } // 右值：1 次移动
+<h2>三种写法的代价模型</h2>
+<pre class="code" data-label="cpp"><code class="c">// 方案 A：两个重载（性能最优，代码两份）
+void add(const Widget&amp; w) { v.push_back(w); }           // 左值：1 次拷贝
+void add(Widget&amp;&amp; w)      { v.push_back(std::move(w)); } // 右值：1 次移动
 
-// 方式 2：按值传递（代码少，左值多一次移动）
-void add(T x) { v.push_back(std::move(x)); }        // 左值：拷贝构造形参 + 移动
-                                                     // 右值：移动构造形参 + 移动
+// 方案 B：按值 + move（一份代码）
+void add(Widget w) { v.push_back(std::move(w)); }
+// 左值：拷贝构造形参 + 移动进容器
+// 右值：移动构造形参 + 移动进容器
 
-// 方式 3：万能引用 + forward（最优性能，但有限制）
-template&lt;class T&gt; void add(T&amp;&amp; x) { v.push_back(std::forward&lt;T&gt;(x)); }
-// 万能引用有 Item 26 的重载问题
+// 方案 C：万能引用 + forward（最优性能，模板，Item 26 的重载坑）
+template&lt;class T&gt; void add(T&amp;&amp; w) { v.push_back(std::forward&lt;T&gt;(w)); }
 </code></pre>
-<p><strong>代价分析：</strong></p>
+<p>理论代价表（书中版本）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>实参类型</th>
-<th>两个重载</th>
-<th>按值传递</th>
-<th>万能引用</th>
+<th>实参</th>
+<th>A 两个重载</th>
+<th>B 按值传递</th>
+<th>C 万能引用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>左值</td>
-<td>1 次拷贝</td>
-<td>1 次拷贝 + 1 次移动</td>
-<td>1 次拷贝</td>
+<td>1 拷贝</td>
+<td>1 拷贝 + 1 移动</td>
+<td>1 拷贝</td>
 </tr>
 <tr>
 <td>右值</td>
-<td>1 次移动</td>
-<td>2 次移动</td>
-<td>1 次移动</td>
+<td>1 移动</td>
+<td>2 移动</td>
+<td>1 移动</td>
 </tr>
 </tbody>
 </table></div>
-<p>按值传递对左值多了一次移动——只有当<strong>移动廉价</strong>时才值得。</p>
-<p><strong>适用条件：</strong> ①函数总是拷贝形参；②移动廉价（<code class="c">string</code>、<code class="c">vector</code>、智能指针）；③拷贝与移动代价相近。</p>
-<p>不满足任一条，用重载或万能引用 + <code class="c">forward</code>。</p>
+<p>按值传递对每种实参都多付<strong>恰好一次移动</strong>——这就是"代码简洁"的价格。值不值，取决于移动的成本。</p>
+<hr />
+<h2>实测：构造计数器对账（本机实测 clang 23.1.0）</h2>
+<p>用带构造/拷贝/移动计数器的 <code class="c">W</code>，两种方案分别喂左值、纯右值、具名右值：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;cstdio&gt;
+#include &lt;vector&gt;
+
+struct Cnt { int ctor = 0, copy = 0, move = 0; };
+Cnt g;
+
+struct W {
+    W() { ++g.ctor; }
+    W(const W&amp;) { ++g.copy; }
+    W(W&amp;&amp;) noexcept { ++g.move; }
+};
+
+void reset(const char* label) {
+    std::printf(&quot;%-34s ctor=%d copy=%d move=%d\n&quot;, label, g.ctor, g.copy, g.move);
+    g = Cnt{};
+}
+
+struct BoxA {                                // 方案 A：两个重载
+    std::vector&lt;W&gt; v;
+    void add(const W&amp; w) { v.push_back(w); }
+    void add(W&amp;&amp; w)      { v.push_back(std::move(w)); }
+};
+
+struct BoxB {                                // 方案 B：按值 + move
+    std::vector&lt;W&gt; v;
+    void add(W w) { v.push_back(std::move(w)); }
+};
+
+int main() {
+    { BoxA a; W w; g = Cnt{}; a.add(w);             reset(&quot;A(双重载) add(左值):&quot;); }
+    { BoxB b; W w; g = Cnt{}; b.add(w);             reset(&quot;B(按值)   add(左值):&quot;); }
+    { BoxA a; g = Cnt{}; a.add(W{});                reset(&quot;A(双重载) add(纯右值 W{}):&quot;); }
+    { BoxB b; g = Cnt{}; b.add(W{});                reset(&quot;B(按值)   add(纯右值 W{}):&quot;); }
+    { BoxA a; W w; g = Cnt{}; a.add(std::move(w));  reset(&quot;A(双重载) add(std::move(w)):&quot;); }
+    { BoxB b; W w; g = Cnt{}; b.add(std::move(w));  reset(&quot;B(按值)   add(std::move(w)):&quot;); }
+    return 0;
+}
+</code></pre>
+<p>clang 23.1.0 + <code class="c">-std=c++17 -Wall</code> 实测输出：</p>
+<pre class="code" data-label="code"><code class="c">A(双重载) add(左值):              ctor=0 copy=1 move=0
+B(按值)   add(左值):              ctor=0 copy=1 move=1
+A(双重载) add(纯右值 W{}):        ctor=1 copy=0 move=1
+B(按值)   add(纯右值 W{}):        ctor=1 copy=0 move=1
+A(双重载) add(std::move(w)):      ctor=0 copy=0 move=1
+B(按值)   add(std::move(w)):      ctor=0 copy=0 move=2
+</code></pre>
+<p>对账结果有两个值得注意的点：</p>
+<ol>
+<li><strong>左值</strong>完全符合理论：B 比 A 多一次移动（copy=1, move=1 vs copy=1, move=0）。</li>
+<li><strong>纯右值 <code class="c">W{}</code> 两方案打平</strong>（都是 ctor=1, move=1）！因为 C++17 起强制拷贝消除，纯右值直接原地构造进按值形参，省了书中预测的一次移动。<strong>具名右值 <code class="c">std::move(w)</code></strong> 不能消除，B 才显出 2 次移动 vs A 的 1 次。</li>
+</ol>
+<p>也就是说：在现代标准 + 现代编译器上，按值传参的"右值税"比书里写的还轻——只有传<strong>具名</strong>右值时才真的多付一次移动。</p>
+<hr />
+<h2>适用前提与反模式</h2>
+<p>按值传参划算，需要三条同时成立：</p>
+<ol>
+<li><strong>类型可移动且移动廉价</strong>：<code class="c">std::string</code>、<code class="c">std::vector</code>、智能指针这类指针交接 O(1)；<code class="c">std::array&lt;T, N&gt;</code> 的移动是逐元素拷贝 O(N)，多付的那次"移动"等于又一次拷贝，不划算。</li>
+<li><strong>参数总会被拷一份存起来</strong>：<code class="c">add</code> 把参数放进容器/成员，拷贝必然发生。如果函数只是<strong>读</strong>参数（<code class="c">double norm(const Vec&amp;)</code>），按值传参是纯浪费。</li>
+<li><strong>拷贝与移动成本同量级</strong>：形参构造那一下躲不掉，若拷贝远贵于移动，左值路径依然心疼。</li>
+</ol>
+<p>两个结构性限制：</p>
+<ul>
+<li><strong>多参数组合爆炸</strong>：两个这样的参数用重载方案要 4 个函数（2²），n 个参数要 2ⁿ 个——这正是按值传参最大的现实动机；反过来，如果参数<strong>不一定</strong>被存（某分支提前 return），按值传参就白付了形参构造费。</li>
+<li><strong>按值接基类会切片</strong>：<code class="c">void f(Base b)</code> 收到 <code class="c">Derived</code> 时切掉派生部分。实测（同一程序扩展）：</li>
+</ul>
+<pre class="code" data-label="cpp"><code class="c">struct Base { virtual int kind() const { return 1; } };
+struct Derived : Base { int kind() const override { return 2; } };
+// by_value(d) = 1   by_ref(d) = 2    ← 按值接到了切剩的 Base
+</code></pre>
+<p>多态类型参数永远用引用/指针，不按值。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>上方"实测"一节即完整可运行程序（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>），输出已给出；切片验证代码见"适用前提"小节末尾。</p>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
-<p><strong>错误 1：移动昂贵的类型按值传递</strong></p>
-<pre class="code" data-label="cpp"><code class="c">void add(std::array&lt;int, 1000&gt; arr) {  // 按值——array 的移动是 O(N)！
-    v.push_back(std::move(arr));  // O(N) 移动
-}
-// 正确：用 const 引用
-void add(const std::array&lt;int, 1000&gt;&amp; arr) {
-    v.push_back(arr);  // 1 次拷贝，和按值的总代价相同但更清晰
-}
-</code></pre>
-<p><strong>修正：</strong> 移动昂贵的类型用 <code class="c">const T&amp;</code> + 拷贝。</p>
-<p><strong>错误 2：不需要拷贝时按值传递</strong></p>
-<pre class="code" data-label="cpp"><code class="c">void process(Widget w) {  // 按值——但只是读取 w，不需要拷贝！
-    use(w);  // 白白拷贝了一次
-}
-</code></pre>
-<p><strong>修正：</strong> 只读参数用 <code class="c">const Widget&amp;</code>。</p>
-<p><strong>错误 3：按值传递但忘了 move 进容器</strong></p>
+<p><strong>错误 1：按值接收后忘了 <code class="c">std::move</code> 进容器</strong></p>
 <pre class="code" data-label="cpp"><code class="c">void add(std::string name) {
-    names.push_back(name);  // 忘了 std::move！→ 拷贝而非移动
+    names.push_back(name);          // name 是具名左值 → 拷贝！按值的收益全没了
 }
 </code></pre>
-<p><strong>修正：</strong> <code class="c">names.push_back(std::move(name));</code></p>
+<p><strong>修正：</strong> <code class="c">names.push_back(std::move(name));</code>——形参是左值，必须显式 move。</p>
+<p><strong>错误 2：移动昂贵的类型按值传递</strong></p>
+<pre class="code" data-label="cpp"><code class="c">void add(std::array&lt;double, 1024&gt; a) { buf.push_back(std::move(a)); }  // 移动 = O(N) 拷贝
+</code></pre>
+<p><strong>修正：</strong> <code class="c">std::array</code>、大 POD 聚合体用 <code class="c">const&amp;</code>（只读）或双重载。</p>
+<p><strong>错误 3：只读参数也按值传</strong></p>
+<pre class="code" data-label="cpp"><code class="c">void print_name(std::string name) { std::cout &lt;&lt; name; }   // 白拷/白移一次
+</code></pre>
+<p><strong>修正：</strong> 只读参数用 <code class="c">const std::string&amp;</code>。</p>
+<p><strong>错误 4：参数可能不存时按值传</strong></p>
+<pre class="code" data-label="cpp"><code class="c">void maybe_add(std::string s) { if (!validate(s)) return; store(std::move(s)); }
+// validate 失败的路径白付了构造形参的钱
+</code></pre>
+<p><strong>修正：</strong> 有条件存储的用 <code class="c">const&amp;</code> 接收，确定要存时再拷。</p>
 <hr />
 <h2>新手要点（和 C 的区别）</h2>
 <div class="tbl-wrap"><table>
@@ -458,76 +509,75 @@ void add(const std::array&lt;int, 1000&gt;&amp; arr) {
 </thead>
 <tbody>
 <tr>
-<td>按值传递</td>
-<td>总是拷贝</td>
-<td>拷贝构造形参</td>
-<td>相同</td>
+<td>传参</td>
+<td>按值（拷贝）或指针</td>
+<td>按值 / <code class="c">const&amp;</code> / <code class="c">&amp;&amp;</code> / 万能引用</td>
+<td>多了值类别维度</td>
 </tr>
 <tr>
-<td>引用传递</td>
-<td>传指针</td>
-<td><code class="c">const T&amp;</code></td>
-<td>C++ 有引用</td>
-</tr>
-<tr>
-<td>移动语义</td>
-<td>不存在</td>
-<td>按值 + <code class="c">move</code></td>
+<td>"省一次拷贝"</td>
+<td>不存在（没有移动语义）</td>
+<td>右值走移动构造</td>
 <td>C++11</td>
 </tr>
 <tr>
-<td>重载简化</td>
-<td>不适用</td>
-<td>按值替代两个重载</td>
-<td>代码简洁</td>
+<td>惯用法</td>
+<td>大结构体传指针</td>
+<td>总会存的参数可按值 + move</td>
+<td>一份代码 ≈ 双重载性能</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>一句话总结：</strong> C 程序员记住——C++ 的"总是要拷贝的参数"用按值传参 + <code class="c">std::move</code> 进容器，一个函数替代两个重载。但只对移动廉价的类型（<code class="c">string</code>/<code class="c">vector</code>/智能指针）划算。</p>
+<p><strong>一句话总结：</strong> 参数<strong>总会被拷一份</strong>、类型<strong>移动廉价</strong>时，按值传参 + <code class="c">std::move</code> 用一份代码拿到接近双重载的性能；否则乖乖用引用。</p>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>策略配置注册</strong>：<code class="c">string</code> symbol 移动廉价，配置函数用按值传参 + <code class="c">std::move</code> 进成员，代码简洁且性能可接受。</li>
-<li><strong>避免不必要的拷贝</strong>：<code class="c">void add(std::string name)</code> 对左值多一次移动——如果 <code class="c">string</code> 很长（如 JSON 配置），考虑用 <code class="c">const string&amp;</code> + 右值重载。</li>
-<li><strong>移动代价意识</strong>：<code class="c">array&lt;T, N&gt;</code> 的移动是 O(N)——HFT 代码中避免对 <code class="c">array</code> 按值传递。</li>
+<li><strong>配置/注册接口</strong>：<code class="c">registerSymbol(std::string sym)</code> 这类冷路径接口按值传参最舒服——移动廉价、必然存进 map，一份代码够简洁。</li>
+<li><strong>热路径不这么玩</strong>：<code class="c">on_tick(Tick t)</code> 若 <code class="c">Tick</code> 含 <code class="c">std::array</code> 或大 buffer，按值形参构造就是 O(N) 拷贝，热路径用 <code class="c">const&amp;</code>。</li>
+<li><strong>具名右值税</strong>：实测确认 <code class="c">f(std::move(w))</code> 时按值方案付 2 次移动——对象若装着堆内存池句柄，这两次移动里的指针交接虽小，在高频调用下也要计入延迟预算。</li>
+<li><strong>多参数构造函数</strong>：订单构建器这类 4-5 个 string 参数的函数，重载方案 32 个函数不现实，按值传参是唯一可维护的选择。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li>按值传递可拷贝形参相比 <code class="c">const T&amp;</code> + 拷贝，对左值实参多出了什么代价？</li>
-<li>什么条件下按值传递才划算？</li>
-<li>移动昂贵的类型应该用什么方式传参？</li>
-<li>下面代码有什么问题？</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">void add(std::string name) {
-    names.push_back(name);
-}
-</code></pre>
+<p><strong>1. 按值传参相比 <code class="c">const&amp;</code>+<code class="c">&amp;&amp;</code> 双重载，对左值实参多付了什么代价？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p>多出<strong>一次移动构造</strong>。对比：<code class="c">void f(const std::string&amp; s) { names.push_back(s); }</code> 传左值时是 1 次拷贝；而按值形参 <code class="c">void f(std::string s)</code> 传左值时是"1 次拷贝（构造形参 <code class="c">s</code>）+ 1 次移动（<code class="c">s</code> 移进容器）"。也就是说按值传递并没有省掉拷贝，只是把"拷贝"固定下来，再额外付一次移动。对右值实参，<code class="c">const T&amp;</code> 版本是 1 次拷贝，按值版本是 2 次移动——若移动廉价则反而更省。</p>
-</li>
-<li>
-<p>三个条件大致同时满足时才划算：①该类型的<strong>移动非常廉价</strong>（<code class="c">std::string</code>、<code class="c">std::vector</code>、<code class="c">std::unique_ptr</code> 这类 O(1) 指针交接，而不是 <code class="c">std::array&lt;T, N&gt;</code> 这种移动等于拷贝的）；②形参<strong>总是会被复制一份</strong>存进内部（不是"有时存、有时不存"）；③相比极致的 <code class="c">const T&amp;</code> + <code class="c">T&amp;&amp;</code> 双重载，你更看重"一个函数、一份代码、更简洁"——少写重载、少维护、少出错。此外它天然支持"拷贝 + 移动"两种调用方，且不需要模板/万能引用。</p>
-</li>
-<li>
-<p>移动昂贵的类型（如 <code class="c">std::array&lt;T, N&gt;</code>、元素全是大 POD 的聚合体——它们的移动就是逐成员拷贝）应该用 <strong><code class="c">const T&amp;</code></strong>（只读场景）或 <strong><code class="c">const T&amp;</code> + <code class="c">T&amp;&amp;</code> 重载</strong>（需要保存一份的场景），避免按值传递带来的那次"等价于完整拷贝的移动"。理由是按值传递的代价模型里，多出的那次移动对这类类型来说就是一次 O(N) 拷贝，得不偿失。若只是读取而不保存，直接 <code class="c">const T&amp;</code> 即可。</p>
-</li>
-<li>
-<p>漏了 <code class="c">std::move</code>：<code class="c">name</code> 是函数内的<strong>左值</strong>（具名形参），<code class="c">names.push_back(name)</code> 会调用拷贝构造，把形参又完整拷贝一次。于是左值实参时总代价是"1 次拷贝 + 1 次拷贝"，右值实参时是"1 次移动 + 1 次拷贝"——按值传递的收益完全被抵消。这正是按值传参惯用法的必要配套步骤：形参进容器时必须再 <code class="c">move</code> 一次：</p>
-</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">void add(std::string name) {
-    names.push_back(std::move(name));   // 形参 → 容器：移动而非拷贝
-}
-// 更简洁：names.emplace_back(std::move(name));
-</code></pre>
+<summary>答案</summary>
+<p>恰好一次移动构造：双重载版左值是 1 次拷贝；按值版是"拷贝构造形参 + 移动进容器"共 1 拷贝 + 1 移动。实测 <code class="c">A(双重载) add(左值): copy=1 move=0</code> vs <code class="c">B(按值) add(左值): copy=1 move=1</code>。</p>
+</details>
+<p><strong>2. 实测中传纯右值 <code class="c">W{}</code> 时两种方案为什么打平？</strong></p>
+<details>
+<summary>答案</summary>
+<p>C++17 起强制拷贝消除：纯右值直接原地构造进按值形参，省掉书中预测的"移动构造形参"那一步，两方案都是 ctor=1, move=1。只有传具名右值（<code class="c">std::move(w)</code>）时才显出按值版多一次移动（move=2 vs 1）。</p>
+</details>
+<p><strong>3. 按值传参惯用法的三条适用前提是什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>①类型可移动且移动廉价（string/vector/unique_ptr，而非 std::array）；②参数总会被拷一份存入内部（不是只读、不是条件存储）；③拷贝与移动成本同量级。三条同时成立时，一份代码换接近双重载的性能是划算交易。</p>
+</details>
+<p><strong>4. 为什么 <code class="c">std::array&lt;T, N&gt;</code> 不适合按值传参？</strong></p>
+<details>
+<summary>答案</summary>
+<p>它的移动是逐成员拷贝 O(N)，按值方案"多付一次移动"对它等于多付一次完整拷贝，代价模型失效。这类类型用 <code class="c">const&amp;</code>（只读）或双重载。</p>
+</details>
+<p><strong>5. 按值接收基类参数会发生什么？实测结果是什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>切片：派生对象被切成基类副本，虚函数行为丢失。实测 <code class="c">by_value(d)=1</code>（Base 的 kind）vs <code class="c">by_ref(d)=2</code>（Derived 的 kind）。多态类型参数必须用引用或指针。</p>
+</details>
+<p><strong>6. 两个按值存储的参数用重载方案要写几个函数？这说明了什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>2² = 4 个，n 个参数要 2ⁿ 个。重载方案在多参数下组合爆炸，这是按值传参最大的现实动机——可维护性。反过来参数"可能不存"时，按值会在放弃的分支里白付构造费。</p>
+</details>
+<p><strong>7. <code class="c">void add(std::string name) { names.push_back(name); }</code> 错在哪？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">name</code> 是具名形参，是左值——<code class="c">push_back(name)</code> 走拷贝，左值实参总代价变成 1 拷贝 + 1 拷贝，按值的收益被完全抵消。必须 <code class="c">push_back(std::move(name))</code>。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
+<li>上一节：<a href="chapter-07.html#ch-7">Item 40 atomic vs volatile</a></li>
 <li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item42-emplace-vs-insert.md">Item 42 emplace vs insert</a></li>
 <li>回到：<a href="#intro">第 8 章 微调</a></li>
 </ul>
@@ -535,87 +585,177 @@ void add(const std::array&lt;int, 1000&gt;&amp; arr) {
       <section class="section" id="s-item42">
         <div class="sec-head"><div class="sec-no">Item 42</div><h2>Item 42：优先 emplace 而非 insert</h2></div>
 <blockquote>
-<p>第 8 章 微调 · Item 42 · 下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item41-pass-by-value.md">Item 41 按值传递</a></p>
+<p>第 8 章 微调 · Item 42 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item41-pass-by-value.md">Item 41 按值传递</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>C 程序员往数组里加元素的方式：</p>
-<pre class="code" data-label="C"><code class="c">struct Widget { int x; int y; };
-struct Widget arr[100];
-int n = 0;
-
-// 先构造临时对象，再拷贝进数组
-struct Widget tmp = {42, 100};
-arr[n++] = tmp;  // 拷贝
-
-// 或者直接初始化
-arr[n].x = 42;
-arr[n].y = 100;
-n++;
+<p>往 <code class="c">vector</code> 里加一个 <code class="c">Widget</code>，两种写法看着差不多：</p>
+<pre class="code" data-label="cpp"><code class="c">v.push_back(Widget(42, 100));   // 先在栈上造一个临时 Widget，再移动进容器
+v.emplace_back(42, 100);        // 把构造参数送进容器，在容器的内存里原地造
 </code></pre>
-<p>C++ 的 <code class="c">push_back</code> 类似 C 的第一种方式——先构造临时对象，再移动/拷贝进容器：</p>
-<pre class="code" data-label="cpp"><code class="c">v.push_back(Widget(42, 100));  // 构造临时 Widget → 移动进 v
-</code></pre>
-<p><code class="c">emplace_back</code> 类似 C 的第二种方式——直接在容器的内存里构造对象，不需要临时对象：</p>
-<pre class="code" data-label="cpp"><code class="c">v.emplace_back(42, 100);  // 直接在 v 的内存里构造 Widget(42, 100)
-// 省去了临时对象的构造 + 移动
-</code></pre>
+<p>第一行其实干了三件事：构造临时对象、移动进容器、析构临时对象。第二行只干一件事：拿参数在容器尾部那块还没初始化的内存上 placement-new 一个对象。<strong>省掉的是整个临时对象的一生</strong>——构造、移动、析构。</p>
+<p>但 <code class="c">emplace</code> 不是无脑替换 <code class="c">push_back</code> 的银弹。它用的是<strong>直接初始化</strong>语义，这意味着两件事：一是它能绕过 <code class="c">explicit</code>（有时候是便利，有时候是踩进编译器都不拦你的坑）；二是参数原样转发给构造函数，传错参数时编译器给你的报错和 <code class="c">push_back</code> 完全不同。再加上智能指针容器那个著名的异常泄漏陷阱，这一节的正确姿势是"优先 emplace，但知道何时不该用"。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p><code class="c">emplace_back</code>/<code class="c">emplace</code> 在容器内<strong>直接构造</strong>元素，省去临时对象 + 移动/拷贝。但要注意异常安全和资源管理。</p>
+<p><code class="c">emplace_back(args...)</code> 在容器内<strong>原地构造</strong>元素，省去临时对象的构造 + 移动 + 析构。实测对比两者构造次数；分析三类 emplace 反而更差/更危险的场景：实参已是元素类型、<code class="c">explicit</code> 构造函数被直接初始化绕过（<code class="c">vector&lt;regex&gt;</code> 实测编译差异）、智能指针容器传裸 <code class="c">new</code> 的异常泄漏。</p>
 <hr />
-<h2>核心对比</h2>
-<pre class="code" data-label="cpp"><code class="c">v.push_back(Widget(42));     // 构造临时 Widget → 移动进 v
-v.emplace_back(42);          // 直接在 v 的内存里构造 Widget
+<h2>实测 1：构造次数对账（本机实测 clang 23.1.0）</h2>
+<p>带构造/拷贝/移动/析构计数器的 <code class="c">W</code>，对比三种插入方式：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;cstdio&gt;
+#include &lt;vector&gt;
+
+struct Cnt { int ctor = 0, copy = 0, move = 0, dtor = 0; };
+Cnt g;
+
+struct W {
+    W(int x, int y) { ++g.ctor; (void)x; (void)y; }
+    W(const W&amp;) { ++g.copy; }
+    W(W&amp;&amp;) noexcept { ++g.move; }
+    ~W() { ++g.dtor; }
+};
+
+void report(const char* label) {
+    std::printf(&quot;%-40s ctor=%d copy=%d move=%d dtor=%d\n&quot;,
+                label, g.ctor, g.copy, g.move, g.dtor);
+    g = Cnt{};
+}
+
+int main() {
+    {
+        std::vector&lt;W&gt; v;
+        v.reserve(1);                 // 排除扩容干扰
+        g = Cnt{};
+        v.push_back(W(42, 100));      // 临时对象 + 移动
+        report(&quot;push_back(W(42,100)):&quot;);
+    }
+    {
+        std::vector&lt;W&gt; v;
+        v.reserve(1);
+        g = Cnt{};
+        v.emplace_back(42, 100);      // 原地构造
+        report(&quot;emplace_back(42,100):&quot;);
+    }
+    {
+        std::vector&lt;W&gt; v;
+        v.reserve(1);
+        W w(42, 100);
+        g = Cnt{};
+        v.push_back(w);               // 传左值：两者都要拷贝
+        report(&quot;push_back(w) 传左值:&quot;);
+        v.pop_back();                 // 析构掉刚插入的元素（dtor 计数 +1）
+        v.emplace_back(w);
+        report(&quot;emplace_back(w) 传左值:&quot;);
+    }
+    return 0;
+}
 </code></pre>
-<p><code class="c">emplace</code> 的优势：无临时对象、无移动、可传任意构造参数。</p>
-<h3>emplace 省了什么</h3>
-<pre class="code" data-label="cpp"><code class="c">std::vector&lt;std::string&gt; v;
-
-// push_back：构造临时 string + 移动
-v.push_back(std::string(&quot;hello&quot;));  // 1. 构造临时 string(&quot;hello&quot;)
-                                     // 2. 移动临时 string 进 v
-                                     // 3. 析构临时 string
-
-// emplace_back：直接构造
-v.emplace_back(&quot;hello&quot;);  // 直接在 v 的内存里构造 string(&quot;hello&quot;)
-                           // 省了临时对象的构造+移动+析构
-
-// 更明显的例子：多参数构造
-std::vector&lt;Widget&gt; vw;
-vw.push_back(Widget(1, 2, 3));  // 构造临时 + 移动
-vw.emplace_back(1, 2, 3);       // 直接构造，传构造参数
+<p>clang 23.1.0 + <code class="c">-std=c++17 -Wall</code> 实测输出：</p>
+<pre class="code" data-label="code"><code class="c">push_back(W(42,100)):                    ctor=1 copy=0 move=1 dtor=1
+emplace_back(42,100):                    ctor=1 copy=0 move=0 dtor=0
+push_back(w) 传左值:                  ctor=0 copy=1 move=0 dtor=0
+emplace_back(w) 传左值:               ctor=0 copy=1 move=0 dtor=1
 </code></pre>
-<h3>emplace 的限制</h3>
-<pre class="code" data-label="cpp"><code class="c">// 1. 依赖 value_type 可直接构造——转换路径不明确时可能选错构造函数
-std::vector&lt;std::regex&gt; vr;
-vr.emplace_back(nullptr);  // 可能匹配意外的构造函数！
+<p>逐行解读：</p>
+<ol>
+<li><strong>临时对象场景</strong>：<code class="c">push_back(W(42,100))</code> 是 ctor=1 + move=1 + dtor=1（临时对象完整的一生）；<code class="c">emplace_back(42,100)</code> 只有 ctor=1。<strong>emplace 精确省掉一次移动和一次析构</strong>——对 <code class="c">std::string</code> 这种移动要交接三个指针的类型，省的是几十条指令。</li>
+<li><strong>左值场景</strong>：两者打平（各 copy=1）。最后一行的 <code class="c">dtor=1</code> 来自中间那次 <code class="c">pop_back()</code>（把上一轮插入的元素析构了），不是 emplace 的开销——<strong>实参已经是元素类型时，emplace 没有任何收益</strong>，它和 push_back 一样只是转发给拷贝/移动构造。</li>
+</ol>
+<p>结论和 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item41-pass-by-value.md">Item 41</a> 的教训一致：emplace 的收益只在"用构造参数原地造"时存在，手里已经有现成对象时两者等价。</p>
+<hr />
+<h2>实测 2：explicit 陷阱——emplace 能编译，push_back 不能</h2>
+<p><code class="c">std::regex</code> 的 <code class="c">const char*</code> 构造函数是 <code class="c">explicit</code>。同一个 <code class="c">vector&lt;regex&gt;</code>，两种插入方式编译结果不同：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;regex&gt;
+#include &lt;vector&gt;
 
-// 2. 异常安全：emplace_back(new Widget) 有泄漏风险
-std::vector&lt;std::unique_ptr&lt;Widget&gt;&gt; v;
-v.emplace_back(new Widget);  // 如果 vector 扩容抛异常 → 裸指针泄漏！
-v.push_back(std::make_unique&lt;Widget&gt;());  // 安全
-
-// 3. 与 push_back 的明确转换不同
-v.push_back(nullptr);  // 明确：push_back(unique_ptr(nullptr))
-v.emplace_back(nullptr);  // 不明确：调哪个构造函数？
+int main() {
+    std::vector&lt;std::regex&gt; v;
+    v.emplace_back(&quot;.*&quot;);   // 编译通过
+    return 0;
+}
 </code></pre>
+<p>clang 23.1.0 实测：<strong>编译通过</strong>。</p>
+<pre class="code" data-label="cpp"><code class="c">    v.push_back(&quot;.*&quot;);      // 换成 push_back
+</code></pre>
+<p>clang 23.1.0 实测报错原文：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching member function for call to 'push_back'
+    v.push_back(&quot;.*&quot;);
+    ~~^~~~~~~~~
+note: candidate function not viable: no known conversion from
+      'const char[3]' to 'const std::regex' for 1st argument
+note: candidate function not viable: no known conversion from
+      'const char[3]' to 'value_type' (aka 'std::regex') for 1st argument
+</code></pre>
+<p>原因：<code class="c">push_back</code> 的形参是 <code class="c">const regex&amp;</code> / <code class="c">regex&amp;&amp;</code>，传 <code class="c">".*"</code> 需要一次 <code class="c">const char* → regex</code> 的<strong>隐式转换</strong>（拷贝初始化），<code class="c">explicit</code> 禁止它；<code class="c">emplace_back</code> 把参数<strong>直接转发给构造函数</strong>（直接初始化），<code class="c">explicit</code> 构造函数名正言顺地被调用。</p>
+<p>这是双刃剑。便利的一面：<code class="c">emplace_back</code> 能搞定 push_back 表达不了的插入。危险的一面：<strong>拷贝初始化是你和编译器之间的默契检查</strong>——隐式转换走不通时 push_back 直接编译失败，而 emplace 会默默地直接构造。经典事故：</p>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;std::string&gt; vs;
+vs.emplace_back(nullptr);   // 能编译！用 nullptr 构造 string → 运行时 UB/崩溃
+vs.push_back(nullptr);      // 编译失败——反而安全
+</code></pre>
+<p><code class="c">explicit</code> 的设计意图是"这种转换必须显式写出"，emplace 的直接初始化把这道护栏拆掉了。参数和元素类型不完全吻合时，想清楚再 emplace。</p>
+<hr />
+<h2>智能指针容器：异常安全的分水岭</h2>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;std::unique_ptr&lt;Widget&gt;&gt; v;
+v.emplace_back(new Widget);                 // 能编译，但有泄漏窗口
+v.push_back(std::make_unique&lt;Widget&gt;());    // 安全
+</code></pre>
+<p>第一行的问题在求值顺序：<code class="c">new Widget</code> <strong>先于</strong> <code class="c">emplace_back</code> 执行，得到一个裸指针；emplace 内部若因扩容分配抛 <code class="c">std::bad_alloc</code>，这个裸指针还没被任何 <code class="c">unique_ptr</code> 接管——<strong>内存泄漏</strong>。</p>
+<p>第二行里 <code class="c">make_unique</code> 在 <code class="c">push_back</code> 之前就完成了 RAII 接管，即使扩容抛异常，临时 <code class="c">unique_ptr</code> 析构也会把对象收走。规则一句话：<strong>往智能指针容器里插新对象，用 <code class="c">push_back(make_unique&lt;T&gt;())</code></strong>；emplace 的参数应该是"构造参数"，不该是裸 <code class="c">new</code> 表达式。</p>
+<hr />
+<h2>决策表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>推荐</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用构造参数新造元素</td>
+<td><code class="c">emplace_back(args...)</code></td>
+<td>原地构造，省临时对象一生（实测省 1 move + 1 dtor）</td>
+</tr>
+<tr>
+<td>手里已有元素类型对象</td>
+<td>随意，两者等价</td>
+<td>实测左值场景 copy=1 打平</td>
+</tr>
+<tr>
+<td>智能指针容器装新对象</td>
+<td><code class="c">push_back(make_unique&lt;T&gt;())</code></td>
+<td>RAII 先接管，无异常泄漏窗口</td>
+</tr>
+<tr>
+<td>参数需隐式转换才匹配</td>
+<td>优先 <code class="c">push_back</code></td>
+<td>拷贝初始化帮你挡住 explicit 误用</td>
+</tr>
+<tr>
+<td>性能极度敏感且类型平凡可拷</td>
+<td>实测后再定</td>
+<td>emplace 也可能因完美转发模板代码膨胀</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>完整可运行例子</h2>
+<p>"实测 1"即完整可运行程序（clang 23.1.0，<code class="c">-std=c++17 -Wall</code>），输出已给出；"实测 2"两个 8 行文件分别演示编译通过与编译失败。</p>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
-<p><strong>错误 1：emplace_back 传裸 new 导致异常泄漏</strong></p>
-<pre class="code" data-label="cpp"><code class="c">std::vector&lt;std::unique_ptr&lt;Widget&gt;&gt; v;
-v.emplace_back(new Widget);  // 扩容抛异常 → Widget 泄漏！
+<p><strong>错误 1：emplace 传已构造好的对象</strong></p>
+<pre class="code" data-label="cpp"><code class="c">v.emplace_back(Widget(42, 100));   // 还是构造了临时对象，和 push_back 一样
 </code></pre>
-<p><strong>修正：</strong> <code class="c">v.push_back(std::make_unique&lt;Widget&gt;());</code> 或 <code class="c">v.emplace_back(std::make_unique&lt;Widget&gt;());</code></p>
-<p><strong>错误 2：emplace 传了不必要的临时对象</strong></p>
-<pre class="code" data-label="cpp"><code class="c">v.emplace_back(Widget(42));  // 和 push_back 一样——还是构造了临时对象！
+<p><strong>修正：</strong> <code class="c">v.emplace_back(42, 100);</code>——传构造参数，不是传对象。</p>
+<p><strong>错误 2：智能指针容器 <code class="c">emplace_back(new T)</code></strong></p>
+<pre class="code" data-label="cpp"><code class="c">v.emplace_back(new Widget);   // 扩容抛异常 → 裸指针泄漏
 </code></pre>
-<p><strong>修正：</strong> <code class="c">v.emplace_back(42);</code>——传构造参数，不是构造好的对象。</p>
-<p><strong>错误 3：emplace 选错构造函数</strong></p>
-<pre class="code" data-label="cpp"><code class="c">std::vector&lt;std::string&gt; v;
-v.emplace_back('a', 10);  // 想构造 10 个 'a' 的 string
-// 但可能匹配了意外的构造函数——需要检查 string 的构造函数列表
+<p><strong>修正：</strong> <code class="c">v.push_back(std::make_unique&lt;Widget&gt;());</code></p>
+<p><strong>错误 3：忽略 emplace 绕过 explicit 的杀伤力</strong></p>
+<pre class="code" data-label="cpp"><code class="c">vs.emplace_back(nullptr);   // 能编译，运行时炸
 </code></pre>
-<p><strong>修正：</strong> 不确定时用 <code class="c">push_back(std::string(10, 'a'))</code> 明确构造。</p>
+<p><strong>修正：</strong> 参数不是元素类型时，警惕 emplace 的直接初始化语义；<code class="c">push_back</code> 的编译错误有时是救命的。</p>
+<p><strong>错误 4：以为 emplace 一定更快</strong></p>
+<p><strong>修正：</strong> 实参已是元素类型时两者等价（实测打平）；容器已持有对象、要做的是"插入现有对象"时，insert/push_back 反而更直白。收益只在原地构造场景。</p>
 <hr />
 <h2>新手要点（和 C 的区别）</h2>
 <div class="tbl-wrap"><table>
@@ -629,83 +769,75 @@ v.emplace_back('a', 10);  // 想构造 10 个 'a' 的 string
 </thead>
 <tbody>
 <tr>
-<td>添加元素</td>
-<td><code class="c">arr[n++] = tmp</code></td>
-<td><code class="c">push_back</code> 或 <code class="c">emplace_back</code></td>
-<td>C++ 容器</td>
+<td>数组追加</td>
+<td><code class="c">arr[n++] = tmp</code>（先造再拷）</td>
+<td><code class="c">push_back</code> / <code class="c">emplace_back</code></td>
+<td>后者原地构造</td>
 </tr>
 <tr>
-<td>临时对象</td>
-<td>总是需要</td>
-<td><code class="c">emplace</code> 不需要</td>
-<td>直接构造</td>
+<td>构造与放置</td>
+<td>分离（先声明再赋值）</td>
+<td>placement new 一体完成</td>
+<td>容器内存管理</td>
 </tr>
 <tr>
 <td>异常安全</td>
-<td>手动管理</td>
-<td><code class="c">make_unique</code> + <code class="c">push_back</code></td>
-<td>RAII</td>
-</tr>
-<tr>
-<td>构造参数</td>
-<td>不适用</td>
-<td><code class="c">emplace(ctor_args...)</code></td>
-<td>完美转发</td>
+<td>手动</td>
+<td>RAII（make_unique 先接管）</td>
+<td>栈展开自动清理</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>一句话总结：</strong> C 程序员记住——<code class="c">emplace_back</code> 直接在容器内存里构造对象，省去临时对象。但传 <code class="c">unique_ptr</code> 时用 <code class="c">push_back(make_unique&lt;T&gt;())</code> 更安全。</p>
+<p><strong>一句话总结：</strong> 有构造参数就 <code class="c">emplace_back(args...)</code> 原地构造；手里已是元素对象两者等价；智能指针容器永远 <code class="c">push_back(make_unique&lt;T&gt;())</code>。</p>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>行情队列</strong>：<code class="c">vector&lt;Tick&gt;</code> 批量入队用 <code class="c">emplace_back</code> 省去临时 <code class="c">Tick</code> 的构造 + 移动——含 <code class="c">string</code> symbol 字段时微秒级收益可观。</li>
-<li><strong>异常安全规则</strong>：<code class="c">emplace_back</code> 传智能指针/值类型，不传裸 <code class="c">new</code> 结果。</li>
-<li><strong>订单簿构造</strong>：<code class="c">order_book.emplace(exchange_id, std::move(handler))</code> 直接在 map 里构造，避免临时 pair。</li>
+<li><strong>行情对象入队</strong>：<code class="c">ticks.emplace_back(symbol, price, qty, ts)</code> 原地构造省一次 Tick 的移动——Tick 若含 <code class="c">std::string</code> symbol，高频下收益可观。</li>
+<li><strong>预分配配合</strong>：emplace 省构造、<code class="c">reserve</code> 省扩容，两者搭配才是完整优化（实测里特意 <code class="c">reserve(1)</code> 排除扩容干扰）。</li>
+<li><strong>订单簿 map</strong>：<code class="c">book.emplace(price, Order{...})</code> 避免临时 <code class="c">pair</code>；但 key 已存在时 emplace 会先构造再丢弃——查插混合场景用 <code class="c">try_emplace</code>（C++17）。</li>
+<li><strong>连接池/对象池</strong>：<code class="c">vector&lt;unique_ptr&lt;Session&gt;&gt;</code> 只准 <code class="c">push_back(make_shared/make_unique)</code>——热路径上一次 bad_alloc 泄漏不会被立刻发现，但会慢慢吃掉内存。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">emplace_back(42)</code> 相比 <code class="c">push_back(Widget(42))</code> 省掉了什么？</li>
-<li><code class="c">v.emplace_back(new Widget)</code> 在扩容抛异常时会发生什么？正确写法是什么？</li>
-<li>什么场景下 <code class="c">emplace</code> 反而不如 <code class="c">push_back</code>？</li>
-<li>为什么 <code class="c">push_back(make_unique&lt;T&gt;())</code> 是 <code class="c">unique_ptr</code> 容器插入的最安全写法？</li>
-<li>下面代码有什么问题？</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">std::vector&lt;std::string&gt; v;
-v.emplace_back(std::string(&quot;hello&quot;));
-</code></pre>
+<p><strong>1. <code class="c">emplace_back(42, 100)</code> 相比 <code class="c">push_back(W(42, 100))</code> 省掉了什么？实测数据？</strong></p>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p>省掉<strong>一个临时对象的构造 + 移动构造 + 析构</strong>。<code class="c">push_back(Widget(42))</code> 的流程是：先构造临时 <code class="c">Widget(42)</code>，再把它作为右值<strong>移动</strong>进容器，最后析构临时对象；而 <code class="c">emplace_back(42)</code> 把实参 <code class="c">42</code> 完美转发给 <code class="c">Widget</code> 的构造函数，直接在容器尾部的<strong>未初始化存储上原地构造</strong>（placement new），中间不产生临时对象，因此少一次移动构造和一次析构。注意它省的是"移动"，不是"拷贝"——<code class="c">push_back</code> 传右值时本来也不会拷贝。</p>
-</li>
-<li>
-<p>会<strong>泄漏那块 <code class="c">new</code> 出来的内存</strong>。实参 <code class="c">new Widget</code> 在调用 <code class="c">emplace_back</code> <strong>之前</strong>就先求值，得到一个裸指针；随后 <code class="c">emplace_back</code> 内部可能因容器扩容而分配内存，若这次分配抛 <code class="c">std::bad_alloc</code>（或元素构造抛异常），那个裸指针还没有被任何 <code class="c">unique_ptr</code> 接管，就永远丢失了——对象泄漏。正确写法是先把裸指针交给 RAII 对象，再插入：</p>
-</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">v.push_back(std::make_unique&lt;Widget&gt;());   // 或 v.emplace_back(std::make_unique&lt;Widget&gt;());
-</code></pre>
-<p><code class="c">make_unique</code> 在 <code class="c">push_back</code> 之前就完成了所有权接管，即使后续扩容抛异常，临时 <code class="c">unique_ptr</code> 也会在栈展开时正常析构并释放对象。</p>
-<ol start="3">
-<li>
-<p>常见三类：①<strong>实参已经是元素类型</strong>（<code class="c">emplace_back(std::string("hello"))</code>）——它只是转发给移动构造，与 <code class="c">push_back</code> 完全等价、毫无收益。②<strong>需要隐式转换的场景</strong>：<code class="c">emplace_back</code> 做的是直接初始化，会调用 <code class="c">explicit</code> 构造函数，可能构造出你没想到的对象（如 <code class="c">std::vector&lt;std::string&gt; v; v.emplace_back(nullptr);</code> 会用 <code class="c">nullptr</code> 构造 <code class="c">string</code>，是未定义行为；而 <code class="c">push_back(nullptr)</code> 直接编译失败，反而更安全）。③<strong>需要异常安全的资源类</strong>：插入智能指针时 <code class="c">push_back(std::make_unique&lt;T&gt;())</code> 比 <code class="c">emplace_back(new T)</code> 安全（见第 2 题）。另外，<code class="c">emplace</code> 的实参是引用传递，若传入的是容器自身的元素引用，扩容后可能引用已失效的存储——也不如先拷贝再 <code class="c">push_back</code> 稳妥。</p>
-</li>
-<li>
-<p>因为它同时满足两点：①<strong>异常安全</strong>——<code class="c">make_unique&lt;T&gt;()</code> 在调用 <code class="c">push_back</code> 之前就构造好了 <code class="c">unique_ptr</code>，对象已被 RAII 接管；即使 <code class="c">push_back</code> 内部扩容分配失败抛异常，这个临时 <code class="c">unique_ptr</code> 也会在栈展开时析构并释放对象，不存在"裸指针没人管"的窗口。②<strong>写法合法且简洁</strong>——<code class="c">push_back(new T)</code> 在 <code class="c">vector&lt;unique_ptr&lt;T&gt;&gt;</code> 上根本编译不过（<code class="c">unique_ptr</code> 的裸指针构造函数是 <code class="c">explicit</code>，<code class="c">push_back</code> 需要的是隐式转换），必须先包成 <code class="c">unique_ptr</code>。而 <code class="c">emplace_back(new T)</code> 虽然能编译（emplace 是直接初始化，允许 explicit），却有第 2 题的泄漏风险。所以 <code class="c">push_back(std::make_unique&lt;T&gt;())</code> 是最安全的写法。</p>
-</li>
-<li>
-<p>没有正确性 bug，但<strong>白白放弃了 emplace 的收益，还多敲了代码</strong>。<code class="c">std::string("hello")</code> 先在调用点构造一个临时 string，<code class="c">emplace_back</code> 再把实参转发给 <code class="c">string</code> 的移动构造函数——等价于 <code class="c">push_back(std::string("hello"))</code>，仍有"临时对象构造 + 移动 + 析构"。要真正原地构造，应直接传构造 <code class="c">string</code> 所需的实参：</p>
-</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">v.emplace_back(&quot;hello&quot;);   // 用 const char* 直接在容器内构造 string，省掉临时对象
-</code></pre>
-<p>或者写 <code class="c">v.push_back("hello");</code>（同样省掉显式临时对象，可读性也更好）。</p>
+<summary>答案</summary>
+<p>省掉临时对象的移动构造和析构。实测：push_back 是 ctor=1, move=1, dtor=1；emplace_back 只有 ctor=1。emplace 把参数完美转发给构造函数，在容器尾部未初始化内存上 placement-new，不产生临时对象。</p>
+</details>
+<p><strong>2. 传左值（已构造好的对象）时两者有差别吗？</strong></p>
+<details>
+<summary>答案</summary>
+<p>没有。实测两者都是 copy=1, move=0。emplace 此时只是转发给拷贝构造，和 push_back 等价。emplace 的收益只在"用构造参数原地造"时存在。</p>
+</details>
+<p><strong>3. <code class="c">vector&lt;regex&gt;</code> 上 <code class="c">emplace_back(".*")</code> 和 <code class="c">push_back(".*")</code> 的编译结果分别是什么？为什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>前者编译通过，后者报错 <code class="c">no known conversion from 'const char[3]' to 'const std::regex'</code>。regex 的 const char* 构造函数是 explicit：push_back 需要隐式转换（拷贝初始化）被 explicit 拒绝；emplace 用直接初始化，explicit 构造函数可被直接调用。explicit 护栏对 emplace 无效。</p>
+</details>
+<p><strong>4. <code class="c">v.emplace_back(new Widget)</code>（v 是 <code class="c">vector&lt;unique_ptr&lt;Widget&gt;&gt;</code>）有什么问题？正确写法？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">new Widget</code> 先于 emplace 求值得到裸指针；若 emplace 内部扩容分配抛异常，裸指针还没被 unique_ptr 接管，内存泄漏。正确写法 <code class="c">v.push_back(std::make_unique&lt;Widget&gt;())</code>——RAII 接管发生在 push_back 之前，栈展开时自动释放。</p>
+</details>
+<p><strong>5. 什么场景下 <code class="c">push_back</code> 反而比 <code class="c">emplace_back</code> 安全？</strong></p>
+<details>
+<summary>答案</summary>
+<p>两类：①参数需要隐式转换才匹配元素类型时，push_back 的拷贝初始化会被 explicit 拦住（编译失败 = 安全），emplace 的直接初始化会默默构造（如 <code class="c">vector&lt;string&gt;::emplace_back(nullptr)</code> 编译通过但运行时 UB）；②智能指针容器装新对象时 push_back(make_unique) 无异常泄漏窗口。</p>
+</details>
+<p><strong>6. map 容器上 emplace 家族有什么额外注意事项？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">map::emplace(k, v)</code> 在 k 已存在时仍会先构造好 value 再丢弃（白付构造费）；C++17 的 <code class="c">try_emplace</code> 只在 key 不存在时才构造，查插混合场景（订单簿按价位插入）应优先 try_emplace。</p>
+</details>
+<p><strong>7. 为什么说"emplace 一定更快"是误解？</strong></p>
+<details>
+<summary>答案</summary>
+<p>实参已是元素类型时两者实测打平（各 copy=1）；emplace 的模板完美转发会实例化更多代码（代码膨胀）；某些场景 insert 迭代器版本还能批量插入。收益精确地只来自"原地构造"这一种场景，其它场景按可读性选。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
-<li>下一章：<a href="#intro">第 9 章（无）—— 本书结束</a></li>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item41-pass-by-value.md">Item 41 按值传递</a></li>
 <li>回到：<a href="#intro">第 8 章 微调</a></li>
 </ul>
       </section>

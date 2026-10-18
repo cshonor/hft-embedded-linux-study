@@ -1,172 +1,270 @@
 # Item 29：认识移动操作不存在或廉价的情形
 
-> 第 5 章 · Item 29 · 上一节：[Item 28 引用折叠](item28-reference-collapsing.md)
+> 第 5 章 右值引用、移动语义与完美转发 · Item 29 · 上一节：[Item 28 引用折叠](item28-reference-collapsing.md)
 
 ## 为什么要学这个（先建立直觉）
 
-C 程序员知道 `memcpy` 对所有类型代价相同——都是按字节拷贝：
+C 程序员的世界里，`memcpy` 对所有类型代价相同——按字节拷贝，没有"移动"的概念。学了移动语义之后，很容易走向另一个极端：以为 `std::move` 是免费的性能加速器，见对象就 move。
 
-```c
-struct Big { char data[4096]; };
-struct Big a, b;
-b = a;  // memcpy 4096 字节——没有"移动"的概念
-```
+真相有三层，一层比一层扎心：
 
-C++ 有了移动语义，但**移动不是万能的**。有些类型没有移动操作，有些移动不比拷贝快。无脑 `std::move` 不总是有效：
+1. **有些类型根本没有移动操作**——`std::move` 静默退化成拷贝，不报错不警告；
+2. **有些类型的移动不比拷贝快**——`std::array` 内联存储，移动是逐元素 O(N)；
+3. **有些场景移动根本不会被使用**——const 对象不能移动，`vector` 扩容时缺 `noexcept` 的移动构造直接被弃用。
 
-```cpp
-// std::array 的移动是 O(N)——因为它内联存储，没有指针可交接
-std::array<int, 1000> arr;
-auto arr2 = std::move(arr);  // 逐元素移动，O(1000)！
-
-// vector 的移动是 O(1)——因为它内部是指针
-std::vector<int> v;
-auto v2 = std::move(v);  // 指针交接，O(1)
-```
+工程态度一句话：**假定移动操作不存在、不廉价、不被用**，除非你确认过类型和场景。
 
 ---
 
 ## 这节讲什么
 
-移动不是万能的——有些类型没有移动操作，有些移动不比拷贝快。无脑 `std::move` 不总是有效。
+移动语义失效的三种情形实测：无移动构造（静默拷贝）、移动不廉价（`std::array` 逐元素）、移动不被用（const 成员、`vector` 扩容缺 `noexcept` 走拷贝）。
 
 ---
 
-## 三种"移动无效"的情形
+## 情形一：移动不存在——静默变拷贝
 
-### 1. 没有移动构造
+C++98 时代的遗留类只要用户声明了拷贝构造（或析构），移动构造就**不会被生成**（Item 17 的规则）。对它 `std::move` 不会报错——`const T&` 拷贝构造也能绑右值，静默走拷贝。本机实测（clang 23.1.0, `-std=c++17 -Wall`）：
 
 ```cpp
-// 旧类、C 兼容结构体没有移动操作
-struct LegacyData {
-    int values[256];
-    // 没有移动构造 → std::move 退回拷贝
+struct Legacy {
+    std::string s;
+    Legacy(std::string v) : s(std::move(v)) {}
+    Legacy(const Legacy& o) : s(o.s) { std::cout << "  Legacy 拷贝构造\n"; }
+    // 用户声明了拷贝构造 → 移动构造不被生成
 };
-LegacyData d;
-auto d2 = std::move(d);  // 拷贝！因为没有移动构造
 
-// C++ 类如果写了析构但没写移动，移动也被抑制（Item 17）
-class OldWidget {
-    int* data;
-public:
-    ~OldWidget() { delete[] data; }
-    // 移动被抑制 → std::move 退回拷贝
+Legacy l1("legacy-data");
+Legacy l2 = std::move(l1);      // 不报错！静默拷贝
+```
+
+实测输出：
+
+```
+== 遗留类 move 静默变 copy ==
+  Legacy 拷贝构造           ← move 了个寂寞
+  l1.s=legacy-data（源还在！）
+```
+
+这就是最危险的地方：**编译通过、没有警告、功能正确，只是慢**。代码 review 时看不出任何问题。
+
+---
+
+## 情形二：移动不廉价——std::array 逐元素
+
+`std::vector` 的移动是 O(1)（交接三个指针），因为它把元素放在堆上。`std::array` 把元素**内联**在对象里，没有指针可交接，移动只能逐元素来。实测（接上 `Legacy`，数组里装两个）：
+
+```cpp
+std::array<Legacy, 2> arr = { Legacy("x"), Legacy("y") };
+auto arr2 = std::move(arr);   // 逐元素"移动"——Legacy 没移动构造，全是拷贝
+```
+
+实测输出：
+
+```
+== std::array 的 move 是逐元素 ==
+  Legacy 拷贝构造
+  Legacy 拷贝构造           ← 移动一个 array，触发 N 次元素级操作
+```
+
+即使元素有移动构造，`std::array<T, N>` 的移动也是 N 次元素移动——对 `int` 这类标量，移动就是拷贝，O(N) 一次都省不了。对照：
+
+| 类型 | 移动复杂度 | 原因 |
+|------|----------|------|
+| `std::vector<T>` | O(1) | 交接堆指针 |
+| `std::string`（长串） | O(1) | 交接堆指针；SSO 短串退化为小拷贝 |
+| `std::array<T, N>` | O(N) | 内联存储，逐元素 |
+| `int` / 指针 / POD | O(1) 但 = 拷贝 | 标量没有资源可交接 |
+
+---
+
+## 情形三：移动不被用——const 与 noexcept
+
+### const 成员让"移动"名存实亡
+
+移动要掏空源对象，const 成员不能被修改——移动构造里它只能被**拷贝**。本机实测：
+
+```cpp
+struct WithConstStr {
+    const std::string name;   // const string 成员
+    WithConstStr(std::string n) : name(std::move(n)) {}
+    WithConstStr(const WithConstStr& o) : name(o.name) { std::cout << "  拷贝构造\n"; }
+    WithConstStr(WithConstStr&& o) noexcept : name(o.name) {  // 写 std::move(o.name) 也没用
+        std::cout << "  \"移动\"构造（const 成员只能拷贝）\n";
+    }
 };
+
+WithConstStr a("this-is-a-fairly-long-string-to-defeat-sso");
+WithConstStr b = std::move(a);
 ```
 
-### 2. 移动不比拷贝快
+实测输出：
 
-```cpp
-// std::array 内联存储元素——移动是逐元素移动，O(N)
-std::vector<std::array<int, 1000>> v;
-auto v2 = std::move(v);  // vector 的移动是 O(1)
-// 但 vector<array<int,1000>> 内部如果扩容，每个 array 的移动是 O(1000)
-
-// 小类型（int、指针）移动 = 拷贝
-int x = 42;
-int y = std::move(x);  // 和 int y = x; 完全一样
+```
+  "移动"构造（const 成员只能拷贝）
+  a.name = this-is-a-fairly-long-string-to-defeat-sso（源没有被掏空！）
 ```
 
-### 3. 常量对象不能移动
+移动构造被调用了，但 const 成员走的是拷贝——源对象的 `name` 完好无损。对 `const` 对象本身 `std::move` 更彻底：直接退化为拷贝构造（实测见 [Item 23](item23-move-and-forward.md)）。
+
+### vector 扩容：缺 noexcept 的移动构造被弃用
+
+`std::vector` 扩容搬移元素时有个两难的异常安全问题：如果用移动构造搬到一半抛异常，旧内存已释放、新内存里是半残元素——**强异常保证**就破了。所以标准库的策略是：移动构造 `noexcept` 才移动，否则**用拷贝**（拷贝失败旧数据还在）。本机实测：
 
 ```cpp
-const std::string s = "hello";
-auto s2 = std::move(s);  // 退回拷贝！const 对象不能移动
-// 因为移动构造需要修改源对象（置空），const 不允许修改
-
-const std::shared_ptr<Widget> sp;
-auto sp2 = std::move(sp);  // 拷贝！const shared_ptr 不能移动
+struct NoNoexcept {
+    std::string s;
+    NoNoexcept(std::string v) : s(std::move(v)) {}
+    NoNoexcept(const NoNoexcept& o) : s(o.s) { std::cout << "  拷贝\n"; }
+    NoNoexcept(NoNoexcept&& o) : s(std::move(o.s)) { std::cout << "  移动\n"; }  // 无 noexcept
+};
+// WithNoexcept 唯一区别：移动构造标了 noexcept
 ```
 
+实测输出（`reserve(1)` 后 `emplace_back` 两次，第二次触发扩容搬移）：
+
+```
+== vector 扩容：移动构造无 noexcept ==
+-- 触发扩容 --
+  拷贝              ← 有移动构造也不用！
+== vector 扩容：移动构造有 noexcept ==
+-- 触发扩容 --
+  移动
+```
+
+一个 `noexcept` 关键字的差别就是扩容时 O(N) 拷贝 vs O(N) 移动。这就是 [Item 14](../ch03-moving-to-modern-cpp/item14-noexcept.md) 的实战意义。
+
+---
+
+## 完整可运行例子
+
+noexcept 对比实验完整代码（clang 23.1.0, `-std=c++17 -Wall`）：
+
 ```cpp
-std::vector<std::array<int, 1000>> v;
-auto v2 = std::move(v);  // O(N)！array 的移动是逐元素的
+#include <iostream>
+#include <vector>
+#include <string>
+#include <utility>
+
+struct NoNoexcept {
+    std::string s;
+    NoNoexcept(std::string v) : s(std::move(v)) {}
+    NoNoexcept(const NoNoexcept& o) : s(o.s) { std::cout << "  拷贝\n"; }
+    NoNoexcept(NoNoexcept&& o) : s(std::move(o.s)) { std::cout << "  移动\n"; }
+};
+
+struct WithNoexcept {
+    std::string s;
+    WithNoexcept(std::string v) : s(std::move(v)) {}
+    WithNoexcept(const WithNoexcept& o) : s(o.s) { std::cout << "  拷贝\n"; }
+    WithNoexcept(WithNoexcept&& o) noexcept : s(std::move(o.s)) { std::cout << "  移动\n"; }
+};
+
+template<class T>
+void growTest(const char* label) {
+    std::cout << "== " << label << " ==\n";
+    std::vector<T> v;
+    v.reserve(1);
+    v.emplace_back("one");
+    std::cout << "-- 触发扩容 --\n";
+    v.emplace_back("two");
+}
+
+int main() {
+    growTest<NoNoexcept>("vector 扩容：移动构造无 noexcept");
+    growTest<WithNoexcept>("vector 扩容：移动构造有 noexcept");
+}
+```
+
+实测输出（与上文一致）：
+
+```
+== vector 扩容：移动构造无 noexcept ==
+-- 触发扩容 --
+  拷贝
+== vector 扩容：移动构造有 noexcept ==
+-- 触发扩容 --
+  移动
 ```
 
 ---
 
 ## 常见错误（新手踩坑）
 
-**错误 1：return std::move(local) 阻止 NRVO**
-```cpp
-Widget make() {
-    Widget w;
-    return std::move(w);  // 阻止 NRVO！强制走移动构造
-}
-// NRVO 比 move 更好——直接在返回值位置构造，零拷贝零移动
-```
-**修正：** `return w;`——让编译器做 NRVO。
-
-**错误 2：对 array 无脑 move 以为 O(1)**
-```cpp
-std::array<BigStruct, 100> arr;
-auto arr2 = std::move(arr);  // O(100 * sizeof(BigStruct))！不是 O(1)
-// array 内联存储，没有指针可交接
-```
-**修正：** 用 `vector` 替代 `array` 如果需要移动，或接受 O(N)。
-
-**错误 3：对 const 对象 move 期望移动**
-```cpp
-const std::vector<int> v = get_data();
-auto v2 = std::move(v);  // 拷贝！const 不能移动
-```
-**修正：** 不要 `const` 如果想移动，或接受拷贝。
-
----
-
-## 新手要点（和 C 的区别）
-
-| 维度 | C 怎么做 | C++ 怎么做 | 为什么 |
-|------|---------|-----------|--------|
-| 资源转移 | 手动交换指针 | 移动构造（如果有） | C++ 语言级支持 |
-| 拷贝代价 | 总是 O(n) | 移动 O(1) 或 O(n) | 取决于类型 |
-| 返回值优化 | 不适用 | NRVO/RVO | 编译器直接构造 |
-| const 限制 | 不适用 | const 不能移动 | 移动需要修改源 |
-
-**一句话总结：** C 程序员记住——`std::move` 不是免费的。对 `array`、小类型、const 对象没用甚至有害。返回局部变量不要 `move`——让 NRVO 生效。
+1. **以为 `std::move` 一定更快**。对无移动构造的遗留类、标量、`std::array`，move 静默变拷贝（实测不报错不警告）。先确认类型有移动构造再谈收益。
+2. **移动构造忘写 `noexcept`**。`vector` 扩容直接弃用你的移动构造走拷贝（实测）。规则：移动构造和 swap 默认就该标 `noexcept`（除非真的可能抛）。
+3. **给类加 `const` 成员图"安全"**。const 成员让移动构造里的该成员只能拷贝、移动赋值干脆被抑制——对象变大后这是隐性性能税。
+4. **`return std::move(local)`**。阻止 NRVO，零开销变一次移动（实测见 [Item 25](item25-move-vs-forward-usage.md)）。
 
 ---
 
 ## HFT 关联
 
-- **`vector<vector<Tick>>` 移动**：桶间用 `move` 转移是 O(1) 真收益；但桶内 `array<Tick, N>` 的移动是 O(N)——选 `vector` 而非 `array` 才能享受移动红利。
-- **返回值优化**：HFT 函数返回大对象时不要 `return std::move(local)`——NRVO 比移动更好。
-- **const 成员**：类的 `const` 成员会阻止移动构造（因为不能修改）——HFT 结构体避免用 `const` 成员。
+- **订单结构体必须检查移动资质**：热路径上的 `Order`/`Tick` 如果含有 `const` 成员或忘了 `noexcept` 移动构造，`vector<Order>` 每次扩容都在做全量拷贝——延迟毛刺的隐形来源。
+- **固定容量选 array 要认账**：`std::array<Level, 32>` 的订单簿档位很合理（无堆分配、cache 友好），但别指望"move 一下整个簿"是 O(1)——它是 32 次逐元素搬移。要搬就用 `vector` 或交换指针。
+- **遗留代码接入**：对接 C++98 时代的行情解码结构体时，默认它们没有移动语义；要么补移动构造（记得 `noexcept`），要么按拷贝做性能预算。
+- **态度即默认**：写模板库（如泛型对象池）时，按"元素类型可能没有廉价移动"来设计——能用指针交换就不搬对象。
 
 ---
 
 ## 自测题
 
-1. `std::vector<std::array<int, 1000>>` 的移动是 O(1) 还是 O(N)？为什么？
-2. 为什么 `return std::move(local)` 反而有害？
-3. `const shared_ptr` 能移动吗？为什么？
-4. 什么类型的移动和拷贝代价相同？
-5. 下面代码有什么问题？
+**1. 对没有移动构造的遗留类 `std::move`，会发生什么？有警告吗？**
+
+<details><summary>答案</summary>
+静默走拷贝构造（`const T&` 能绑右值），不报错不警告。实测 `Legacy` 输出"拷贝构造"且源对象数据完好。用户声明拷贝构造/析构会抑制移动构造的生成（Item 17）。
+</details>
+
+**2. `std::array<T, N>` 的移动为什么是 O(N)？**
+
+<details><summary>答案</summary>
+`array` 把元素内联存储在对象内部，没有堆指针可交接，移动构造只能逐元素移动；对标量元素移动=拷贝。实测移动 `array<Legacy, 2>` 触发 2 次元素拷贝。对比 `vector` 的移动是 O(1) 指针交接。
+</details>
+
+**3. const 成员对移动有什么影响？实测现象？**
+
+<details><summary>答案</summary>
+移动构造里 const 成员只能拷贝（不能掏空源对象的 const 部分），移动赋值则被直接抑制。实测：`WithConstStr` 的移动构造执行后，源对象的 `name` 完好无损。整个 const 对象被 move 时则完全退化为拷贝构造。
+</details>
+
+**4. `vector` 扩容时，为什么有移动构造却不一定用？**
+
+<details><summary>答案</summary>
+强异常保证：移动搬一半抛异常会破坏旧数据，拷贝失败则旧数据完好。标准库只在移动构造 `noexcept`（或类型不可拷贝）时才用移动。实测：无 `noexcept` 输出"拷贝"，有 `noexcept` 输出"移动"。
+</details>
+
+**5. 移动与拷贝代价相同的类型有哪些？**
+
+<details><summary>答案</summary>
+标量（int/指针）、POD 聚合体、`std::array`、SSO 范围内的短 `std::string`——它们的资源就在对象内，没有可交接的间接指针。
+</details>
+
+**6. "假定移动不存在、不廉价、不被用"分别对应什么情形？**
+
+<details><summary>答案</summary>
+不存在：遗留类/拷贝构造抑制移动生成；不廉价：`std::array`、标量、短字符串；不被用：const 对象/const 成员、`vector` 扩容遇非 `noexcept` 移动构造、`return std::move` 被 NRVO 规则架空之外的语义损失。
+</details>
+
+**7. 下面代码在性能上有什么隐患？**
+
 ```cpp
-std::array<BigStruct, 100> getData() {
-    std::array<BigStruct, 100> arr;
-    return std::move(arr);
-}
+struct Config {
+    const std::string venue;
+    std::string notes;
+    Config(const Config&) = default;
+};
+std::vector<Config> configs;   // 频繁 push_back
 ```
 
-<details>
-<summary>参考答案</summary>
-
-1. 移动整个 `vector` 是 **O(1)**，但移动其内部的每个 `array<int, 1000>` 元素是 **O(N)**（N = 1000）。原因：`std::vector` 只持有指向堆上数组的指针，移动就是把指针交接过来，与元素个数无关；而 `std::array` 把元素**内联存储**在对象内部，没有可交接的指针，它的移动构造只能逐个移动元素，对 `int` 元素来说就是逐元素拷贝。所以整体一次移动仍是 O(1) 的指针交接，可一旦需要搬移元素（如重分配）就是 O(N)——这也是笔记里"选 `vector` 而非 `array` 才能享受移动红利"的原因。
-
-2. 有两个害处：①**阻止 NRVO/RVO**：`return` 一个与返回类型相同的局部变量时，编译器可以直接在调用方的返回值位置构造它（零拷贝、零移动）；而 `std::move(local)` 使返回表达式变成 `T&&`，不再是"具名局部对象"，NRVO 的前提被破坏，编译器只能走移动构造——白白多一次移动。②返回类型是引用/`T` 时还可能引入悬垂风险。正确写法就是 `return local;`。
-
-3. 不能移动，会退化成**拷贝**。`std::move` 只是把实参转成 `T&&`，但 `const shared_ptr` 的类型是 `const std::shared_ptr<T>`，转成的是 `const std::shared_ptr<T>&&`。移动构造函数的形参是 `shared_ptr&&`（非 const），无法绑定 const 右值；于是重载决议选中拷贝构造 `shared_ptr(const shared_ptr&)`（它能绑定 const 实参）。根本原因是"移动需要修改源对象"，const 禁止修改。同理，类的 `const` 成员也会阻止编译器生成/使用移动构造。
-
-4. 两类：①**没有间接资源的类型**：`std::array<T, N>`、`std::pair<int,int>`、所有元素都是标量的聚合体、POD 结构体——它们的数据就在对象里，移动只能逐成员复制，代价与拷贝相同（对 `int`/`double` 这类标量，移动就是拷贝）。②**移动被抑制/退化的情形**：`const` 对象、`const` 成员、没有定义移动操作的类型（退化成拷贝）、以及开启了 SSO 的小字符串（`std::string` 短字符串优化范围内，移动退化成一次小拷贝）。另外含原子/互斥成员的类型也不可移动。
-
-5. 问题是画蛇添足且有害。`arr` 是 `std::array<BigStruct, 100>`：①它内联存储、没有指针可交接，移动是 O(100 × sizeof(BigStruct)) 的逐元素搬移，本来就省不了；②更关键的是 `return std::move(arr);` 破坏了 NRVO，编译器无法在返回值位置直接构造，只能先构造局部 `arr` 再移动出去，反而多了一次 O(N) 搬移。修正：直接 `return arr;`（让 NRVO 生效，理想情况下零拷贝），若确实要享受 O(1) 移动则改用 `std::vector<BigStruct>` 作为返回类型。
-
+<details><summary>答案</summary>
+双重隐患：①用户声明（default）拷贝构造会抑制移动构造生成，`configs` 扩容全部走拷贝；②即使补上移动构造，`const venue` 成员也只能拷贝。修正：去掉 `const`、`= default` 拷贝构造改为补 `Config(Config&&) noexcept = default;`，或直接用 `std::deque`/预留 `reserve` 规避扩容。
 </details>
 
 ---
 
 ## 参考与延伸
 
-- 下一节：[Item 30 完美转发失败](item30-forwarding-failures.md)
-- 回到：[第 5 章](README.md)
+- 上一节：[Item 28 引用折叠](item28-reference-collapsing.md)
+- 下一节：[Item 30 完美转发失败的情形](item30-forwarding-failures.md)
+- 关联：[Item 14 noexcept](../ch03-moving-to-modern-cpp/item14-noexcept.md)
+- 回到：[第 5 章 右值引用、移动语义与完美转发](README.md)

@@ -4,128 +4,229 @@
 
 ## 为什么要学这个（先建立直觉）
 
-C 没有异常机制。C 程序员习惯用返回值表示错误：
+C 没有异常机制，C 程序员习惯用返回值表示错误：`if (data == NULL) return -1;`。C++ 有异常，函数可以 `throw` 而不返回错误码。但异常不是免费的——编译器要生成 unwind 表，运行时栈展开有开销。C++11 的 `noexcept` 就是给编译器的承诺："这个函数保证不抛"，编译器据此省掉异常处理代码、做更强的优化。
 
-```c
-int process(const char* data) {
-    if (data == NULL) return -1;    // 错误码
-    // ... 处理 ...
-    return 0;                        // 成功
-}
-```
+**但 `noexcept` 真正值钱的地方不在优化，而在它是一份接口契约，会被标准库读取。** `std::vector` 在 `push_back` 扩容、搬移旧元素时，会检查元素的移动构造是不是 `noexcept`。是 → 用移动（每个元素 O(1)）；不是 → 退回拷贝（安全但慢）。这个检查是**编译期**的（`std::is_nothrow_move_constructible` + `std::move_if_noexcept`）。
 
-C++ 有异常。函数可以抛异常而非返回错误码。但异常有代价——编译器需要生成异常处理表，运行时栈展开有开销。`noexcept` 是 C++11 引入的关键字，告诉编译器"这个函数保证不抛异常"，编译器据此做优化。
-
-**最关键的应用场景：** STL 容器在 `push_back` 扩容时会检查元素的移动构造是否 `noexcept`。如果 `noexcept`，用移动（O(1) per element，快）；否则退回拷贝（安全但慢）。这个检查是**编译期**的——你标不标 `noexcept` 直接决定了容器的运行时性能。
-
-```cpp
-class Widget {
-public:
-    // 标了 noexcept → vector 扩容用移动 → 快
-    Widget(Widget&& other) noexcept;
-    // 没标 noexcept → vector 扩容退回拷贝 → 慢
-    Widget(const Widget& other);
-};
-```
+也就是说：你写了移动构造但忘了标 `noexcept`，容器根本不敢用，悄悄退化成拷贝。**代码能跑、单测能过、只是慢**——而且慢在一个最不该慢的地方：扩容那一瞬间。
 
 ---
 
 ## 这节讲什么
 
-`noexcept` 是函数接口契约的一部分。对**移动构造**、**swap**、**析构**标 `noexcept` 尤其关键——STL 容器在 `push_back` 扩容时会检查元素移动构造是否 `noexcept`：是则用移动（快），否则退回拷贝（安全）。
+1. `vector` 扩容时 `move_if_noexcept` 的实测：移动构造标与不标 `noexcept`，构造次数差多少；
+2. `noexcept` 是承诺不是建议：标错并抛异常的后果（`terminate`）与编译告警；
+3. `swap` 与析构的隐式 `noexcept`；
+4. 条件 `noexcept` 与 `noexcept` 运算符。
 
 ---
 
-## 核心机制
+## 实测一：vector 扩容走 move 还是 copy
 
-### noexcept 影响容器性能
+用一个带计数器的类模板，两种实例化**只差移动构造上的 `noexcept`**（`noexcept(NX)` 叫**条件 noexcept**），其余代码完全相同：
 
 ```cpp
-class Widget {
-public:
-    Widget(Widget&& other) noexcept;  // noexcept 移动构造
-    Widget& operator=(Widget&& other) noexcept;
+#include <iostream>
+#include <vector>
+#include <type_traits>
+#include <utility>
+
+template <bool NX>
+struct Counted {
+    static int copies, moves;
+    int id = 0;
+    Counted() = default;
+    explicit Counted(int i) : id(i) {}
+    Counted(const Counted& o) : id(o.id) { ++copies; }
+    Counted(Counted&& o) noexcept(NX) : id(o.id) { o.id = -1; ++moves; }
 };
+template <bool NX> int Counted<NX>::copies = 0;
+template <bool NX> int Counted<NX>::moves  = 0;
 
-// STL 容器扩容时的分派逻辑（简化）：
-// vector::push_back 扩容时
-if (is_nothrow_move_constructible_v<T>)
-    move old elements;    // O(1) per element，快
-else
-    copy old elements;    // O(n) per element，安全
+template <bool NX>
+void run(const char* tag) {
+    std::vector<Counted<NX>> v;
+    for (int i = 0; i < 9; ++i) {
+        Counted<NX> c(i);
+        v.push_back(std::move(c));      // 容量不足时触发搬移
+    }
+    std::cout << tag << "  is_nothrow_move_constructible="
+              << std::is_nothrow_move_constructible<Counted<NX>>::value
+              << "  copies=" << Counted<NX>::copies << "  moves=" << Counted<NX>::moves << "\n";
+}
 
-// 标了 noexcept → is_nothrow_move_constructible 为 true → 走移动
-// 没标 noexcept → 可能走拷贝——哪怕你写了移动构造！
+int main() {
+    std::cout << std::boolalpha;
+    run<true >("move ctor noexcept   ");
+    run<false>("move ctor NOT noexcp ");
+    return 0;
+}
 ```
 
-### noexcept 的两种形式
+连续 `push_back(std::move(c))` 九次，容量按 0→1→2→4→8→16 翻倍。clang 23.1.0（`-std=c++17 -Wall`）实测输出：
+
+```
+move ctor noexcept     is_nothrow_move_constructible=true  copies=0  moves=24
+move ctor NOT noexcp   is_nothrow_move_constructible=false  copies=15  moves=9
+```
+
+| 版本 | `push_back` 直接构造 | 扩容搬移旧元素 | 合计 |
+|------|------------------|-----------|-----|
+| 标了 `noexcept` | 9 次移动 | 1+2+4+8 = **15 次移动** | `moves=24, copies=0` |
+| 没标 `noexcept` | 9 次移动 | 15 次**拷贝** | `moves=9, copies=15` |
+
+**唯一的差别就是那 15 次搬移走的是移动还是拷贝。** 当元素里带着 `std::string`、堆缓冲区或锁句柄时，这 15 次就是 15 次深拷贝——正是 HFT 里"扩容延迟尖峰"的来源。
+
+---
+
+## 实测二：noexcept 是承诺，不是建议
+
+标了 `noexcept` 的函数若真让异常逃逸，标准规定调用 `std::terminate()`——程序直接终止，没有栈展开，也没有 catch 的机会：
 
 ```cpp
-// 1. 直接标注
-void process() noexcept { /* 保证不抛 */ }
+#include <iostream>
+#include <stdexcept>
 
-// 2. 条件 noexcept——根据表达式是否 noexcept 决定
-template<class T>
-void swap(T& a, T& b) noexcept(noexcept(T(std::declval<T>()))) {
+void boom() noexcept {
+    throw std::runtime_error("oops");   // 从 noexcept 函数逃逸
+}
+
+int main() {
+    std::cout << "before boom()\n";
+    boom();
+    std::cout << "after boom()\n";      // 永远不会打印
+    return 0;
+}
+```
+
+实测（clang 23.1.0）：编译期先给一条告警，运行中 abort，退出码 134（SIGABRT）。
+
+```
+warning: 'boom' has a non-throwing exception specification but can still throw [-Wexceptions]
+note: function declared non-throwing here
+
+before boom()
+libc++abi: terminating due to uncaught exception of type std::runtime_error: oops
+```
+
+如果异常不是直接 `throw`，而是来自内部的 `std::make_shared`、`vector::push_back`（可能抛 `bad_alloc`），编译器未必告警——但 `terminate` 一样会发生。同理，析构函数自 C++11 起**默认就是 `noexcept`**，在析构里抛异常同样 `terminate`。
+
+---
+
+## 实测三：swap / 析构的默认 noexcept
+
+有一批操作编译器会**自动**标 `noexcept`（除非成员/基类显式禁止），不需要你动手：
+
+| 函数 | 默认是否 `noexcept` | 说明 |
+|------|-------------------|------|
+| 析构函数 | **是**（C++11 起） | 只有显式 `noexcept(false)` 才能改变 |
+| 隐式生成的拷贝/移动构造与赋值 | 由成员决定 | 所有成员的对应操作都 `noexcept` 才是 |
+| 隐式生成的默认构造 | 由成员决定 | 同上 |
+| `operator delete` / `delete[]` | 是 | 释放内存不该失败 |
+
+自己写 `swap` 时应该用条件 `noexcept`，让"是否不抛"跟着元素类型走：
+
+```cpp
+template <typename T>
+void my_swap(T& a, T& b) noexcept(std::is_nothrow_move_constructible<T>::value &&
+                                  std::is_nothrow_move_assignable<T>::value) {
     T tmp = std::move(a);
     a = std::move(b);
     b = std::move(tmp);
 }
-// 如果 T 的移动构造是 noexcept，swap 也是 noexcept
 ```
 
-### 标错 noexcept 的后果
+`noexcept(表达式)` 里的操作数不会被求值，只做"这个表达式会不会抛"的编译期判断——这就是 **`noexcept` 运算符**。
+
+---
+
+## 实测四：C++17 起 noexcept 进入函数类型
+
+C++17 之前 `noexcept` 只是函数属性，不属于类型；C++17（P0012R1）把它**并入函数类型**。于是函数指针的赋值规则变了：
 
 ```cpp
-void risky() noexcept {
-    throw std::runtime_error("oops");  // 抛了异常！
-}
-// 调用 risky() 时会 std::terminate()——程序直接挂
-// noexcept 是承诺，不是建议
+void safe() noexcept { }
+void risky() { }
+
+void (*p1)() noexcept = safe;   // OK：noexcept → noexcept
+void (*p2)()          = risky;   // OK：非 noexcept → 非 noexcept
+void (*p3)() noexcept = risky;   // C++17 起：非法！非 noexcept → noexcept
 ```
 
-**标错 `noexcept` 但抛异常会 `std::terminate`**——所以 `noexcept` 是承诺，不是建议。
+跨标准实测报错原文（clang 23.1.0）：
+
+```
+-std=c++11 : error: target exception specification is not superset of source
+-std=c++14 : error: target exception specification is not superset of source
+-std=c++17 : error: cannot initialize a variable of type 'void (*)() noexcept'
+                    with an lvalue of type 'void ()': different exception specifications
+-std=c++20 : 同 c++17
+```
+
+C++11/14 也报错，但**理由不同**：前者是函数自身的异常规范太窄，后者是**类型不匹配**。类型层面的差异可以用 `std::is_same` 直接看到：
+
+```cpp
+std::cout << std::is_same<void(), void() noexcept>::value                  // c++11/14: 1   c++17/20: 0
+          << std::is_convertible<void (*)() noexcept, void (*)()>::value;  // 全部标准: 1
+```
+
+反向（把 `noexcept` 函数指针赋给普通函数指针）在所有标准下都合法——C++17 专门加了一条隐式转换，避免"加了 `noexcept` 反而破坏老代码"。实践含义：**给已有函数加 `noexcept` 通常是安全的，但撤掉 `noexcept` 可能破坏调用方**。所以它叫接口契约。
+
+---
+
+## 完整可运行例子
+
+第二个程序：把"条件 noexcept + 析构默认 noexcept"两件静态性质一次打印出来（`-std=c++17 -Wall`）。
+
+```cpp
+#include <iostream>
+#include <type_traits>
+#include <utility>
+
+struct Plain         { int a = 0; double b = 0.0; };
+struct WithUserDtor  { ~WithUserDtor() {} };
+struct WithThrowDtor { ~WithThrowDtor() noexcept(false) {} };
+
+struct NoexceptMove { NoexceptMove(NoexceptMove&&) noexcept {} NoexceptMove& operator=(NoexceptMove&&) noexcept { return *this; } };
+struct ThrowingMove { ThrowingMove(ThrowingMove&&) {} ThrowingMove& operator=(ThrowingMove&&) { return *this; } };
+
+// 条件 noexcept：my_swap 是否 noexcept 取决于元素类型
+template <typename T>
+void my_swap(T& a, T& b) noexcept(std::is_nothrow_move_constructible<T>::value &&
+                                  std::is_nothrow_move_assignable<T>::value) {
+    T tmp = std::move(a);
+    a = std::move(b);
+    b = std::move(tmp);
+}
+
+int main() {
+    std::cout << std::boolalpha;
+    std::cout << "Plain         nothrow dtor = " << std::is_nothrow_destructible<Plain>::value << "\n"
+              << "WithUserDtor  nothrow dtor = " << std::is_nothrow_destructible<WithUserDtor>::value << "\n"
+              << "WithThrowDtor nothrow dtor = " << std::is_nothrow_destructible<WithThrowDtor>::value << "\n";
+    std::cout << "my_swap<NoexceptMove> noexcept = " << noexcept(my_swap(std::declval<NoexceptMove&>(), std::declval<NoexceptMove&>())) << "\n";
+    std::cout << "my_swap<ThrowingMove> noexcept = " << noexcept(my_swap(std::declval<ThrowingMove&>(), std::declval<ThrowingMove&>())) << "\n";
+    return 0;
+}
+```
+
+clang 23.1.0 实测输出：
+
+```
+Plain         nothrow dtor = true
+WithUserDtor  nothrow dtor = true
+WithThrowDtor nothrow dtor = false
+my_swap<NoexceptMove> noexcept = true
+my_swap<ThrowingMove> noexcept = false
+```
+
+注意 `WithUserDtor` 那行：**哪怕是手写空函数体的析构，也仍然是 `noexcept`**。而 `my_swap<ThrowingMove>` 为 `false`，说明条件 `noexcept` 把"元素会不会抛"如实传导到了 `swap` 上——这正是 Item 14 想让你养成的写法。
 
 ---
 
 ## 常见错误（新手踩坑）
 
-**错误 1：移动构造忘了标 noexcept**
-```cpp
-class Order {
-public:
-    Order(Order&& o);  // 没标 noexcept
-};
-std::vector<Order> v;
-v.push_back(Order{...});  // 扩容时退回拷贝！哪怕你有移动构造
-```
-**修正：** `Order(Order&& o) noexcept;`
-
-**错误 2：标了 noexcept 但函数内部调了可能抛异常的函数**
-```cpp
-void process() noexcept {
-    auto ptr = std::make_shared<Widget>();  // make_shared 可能抛 bad_alloc
-    // 如果真抛了 → std::terminate
-}
-```
-**修正：** 不确定就别标 `noexcept`。或者 catch 所有异常：
-```cpp
-void process() noexcept {
-    try { /* 可能抛异常的代码 */ }
-    catch (...) { /* 吞掉 */ }
-}
-```
-
-**错误 3：析构函数抛异常**
-```cpp
-class Bad {
-public:
-    ~Bad() { throw std::runtime_error("oops"); }  // 析构抛异常！
-};
-// 析构函数默认是 noexcept（C++11 起）
-// 如果真的抛了 → std::terminate
-```
-**修正：** 析构函数永远不抛异常。如果析构里调了可能抛的代码，用 try-catch 包住。
+1. **移动构造 / 移动赋值忘了标 `noexcept`**。本 Item 的头号实践项。资源搬移只是拷指针、置空，本不会抛；但编译器按"可能抛"处理，容器扩容退回拷贝（实测差 15 次拷贝）。
 
 ---
 
@@ -136,53 +237,59 @@ public:
 | 错误处理 | 返回值（`return -1`） | 异常（`throw`）或返回值 | C++ 有异常机制 |
 | 不抛保证 | 不适用 | `noexcept` | 编译器优化 + 接口契约 |
 | 析构抛异常 | 不适用 | 禁止（`terminate`） | 异常安全保证 |
-| 影响容器 | 不适用 | `noexcept` 移动 → 走移动 | 编译期分派 |
 
-**一句话总结：** C 程序员记住——C++ 有异常，`noexcept` 是"我保证不抛异常"的契约。最该标的是移动构造/赋值和 swap——它们直接影响 STL 容器性能。
+**一句话总结：** `noexcept` 是"我保证不抛"的**契约**，不是给编译器的提示。析构和 `swap` 默认就是 `noexcept`，你真正要动手标的是**移动构造**和**移动赋值**。
 
 ---
 
 ## HFT 关联
 
-- **扩容延迟尖峰**：`vector<Order> push_back` 扩容时，`Order` 的移动构造必须 `noexcept` 才走移动语义——否则扩容退回拷贝，订单簿重建延迟尖峰。这是 HFT C++ 性能的**隐形开关**。
-- **move 语义 vs copy**：HFT 热路径中大量使用 `std::move` 转移数据所有权，`noexcept` 保证移动操作不抛异常，避免异常处理开销。
-- **编译器优化**：`noexcept` 让编译器省略异常处理代码（unwind table），减少代码体积和分支预测压力。
+- **扩容延迟尖峰**：`vector<Order>` 在 `push_back` 扩容时，`Order` 的移动构造必须 `noexcept` 才走移动，否则退回拷贝，订单簿重建时出现延迟尖峰。这是 HFT C++ 性能的**隐形开关**——实测同样 9 次 `push_back`，差 15 次拷贝。
+- **`move_if_noexcept` 的作用**：容器搬移元素时要维持强异常保证——搬移途中抛异常不能破坏原容器。移动不抛才敢用移动，否则用拷贝。所以"移动更快"不是你决定的，是 `noexcept` 决定的。
+- **代码体积**：`noexcept` 让编译器省略 unwind 表，减小二进制体积，间接降低 i-cache 压力（次要收益，主要收益仍是容器分派）。
 
 ---
 
 ## 自测题
 
-1. STL 容器 `push_back` 扩容时如何决定用移动还是拷贝？`noexcept` 在其中起什么作用？
-2. 标了 `noexcept` 但函数抛了异常会发生什么？
-3. 最应该标 `noexcept` 的四个函数是什么？
-4. 为什么说"标错 noexcept 比不标更危险"？
-5. 下面代码有什么问题？
+**1. `vector` 扩容时如何决定搬移元素用移动还是拷贝？**
+<details><summary>答案</summary>
+编译期判断元素类型的移动构造是否 `noexcept`（`std::is_nothrow_move_constructible`）：是 → 用移动构造搬移，快且能提供强异常保证；否 → 退回拷贝构造，因为容器必须保证"搬移途中抛异常也不破坏原容器"。实现上走的是 `std::move_if_noexcept`。
+</details>
+
+**2. 实测里两种 `Counted` 的 `copies`/`moves` 分别是多少？为什么？**
+<details><summary>答案</summary>
+标 `noexcept`：`copies=0, moves=24`；没标：`copies=15, moves=9`。9 次是 `push_back(std::move(c))` 直接构造新元素（不受 `noexcept` 影响）；容量按 1→2→4→8→16 翻倍共搬移 15 次旧元素——这 15 次才是"移动 vs 拷贝"的分水岭。
+</details>
+
+**3. 标了 `noexcept` 却抛了异常会怎样？编译器会拦吗？**
+<details><summary>答案</summary>
+不会拦，只给 `-Wexceptions` 告警；运行时调用 `std::terminate()`，进程 abort（实测退出码 134）。若异常来自内部的 `make_shared`/`push_back`（可能抛 `bad_alloc`），连告警都可能没有。
+</details>
+
+**4. 为什么漏标 `noexcept` 比错标安全？**
+<details><summary>答案</summary>
+漏标的后果只是"性能没那么好"——容器退回拷贝，代码仍正确。错标（标了却可能抛）的后果是 `terminate`：进程崩溃、订单状态不明。所以只对确实不会抛、且经过审查的函数标注。
+</details>
+
+**5. C++17 起 `noexcept` 进入函数类型后，函数指针赋值规则怎么变的？**
+<details><summary>答案</summary>
+普通函数指针 → `noexcept` 函数指针变非法（C++17/20 报 `different exception specifications`；C++11/14 报 `target exception specification is not superset of source`）。反向 `noexcept` → 普通仍然合法（标准特意加了这条隐式转换）。`std::is_same<void(), void() noexcept>` 从 1 变成 0。
+</details>
+
+**6. 下面代码有什么问题？**
 ```cpp
 class Widget {
 public:
     Widget(Widget&& o) { data_ = o.data_; o.data_ = nullptr; }
+private:
+    int* data_;
 };
 std::vector<Widget> v;
 v.push_back(std::move(w));
 ```
-
-<details>
-<summary>参考答案</summary>
-
-1. 容器在扩容（重分配）搬移元素时，会在编译期判断元素类型的移动构造是否 `noexcept`（准确说是 `std::is_nothrow_move_constructible`）：如果是 `noexcept`，就用移动构造搬移——快，且能提供强异常保证；如果不是 `noexcept`，为了在搬移过程中抛异常时不破坏原容器（保证强异常安全），容器会退回使用**拷贝构造**。也就是说 `noexcept` 是"走移动还是走拷贝"的编译期开关：移动没标 `noexcept`，`push_back` 扩容就悄悄退化成拷贝，性能大幅下降。
-
-2. 如果异常从 `noexcept` 函数内部逃逸出来，标准规定调用 `std::terminate()`——程序直接终止（实现上通常先 `std::unexpected` 相关处理，最终 abort）。它不会像普通异常那样向外传播、也不会给你栈展开和 catch 的机会，因为编译器已经按"不抛"做了优化、省略了 unwind 信息。因此 `noexcept` 是严肃的契约而非提示。
-
-3. 按本 Item 的优先级，**移动构造函数、移动赋值运算符、swap、析构函数**这四类最该标。原因：前两者直接决定 STL 容器扩容走移动还是拷贝；`swap` 是许多异常安全惯用法（copy-and-swap）的基础，必须不抛；析构函数自 C++11 起默认就是 `noexcept`，析构里抛异常同样触发 `terminate`。
-
-4. 因为漏标 `noexcept` 的后果只是"性能没那么好"（退回拷贝），而**错标**（标了却可能抛）的后果是程序直接 `terminate`——在 HFT 里这意味着进程崩溃、订单状态不明，远比慢一点严重。此外 `noexcept` 是接口的一部分，一旦标了就很难在不破坏调用方的前提下撤回，所以只对"确实不会抛、且经过审查"的函数标注。
-
-5. 问题在于 `Widget(Widget&& o)` 没有标 `noexcept`。它做的是指针/资源搬移，本身不会抛，但编译器按"可能抛"处理，于是 `vector<Widget>` 扩容（以及 `resize`、`insert` 等需要搬移的场景）会保守地改用**拷贝构造**，`v.push_back(std::move(w))` 的移动优势被浪费——这正是笔记里说的"隐形开关"。修正：
-```cpp
-Widget(Widget&& o) noexcept : data_(o.data_) { o.data_ = nullptr; }
-```
-用初始化列表接管资源，并显式声明 `noexcept`。
-
+<details><summary>答案</summary>
+移动构造没标 `noexcept`。它只是搬指针、置空，本身不会抛；但编译器按"可能抛"处理，`vector<Widget>` 扩容（以及 `resize`、`insert` 等需要搬移的场合）会保守地改用拷贝构造，`push_back(std::move(w))` 的移动优势被浪费。修正：`Widget(Widget&& o) noexcept : data_(o.data_) { o.data_ = nullptr; }`。
 </details>
 
 ---

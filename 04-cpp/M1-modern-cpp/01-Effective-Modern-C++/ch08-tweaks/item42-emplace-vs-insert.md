@@ -1,117 +1,208 @@
 # Item 42：优先 emplace 而非 insert
 
-> 第 8 章 微调 · Item 42 · 下一节：[Item 41 按值传递](item41-pass-by-value.md)
+> 第 8 章 微调 · Item 42 · 上一节：[Item 41 按值传递](item41-pass-by-value.md)
 
 ## 为什么要学这个（先建立直觉）
 
-C 程序员往数组里加元素的方式：
-
-```c
-struct Widget { int x; int y; };
-struct Widget arr[100];
-int n = 0;
-
-// 先构造临时对象，再拷贝进数组
-struct Widget tmp = {42, 100};
-arr[n++] = tmp;  // 拷贝
-
-// 或者直接初始化
-arr[n].x = 42;
-arr[n].y = 100;
-n++;
-```
-
-C++ 的 `push_back` 类似 C 的第一种方式——先构造临时对象，再移动/拷贝进容器：
+往 `vector` 里加一个 `Widget`，两种写法看着差不多：
 
 ```cpp
-v.push_back(Widget(42, 100));  // 构造临时 Widget → 移动进 v
+v.push_back(Widget(42, 100));   // 先在栈上造一个临时 Widget，再移动进容器
+v.emplace_back(42, 100);        // 把构造参数送进容器，在容器的内存里原地造
 ```
 
-`emplace_back` 类似 C 的第二种方式——直接在容器的内存里构造对象，不需要临时对象：
+第一行其实干了三件事：构造临时对象、移动进容器、析构临时对象。第二行只干一件事：拿参数在容器尾部那块还没初始化的内存上 placement-new 一个对象。**省掉的是整个临时对象的一生**——构造、移动、析构。
 
-```cpp
-v.emplace_back(42, 100);  // 直接在 v 的内存里构造 Widget(42, 100)
-// 省去了临时对象的构造 + 移动
-```
+但 `emplace` 不是无脑替换 `push_back` 的银弹。它用的是**直接初始化**语义，这意味着两件事：一是它能绕过 `explicit`（有时候是便利，有时候是踩进编译器都不拦你的坑）；二是参数原样转发给构造函数，传错参数时编译器给你的报错和 `push_back` 完全不同。再加上智能指针容器那个著名的异常泄漏陷阱，这一节的正确姿势是"优先 emplace，但知道何时不该用"。
 
 ---
 
 ## 这节讲什么
 
-`emplace_back`/`emplace` 在容器内**直接构造**元素，省去临时对象 + 移动/拷贝。但要注意异常安全和资源管理。
+`emplace_back(args...)` 在容器内**原地构造**元素，省去临时对象的构造 + 移动 + 析构。实测对比两者构造次数；分析三类 emplace 反而更差/更危险的场景：实参已是元素类型、`explicit` 构造函数被直接初始化绕过（`vector<regex>` 实测编译差异）、智能指针容器传裸 `new` 的异常泄漏。
 
 ---
 
-## 核心对比
+## 实测 1：构造次数对账（本机实测 clang 23.1.0）
+
+带构造/拷贝/移动/析构计数器的 `W`，对比三种插入方式：
 
 ```cpp
-v.push_back(Widget(42));     // 构造临时 Widget → 移动进 v
-v.emplace_back(42);          // 直接在 v 的内存里构造 Widget
+#include <cstdio>
+#include <vector>
+
+struct Cnt { int ctor = 0, copy = 0, move = 0, dtor = 0; };
+Cnt g;
+
+struct W {
+    W(int x, int y) { ++g.ctor; (void)x; (void)y; }
+    W(const W&) { ++g.copy; }
+    W(W&&) noexcept { ++g.move; }
+    ~W() { ++g.dtor; }
+};
+
+void report(const char* label) {
+    std::printf("%-40s ctor=%d copy=%d move=%d dtor=%d\n",
+                label, g.ctor, g.copy, g.move, g.dtor);
+    g = Cnt{};
+}
+
+int main() {
+    {
+        std::vector<W> v;
+        v.reserve(1);                 // 排除扩容干扰
+        g = Cnt{};
+        v.push_back(W(42, 100));      // 临时对象 + 移动
+        report("push_back(W(42,100)):");
+    }
+    {
+        std::vector<W> v;
+        v.reserve(1);
+        g = Cnt{};
+        v.emplace_back(42, 100);      // 原地构造
+        report("emplace_back(42,100):");
+    }
+    {
+        std::vector<W> v;
+        v.reserve(1);
+        W w(42, 100);
+        g = Cnt{};
+        v.push_back(w);               // 传左值：两者都要拷贝
+        report("push_back(w) 传左值:");
+        v.pop_back();                 // 析构掉刚插入的元素（dtor 计数 +1）
+        v.emplace_back(w);
+        report("emplace_back(w) 传左值:");
+    }
+    return 0;
+}
 ```
 
-`emplace` 的优势：无临时对象、无移动、可传任意构造参数。
+clang 23.1.0 + `-std=c++17 -Wall` 实测输出：
 
-### emplace 省了什么
-
-```cpp
-std::vector<std::string> v;
-
-// push_back：构造临时 string + 移动
-v.push_back(std::string("hello"));  // 1. 构造临时 string("hello")
-                                     // 2. 移动临时 string 进 v
-                                     // 3. 析构临时 string
-
-// emplace_back：直接构造
-v.emplace_back("hello");  // 直接在 v 的内存里构造 string("hello")
-                           // 省了临时对象的构造+移动+析构
-
-// 更明显的例子：多参数构造
-std::vector<Widget> vw;
-vw.push_back(Widget(1, 2, 3));  // 构造临时 + 移动
-vw.emplace_back(1, 2, 3);       // 直接构造，传构造参数
+```
+push_back(W(42,100)):                    ctor=1 copy=0 move=1 dtor=1
+emplace_back(42,100):                    ctor=1 copy=0 move=0 dtor=0
+push_back(w) 传左值:                  ctor=0 copy=1 move=0 dtor=0
+emplace_back(w) 传左值:               ctor=0 copy=1 move=0 dtor=1
 ```
 
-### emplace 的限制
+逐行解读：
+
+1. **临时对象场景**：`push_back(W(42,100))` 是 ctor=1 + move=1 + dtor=1（临时对象完整的一生）；`emplace_back(42,100)` 只有 ctor=1。**emplace 精确省掉一次移动和一次析构**——对 `std::string` 这种移动要交接三个指针的类型，省的是几十条指令。
+2. **左值场景**：两者打平（各 copy=1）。最后一行的 `dtor=1` 来自中间那次 `pop_back()`（把上一轮插入的元素析构了），不是 emplace 的开销——**实参已经是元素类型时，emplace 没有任何收益**，它和 push_back 一样只是转发给拷贝/移动构造。
+
+结论和 [Item 41](item41-pass-by-value.md) 的教训一致：emplace 的收益只在"用构造参数原地造"时存在，手里已经有现成对象时两者等价。
+
+---
+
+## 实测 2：explicit 陷阱——emplace 能编译，push_back 不能
+
+`std::regex` 的 `const char*` 构造函数是 `explicit`。同一个 `vector<regex>`，两种插入方式编译结果不同：
 
 ```cpp
-// 1. 依赖 value_type 可直接构造——转换路径不明确时可能选错构造函数
-std::vector<std::regex> vr;
-vr.emplace_back(nullptr);  // 可能匹配意外的构造函数！
+#include <regex>
+#include <vector>
 
-// 2. 异常安全：emplace_back(new Widget) 有泄漏风险
+int main() {
+    std::vector<std::regex> v;
+    v.emplace_back(".*");   // 编译通过
+    return 0;
+}
+```
+
+clang 23.1.0 实测：**编译通过**。
+
+```cpp
+    v.push_back(".*");      // 换成 push_back
+```
+
+clang 23.1.0 实测报错原文：
+
+```
+error: no matching member function for call to 'push_back'
+    v.push_back(".*");
+    ~~^~~~~~~~~
+note: candidate function not viable: no known conversion from
+      'const char[3]' to 'const std::regex' for 1st argument
+note: candidate function not viable: no known conversion from
+      'const char[3]' to 'value_type' (aka 'std::regex') for 1st argument
+```
+
+原因：`push_back` 的形参是 `const regex&` / `regex&&`，传 `".*"` 需要一次 `const char* → regex` 的**隐式转换**（拷贝初始化），`explicit` 禁止它；`emplace_back` 把参数**直接转发给构造函数**（直接初始化），`explicit` 构造函数名正言顺地被调用。
+
+这是双刃剑。便利的一面：`emplace_back` 能搞定 push_back 表达不了的插入。危险的一面：**拷贝初始化是你和编译器之间的默契检查**——隐式转换走不通时 push_back 直接编译失败，而 emplace 会默默地直接构造。经典事故：
+
+```cpp
+std::vector<std::string> vs;
+vs.emplace_back(nullptr);   // 能编译！用 nullptr 构造 string → 运行时 UB/崩溃
+vs.push_back(nullptr);      // 编译失败——反而安全
+```
+
+`explicit` 的设计意图是"这种转换必须显式写出"，emplace 的直接初始化把这道护栏拆掉了。参数和元素类型不完全吻合时，想清楚再 emplace。
+
+---
+
+## 智能指针容器：异常安全的分水岭
+
+```cpp
 std::vector<std::unique_ptr<Widget>> v;
-v.emplace_back(new Widget);  // 如果 vector 扩容抛异常 → 裸指针泄漏！
-v.push_back(std::make_unique<Widget>());  // 安全
-
-// 3. 与 push_back 的明确转换不同
-v.push_back(nullptr);  // 明确：push_back(unique_ptr(nullptr))
-v.emplace_back(nullptr);  // 不明确：调哪个构造函数？
+v.emplace_back(new Widget);                 // 能编译，但有泄漏窗口
+v.push_back(std::make_unique<Widget>());    // 安全
 ```
+
+第一行的问题在求值顺序：`new Widget` **先于** `emplace_back` 执行，得到一个裸指针；emplace 内部若因扩容分配抛 `std::bad_alloc`，这个裸指针还没被任何 `unique_ptr` 接管——**内存泄漏**。
+
+第二行里 `make_unique` 在 `push_back` 之前就完成了 RAII 接管，即使扩容抛异常，临时 `unique_ptr` 析构也会把对象收走。规则一句话：**往智能指针容器里插新对象，用 `push_back(make_unique<T>())`**；emplace 的参数应该是"构造参数"，不该是裸 `new` 表达式。
+
+---
+
+## 决策表
+
+| 场景 | 推荐 | 理由 |
+|------|------|------|
+| 用构造参数新造元素 | `emplace_back(args...)` | 原地构造，省临时对象一生（实测省 1 move + 1 dtor） |
+| 手里已有元素类型对象 | 随意，两者等价 | 实测左值场景 copy=1 打平 |
+| 智能指针容器装新对象 | `push_back(make_unique<T>())` | RAII 先接管，无异常泄漏窗口 |
+| 参数需隐式转换才匹配 | 优先 `push_back` | 拷贝初始化帮你挡住 explicit 误用 |
+| 性能极度敏感且类型平凡可拷 | 实测后再定 | emplace 也可能因完美转发模板代码膨胀 |
+
+---
+
+## 完整可运行例子
+
+"实测 1"即完整可运行程序（clang 23.1.0，`-std=c++17 -Wall`），输出已给出；"实测 2"两个 8 行文件分别演示编译通过与编译失败。
 
 ---
 
 ## 常见错误（新手踩坑）
 
-**错误 1：emplace_back 传裸 new 导致异常泄漏**
-```cpp
-std::vector<std::unique_ptr<Widget>> v;
-v.emplace_back(new Widget);  // 扩容抛异常 → Widget 泄漏！
-```
-**修正：** `v.push_back(std::make_unique<Widget>());` 或 `v.emplace_back(std::make_unique<Widget>());`
+**错误 1：emplace 传已构造好的对象**
 
-**错误 2：emplace 传了不必要的临时对象**
 ```cpp
-v.emplace_back(Widget(42));  // 和 push_back 一样——还是构造了临时对象！
+v.emplace_back(Widget(42, 100));   // 还是构造了临时对象，和 push_back 一样
 ```
-**修正：** `v.emplace_back(42);`——传构造参数，不是构造好的对象。
 
-**错误 3：emplace 选错构造函数**
+**修正：** `v.emplace_back(42, 100);`——传构造参数，不是传对象。
+
+**错误 2：智能指针容器 `emplace_back(new T)`**
+
 ```cpp
-std::vector<std::string> v;
-v.emplace_back('a', 10);  // 想构造 10 个 'a' 的 string
-// 但可能匹配了意外的构造函数——需要检查 string 的构造函数列表
+v.emplace_back(new Widget);   // 扩容抛异常 → 裸指针泄漏
 ```
-**修正：** 不确定时用 `push_back(std::string(10, 'a'))` 明确构造。
+
+**修正：** `v.push_back(std::make_unique<Widget>());`
+
+**错误 3：忽略 emplace 绕过 explicit 的杀伤力**
+
+```cpp
+vs.emplace_back(nullptr);   // 能编译，运行时炸
+```
+
+**修正：** 参数不是元素类型时，警惕 emplace 的直接初始化语义；`push_back` 的编译错误有时是救命的。
+
+**错误 4：以为 emplace 一定更快**
+
+**修正：** 实参已是元素类型时两者等价（实测打平）；容器已持有对象、要做的是"插入现有对象"时，insert/push_back 反而更直白。收益只在原地构造场景。
 
 ---
 
@@ -119,61 +210,70 @@ v.emplace_back('a', 10);  // 想构造 10 个 'a' 的 string
 
 | 维度 | C 怎么做 | C++ 怎么做 | 为什么 |
 |------|---------|-----------|--------|
-| 添加元素 | `arr[n++] = tmp` | `push_back` 或 `emplace_back` | C++ 容器 |
-| 临时对象 | 总是需要 | `emplace` 不需要 | 直接构造 |
-| 异常安全 | 手动管理 | `make_unique` + `push_back` | RAII |
-| 构造参数 | 不适用 | `emplace(ctor_args...)` | 完美转发 |
+| 数组追加 | `arr[n++] = tmp`（先造再拷） | `push_back` / `emplace_back` | 后者原地构造 |
+| 构造与放置 | 分离（先声明再赋值） | placement new 一体完成 | 容器内存管理 |
+| 异常安全 | 手动 | RAII（make_unique 先接管） | 栈展开自动清理 |
 
-**一句话总结：** C 程序员记住——`emplace_back` 直接在容器内存里构造对象，省去临时对象。但传 `unique_ptr` 时用 `push_back(make_unique<T>())` 更安全。
+**一句话总结：** 有构造参数就 `emplace_back(args...)` 原地构造；手里已是元素对象两者等价；智能指针容器永远 `push_back(make_unique<T>())`。
 
 ---
 
 ## HFT 关联
 
-- **行情队列**：`vector<Tick>` 批量入队用 `emplace_back` 省去临时 `Tick` 的构造 + 移动——含 `string` symbol 字段时微秒级收益可观。
-- **异常安全规则**：`emplace_back` 传智能指针/值类型，不传裸 `new` 结果。
-- **订单簿构造**：`order_book.emplace(exchange_id, std::move(handler))` 直接在 map 里构造，避免临时 pair。
+- **行情对象入队**：`ticks.emplace_back(symbol, price, qty, ts)` 原地构造省一次 Tick 的移动——Tick 若含 `std::string` symbol，高频下收益可观。
+- **预分配配合**：emplace 省构造、`reserve` 省扩容，两者搭配才是完整优化（实测里特意 `reserve(1)` 排除扩容干扰）。
+- **订单簿 map**：`book.emplace(price, Order{...})` 避免临时 `pair`；但 key 已存在时 emplace 会先构造再丢弃——查插混合场景用 `try_emplace`（C++17）。
+- **连接池/对象池**：`vector<unique_ptr<Session>>` 只准 `push_back(make_shared/make_unique)`——热路径上一次 bad_alloc 泄漏不会被立刻发现，但会慢慢吃掉内存。
 
 ---
 
 ## 自测题
 
-1. `emplace_back(42)` 相比 `push_back(Widget(42))` 省掉了什么？
-2. `v.emplace_back(new Widget)` 在扩容抛异常时会发生什么？正确写法是什么？
-3. 什么场景下 `emplace` 反而不如 `push_back`？
-4. 为什么 `push_back(make_unique<T>())` 是 `unique_ptr` 容器插入的最安全写法？
-5. 下面代码有什么问题？
-```cpp
-std::vector<std::string> v;
-v.emplace_back(std::string("hello"));
-```
+**1. `emplace_back(42, 100)` 相比 `push_back(W(42, 100))` 省掉了什么？实测数据？**
 
-<details>
-<summary>参考答案</summary>
+<details><summary>答案</summary>
+省掉临时对象的移动构造和析构。实测：push_back 是 ctor=1, move=1, dtor=1；emplace_back 只有 ctor=1。emplace 把参数完美转发给构造函数，在容器尾部未初始化内存上 placement-new，不产生临时对象。
+</details>
 
-1. 省掉**一个临时对象的构造 + 移动构造 + 析构**。`push_back(Widget(42))` 的流程是：先构造临时 `Widget(42)`，再把它作为右值**移动**进容器，最后析构临时对象；而 `emplace_back(42)` 把实参 `42` 完美转发给 `Widget` 的构造函数，直接在容器尾部的**未初始化存储上原地构造**（placement new），中间不产生临时对象，因此少一次移动构造和一次析构。注意它省的是"移动"，不是"拷贝"——`push_back` 传右值时本来也不会拷贝。
+**2. 传左值（已构造好的对象）时两者有差别吗？**
 
-2. 会**泄漏那块 `new` 出来的内存**。实参 `new Widget` 在调用 `emplace_back` **之前**就先求值，得到一个裸指针；随后 `emplace_back` 内部可能因容器扩容而分配内存，若这次分配抛 `std::bad_alloc`（或元素构造抛异常），那个裸指针还没有被任何 `unique_ptr` 接管，就永远丢失了——对象泄漏。正确写法是先把裸指针交给 RAII 对象，再插入：
-```cpp
-v.push_back(std::make_unique<Widget>());   // 或 v.emplace_back(std::make_unique<Widget>());
-```
-`make_unique` 在 `push_back` 之前就完成了所有权接管，即使后续扩容抛异常，临时 `unique_ptr` 也会在栈展开时正常析构并释放对象。
+<details><summary>答案</summary>
+没有。实测两者都是 copy=1, move=0。emplace 此时只是转发给拷贝构造，和 push_back 等价。emplace 的收益只在"用构造参数原地造"时存在。
+</details>
 
-3. 常见三类：①**实参已经是元素类型**（`emplace_back(std::string("hello"))`）——它只是转发给移动构造，与 `push_back` 完全等价、毫无收益。②**需要隐式转换的场景**：`emplace_back` 做的是直接初始化，会调用 `explicit` 构造函数，可能构造出你没想到的对象（如 `std::vector<std::string> v; v.emplace_back(nullptr);` 会用 `nullptr` 构造 `string`，是未定义行为；而 `push_back(nullptr)` 直接编译失败，反而更安全）。③**需要异常安全的资源类**：插入智能指针时 `push_back(std::make_unique<T>())` 比 `emplace_back(new T)` 安全（见第 2 题）。另外，`emplace` 的实参是引用传递，若传入的是容器自身的元素引用，扩容后可能引用已失效的存储——也不如先拷贝再 `push_back` 稳妥。
+**3. `vector<regex>` 上 `emplace_back(".*")` 和 `push_back(".*")` 的编译结果分别是什么？为什么？**
 
-4. 因为它同时满足两点：①**异常安全**——`make_unique<T>()` 在调用 `push_back` 之前就构造好了 `unique_ptr`，对象已被 RAII 接管；即使 `push_back` 内部扩容分配失败抛异常，这个临时 `unique_ptr` 也会在栈展开时析构并释放对象，不存在"裸指针没人管"的窗口。②**写法合法且简洁**——`push_back(new T)` 在 `vector<unique_ptr<T>>` 上根本编译不过（`unique_ptr` 的裸指针构造函数是 `explicit`，`push_back` 需要的是隐式转换），必须先包成 `unique_ptr`。而 `emplace_back(new T)` 虽然能编译（emplace 是直接初始化，允许 explicit），却有第 2 题的泄漏风险。所以 `push_back(std::make_unique<T>())` 是最安全的写法。
+<details><summary>答案</summary>
+前者编译通过，后者报错 `no known conversion from 'const char[3]' to 'const std::regex'`。regex 的 const char* 构造函数是 explicit：push_back 需要隐式转换（拷贝初始化）被 explicit 拒绝；emplace 用直接初始化，explicit 构造函数可被直接调用。explicit 护栏对 emplace 无效。
+</details>
 
-5. 没有正确性 bug，但**白白放弃了 emplace 的收益，还多敲了代码**。`std::string("hello")` 先在调用点构造一个临时 string，`emplace_back` 再把实参转发给 `string` 的移动构造函数——等价于 `push_back(std::string("hello"))`，仍有"临时对象构造 + 移动 + 析构"。要真正原地构造，应直接传构造 `string` 所需的实参：
-```cpp
-v.emplace_back("hello");   // 用 const char* 直接在容器内构造 string，省掉临时对象
-```
-或者写 `v.push_back("hello");`（同样省掉显式临时对象，可读性也更好）。
+**4. `v.emplace_back(new Widget)`（v 是 `vector<unique_ptr<Widget>>`）有什么问题？正确写法？**
 
+<details><summary>答案</summary>
+`new Widget` 先于 emplace 求值得到裸指针；若 emplace 内部扩容分配抛异常，裸指针还没被 unique_ptr 接管，内存泄漏。正确写法 `v.push_back(std::make_unique<Widget>())`——RAII 接管发生在 push_back 之前，栈展开时自动释放。
+</details>
+
+**5. 什么场景下 `push_back` 反而比 `emplace_back` 安全？**
+
+<details><summary>答案</summary>
+两类：①参数需要隐式转换才匹配元素类型时，push_back 的拷贝初始化会被 explicit 拦住（编译失败 = 安全），emplace 的直接初始化会默默构造（如 `vector<string>::emplace_back(nullptr)` 编译通过但运行时 UB）；②智能指针容器装新对象时 push_back(make_unique) 无异常泄漏窗口。
+</details>
+
+**6. map 容器上 emplace 家族有什么额外注意事项？**
+
+<details><summary>答案</summary>
+`map::emplace(k, v)` 在 k 已存在时仍会先构造好 value 再丢弃（白付构造费）；C++17 的 `try_emplace` 只在 key 不存在时才构造，查插混合场景（订单簿按价位插入）应优先 try_emplace。
+</details>
+
+**7. 为什么说"emplace 一定更快"是误解？**
+
+<details><summary>答案</summary>
+实参已是元素类型时两者实测打平（各 copy=1）；emplace 的模板完美转发会实例化更多代码（代码膨胀）；某些场景 insert 迭代器版本还能批量插入。收益精确地只来自"原地构造"这一种场景，其它场景按可读性选。
 </details>
 
 ---
 
 ## 参考与延伸
 
-- 下一章：[第 9 章（无）—— 本书结束](../README.md)
+- 上一节：[Item 41 按值传递](item41-pass-by-value.md)
 - 回到：[第 8 章 微调](README.md)

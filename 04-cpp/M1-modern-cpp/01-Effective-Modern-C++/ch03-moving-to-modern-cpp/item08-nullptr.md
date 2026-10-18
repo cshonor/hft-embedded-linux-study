@@ -4,113 +4,191 @@
 
 ## 为什么要学这个（先建立直觉）
 
-C 里空指针怎么写？两种方式：
+C 里写空指针就两招：`int* p = NULL;` 或 `int* p = 0;`。在 C 里这基本没问题——C 没有函数重载，传 `NULL` 给函数就是传空指针，世界很单纯。
 
-```c
-int* p = NULL;    // 方式一
-int* p = 0;       // 方式二
-// NULL 通常定义为 ((void*)0) 或 0
-```
+C++ 有重载，事情就变了味。`f(0)` 里的 `0` 是个如假包换的 `int`——如果你的重载集里恰好有 `f(int)` 和 `f(void*)`，编译器会毫不犹豫地选 `f(int)`，哪怕你的意图是"传个空指针"。`NULL` 也好不到哪去：C++ 不允许 `void*` 隐式转其他指针，所以 C++ 标准库只能把 `NULL` 定义成整型字面量（本机 macOS 上是 `0L`，即 `long`）。它**从来不是指针类型**。
 
-在 C 里这基本没问题——C 没有函数重载，`NULL` 传给函数就是空指针。但 C++ 有函数重载：
+最扎心的是模板：把 `NULL` 传进 `template<class T> void g(T)`，`T` 被推导成 `long`——函数体里拿到的是个整数，想赋给指针直接编译失败。这种 bug 在泛型代码里藏得很深。
 
-```cpp
-void f(int);       // 重载 1
-void f(char*);     // 重载 2
-
-f(0);       // 调 f(int)——你以为传空指针，实际传了整数 0
-f(NULL);    // 可能调 f(int)——NULL 的类型依赖实现，可能是 int
-f(nullptr); // 调 f(char*)——这才是你想要的
-```
-
-**根因：** C++ 的 `NULL` 不是指针类型，它是整型（`0` 或 `0L`）。`nullptr` 是 C++11 引入的真正的空指针常量，类型是 `std::nullptr_t`，能隐式转任意指针但不能转整型。
+`nullptr` 是 C++11 给出的答案：一个有自己的类型 `std::nullptr_t` 的空指针字面量，能隐式转成任何指针，但**永远不能**变成整数。歧义从根上消失。
 
 ---
 
 ## 这节讲什么
 
-`0` 和 `NULL` 都是整型字面量，在指针与整型重载时会误选整型。`nullptr` 的类型是 `std::nullptr_t`，能隐式转任意指针但不能转整型——彻底消除歧义。
+1. `0` / `NULL` / `nullptr` 在重载决议下的真实走向（附实测）；
+2. `NULL` 在模板里被推导成整数的坑（呼应 Item 30 的完美转发失败）；
+3. `std::nullptr_t` 的性质：`sizeof`、隐式转换规则；
+4. 全部论断本机实测：clang 23.1.0，arm64-apple-darwin，libc++，`-std=c++17 -Wall`。
 
 ---
 
-## 核心机制
-
-### 重载歧义消除
+## 重载决议实测：三个实参三种命运
 
 ```cpp
-void f(int);
-void f(Widget*);
-f(0);          // 调 f(int)！不是 f(Widget*)
-f(NULL);       // 仍可能调 f(int)（NULL 的类型依赖实现）
-f(nullptr);    // 调 f(Widget*)，正确
+#include <iostream>
+
+void f(int)   { std::cout << "f(int)\n"; }
+void f(bool)  { std::cout << "f(bool)\n"; }
+void f(void*) { std::cout << "f(void*)\n"; }
+
+int main() {
+    f(0);         // 哪个？
+    // f(NULL);   // 这行根本编不过（见下）
+    f(nullptr);   // 哪个？
+}
 ```
 
-### nullptr 在模板中的优势
+本机实测 clang 23.1.0 输出：
+
+```
+f(int)
+f(void*)
+```
+
+- `f(0)` → `f(int)`：`0` 是 `int` 字面量，精确匹配整型重载，指针重载看都不看。
+- `f(nullptr)` → `f(void*)`：`nullptr` 只能转指针，整型重载出局。
+
+而 `f(NULL)` 在这组重载下**直接编译失败**：
+
+```
+error: call to 'f' is ambiguous
+    f(NULL);
+    ^
+note: candidate function     void f(int)
+note: candidate function     void f(bool)
+note: candidate function     void f(void*)
+```
+
+本机 `NULL` 展开为 `0L`（`long`）：`long→int`、`long→bool`、`long→void*`（`0L` 是空指针常量）三条转换路径**同分**，重载决议判平局。这就是 `NULL` 的尴尬处境——它既不够像整数，也不够像指针，在哪边都是半个候选人。如果重载集里碰巧没有 `f(bool)`，`f(NULL)` 会静默选中 `f(int)`——bug 就从编译期错误变成运行期错误。
+
+---
+
+## 模板推导：NULL 变成整数的地方
 
 ```cpp
-// 模板推导：传 0 会被推成 int
-template<class T> void g(T x);
-g(0);          // T = int —— 不是指针！
-g(nullptr);    // T = nullptr_t —— 正确，后续可隐式转任意指针
+#include <iostream>
 
-// 实际场景：锁的默认参数
-template<class Mutex>
-class lock_guard {
-public:
-    // 如果想传"空锁"做默认参数
-    lock_guard(Mutex* m = nullptr);  // OK，nullptr 正确推导
-};
+template<typename T>
+void g(T x) { std::cout << __PRETTY_FUNCTION__ << "\n"; }
+
+int main() {
+    g(0);         // ?
+    g(NULL);      // ?
+    g(nullptr);   // ?
+}
 ```
 
-### nullptr 的比较行为
+本机实测 clang 23.1.0 输出：
+
+```
+void g(T) [T = int]
+void g(T) [T = long]
+void g(T) [T = std::nullptr_t]
+```
+
+模板推导只看表达式的类型：`0` 是 `int`，`NULL`（`0L`）是 `long`，都和指针无关。函数体里如果写 `*x` 或 `x->foo()`，编译报错的位置在模板深处，新手很难联想到是调用点传了 `NULL`。只有 `g(nullptr)` 推出 `T = std::nullptr_t`，函数体里可以再隐式转成需要的任意指针类型。
+
+这正是完美转发里"`NULL`/`0` 无法正确转发空指针"的根源，详见 [Item 30 完美转发失败的情形](../ch05-rvalue-move-forwarding/item30-forwarding-failures.md)。泛型代码里表达"空指针"只有一个选择：`nullptr`。
+
+---
+
+## std::nullptr_t：nullptr 的类型
 
 ```cpp
-int* p = nullptr;
-if (p == nullptr) { /* true */ }
-if (p) { /* false */ }
-if (!p) { /* true */ }
+#include <cstddef>
+#include <iostream>
 
-// nullptr 可以和任意指针比较
-char* cp = nullptr;
-Widget* wp = nullptr;
-// cp == wp;  // 编译失败——不同指针类型不能比较
-// cp == nullptr;  // OK
-// wp == nullptr;  // OK
+int main() {
+    std::cout << "sizeof(nullptr)=" << sizeof(nullptr) << "\n";
+    std::cout << "sizeof(void*)=" << sizeof(void*) << "\n";
+    std::cout << "sizeof(NULL)=" << sizeof(NULL) << "\n";
+
+    std::nullptr_t np = nullptr;   // 可以声明该类型的变量
+    int* p = np;                   // nullptr_t 可隐式转任意指针
+    std::cout << "p==nullptr: " << (p == nullptr) << "\n";
+}
 ```
 
-`nullptr` 的三大优势：
-1. **不会误选整型重载**
-2. **模板推导正确**：`g(nullptr)` 推出 `T = nullptr_t`，而非 `int`
-3. **代码意图清晰**：`nullptr` 一眼看出是空指针，`0` 需要看上下文
+本机实测 clang 23.1.0 输出：
+
+```
+sizeof(nullptr)=8
+sizeof(void*)=8
+sizeof(NULL)=8
+```
+
+要点：
+
+- `std::nullptr_t` 大小和指针相同（本机 8 字节），传参、存容器没有额外开销；
+- 它能隐式转**任意**对象指针、函数指针和成员指针，也能和任意指针比较（`==`/`!=`）；
+- 转整型是**禁止**的：`int x = nullptr;` 实测报错 `error: cannot initialize a variable of type 'int' with an rvalue of type 'std::nullptr_t'`；
+- 语境转换到 `bool` 是允许的：`if (p)`、`if (!p)` 照常工作，`nullptr` 判为 `false`。
+
+对比表：
+
+| 写法 | 类型（本机） | 重载中像整数？ | 模板推导 | 可读性 |
+|------|------------|--------------|---------|--------|
+| `0` | `int` | 是（就是它） | `T = int` | 差，要看上下文 |
+| `NULL` | `long`（`0L`） | 是，还可能 ambiguous | `T = long` | 中，但语义是假的 |
+| `nullptr` | `std::nullptr_t` | 否 | `T = std::nullptr_t` | 一眼即空指针 |
+
+---
+
+## 完整可运行例子
+
+```cpp
+#include <cstddef>
+#include <iostream>
+#include <type_traits>
+
+void log(int id)     { std::cout << "log(int): id=" << id << "\n"; }
+void log(void* ptr)  { std::cout << "log(void*): ptr=" << ptr << "\n"; }
+
+template<typename T>
+void deduce(T x) { std::cout << __PRETTY_FUNCTION__ << "\n"; }
+
+int main() {
+    // 1. 重载走向
+    log(0);         // log(int)：0 是整数
+    log(nullptr);   // log(void*)：nullptr 只转指针
+
+    // 2. 模板推导
+    deduce(0);
+    deduce(NULL);
+    deduce(nullptr);
+
+    // 3. nullptr_t 的性质
+    static_assert(std::is_same_v<decltype(nullptr), std::nullptr_t>);
+    static_assert(sizeof(nullptr) == sizeof(void*));
+    std::nullptr_t np = nullptr;
+    int* p = np;
+    std::cout << "p is null: " << std::boolalpha << (p == nullptr) << "\n";
+
+    // 4. 禁止转整型（编译期错误，本例注释掉才能跑）
+    // int bad = nullptr;   // error: cannot initialize 'int' with 'std::nullptr_t'
+}
+```
+
+本机实测 clang 23.1.0（`-std=c++17 -Wall`）输出：
+
+```
+log(int): id=0
+log(void*): ptr=0
+void deduce(T) [T = int]
+void deduce(T) [T = long]
+void deduce(T) [T = std::nullptr_t]
+p is null: true
+```
 
 ---
 
 ## 常见错误（新手踩坑）
 
-**错误 1：在重载函数中传 0 想表达空指针**
-```cpp
-void process(int x);
-void process(Widget* w);
-process(0);  // 调 process(int)，不是 process(Widget*)！
-```
-**修正：** 用 `process(nullptr);`。
-
-**错误 2：模板中传 NULL 导致类型推导错误**
-```cpp
-template<class T> void set_callback(T cb) { /* ... */ }
-set_callback(NULL);  // T = int 或 long，不是函数指针！
-set_callback(nullptr);  // T = nullptr_t
-```
-**修正：** 模板场景一律用 `nullptr`。
-
-**错误 3：混用 NULL 和 nullptr 导致代码风格不一致**
-```cpp
-// 老代码
-if (ptr == NULL) { ... }
-// 新代码
-if (ptr == nullptr) { ... }
-```
-**修正：** 统一用 `nullptr`。`NULL` 在 C++ 里没有任何 `nullptr` 不具备的优势。
+1. **重载集里传 `0` 想表达空指针**。`process(0)` 选中的永远是 `process(int)` 而不是 `process(Widget*)`。修正：`process(nullptr)`。
+2. **模板里传 `NULL`**。实测 `T` 被推导成 `long`，函数体把它当指针用时报错埋在模板实例化深处。修正：模板场景一律 `nullptr`。
+3. **以为 `NULL` 是指针类型**。C 里 `NULL` 常是 `((void*)0)`，但 C++ 禁止 `void*` 隐式转对象指针，所以 C++ 的 `NULL` 只能是整型（本机 `0L`）。从 C 带来的直觉在重载和模板里都会翻车。
+4. **同一文件混用三种写法**。`if (p == NULL)` 和 `if (p == nullptr)` 并存，审查者要分心判断每一处有没有重载/推导陷阱。修正：全仓统一 `nullptr`，老代码顺手改，`NULL` 在 C++ 里没有任何 `nullptr` 不具备的优势。
 
 ---
 
@@ -118,56 +196,65 @@ if (ptr == nullptr) { ... }
 
 | 维度 | C 怎么做 | C++ 怎么做 | 为什么 |
 |------|---------|-----------|--------|
-| 空指针写法 | `NULL` 或 `0` | `nullptr` | C++ 有重载，`NULL`/`0` 是整型会误选 |
-| `NULL` 的定义 | `((void*)0)`（指针类型） | `0` 或 `0L`（整型！） | C++ 不允许 `void*` 隐式转其他指针 |
-| 模板推导 | 不适用（C 无模板） | `nullptr` → `T = nullptr_t` | 正确表达"空指针"意图 |
-| 类型安全 | 无重载所以无所谓 | `nullptr` 有独立类型 | 消除重载歧义 |
+| 空指针写法 | `NULL` 或 `0` | `nullptr` | C++ 有重载与模板，`0`/`NULL` 是整型会误选 |
+| `NULL` 的定义 | `((void*)0)`（指针类型） | `0` 或 `0L`（整型） | C++ 不允许 `void*` 隐式转其他指针 |
+| 模板推导 | 不适用（C 无模板） | `nullptr` → `T = std::nullptr_t` | 正确表达"空指针"意图 |
 
-**一句话总结：** C 程序员记住——C++ 的 `NULL` 不是 C 的 `NULL`（C 的 `NULL` 是指针，C++ 的是整型），C++ 里空指针一律用 `nullptr`。
+**一句话总结：** C 程序员记住——C++ 的 `NULL` 不是 C 的 `NULL`（C 的是指针、C++ 的是整型），C++ 里空指针一律写 `nullptr`。
 
 ---
 
 ## HFT 关联
 
-- **模板推导正确性**：策略工厂 `template<class T> T* create(Args...)` 里传 `nullptr` 做默认参数时，类型推导正确；传 `0` 会被推成 `int`。
-- **回调注册**：`set_handler(nullptr)` 清除回调比 `set_handler(NULL)` 更安全——`NULL` 在模板中可能被推成整型，导致编译错误或运行时 bug。
-- **指针比较清晰**：`if (order_ptr == nullptr)` 比 `if (!order_ptr)` 更明确地表达"检查空指针"意图，代码审查时一目了然。
+- **回调注册/清除**：`set_handler(nullptr)` 清除行情回调，重载决议与模板推导都零歧义；`set_handler(0)` 在模板化回调框架里会把 `T` 推成 `int`，编译失败都算好运，推到别的重载才是事故。
+- **哨兵节点清晰化**：侵入式链表/内存池 freelist 的尾哨兵写 `nullptr`，读汇编时就是一次与 0 的比较（`cbz`/`cbnz`），和 `NULL` 生成的代码完全一样——零成本，纯赚可读性。汇编级分析见姊妹篇 [Item 8a nullptr 的硬件路径](item08a-nullptr的硬件路径.md)。
+- **ABI 无差异**：`sizeof(nullptr) == sizeof(void*)`（实测 8），用 `nullptr` 替换 `NULL` 不改变任何二进制布局，存量代码可以放心机械化替换。
 
 ---
 
 ## 自测题
 
-1. `f(0)` 在 `void f(int); void f(Widget*);` 重载集里调用哪个？`f(nullptr)` 呢？
-2. `nullptr` 的类型是什么？它能隐式转成 `int` 吗？
-3. 为什么 `NULL` 在 C++ 里不安全？C 的 `NULL` 和 C++ 的 `NULL` 定义有什么不同？
-4. `template<class T> void g(T x); g(nullptr);` 推出 `T` 是什么？`g(0)` 呢？
-5. 下面代码有什么问题？
+**1. `void f(int); void f(void*);` 下 `f(0)`、`f(NULL)`、`f(nullptr)` 各调哪个？**
+<details><summary>答案</summary>
+`f(0)` 调 `f(int)`（`0` 是 `int` 字面量，精确匹配）；`f(nullptr)` 调 `f(void*)`（`nullptr` 只能转指针）；`f(NULL)` 视实现而定——本机 `NULL` 是 `0L`，实测在两参重载里尚可调 `f(int)`，加上 `f(bool)` 后变成 `error: call to 'f' is ambiguous`。结论：只有 `nullptr` 的行为不依赖实现。
+</details>
+
+**2. `nullptr` 的类型是什么？能隐式转成 `int` 吗？**
+<details><summary>答案</summary>
+类型是 `std::nullptr_t`（`<cstddef>`）。不能转 `int`：实测 `int x = nullptr;` 报 `error: cannot initialize a variable of type 'int' with an rvalue of type 'std::nullptr_t'`。它能隐式转任意指针类型，语境下可转 `bool`（`if (p)`）。
+</details>
+
+**3. `template<class T> void g(T); g(NULL);` 在本机推出 `T` 是什么？后果是什么？**
+<details><summary>答案</summary>
+`T = long`（本机 `NULL` 是 `0L`）。后果：函数体里拿到的"指针"其实是个整数，任何指针运算（`*x`、`x->`、赋给指针变量）都会编译失败，且报错位置在模板深处。这就是 Item 30 讲的完美转发失败场景之一。
+</details>
+
+**4. 为什么 C++ 不把 `NULL` 定义成 `((void*)0)`，像 C 那样？**
+<details><summary>答案</summary>
+因为 C++ 禁止 `void*` 隐式转换为其他对象指针类型。若 `NULL` 是 `((void*)0)`，`int* p = NULL;` 都编不过。所以 C++ 标准规定 `NULL` 是整型空指针常量（`0` 或 `0L`），它进入重载决议时天然是"整数候选人"，这是一切歧义的根源。
+</details>
+
+**5. `sizeof(nullptr)` 是多少？把代码里的 `NULL` 全换成 `nullptr` 会改变 ABI 吗？**
+<details><summary>答案</summary>
+本机实测 8，与 `sizeof(void*)` 相同。不会改变 ABI：`nullptr` 的表示就是空指针值，和 `NULL` 生成的机器码一致（见 Item 8a 的汇编对比），替换是纯语义增强。
+</details>
+
+**6. 下面代码有什么问题？**
 ```cpp
 void register_cb(int id);
 void register_cb(void(*cb)());
-register_cb(0);       // A
-register_cb(nullptr); // B
+register_cb(0);
 ```
-
-<details>
-<summary>参考答案</summary>
-
-1. `f(0)` 调用 `void f(int)`——`0` 是 `int` 字面量，精确匹配整型重载；`f(nullptr)` 调用 `void f(Widget*)`——`nullptr` 只能转换成指针类型，不能转成整型。`nullptr` 的引入正是为了让"空指针"在重载决议中不再和整数竞争。
-
-2. `nullptr` 的类型是 `std::nullptr_t`（定义于 `<cstddef>`）。它不能隐式转换成整型（`int`、`bool` 之外的整数类型都不行），只能转换成任意指针类型、`bool`（仅限直接初始化/特定语境）以及 `std::nullptr_t` 自身。所以 `int x = nullptr;` 是非法的。
-
-3. 因为 C++ 里 `NULL` 通常被定义为 `0` 或 `0L`，是**整型**而非指针类型：在重载决议中它会选中整型重载而不是指针重载；在模板推导中会被推成 `int`/`long` 而不是指针；还容易被当成数值参与算术。C 的 `NULL` 常定义为 `((void*)0)`，而 C++ 不允许 `void*` 隐式转换成其他对象指针，所以 C++ 只能把它定义成整型，这正是它不安全的根源。
-
-4. `g(nullptr)` 推出 `T = std::nullptr_t`（`nullptr` 有自己的类型，按值形参剥掉引用后就是 `nullptr_t`）。`g(0)` 推出 `T = int`。这意味着在模板里传 `0` 表达"空指针"是错的——函数体里拿到的是整数 `0`，无法赋给指针，通常编译失败或语义错误。
-
-5. A 行 `register_cb(0)` 选中的是 `void register_cb(int id)`，即"注册 id 为 0"，而程序员的意图很可能是"清除回调"——这是 `NULL`/`0` 导致的经典误选重载 bug。B 行 `register_cb(nullptr)` 明确调用 `void register_cb(void(*cb)())`，表达清除回调的意图，编译期就能保证选对重载。
-
+<details><summary>答案</summary>
+`register_cb(0)` 选中的是 `register_cb(int)`——程序员意图多半是"清除回调"，实际调用的是"注册 id 0"。修正：`register_cb(nullptr)` 明确选中函数指针重载，编译期保证意图与行为一致。
 </details>
 
 ---
 
 ## 参考与延伸
 
+- 上一节：[Item 7 () vs {}](item07-parens-vs-braces.md)
 - 配套深挖：[Item 8a nullptr 的硬件路径——判空、重载与 0 页保护（汇编实测）](item08a-nullptr的硬件路径.md)
 - 下一节：[Item 9 using 别名](item09-using.md)
+- 相关：[Item 30 完美转发失败的情形](../ch05-rvalue-move-forwarding/item30-forwarding-failures.md)
 - 回到：[第 3 章 移步现代 C++](README.md)

@@ -643,182 +643,253 @@ Widget w;
 <h2>为什么要学这个（先建立直觉）</h2>
 <p>C 程序员用裸指针"观察但不拥有"：</p>
 <pre class="code" data-label="C"><code class="c">struct Widget* cached = NULL;
-
 void use_cache() {
-    if (cached) {
-        cached-&gt;do_work();  // 如果 cached 已被 free → 悬垂指针 → UB
-    }
+    if (cached) cached-&gt;do_work();  // 若 cached 已被 free → 悬垂指针 → UB
 }
 </code></pre>
-<p>问题：C 的裸指针不知道目标是否还活着。<code class="c">cached</code> 可能指向已释放的内存——用就是 UB，不用又没法检测。</p>
-<p>C++ 的 <code class="c">weak_ptr</code> 解决了这个问题：它不增加强引用计数（不延长对象生命），但能用 <code class="c">lock()</code> <strong>原子地</strong>检查"对象还活着吗"并获取 <code class="c">shared_ptr</code>：</p>
-<pre class="code" data-label="cpp"><code class="c">std::weak_ptr&lt;Widget&gt; wp = sp;
-if (auto p = wp.lock()) {
-    p-&gt;do_work();   // 对象还活着，安全使用
-} else {
-    // 对象已被销毁，重新加载或跳过
-}
-</code></pre>
+<p>问题：C 的裸指针<strong>不知道目标是否还活着</strong>。<code class="c">cached</code> 非空不代表指向的内存有效——用就是 UB，不用又没法检测。这类 bug 在长时运行系统里最致命：指针 99% 的时间指向有效内存，只有对象被释放后的那一下访问才崩。</p>
+<p>C++ 的 <code class="c">weak_ptr</code> 把"观察但不拥有"做成了可检测的语言设施：不增加强引用计数（不延长对象生命），但能通过 <code class="c">lock()</code> <strong>原子地</strong>回答"对象还活着吗"——活着就给你一个 <code class="c">shared_ptr</code> 保证使用期间不死，死了就给你空指针，走降级路径而不是 UB。</p>
+<p>另一个容易忽视的问题：<code class="c">shared_ptr</code> 的引用计数<strong>解决不了环</strong>——两个对象互相持有对方的 <code class="c">shared_ptr</code>，谁也放不掉谁，内存永久泄漏。<code class="c">weak_ptr</code> 是标准的破环工具。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p><code class="c">weak_ptr</code> 不增加强引用计数，观察 <code class="c">shared_ptr</code> 但不延长对象生命。要访问对象须 <code class="c">lock()</code> 提升为 <code class="c">shared_ptr</code>（原子地检查并获取）。</p>
+<p><code class="c">weak_ptr</code> 观察 <code class="c">shared_ptr</code> 但不拥有：不增强引用计数、不能直接解引用，访问前必须 <code class="c">lock()</code> 提升为 <code class="c">shared_ptr</code>（原子地检查+获取）。三大用途：打破环引用、观察者模式、缓存。</p>
 <hr />
-<h2>核心用法</h2>
-<h3>lock() 的原子性</h3>
-<pre class="code" data-label="cpp"><code class="c">std::shared_ptr&lt;Widget&gt; sp = std::make_shared&lt;Widget&gt;();
-std::weak_ptr&lt;Widget&gt; wp = sp;   // wp 观察 sp，不增加强引用计数
+<h2>循环引用：shared_ptr 的死穴</h2>
+<p>两个结构体互相持有对方的 <code class="c">shared_ptr</code>，本机实测（clang 23.1.0, <code class="c">-std=c++17 -Wall</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;memory&gt;
+#include &lt;iostream&gt;
+struct B;
+struct A {
+    std::shared_ptr&lt;B&gt; b;
+    ~A() { std::cout &lt;&lt; &quot;~A()\n&quot;; }
+};
+struct B {
+    std::shared_ptr&lt;A&gt; a;
+    ~B() { std::cout &lt;&lt; &quot;~B()\n&quot;; }
+};
 
-// 在另一个线程里 sp 可能被 reset
-// sp.reset();
-
-// 安全访问：lock() 是原子的
-if (auto p = wp.lock()) {
-    // p 有效（强引用计数 &gt;= 1），安全使用
-    p-&gt;doSomething();
-} else {
-    // 对象已被销毁，wp 是悬垂的
-}
-</code></pre>
-<p><code class="c">lock()</code> 是原子的：检查强引用计数 &gt; 0，若是则递增并返回 <code class="c">shared_ptr</code>；否则返回空 <code class="c">shared_ptr</code>。这避免了"检查后使用"的 TOCTOU 竞争。</p>
-<h3>三大用途</h3>
-<pre class="code" data-label="cpp"><code class="c">// 1. 缓存：对象不使用时可被回收
-std::map&lt;Key, std::weak_ptr&lt;Data&gt;&gt; cache;
-auto get_data(const Key&amp; k) {
-    if (auto sp = cache[k].lock()) return sp;   // 缓存命中
-    auto sp = std::make_shared&lt;Data&gt;(load(k));   // 重新加载
-    cache[k] = sp;
-    return sp;
-}
-
-// 2. 观察者模式：观察者不延长被观察对象的生命
-class Subject {
-    std::vector&lt;std::weak_ptr&lt;Observer&gt;&gt; observers;
-public:
-    void notify() {
-        for (auto&amp; wp : observers) {
-            if (auto sp = wp.lock()) {
-                sp-&gt;update();  // 只通知活着的观察者
-            }
-        }
+int main() {
+    std::cout &lt;&lt; &quot;--- 进入作用域 ---\n&quot;;
+    {
+        auto pa = std::make_shared&lt;A&gt;();
+        auto pb = std::make_shared&lt;B&gt;();
+        pa-&gt;b = pb;
+        pb-&gt;a = pa;
+        std::cout &lt;&lt; &quot;pa.use_count() = &quot; &lt;&lt; pa.use_count() &lt;&lt; &quot;\n&quot;
+                  &lt;&lt; &quot;pb.use_count() = &quot; &lt;&lt; pb.use_count() &lt;&lt; &quot;\n&quot;;
     }
-};
-
-// 3. 打破环引用
-struct Node {
-    std::shared_ptr&lt;Node&gt; next;
-    std::weak_ptr&lt;Node&gt; prev;  // weak 打破环！
-    // 如果 prev 也用 shared_ptr → 环引用 → 内存泄漏
-};
+    std::cout &lt;&lt; &quot;--- 离开作用域（注意：没有任何析构打印）---\n&quot;;
+}
 </code></pre>
+<p>实测输出（两个 <code class="c">~</code> 析构打印都没出现）：</p>
+<pre class="code" data-label="code"><code class="c">--- 进入作用域 ---
+pa.use_count() = 2
+pb.use_count() = 2
+--- 离开作用域（注意：没有任何析构打印）---
+</code></pre>
+<p>计数推演：<code class="c">pa</code> 销毁，A 的计数 2→1（还剩 <code class="c">pb-&gt;a</code>）；<code class="c">pb</code> 销毁，B 的计数 2→1（还剩 <code class="c">pa</code> 尸体里的 <code class="c">b</code>）。<strong>A 的释放依赖 B 先析构，B 的释放依赖 A 先析构</strong>——死锁式的计数环。</p>
+<p>LeakSanitizer 实测（<code class="c">-fsanitize=address -g</code>，<code class="c">ASAN_OPTIONS=detect_leaks=1</code>）：</p>
+<pre class="code" data-label="code"><code class="c">==84763==ERROR: LeakSanitizer: detected memory leaks
+Indirect leak of 40 byte(s) in 1 object(s) allocated from:
+    ... #9 in main emcC_item20_cycle.cpp:18
+Indirect leak of 40 byte(s) in 1 object(s) allocated from:
+    ... #9 in main emcC_item20_cycle.cpp:17
+SUMMARY: AddressSanitizer: 80 byte(s) leaked in 2 allocation(s).
+</code></pre>
+<p>40 字节一块、共两块——正是 A、B 各自"对象+控制块"的合并分配（<code class="c">make_shared</code> 的缘故，见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item21-make-functions.md">Item 21</a>）。macOS 上 ASan <strong>默认不开泄漏检测</strong>，要加 <code class="c">ASAN_OPTIONS=detect_leaks=1</code>。</p>
+<h3>weak_ptr 破环</h3>
+<p>把环上的一条边改成 <code class="c">weak_ptr</code>（通常选"子指父"或"回指"的那条边）：<code class="c">struct B { std::weak_ptr&lt;A&gt; a; ... };</code>，本机实测输出：</p>
+<pre class="code" data-label="code"><code class="c">--- 进入作用域 ---
+pa.use_count() = 1        ← weak_ptr 不增强引用计数
+pb.use_count() = 2
+observer.expired() = 0
+~A()                      ← pa 销毁时 A 立即析构
+~B()                      ← A 析构 → b 成员销毁 → B 计数归零 → B 析构
+--- 离开作用域 ---
+observer.expired() = 1    ← 外部观察者正确看到&quot;已失效&quot;
+lock() 返回空? 1
+</code></pre>
+<p>关键事实：<strong><code class="c">weak_ptr</code> 不增加强引用计数</strong>（<code class="c">pa.use_count()</code> 保持 1），析构链因此能正常走完：<code class="c">pa</code> 销毁 → A 计数归零 → A 析构 → 成员 <code class="c">b</code> 销毁 → B 计数归零 → B 析构。</p>
 <hr />
-<h2>常见错误（新手踩坑）</h2>
-<p><strong>错误 1：环引用导致内存泄漏</strong></p>
-<pre class="code" data-label="cpp"><code class="c">struct A { std::shared_ptr&lt;B&gt; b; };
-struct B { std::shared_ptr&lt;A&gt; a; };  // 环！
-auto pa = std::make_shared&lt;A&gt;();
-auto pb = std::make_shared&lt;B&gt;();
-pa-&gt;b = pb;  // b 的引用计数 = 2
-pb-&gt;a = pa;  // a 的引用计数 = 2
-// pa, pb 离开作用域 → 引用计数各降 1 → 但还有 1 → 永不归零 → 内存泄漏
+<h2>lock() 的原子性与 expired() 的局限</h2>
+<p><code class="c">lock()</code> 在一次原子操作里完成：检查强引用计数 &gt; 0 → 递增 → 返回有效 <code class="c">shared_ptr</code>；否则返回空。为什么必须原子？看反面教材：</p>
+<pre class="code" data-label="cpp"><code class="c">if (!wp.expired()) {   // 检查
+    // ← 另一线程在此刻 reset 了最后一个 shared_ptr，对象销毁
+    auto p = wp.lock();  // 再获取——可能返回空！
+    p-&gt;do_work();        // 空指针解引用
+}
 </code></pre>
-<p><strong>修正：</strong> 一方用 <code class="c">weak_ptr</code> 破环。</p>
-<p><strong>错误 2：直接用 weak_ptr 访问对象</strong></p>
-<pre class="code" data-label="cpp"><code class="c">std::weak_ptr&lt;Widget&gt; wp = sp;
-wp-&gt;doSomething();  // 编译失败！weak_ptr 没有 -&gt; 操作符
-</code></pre>
-<p><strong>修正：</strong> 先 <code class="c">lock()</code> 拿到 <code class="c">shared_ptr</code> 再访问。</p>
-<p><strong>错误 3：lock() 后不检查返回值</strong></p>
-<pre class="code" data-label="cpp"><code class="c">auto p = wp.lock();  // 可能返回空 shared_ptr
-p-&gt;doSomething();    // 如果 wp 已悬垂 → 空指针解引用 → UB
-</code></pre>
-<p><strong>修正：</strong> <code class="c">if (auto p = wp.lock()) { p-&gt;doSomething(); }</code></p>
+<p><code class="c">expired()</code> 的返回值<strong>只能用于日志和统计</strong>——它回答的是"刚才那一刻死没死"，不是"下一秒还活着吗"。正确姿势永远是用 <code class="c">lock()</code> 的返回值判断：<code class="c">if (auto p = wp.lock()) { p-&gt;do_work(); }</code>——要么拿到活的，要么拿到空，没有中间态；且 <code class="c">p</code> 持有强引用，使用期间对象保证不死。</p>
 <hr />
-<h2>新手要点（和 C 的区别）</h2>
+<h2>三大经典场景</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>维度</th>
-<th>C 怎么做</th>
-<th>C++ 怎么做</th>
-<th>为什么</th>
+<th>场景</th>
+<th>谁持有 weak_ptr</th>
+<th>lock() 失败时怎么办</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>观察指针</td>
-<td>裸指针（可能悬垂）</td>
-<td><code class="c">weak_ptr</code>（可检测）</td>
-<td>安全</td>
+<td>打破环引用</td>
+<td>环上的"反向"边（子→父、prev）</td>
+<td>不会出现（环内保证存活）</td>
 </tr>
 <tr>
-<td>悬垂检测</td>
-<td>无法检测</td>
-<td><code class="c">lock()</code> 返回空</td>
-<td>原子检查</td>
+<td>观察者模式</td>
+<td>分发器持有观察者的 weak</td>
+<td>跳过并顺手清理</td>
 </tr>
 <tr>
-<td>引用计数</td>
-<td>手动管理</td>
-<td><code class="c">shared_ptr</code> 自动</td>
-<td>RAII</td>
-</tr>
-<tr>
-<td>环引用</td>
-<td>不适用（C 无引用计数）</td>
-<td><code class="c">weak_ptr</code> 破环</td>
-<td>避免内存泄漏</td>
+<td>缓存</td>
+<td>缓存表持有值的 weak</td>
+<td>重新加载，写回缓存</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>一句话总结：</strong> C 程序员记住——<code class="c">weak_ptr</code> 是"能检测悬垂的观察指针"。用 <code class="c">lock()</code> 原子地检查+获取，比 C 的裸指针安全得多。</p>
+<p>缓存场景的精妙之处：缓存<strong>不阻止</strong>对象被回收——没人用的数据自然释放，内存压力下缓存自动收缩；<code class="c">lock()</code> 失败了再加载一次即可。这是裸指针缓存做不到的行为。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>观察者 + 缓存 + expired 检测三合一，本机实测（clang 23.1.0, <code class="c">-std=c++17 -Wall</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;memory&gt;
+#include &lt;iostream&gt;
+#include &lt;map&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
+
+struct Observer {
+    std::string name;
+    explicit Observer(std::string n) : name(std::move(n)) {}
+    void update(const std::string&amp; m) { std::cout &lt;&lt; &quot;  [&quot; &lt;&lt; name &lt;&lt; &quot;] 收到: &quot; &lt;&lt; m &lt;&lt; &quot;\n&quot;; }
+    ~Observer() { std::cout &lt;&lt; &quot;  ~Observer(&quot; &lt;&lt; name &lt;&lt; &quot;)\n&quot;; }
+};
+
+struct Subject {
+    std::vector&lt;std::weak_ptr&lt;Observer&gt;&gt; observers;
+    void subscribe(const std::shared_ptr&lt;Observer&gt;&amp; o) { observers.push_back(o); }
+    void notify(const std::string&amp; msg) {
+        for (auto it = observers.begin(); it != observers.end();) {
+            if (auto sp = it-&gt;lock()) { sp-&gt;update(msg); ++it; }
+            else { std::cout &lt;&lt; &quot;  (跳过已销毁的观察者)\n&quot;;
+                   it = observers.erase(it); }       // 顺手清理
+        }
+    }
+};
+
+struct Quote { double bid, ask; };
+std::map&lt;std::string, std::weak_ptr&lt;Quote&gt;&gt; cache;
+
+std::shared_ptr&lt;Quote&gt; getQuote(const std::string&amp; sym) {
+    if (auto sp = cache[sym].lock()) { std::cout &lt;&lt; &quot;  缓存命中: &quot; &lt;&lt; sym &lt;&lt; &quot;\n&quot;; return sp; }
+    std::cout &lt;&lt; &quot;  缓存未命中，重新加载: &quot; &lt;&lt; sym &lt;&lt; &quot;\n&quot;;
+    auto sp = std::make_shared&lt;Quote&gt;(Quote{100.25, 100.30});
+    cache[sym] = sp;
+    return sp;
+}
+
+int main() {
+    std::cout &lt;&lt; &quot;== 观察者 ==\n&quot;;
+    Subject subj;
+    {
+        auto o1 = std::make_shared&lt;Observer&gt;(&quot;策略A&quot;);
+        auto o2 = std::make_shared&lt;Observer&gt;(&quot;策略B&quot;);
+        subj.subscribe(o1);
+        subj.subscribe(o2);
+        subj.notify(&quot;行情快照#1&quot;);
+    }   // o1、o2 在此销毁
+    subj.notify(&quot;行情快照#2&quot;);
+
+    std::cout &lt;&lt; &quot;== 缓存 ==\n&quot;;
+    {
+        auto q1 = getQuote(&quot;AAPL&quot;);
+        auto q2 = getQuote(&quot;AAPL&quot;);
+        std::cout &lt;&lt; &quot;  q1.use_count() = &quot; &lt;&lt; q1.use_count() &lt;&lt; &quot; (weak_ptr 不计入)\n&quot;;
+    }
+    auto q3 = getQuote(&quot;AAPL&quot;);   // 缓存里只剩悬垂 weak → 重新加载
+
+    std::cout &lt;&lt; &quot;== expired 检测 ==\n&quot;;
+    std::weak_ptr&lt;Quote&gt; wq = q3;
+    std::cout &lt;&lt; &quot;  存活时 expired = &quot; &lt;&lt; wq.expired() &lt;&lt; &quot;\n&quot;;
+    q3.reset();
+    std::cout &lt;&lt; &quot;  释放后 expired = &quot; &lt;&lt; wq.expired() &lt;&lt; &quot;\n&quot;;
+}
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">== 观察者 ==
+  [策略A] 收到: 行情快照#1
+  [策略B] 收到: 行情快照#1
+  ~Observer(策略B)
+  ~Observer(策略A)
+  (跳过已销毁的观察者)
+  (跳过已销毁的观察者)
+== 缓存 ==
+  缓存未命中，重新加载: AAPL
+  缓存命中: AAPL
+  q1.use_count() = 2 (weak_ptr 不计入)
+  缓存未命中，重新加载: AAPL
+== expired 检测 ==
+  存活时 expired = 0
+  释放后 expired = 1
+</code></pre>
+<hr />
+<h2>常见错误（新手踩坑）</h2>
+<ol>
+<li><strong>环引用导致内存泄漏</strong>。A↔B 互相 <code class="c">shared_ptr</code>，计数永不归零（本节开头实测）。修正：环上"回指"的边改 <code class="c">weak_ptr</code>。工程惯例：所有权方向（父→子、next）用 <code class="c">shared_ptr</code>，观察方向（子→父、prev）用 <code class="c">weak_ptr</code>。</li>
+<li><strong>直接用 <code class="c">weak_ptr</code> 访问对象</strong>。<code class="c">wp-&gt;doSomething();</code> 编译失败——<code class="c">weak_ptr</code> 故意不提供 <code class="c">*</code>/<code class="c">-&gt;</code>，逼你先 <code class="c">lock()</code>。这个"不便"是设计，不是缺陷。</li>
+<li><strong><code class="c">lock()</code> 后不检查返回值</strong>。<code class="c">auto p = wp.lock(); p-&gt;doSomething();</code> 当 <code class="c">wp</code> 已悬垂时是空指针解引用。修正：<code class="c">if (auto p = wp.lock()) { ... }</code>。</li>
+<li><strong>用 <code class="c">expired()</code> 做"检查后使用"</strong>。多线程下检查和使用之间有窗口期（TOCTOU）。永远用 <code class="c">lock()</code> 的原子语义。</li>
+</ol>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>观察者模式</strong>：行情分发器持有策略的 <code class="c">weak_ptr</code>，策略销毁后分发器 <code class="c">lock()</code> 返回空自动跳过——避免策略热卸载时的悬垂回调。</li>
-<li><strong>缓存</strong>：行情快照缓存用 <code class="c">weak_ptr</code>，内存紧张时可自动回收，<code class="c">lock()</code> 失败时重新拉取。</li>
-<li><strong>环引用</strong>：双向链表/图结构用 <code class="c">weak_ptr</code> 打破环，避免 <code class="c">shared_ptr</code> 导致的内存泄漏。</li>
+<li><strong>策略热卸载</strong>：行情分发器持有策略回调的 <code class="c">weak_ptr</code>。策略模块热更新/卸载后，分发器 <code class="c">lock()</code> 返回空自动跳过——避免向已 <code class="c">dlclose</code> 掉的代码段回调，这是裸指针回调表最难处理的场景。</li>
+<li><strong>行情快照缓存</strong>：<code class="c">map&lt;string, weak_ptr&lt;Quote&gt;&gt;</code> 做快照缓存，不活跃合约的快照自动回收，命中时零拷贝共享。</li>
+<li><strong>控制块开销</strong>：每个 <code class="c">weak_ptr</code> 会延长控制块寿命（对象死后控制块存活到最后一个 weak 销毁）。大对象 + 长期 weak 的内存滞留问题见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item21-make-functions.md">Item 21</a>。</li>
+<li><strong>热路径别滥用</strong>：<code class="c">shared_ptr</code>/<code class="c">weak_ptr</code> 的计数是原子操作，每次拷贝都是一次 atomic increment。能用 <code class="c">unique_ptr</code> 就别上 <code class="c">shared_ptr</code>，能保证存活期的观察就用裸指针/引用——<code class="c">weak_ptr</code> 的价值恰恰是"无法保证存活期"的场景。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">weak_ptr</code> 如何安全访问对象？<code class="c">lock()</code> 的原子性为什么重要？</li>
-<li><code class="c">weak_ptr</code> 的三大用途是什么？</li>
-<li>什么是 <code class="c">shared_ptr</code> 的环引用问题？<code class="c">weak_ptr</code> 如何解决？</li>
-<li><code class="c">lock()</code> 返回空 <code class="c">shared_ptr</code> 意味着什么？</li>
-<li>下面代码有什么问题？</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">std::weak_ptr&lt;Widget&gt; wp;
-{
-    auto sp = std::make_shared&lt;Widget&gt;();
-    wp = sp;
-}
-auto p = wp.lock();
-p-&gt;doSomething();
+<p><strong>1. <code class="c">weak_ptr</code> 为什么不能直接解引用？<code class="c">lock()</code> 的原子性解决了什么问题？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">weak_ptr</code> 不拥有对象，故意不提供 <code class="c">*</code>/<code class="c">-&gt;</code>，逼你显式处理"对象可能已死"的分支。<code class="c">lock()</code> 在一次原子操作里完成"检查计数 &gt; 0 → 递增 → 返回 shared_ptr"，消除 TOCTOU 竞争：拆成 <code class="c">expired()</code> 检查 + 获取两步，中间另一线程可能释放对象。返回的 <code class="c">shared_ptr</code> 还保证使用期间对象不死。</p>
+</details>
+<p><strong>2. 循环引用为什么泄漏？一句话说明计数为什么回不到零。</strong></p>
+<details>
+<summary>答案</summary>
+<p>A 的释放依赖 B 先析构（B 持有 <code class="c">shared_ptr&lt;A&gt;</code>），B 的释放依赖 A 先析构（A 持有 <code class="c">shared_ptr&lt;B&gt;</code>）——互相等待，谁也走不到第一步。实测离开作用域后无任何析构打印，LeakSanitizer 报 80 字节泄漏。</p>
+</details>
+<p><strong>3. <code class="c">weak_ptr</code> 会影响 <code class="c">use_count()</code> 吗？破环后析构顺序如何？</strong></p>
+<details>
+<summary>答案</summary>
+<p>不影响——实测 <code class="c">pb-&gt;a = pa</code>（weak）后 <code class="c">pa.use_count()</code> 仍为 1。破环后链式析构：<code class="c">pa</code> 销毁 → A 计数归零 → A 析构 → 成员 <code class="c">b</code> 销毁 → B 计数归零 → B 析构。</p>
+</details>
+<p><strong>4. <code class="c">lock()</code> 返回空意味着什么？正确处理方式是什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>意味着对象已析构（weak_ptr expired）。正确处理是走降级路径：重新加载（缓存）、跳过并清理（观察者）——绝不能解引用返回的空 <code class="c">shared_ptr</code>。</p>
+</details>
+<p><strong>5. 为什么不能用 <code class="c">expired()</code> 做"检查后使用"？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">expired()</code> 与随后的访问之间有窗口期：返回 false 只代表"检查那一刻活着"，另一线程下一纳秒可能就释放了最后一个 <code class="c">shared_ptr</code>。典型 TOCTOU 竞争，<code class="c">lock()</code> 的原子语义才安全。</p>
+</details>
+<p><strong>6. 观察者模式里 <code class="c">notify()</code> 时 <code class="c">lock()</code> 失败除了跳过还应做什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>顺手把悬垂的 <code class="c">weak_ptr</code> 从列表 <code class="c">erase</code> 掉。否则列表随时间积累大量死 weak（每个都还占着控制块），遍历成本越来越高。</p>
+</details>
+<p><strong>7. 下面代码输出什么？为什么？</strong></p>
+<pre class="code" data-label="cpp"><code class="c">auto sp = std::make_shared&lt;int&gt;(42);
+std::weak_ptr&lt;int&gt; wp = sp;
+std::cout &lt;&lt; sp.use_count() &lt;&lt; &quot;\n&quot;;
+sp.reset();
+std::cout &lt;&lt; wp.expired() &lt;&lt; &quot;\n&quot;;
 </code></pre>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p><code class="c">weak_ptr</code> 不拥有对象、不能直接用 <code class="c">*</code> / <code class="c">-&gt;</code> 访问，必须先 <code class="c">lock()</code> 得到一个 <code class="c">shared_ptr</code>，再检查它是否为空后使用。<code class="c">lock()</code> 的原子性至关重要：它必须在一次原子操作里完成"检查弱计数/强计数是否仍大于 0，若是则递增强引用计数"。如果这两步分开做（先 <code class="c">expired()</code> 判断再解引用），中间可能被其他线程抢先释放对象，你拿到的就是一个已经悬垂的指针——<code class="c">lock()</code> 保证"要么拿到一个有效的 <code class="c">shared_ptr</code>，要么拿到空"，不存在中间态。</p>
-</li>
-<li>
-<p>三大用途：①<strong>打破 <code class="c">shared_ptr</code> 环引用</strong>（父子、双向链表、图结构里让一方持有 <code class="c">weak_ptr</code>）；②<strong>观察者/回调的非拥有引用</strong>（分发器持有观察者的 <code class="c">weak_ptr</code>，对方销毁后 <code class="c">lock()</code> 失败自动跳过，避免悬垂回调）；③<strong>缓存</strong>（缓存持有 <code class="c">weak_ptr</code>，对象无人使用时自动释放；<code class="c">lock()</code> 失败就重新加载，内存压力下可自动回收）。此外也用于 <code class="c">enable_shared_from_this</code> 的内部实现。</p>
-</li>
-<li>
-<p>环引用指两个（或多个）对象互相持有 <code class="c">shared_ptr</code>，形成引用计数环：A 的计数靠 B 释放、B 的计数靠 A 释放，谁也不会归零，两个对象都无法析构，造成内存泄漏（且这类泄漏在长时间运行的行情/策略系统里会持续累积）。<code class="c">weak_ptr</code> 通过"只观察、不增加强引用计数"打破环：把环上的一条边改成 <code class="c">weak_ptr</code>（通常是子节点指向父节点、观察者指回主体），计数就能正常归零。注意这只解决<strong>强引用环</strong>，若还涉及 <code class="c">shared_from_this</code> 或自环同样需要检查。</p>
-</li>
-<li>
-<p>意味着被观察的对象<strong>已经不存在了</strong>（强引用计数已归零、对象已被析构，<code class="c">weak_ptr</code> 处于 expired 状态）。此时必须跳过使用、走降级路径（重新加载、重新注册、忽略该观察者），绝不能解引用——<code class="c">lock()</code> 返回的空 <code class="c">shared_ptr</code> 解引用是空指针解引用，属于未定义行为。因此正确写法总是先判空：</p>
-</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">if (auto p = wp.lock()) { p-&gt;doSomething(); }
-</code></pre>
-<ol start="5">
-<li>有问题，且会崩溃。内层作用域结束时 <code class="c">sp</code> 被销毁，<code class="c">Widget</code> 的唯一强引用消失，对象被析构；<code class="c">wp</code> 随之 expired。之后 <code class="c">wp.lock()</code> 返回一个<strong>空</strong> <code class="c">shared_ptr</code>，<code class="c">p-&gt;doSomething()</code> 就是对空 <code class="c">shared_ptr</code> 解引用——未定义行为（实际上通常是空指针调用成员函数而崩溃；若成员函数不访问 <code class="c">this</code> 可能"碰巧"不崩，但依然非法）。修正：</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">if (auto p = wp.lock()) { p-&gt;doSomething(); }
-else { /* 对象已销毁，走降级路径 */ }
-</code></pre>
+<summary>答案</summary>
+<p>输出 <code class="c">1</code> 和 <code class="c">1</code>（true）。<code class="c">weak_ptr</code> 不增强引用计数，<code class="c">use_count()</code> 保持 1；<code class="c">sp.reset()</code> 后唯一强引用消失，对象析构，<code class="c">wp</code> 变 expired。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
@@ -833,169 +904,221 @@ else { /* 对象已销毁，走降级路径 */ }
 <p>第 4 章 智能指针 · Item 21 · 上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item20-weak-ptr.md">Item 20 weak_ptr</a></p>
 </blockquote>
 <h2>为什么要学这个（先建立直觉）</h2>
-<p>C 程序员分配内存的方式：</p>
+<p>C 程序员分配内存一步到位：</p>
 <pre class="code" data-label="C"><code class="c">struct Widget* p = malloc(sizeof(struct Widget));
-if (p) { widget_init(p, args); }
-// ... 使用 ...
-free(p);  // 手动释放
+widget_init(p, args);
+free(p);
 </code></pre>
-<p>C++ 用 <code class="c">new</code>/<code class="c">delete</code> 替代 <code class="c">malloc</code>/<code class="c">free</code>，加上智能指针自动释放：</p>
-<pre class="code" data-label="cpp"><code class="c">// 方式 1：new + 包装（两次分配）
-std::shared_ptr&lt;Widget&gt; sp(new Widget(args));
-// → new 分配 Widget 一次，shared_ptr 分配控制块一次 = 2 次堆分配
-
-// 方式 2：make_shared（一次分配）
-auto sp = std::make_shared&lt;Widget&gt;(args);
-// → 一次分配同时建 Widget + 控制块 = 1 次堆分配
+<p>C++ 的 <code class="c">shared_ptr</code> 比 C 多了一样东西：<strong>控制块</strong>（强/弱引用计数、删除器等元数据）。直接用 <code class="c">new</code> 包装时，对象和控制块是<strong>两次</strong>堆分配：</p>
+<pre class="code" data-label="cpp"><code class="c">std::shared_ptr&lt;Widget&gt; sp(new Widget(args));  // new Widget 一次 + 控制块一次 = 2 次
+auto sp2 = std::make_shared&lt;Widget&gt;(args);     // 对象+控制块合并 = 1 次
 </code></pre>
-<p><code class="c">make_shared</code> 不仅少一次分配（更快、更 cache 友好），还解决了异常安全问题。</p>
+<p>少一次分配意味着：少一次 malloc 锁竞争、对象和控制块在同一 cache 行、代码还更短。这几乎是白捡的收益——但 <code class="c">make</code> 有三个不适用场景（自定义删除器、大对象+长期 weak_ptr、大括号初始化），不知道边界就会从"白捡"变成"白送bug"。</p>
 <hr />
 <h2>这节讲什么</h2>
-<p><code class="c">make_shared</code> 一次分配同时建对象 + 控制块，比 <code class="c">shared_ptr&lt;T&gt;(new T)</code> 的两次分配更省且 cache 友好。但有些场景不能用 <code class="c">make</code>。</p>
+<p>优先用 <code class="c">make_unique</code>（C++14）/ <code class="c">make_shared</code>（C++11）而非直接 <code class="c">new</code>：单次分配、异常安全、代码简洁。三个例外：需要自定义删除器、大对象且有长期 <code class="c">weak_ptr</code>、需要大括号初始化。</p>
 <hr />
-<h2>make 的优势</h2>
-<h3>单次堆分配</h3>
-<pre class="code" data-label="cpp"><code class="c">auto sp = std::make_shared&lt;Widget&gt;(args);           // 1 次分配
-auto sp2 = std::shared_ptr&lt;Widget&gt;(new Widget(args));  // 2 次分配
-// make_shared 把 Widget 对象和控制块放在同一块内存里
-// → 更少的 malloc 调用、更少的内存碎片、更好的 cache 局部性
+<h2>优势一：单次堆分配（实测）</h2>
+<p>用全局 <code class="c">operator new/delete</code> 计数器观察分配行为，本机实测（clang 23.1.0, <code class="c">-std=c++17 -Wall</code>）。<code class="c">Big</code> 是 4KB 的大对象：</p>
+<pre class="code" data-label="cpp"><code class="c">// make_shared：一次分配，对象+控制块同一块内存
+auto sp = std::make_shared&lt;Big&gt;();
+// new + shared_ptr：两次分配，对象和控制块分开
+std::shared_ptr&lt;Big&gt; sp2(new Big);
 </code></pre>
-<h3>异常安全</h3>
-<pre class="code" data-label="cpp"><code class="c">// 危险：new 和 may_throw 的求值顺序未指定
-func(std::shared_ptr&lt;T&gt;(new T), may_throw());
-// 可能的执行顺序：new T → may_throw() → 构造 shared_ptr
-// 如果 may_throw 抛异常 → new T 的内存泄漏！
-
-// 安全：make 保证不会泄漏
-func(std::make_shared&lt;T&gt;(), may_throw());
-// make_shared 内部一次完成分配+构造+包装，不会中间被打断
-</code></pre>
-<h3>代码简洁</h3>
-<pre class="code" data-label="cpp"><code class="c">// 啰嗦
-std::shared_ptr&lt;Widget&gt; sp(new Widget(42));
-std::unique_ptr&lt;Widget&gt; up(new Widget(42));
-
-// 简洁
-auto sp = std::make_shared&lt;Widget&gt;(42);
-auto up = std::make_unique&lt;Widget&gt;(42);  // C++14
-</code></pre>
+<p>本机实测（用全局 <code class="c">operator new/delete</code> 打日志，完整代码与输出见文末）：<code class="c">make_shared</code> 一侧只有一行 <code class="c">new 4120 字节</code>（4096 对象 + 24 控制块合并）；<code class="c">new</code> 一侧是两行 <code class="c">new 4096 字节</code> + <code class="c">new 32 字节</code>。malloc 次数减半，且对象与控制块相邻，增减引用计数时不会额外 cache miss。</p>
 <hr />
-<h2>不能用 make 的场景</h2>
-<pre class="code" data-label="cpp"><code class="c">// 1. 自定义删除器——make 不支持
-std::shared_ptr&lt;FILE&gt; fp(fopen(&quot;data.txt&quot;, &quot;r&quot;), fclose);
-// make_shared 无法传自定义删除器
+<h2>优势二：异常安全（C++17 前的求值顺序坑）</h2>
+<p>Meyers 书里的经典例子：</p>
+<pre class="code" data-label="cpp"><code class="c">void processWidget(std::shared_ptr&lt;Widget&gt; spw, int priority);
+int computePriority();   // 可能抛异常
 
-// 2. 自定义分配器
-std::shared_ptr&lt;T&gt; sp(std::allocate_shared&lt;T&gt;(alloc, args));
+processWidget(std::shared_ptr&lt;Widget&gt;(new Widget), computePriority());
+</code></pre>
+<p>C++17 之前，编译器可以按这个顺序执行：① <code class="c">new Widget</code>（裸指针产生，没人接管）→ ② <code class="c">computePriority()</code>（<strong>抛异常</strong>）→ ③ <code class="c">shared_ptr</code> 构造（永不执行）——<code class="c">new</code> 出来的 <code class="c">Widget</code> 永久泄漏。模拟这个顺序实测（<code class="c">-fsanitize=address -g</code>，<code class="c">ASAN_OPTIONS=detect_leaks=1</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">__attribute__((noinline)) void dangerousOrder() {
+    Widget* raw = new Widget;                  // ①
+    int prio = computePriority();              // ② 抛异常
+    processWidget(std::shared_ptr&lt;Widget&gt;(raw), prio);  // ③ 永不执行
+}
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">Widget()
+computePriority() 抛异常
+caught: boom
+main 结束（注意没有 ~Widget()）
+=================================================================
+==86433==ERROR: LeakSanitizer: detected memory leaks
+Direct leak of 1 byte(s) in 1 object(s) allocated from:
+    #1 in dangerousOrder() emcC_item21_order.cpp:22
+SUMMARY: AddressSanitizer: 1 byte(s) leaked in 1 allocation(s).
+</code></pre>
+<p><strong>注意 C++17 已修掉这个坑</strong>：标准规定函数实参的求值<strong>以整个实参为单位</strong>、不允许交错——<code class="c">shared_ptr&lt;Widget&gt;(new Widget)</code> 这个实参要么完整构造好，要么还没开始。本机实测（clang 23.1.0, <code class="c">-std=c++17</code>）原始写法也<strong>不泄漏</strong>：</p>
+<pre class="code" data-label="code"><code class="c">Widget()
+computePriority()
+~Widget()          ← shared_ptr 实参已完整构造，栈展开时正常析构
+caught: boom
+</code></pre>
+<p>但 Meyers 的建议依然成立：<strong>用 <code class="c">make_shared</code> 就根本不用关心求值顺序规则</strong>，而且在 C++11/14 模式下编译老代码时这个坑仍然活着。这是"不要依赖你知道编译器怎么做"的典型案例。</p>
+<hr />
+<h2>局限一：不能指定自定义删除器</h2>
+<p><code class="c">make_*</code> 系列没有把删除器传进去的入口：</p>
+<pre class="code" data-label="cpp"><code class="c">// 自定义删除器必须用 new + 构造函数
+std::shared_ptr&lt;FILE&gt; fp(fopen(&quot;data.bin&quot;, &quot;rb&quot;), &amp;fclose);
+// make_shared 做不到这件事——没有接受删除器的重载
+</code></pre>
+<p>需要自定义分配器时同理，用 <code class="c">std::allocate_shared</code>。</p>
+<hr />
+<h2>局限二：大对象 + 长期 weak_ptr → 内存滞留</h2>
+<p>这是单次分配的<strong>反面</strong>：<code class="c">make_shared</code> 把对象和控制块放进同一块内存，而 <code class="c">weak_ptr</code> 依赖控制块存活——只要还有一个 <code class="c">weak_ptr</code> 活着，<strong>整块内存</strong>（包括早已析构的大对象占的部分）都不能归还。本机实测：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Big { char data[4096]; };
+std::weak_ptr&lt;Big&gt; wp;
+{
+    auto sp = std::make_shared&lt;Big&gt;();   // vs shared_ptr&lt;Big&gt;(new Big)
+    wp = sp;
+}   // sp 死：Big 析构了，但内存归还了吗？
+// wp 还活着 → 观察 live bytes
+</code></pre>
+<p>实测（完整输出见文末"完整可运行例子"）：<code class="c">make_shared</code> 版本 <code class="c">sp</code> 死后 <code class="c">live = 4120</code>——对象已析构，<strong>4120 字节整块滞留</strong>，直到 <code class="c">wp</code> 也析构才 <code class="c">delete 4120</code>；<code class="c">new</code> 版本 <code class="c">sp</code> 一死立即 <code class="c">delete 4096 字节</code>，只剩 32 字节控制块陪 <code class="c">wp</code> 到最后。</p>
+<p>对象 4KB、滞留时间 = 最后一个 <code class="c">weak_ptr</code> 的寿命。换成 40MB 的帧缓冲 + 一个长期存活的监控 weak_ptr，滞留的就是 40MB。这种场景用 <code class="c">shared_ptr&lt;Big&gt;(new Big)</code>。</p>
+<hr />
+<h2>局限三：完美转发传不了大括号</h2>
+<p><code class="c">make_*</code> 的实参是函数参数包，大括号初始化列表<strong>不是有类型的表达式</strong>，推不了导（和 <a href="chapter-01.html#ch-1">Item 2</a> 的模板推导失败同源）。本机实测报错原文：</p>
+<pre class="code" data-label="cpp"><code class="c">auto bad = std::make_unique&lt;std::vector&lt;int&gt;&gt;({1, 2, 3});
+</code></pre>
+<pre class="code" data-label="code"><code class="c">error: no matching function for call to 'make_unique'
+    auto bad = std::make_unique&lt;std::vector&lt;int&gt;&gt;({1, 2, 3});
+               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+note: candidate template ignored: substitution failure [with _Tp = std::vector&lt;int&gt;]:
+      deduced incomplete pack &lt;(no value)&gt; for template parameter '_Args'
+</code></pre>
+<p>圆括号则一切正常（实测输出 <code class="c">10</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">auto v = std::make_unique&lt;std::vector&lt;int&gt;&gt;(10, 0);  // 10 个 0
+// 想要大括号语义，绕道：
+auto il = {1, 2, 3};
+auto v2 = std::make_unique&lt;std::vector&lt;int&gt;&gt;(il);    // OK：il 有类型
+// 或直接 new
+std::shared_ptr&lt;std::vector&lt;int&gt;&gt; v3(new std::vector&lt;int&gt;{1, 2, 3});
+</code></pre>
+<p>另外注意版本差异：<code class="c">make_unique</code> 是 <strong>C++14</strong> 才有的（C++11 只有 <code class="c">make_shared</code>），本机实测 <code class="c">-std=c++11</code> 下报 <code class="c">error: no member named 'make_unique' in namespace 'std'</code>。</p>
+<hr />
+<h2>完整可运行例子</h2>
+<p>内存滞留对比的完整实测代码（clang 23.1.0, <code class="c">-std=c++17 -Wall</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;memory&gt;
+#include &lt;iostream&gt;
+#include &lt;new&gt;
 
-// 3. 大对象 + 长期 weak_ptr
-// make_shared 把对象和控制块绑在一起——对象析构后内存延迟到所有 weak_ptr 销毁才回收
-// 如果对象很大且有长期存活的 weak_ptr → 内存延迟释放
-auto sp = std::make_shared&lt;BigData&gt;();  // BigData 析构后内存仍被 weak_ptr 持有
-std::weak_ptr&lt;BigData&gt; wp = sp;  // 长期持有
-sp.reset();  // BigData 析构了，但内存没释放（等 wp 销毁）
+static long g_liveBytes = 0;
+void* operator new(std::size_t n) {
+    g_liveBytes += n;
+    std::cout &lt;&lt; &quot;  new &quot; &lt;&lt; n &lt;&lt; &quot; 字节\n&quot;;
+    return std::malloc(n);
+}
+void operator delete(void* p, std::size_t n) noexcept {
+    g_liveBytes -= n; std::cout &lt;&lt; &quot;  delete &quot; &lt;&lt; n &lt;&lt; &quot; 字节\n&quot;; std::free(p);
+}
+
+struct Big { char data[4096]; };   // 4KB 大对象
+
+int main() {
+    std::cout &lt;&lt; &quot;== make_shared：对象和控制块同一块 ==\n&quot;;
+    {
+        std::weak_ptr&lt;Big&gt; wp;
+        {
+            auto sp = std::make_shared&lt;Big&gt;();
+            wp = sp;
+            std::cout &lt;&lt; &quot;  live = &quot; &lt;&lt; g_liveBytes &lt;&lt; &quot;\n&quot;;
+        }
+        std::cout &lt;&lt; &quot;  sp 死后(wp 还活着) live = &quot; &lt;&lt; g_liveBytes &lt;&lt; &quot;\n&quot;;
+    }
+    std::cout &lt;&lt; &quot;  wp 也死后 live = &quot; &lt;&lt; g_liveBytes &lt;&lt; &quot;\n&quot;;
+
+    std::cout &lt;&lt; &quot;== new + shared_ptr：对象和控制块分开 ==\n&quot;;
+    {
+        std::weak_ptr&lt;Big&gt; wp;
+        {
+            std::shared_ptr&lt;Big&gt; sp(new Big);
+            wp = sp;
+            std::cout &lt;&lt; &quot;  live = &quot; &lt;&lt; g_liveBytes &lt;&lt; &quot;\n&quot;;
+        }
+        std::cout &lt;&lt; &quot;  sp 死后(wp 还活着) live = &quot; &lt;&lt; g_liveBytes &lt;&lt; &quot;\n&quot;;
+    }
+    std::cout &lt;&lt; &quot;  wp 也死后 live = &quot; &lt;&lt; g_liveBytes &lt;&lt; &quot;\n&quot;;
+}
+</code></pre>
+<p>实测输出（前面各节已引用）：</p>
+<pre class="code" data-label="code"><code class="c">== make_shared：对象和控制块同一块 ==
+  new 4120 字节
+  live = 4120
+  sp 死后(wp 还活着) live = 4120
+  delete 4120 字节
+  wp 也死后 live = 0
+== new + shared_ptr：对象和控制块分开 ==
+  new 4096 字节
+  new 32 字节
+  live = 4128
+  delete 4096 字节
+  sp 死后(wp 还活着) live = 32
+  delete 32 字节
+  wp 也死后 live = 0
 </code></pre>
 <hr />
 <h2>常见错误（新手踩坑）</h2>
-<p><strong>错误 1：函数参数中 new + 异常泄漏</strong></p>
-<pre class="code" data-label="cpp"><code class="c">void process(std::shared_ptr&lt;Widget&gt; sp, int priority);
-process(std::shared_ptr&lt;Widget&gt;(new Widget), compute_priority());
-// 如果 compute_priority 先执行且抛异常 → Widget 泄漏
-</code></pre>
-<p><strong>修正：</strong> <code class="c">process(std::make_shared&lt;Widget&gt;(), compute_priority());</code></p>
-<p><strong>错误 2：大对象 + 长期 weak_ptr 用 make_shared</strong></p>
-<pre class="code" data-label="cpp"><code class="c">auto sp = std::make_shared&lt;HugeBuffer&gt;();  // 10MB
-std::weak_ptr&lt;HugeBuffer&gt; monitor = sp;    // 监控对象长期持有
-sp.reset();  // HugeBuffer 析构了，但 10MB 内存没释放！
-</code></pre>
-<p><strong>修正：</strong> 用 <code class="c">std::shared_ptr&lt;HugeBuffer&gt;(new HugeBuffer)</code> 分离对象和控制块。</p>
-<p><strong>错误 3：用 new 传给 make_shared</strong></p>
-<pre class="code" data-label="cpp"><code class="c">auto sp = std::make_shared&lt;Widget&gt;(new Widget());  // 两次 new！
-// make_shared 会在内部 new，你又传了一个 new 的对象
-</code></pre>
-<p><strong>修正：</strong> <code class="c">auto sp = std::make_shared&lt;Widget&gt;();</code>（传构造参数，不是 new 的对象）</p>
-<hr />
-<h2>新手要点（和 C 的区别）</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>维度</th>
-<th>C 怎么做</th>
-<th>C++ 怎么做</th>
-<th>为什么</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>分配</td>
-<td><code class="c">malloc</code></td>
-<td><code class="c">new</code> / <code class="c">make_shared</code></td>
-<td>C++ 有构造函数</td>
-</tr>
-<tr>
-<td>释放</td>
-<td><code class="c">free</code></td>
-<td><code class="c">delete</code> / 智能指针自动</td>
-<td>RAII</td>
-</tr>
-<tr>
-<td>异常安全</td>
-<td>不适用</td>
-<td><code class="c">make_shared</code> 保证</td>
-<td>异常安全</td>
-</tr>
-<tr>
-<td>分配次数</td>
-<td>1 次 <code class="c">malloc</code></td>
-<td><code class="c">make_shared</code> 1 次，<code class="c">new</code> 2 次</td>
-<td>控制块</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>一句话总结：</strong> C 程序员记住——<code class="c">make_unique</code>/<code class="c">make_shared</code> 是"分配+构造+包装"一步到位的安全工厂函数。优先用它们，除非需要自定义删除器或大对象+长期 weak_ptr。</p>
+<ol>
+<li><strong><code class="c">make_shared</code> 里再套 <code class="c">new</code></strong>。<code class="c">make_shared&lt;Widget&gt;(new Widget)</code> 把 <code class="c">Widget*</code> 当构造实参转发——要么编译失败，要么 <code class="c">new</code> 出来的对象没人接管直接泄漏。<code class="c">make_*</code> 收的是<strong>构造参数</strong>，不是指针。</li>
+<li><strong>大对象 + 长期 <code class="c">weak_ptr</code> 还用 <code class="c">make_shared</code></strong>。对象析构后整块内存滞留到最后一个 weak 死亡（本节实测）。修正：<code class="c">shared_ptr&lt;Big&gt;(new Big)</code> 分离分配。</li>
+<li><strong>以为 <code class="c">make</code> 总是异常安全的最优解而忽略版本</strong>。<code class="c">make_unique</code> 是 C++14 才有；C++11 工程要么自己写一个简单的（书里有 5 行实现），要么用 <code class="c">unique_ptr&lt;T&gt;(new T)</code> 并接受其异常安全分析。</li>
+<li><strong>想给 <code class="c">make_shared</code> 传大括号</strong>。<code class="c">{1,2,3}</code> 推不出类型（实测报错见上）。先把列表绑到 <code class="c">auto il = {...}</code> 再传，或用 <code class="c">new</code>。</li>
+</ol>
 <hr />
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>cache 友好</strong>：<code class="c">make_shared</code> 的单次分配让对象和控制块在同一 cache 行，减少 cache miss。</li>
-<li><strong>异常安全</strong>：HFT 代码在热路径中传 <code class="c">shared_ptr</code> 给函数时用 <code class="c">make_shared</code> 避免异常泄漏。</li>
-<li><strong>减少分配次数</strong>：每减少一次 <code class="c">malloc</code> 都能减少锁竞争和内存碎片——HFT 低延迟场景每次微秒都重要。</li>
+<li><strong>malloc 次数减半 + cache 局部性</strong>：每次堆分配都可能撞内存池锁；<code class="c">make_shared</code> 少一次分配，且控制块与对象同块——增减 <code class="c">use_count()</code> 后紧接着访问对象数据，大概率同一 cache 行。</li>
+<li><strong>内存滞留即容量风险</strong>：4KB 实测放大到百万级订单对象，长期 weak 监控会让内存水位居高不下。HFT 里监控/审计引用如果必须长期存在，考虑分离分配或对监控侧改用裸指针+存活期协议。</li>
+<li><strong>异常安全不依赖编译器版本</strong>：热路径上的 <code class="c">f(shared_ptr&lt;T&gt;(new T), g())</code> 写法在 C++11/14 编译模式下仍是泄漏隐患，<code class="c">make_shared</code> 一劳永逸。</li>
 </ul>
 <hr />
 <h2>自测题</h2>
-<ol>
-<li><code class="c">make_shared</code> 比 <code class="c">shared_ptr&lt;T&gt;(new T)</code> 省在哪里？</li>
-<li><code class="c">func(shared_ptr&lt;T&gt;(new T), may_throw())</code> 有什么异常安全问题？<code class="c">make_shared</code> 如何解决？</li>
-<li>什么场景下不能用 <code class="c">make_shared</code> 而要用 <code class="c">new</code>？</li>
-<li>为什么大对象 + 长期 <code class="c">weak_ptr</code> 不适合 <code class="c">make_shared</code>？</li>
-<li>下面代码有什么问题？</li>
-</ol>
+<p><strong>1. <code class="c">make_shared</code> 比 <code class="c">shared_ptr&lt;T&gt;(new T)</code> 省在哪？实测分配次数各是多少？</strong></p>
+<details>
+<summary>答案</summary>
+<p>省在一次堆分配：<code class="c">new</code> 版本 2 次（对象 4096B + 控制块 32B），<code class="c">make_shared</code> 1 次（合并 4120B）。附带收益：对象与控制块同 cache 行、代码更短、异常安全。</p>
+</details>
+<p><strong>2. <code class="c">processWidget(shared_ptr&lt;Widget&gt;(new Widget), computePriority())</code> 在 C++17 前为什么可能泄漏？C++17 改了什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p>C++17 前实参求值可交错：<code class="c">new Widget</code> → <code class="c">computePriority()</code> 抛异常 → <code class="c">shared_ptr</code> 构造未执行，裸指针泄漏（实测 ASan 报 Direct leak）。C++17 规定实参求值不可交错，泄漏路径封死；但 C++11/14 模式下坑仍在，<code class="c">make_shared</code> 与版本无关地安全。</p>
+</details>
+<p><strong>3. 为什么 <code class="c">make_shared</code> 不能用于需要自定义删除器的场景？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">make_*</code> 的接口只有"类型 + 构造参数"，没有传入删除器的重载。删除器只能走 <code class="c">shared_ptr&lt;T&gt;(p, deleter)</code> 构造函数，例如 <code class="c">std::shared_ptr&lt;FILE&gt; fp(fopen(...), &amp;fclose);</code>。</p>
+</details>
+<p><strong>4. 大对象 + 长期 <code class="c">weak_ptr</code> 为什么不宜用 <code class="c">make_shared</code>？实测数据是什么？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">make_shared</code> 把对象与控制块合并分配，而 <code class="c">weak_ptr</code> 依赖控制块存活——只要还有 weak 活着，整块内存不能归还。实测：4KB 对象，<code class="c">make_shared</code> 版本 sp 死后仍滞留 4120B；<code class="c">new</code> 版本 sp 死后立即归还 4096B，只留 32B 控制块。</p>
+</details>
+<p><strong>5. <code class="c">std::make_unique&lt;std::vector&lt;int&gt;&gt;({1,2,3})</code> 为什么编译失败？怎么绕？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">{1,2,3}</code> 是 braced-init-list，不是有类型的表达式，模板的参数包 <code class="c">_Args</code> 无法从中推导（实测报 <code class="c">deduced incomplete pack &lt;(no value)&gt;</code>）。绕法：<code class="c">auto il = {1,2,3}; make_unique&lt;vector&lt;int&gt;&gt;(il)</code>，或用圆括号 <code class="c">(10, 0)</code>，或直接 <code class="c">new</code>。</p>
+</details>
+<p><strong>6. <code class="c">make_unique</code> 是哪个标准版本引入的？C++11 下怎么办？</strong></p>
+<details>
+<summary>答案</summary>
+<p>C++14。C++11 只有 <code class="c">make_shared</code>（实测 <code class="c">-std=c++11</code> 报 <code class="c">no member named 'make_unique'</code>）。C++11 下可手写 5 行的 <code class="c">make_unique</code>（<code class="c">return std::unique_ptr&lt;T&gt;(new T(std::forward&lt;Args&gt;(args)...));</code>），或直接用 <code class="c">unique_ptr&lt;T&gt;(new T(...))</code>。</p>
+</details>
+<p><strong>7. 下面代码有什么问题？</strong></p>
 <pre class="code" data-label="cpp"><code class="c">auto sp = std::make_shared&lt;Widget&gt;(new Widget(42));
 </code></pre>
 <details>
-<summary>参考答案</summary>
-<ol>
-<li>
-<p>省在一次内存分配：<code class="c">shared_ptr&lt;T&gt;(new T)</code> 需要两次分配（一次给 <code class="c">T</code> 对象，一次给控制块），<code class="c">make_shared&lt;T&gt;</code> 把对象和控制块放在<strong>同一块连续内存</strong>里一次分配完成。收益有三：分配次数减半（malloc 是 HFT 里的锁竞争与碎片来源）、控制块与对象相邻因而 <strong>cache 局部性更好</strong>、少一个指针间接与一块元数据内存。此外 <code class="c">make_shared</code> 也消除了异常安全问题（见第 2 题），且代码更短。</p>
-</li>
-<li>
-<p>问题在于实参求值顺序未指定：编译器可能先 <code class="c">new T</code>（分配并构造对象），再调用 <code class="c">may_throw()</code>，然后才构造 <code class="c">shared_ptr</code>。若 <code class="c">may_throw()</code> 抛异常，那块已 <code class="c">new</code> 出来但还没交给任何智能指针的内存就<strong>永久泄漏</strong>了（<code class="c">shared_ptr</code> 根本没被构造）。<code class="c">make_shared</code> 把"分配"和"交给智能指针"合成一个函数调用，返回的 <code class="c">shared_ptr</code> 立刻拥有对象：即使后续实参求值抛异常，<code class="c">shared_ptr</code> 临时对象也会在栈展开时正常析构并释放内存。同理 <code class="c">std::make_unique</code> 解决了 <code class="c">unique_ptr</code> 的同类问题。</p>
-</li>
-<li>
-<p>主要三类：①需要<strong>自定义删除器</strong>或自定义分配器（<code class="c">make_*</code> 不支持指定删除器，只能 <code class="c">shared_ptr&lt;T&gt;(p, deleter)</code>）；②需要<strong>大括号初始化</strong>（<code class="c">make_shared</code> 转发的是圆括号，无法传 <code class="c">initializer_list</code>，如 <code class="c">auto v = std::make_shared&lt;std::vector&lt;int&gt;&gt;({1,2,3})</code> 不行，需 <code class="c">std::shared_ptr&lt;std::vector&lt;int&gt;&gt;(new std::vector&lt;int&gt;{1,2,3})</code>）；③对象构造失败/需要特殊内存布局（重载了 <code class="c">operator new</code>/<code class="c">operator delete</code> 的类、需要 <code class="c">new (ptr)</code> 放置构造、或类有 protected 构造需要友元工厂）。另外需要 <code class="c">weak_ptr</code> 长期持有大对象时也不宜用 <code class="c">make_shared</code>（见第 4 题）。</p>
-</li>
-<li>
-<p>因为 <code class="c">make_shared</code> 把对象和控制块放在<strong>同一块内存</strong>里，而 <code class="c">weak_ptr</code> 依赖控制块存活（弱计数）。只要还有任何一个 <code class="c">weak_ptr</code> 存在，控制块就不能释放，于是与之同块分配的<strong>整个对象存储</strong>（哪怕对象早已析构）也无法归还——大对象会因此长期占用内存。用 <code class="c">shared_ptr&lt;T&gt;(new T)</code> 时对象与控制块分开分配，对象析构后立即单独释放，只有小的控制块会留存到最后一个 <code class="c">weak_ptr</code> 消失。</p>
-</li>
-<li>
-<p>既冗余又泄漏。<code class="c">make_shared&lt;Widget&gt;(args...)</code> 会把 args 转发给 <code class="c">Widget</code> 的构造函数，这里传的是 <code class="c">new Widget(42)</code>（一个 <code class="c">Widget*</code>），于是它尝试用 <code class="c">Widget(Widget*)</code> 构造——若无匹配构造函数则编译失败；若恰好有 <code class="c">Widget(Widget*)</code> 构造函数能编译，那块 <code class="c">new</code> 出来的 <code class="c">Widget</code> 就没人接管，永远泄漏。正确写法是把构造参数直接传给 <code class="c">make_shared</code>：</p>
-</li>
-</ol>
-<pre class="code" data-label="cpp"><code class="c">auto sp = std::make_shared&lt;Widget&gt;(42);   // 传构造实参，不传 new
-</code></pre>
+<summary>答案</summary>
+<p><code class="c">make_shared</code> 把实参转发给 <code class="c">Widget</code> 的构造函数，这里传的是 <code class="c">Widget*</code>——若无 <code class="c">Widget(Widget*)</code> 构造则编译失败；若恰有则能编译但 <code class="c">new</code> 出来的对象没人接管，永久泄漏。正确写法：<code class="c">std::make_shared&lt;Widget&gt;(42)</code>，传构造参数而不是指针。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
 <ul>
+<li>上一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item20-weak-ptr.md">Item 20 weak_ptr</a></li>
 <li>下一节：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/item22-pimpl.md">Item 22 Pimpl</a></li>
 <li>回到：<a href="#intro">第 4 章 智能指针</a></li>
 </ul>
