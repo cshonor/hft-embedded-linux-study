@@ -658,6 +658,77 @@ new int[3]       sizeof*3 = 12 字节，实际申请 12 字节，偏移 0 字节
 <li><strong>只有析构非平凡的类型才需要它。</strong> <code class="c">int</code> 这类平凡类型 <code class="c">delete[]</code> 不必逐个析构，就不用记元素数——<strong>连头部都省掉了</strong>。</li>
 </ol>
 <p>算内存池容量时若把这块漏了，池子会算少；按 8 字节算也会算少。</p>
+<h3>calloc：清零 ≠ 构造（UB 的判定链）</h3>
+<p>C 里 <code class="c">calloc</code> 就是「<code class="c">malloc</code> + 清零」的省事写法，但它在 C++ 里最会骗人：<strong>字节清得干干净净，看着规规矩矩，对象却一次都没构造。</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th style="text-align: center;"><code class="c">malloc</code></th>
+<th style="text-align: center;"><code class="c">calloc</code></th>
+<th style="text-align: center;"><code class="c">new T</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>拿到堆内存</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>写字节</td>
+<td style="text-align: center;">❌ 脏数据</td>
+<td style="text-align: center;">✅ 全位零</td>
+<td style="text-align: center;">视初始化形式</td>
+</tr>
+<tr>
+<td><strong>调用构造函数</strong></td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td><strong>对象生命周期开始</strong></td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>释放</td>
+<td style="text-align: center;"><code class="c">free</code> 不析构</td>
+<td style="text-align: center;"><code class="c">free</code> 不析构</td>
+<td style="text-align: center;"><code class="c">delete</code> 先析构</td>
+</tr>
+</tbody>
+</table></div>
+<p>「<code class="c">calloc</code> 之后能不能直接用」由两条标准规则决定：</p>
+<ol>
+<li><strong>生命周期开始 = 拿到存储 + 初始化完成</strong>（<code class="c">[basic.life]</code>）。<code class="c">calloc</code> 只完成了前一半。</li>
+<li><strong>C++20 的隐式对象创建（P0593）</strong>确实说分配函数会「隐式创建对象」，但<strong>只对 implicit-lifetime 类型</strong>——聚合体、标量、默认构造 trivial 的类。用户写了构造函数的类不在其列，<strong>一个对象都不会被创建</strong>。</li>
+</ol>
+<p>所以 <code class="c">struct A { int val; A() : val(42) {} };</code> 经 <code class="c">calloc</code> 后读 <code class="c">p-&gt;val</code>，实测（macOS + clang 23.1.0 + libc++，2026-10-19）：</p>
+<pre class="code" data-label="code"><code class="c">构造函数写的是 val = 42
+实际读到       val = 0        &lt;- 读到 0 = 观测到不可能状态
+is_trivially_default_constructible_v&lt;A&gt; = 0
+</code></pre>
+<p><strong>「输出 0」恰恰证明它是 UB</strong>：一个合法存在的 A，val 必然是 42；读到 0 只能说明那里根本没有对象。而且 <code class="c">-O0</code> / <code class="c">-O2</code> / <code class="c">-fsanitize=undefined</code> 三档输出完全一致，<strong>UBSan 一声不吭</strong>——它查的是「未初始化读」，而 <code class="c">calloc</code> 确实把字节写了。</p>
+<p>换成带虚函数的类，不用推理、当场就能看见崩溃（vptr 那 8 个字节也被清零，通过空 vptr 做虚调用）：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(V) = 16
+val = 0，准备调用虚函数...
+EXIT=139        &lt;- SIGSEGV
+</code></pre>
+<p><strong>唯一能翻盘的条件</strong>：把构造函数删掉，让类型退回 trivial 聚合体——此时 C++20 起的隐式对象创建接管，读成员是合法的（实测输出 0）。分水岭不是「用没用 calloc」，而是<strong>这个类型有没有 non-trivial 的构造函数</strong>。</p>
+<p>正确写法：把「内存」和「构造」两件事分开结清。</p>
+<pre class="code" data-label="cpp"><code class="c">void* raw = calloc(1, sizeof(A));
+A*    r   = new (raw) A();    // 括号 = 值初始化；有用户构造函数则走默认构造
+// ... 用 r ...
+r-&gt;~A();                      // 显式析构
+free(raw);                    // 归还内存（这里不能用 delete）
+</code></pre>
+<blockquote>
+<p>⚠️ <code class="c">calloc</code> 清的是<strong>全位零（all-bits-zero）</strong>，不是「值等于 0」。整数类型可以放心依赖（C++20 起保证纯二进制 + 二补数）；但<strong>指针成员全零位不保证是 <code class="c">nullptr</code>、浮点不保证是 <code class="c">0.0</code>、padding 位也不保证</strong>——实测在 arm64 + libc++ 上 <code class="c">ptr</code> 确实是 <code class="c">0x0</code>、<code class="c">double</code> 确实是 <code class="c">0</code>，但这只是这个平台的巧合，不可写成依赖。</p>
+</blockquote>
 <h2>和 C 的区别</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -792,6 +863,22 @@ std::shared_ptr&lt;int&gt; q(raw);         // 用裸指针构造另一个
 <p>删掉 <code class="c">~Data()</code> 后变成平凡析构类型，<code class="c">delete[]</code> 不必逐个析构，就不需要记元素个数——<strong>连 16 字节头部都省了</strong>，只申请 <strong>2400 字节</strong>。</p>
 <p>给内存池算容量时踩的两个坑：① 忘了头部 → 池子算小了；② 以为头部是 8 字节 → 还是算小了（arm64 + libc++ 实测是 16）。</p>
 </details>
+<p><strong>7. 判断题</strong>：下面代码是否安全？</p>
+<pre class="code" data-label="cpp"><code class="c">struct A { int val; A() : val(42) {} };
+A* p = (A*)calloc(1, sizeof(A));
+std::cout &lt;&lt; p-&gt;val &lt;&lt; std::endl;
+</code></pre>
+<ul>
+<li>A. 安全，输出 0</li>
+<li>B. UB，未定义行为</li>
+</ul>
+<details>
+<summary>答案</summary>
+<p>B。而且 <strong>A 选项自相矛盾</strong>：如果它真的安全合法，那对象就存在，构造函数跑过，val 就该是 <strong>42</strong>。</p>
+<p>判定链：① 对象生命周期开始 = 拿到存储 + 初始化完成，<code class="c">calloc</code> 只给了存储；② C++20 隐式对象创建只对 implicit-lifetime 类型生效，而 <code class="c">A</code> 有用户提供的构造函数（<code class="c">is_trivially_default_constructible_v&lt;A&gt; == 0</code>），不适用 → <strong>内存上没有 A 对象</strong> → 访问 <code class="c">p-&gt;val</code> 是 UB。</p>
+<p>实测印证：三档优化下都输出 <code class="c">0</code>（不是 42），UBSan 不报错；若把 <code class="c">A</code> 加上虚函数，<code class="c">calloc</code> 后虚调用直接 SIGSEGV（exit 139）。反例：删掉构造函数让 <code class="c">A</code> 变回 trivial 聚合体，此时 C++20 起合法，输出 0。</p>
+<p>正确写法是 <code class="c">new (raw) A()</code> 显式构造 + <code class="c">r-&gt;~A()</code> 显式析构 + <code class="c">free(raw)</code>。</p>
+</details>
 <h2>可跑的例子</h2>
 <p><strong><code class="c">examples/12.2-placement-new.cpp</code></strong> —— 亲手看 placement new 到底干了什么。</p>
 <pre class="code" data-label="shell"><code class="c">clang++ -std=c++20 12.2-placement-new.cpp -o /tmp/demo &amp;&amp; /tmp/demo
@@ -873,6 +960,22 @@ clang++ -std=c++11 -O0 12.2-delete-vs-free.cpp -o /tmp/demo11 &amp;&amp; /tmp/de
     int[3]：sizeof*3 = 12 字节，申请了 12 字节，偏移 0 字节
 </code></pre>
 <p><strong>两条最值得记的数字</strong>：有析构的类型每次 <code class="c">new[]</code> 额外付 <strong>16 字节</strong>；<code class="c">int</code> 这类平凡类型<strong>一分钱都不付</strong>。我一直以为头部是 8 字节，跑完才发现不是。</p>
+<p><strong><code class="c">examples/12.2-calloc-is-not-construct.cpp</code></strong> —— 上面「calloc 清零 ≠ 构造」那条链，跑一遍全都看得见。</p>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++20 -O0 12.2-calloc-is-not-construct.cpp -o /tmp/calloc_demo &amp;&amp; /tmp/calloc_demo
+/tmp/calloc_demo --crash      # 崩给你看（故意的）
+</code></pre>
+<p>真实输出（节选）：</p>
+<pre class="code" data-label="code"><code class="c">========== 实验 1：calloc + 有构造函数的类 ==========
+    构造函数写的是 val = 42
+    实际读到       val = 0     &lt;- 读到 0 = 观测到不可能状态
+    is_trivially_default_constructible_v&lt;A&gt; = 0
+
+========== 实验 6：calloc 后调虚函数 ==========
+    sizeof(V) = 16
+    val = 0，准备调用虚函数...
+EXIT=139        &lt;- SIGSEGV
+</code></pre>
+<p><strong>换 <code class="c">-O2</code> 重跑，输出逐字相同</strong> —— 这正是 UB 麻烦的地方：它不是「有时对有时错」，而是「在这个平台上稳定地错成 0」，把错误伪装成看起来合理的结果。</p>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §12.2：动态数组与 new/delete</li>
