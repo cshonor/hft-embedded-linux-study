@@ -21,6 +21,7 @@
   - [2.4.1 const 基础与 constexpr](./2.4-const-qualifier/2.4.1-const基础与constexpr.md)
   - [2.4.2 const 口诀与声明语法](./2.4-const-qualifier/2.4.2-const口诀与声明语法.md)
   - [2.4.3 constexpr 详解](./2.4-const-qualifier/2.4.3-constexpr详解.md)
+  - [2.4.4 const 在类里的传播](./2.4-const-qualifier/2.4.4-const在类里的传播.md)
 - [2.5 处理类型](./2.5-处理类型.md)
 - [2.6 自定义数据结构](./2.6-custom-data-structures/2.6-自定义数据结构.md)
   - [2.6.1 Sales_data 入门与聚合](./2.6-custom-data-structures/2.6.1-Sales_data入门与聚合.md)
