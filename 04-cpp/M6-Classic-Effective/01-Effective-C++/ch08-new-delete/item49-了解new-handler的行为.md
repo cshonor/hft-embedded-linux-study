@@ -1,4 +1,4 @@
-# 条款 48：了解 new-handler 的行为
+# 条款 49：了解 new-handler 的行为
 
 ## 本节讲什么
 
@@ -7,8 +7,8 @@
 给你"抢救内存"的机会：释放应急池、重试、或者干脆换种死法。
 这条讲清 new-handler 的循环语义、注册方法、以及工程上该不该用它。
 
-← 上一条 [item47 traits classes](../ch07-templates-generics/item47-请使用traits-classes表现类型信息.md)；
-下一条 [item49 类内 new/delete](./item49-了解class-specific的new-delete.md)。
+← 上一条 [item48 模板元编程](../ch07-templates-generics/item48-了解模板元编程.md)；
+下一条 [item49b 类内 new/delete 补充](./item49b-了解class-specific的new-delete.md)。
 
 ---
 
@@ -130,3 +130,31 @@ handler 的注册权属于**应用层**（main 的早期）——库要抢救内
 和断线预案是同构的风险哲学。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item48-了解new、delete的各种含义.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** `set_new_handler` 的作用是什么？
+```cpp
+void outOfMemory() {
+    std::cerr << "Out of memory!";
+    std::abort();
+}
+int main() {
+    std::set_new_handler(outOfMemory);
+    // 之后 new 失败会调用 outOfMemory
+}
+```
+
+<details>
+<summary>参考答案</summary>
+
+`set_new_handler` 注册一个在 `operator new` 无法满足内存请求时调用的回调函数。回调可以：1) 释放可用内存后返回（让 new 重试）；2) 抛 `bad_alloc` 异常；3) 调用 `abort()`/`exit()` 终止程序。不设 handler 时默认抛 `bad_alloc`。
+
+</details>
+

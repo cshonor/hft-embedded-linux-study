@@ -132,3 +132,27 @@ Stack 根本不想提供——继承把这些承诺**全部公开**给了用户�
 而不是运行时才能发现的坑。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item32-确定你的public继承塑模出is-a关系.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 以下继承关系是否正确？为什么？
+```cpp
+class Bird { public: virtual void fly(); };
+class Penguin : public Bird {};
+Penguin p;
+p.fly();  // 企鹅能飞？
+```
+
+<details>
+<summary>参考答案</summary>
+
+不正确。`Penguin` is-a `Bird` 暗示企鹅具备鸟的所有行为，包括飞——但企鹅不会飞。`is-a` 关系要求派生类能替换基类而程序行为正确。修正：要么去掉 `Bird::fly()`（不是所有鸟都能飞），要么区分 `FlyingBird` 和 `Bird`。is-a 不是「在现实世界中属于同一类别」，而是「在程序中能正确替换」。
+
+</details>
+

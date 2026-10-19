@@ -114,3 +114,33 @@ unordered_map 的热路径三宗罪：① 节点分配（每个元素一次 new�
 "view 进热路径，owning 留冷路径"是字符串处理的延迟纪律（→ item28 句柄管理）。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item54-熟悉标准库，优先复用而非重复造轮子.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 以下功能 C++ 标准库已经提供，不该手写。写出对应的头文件。
+1) 动态数组 → ?
+2) 链表 → ?
+3) 哈希表 → ?
+4) 智能指针 → ?
+5) 正则表达式 → ?
+6) 线程 → ?
+
+<details>
+<summary>参考答案</summary>
+
+1) `std::vector` — `<vector>`
+2) `std::list` — `<list>`
+3) `std::unordered_map` — `<unordered_map>`
+4) `std::unique_ptr` / `std::shared_ptr` — `<memory>`
+5) `std::regex` — `<regex>`
+6) `std::thread` — `<thread>`
+标准库经过充分测试、跨平台、性能优化。优先复用而非重复造轮子。
+
+</details>
+

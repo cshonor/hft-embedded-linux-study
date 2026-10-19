@@ -134,3 +134,28 @@ is-a 谎言随代码扩散（用户开始依赖基类接口），**剥离成本�
 松耦合 → 强耦合容易，强耦合 → 松耦合难：默认站在松的一边。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item38-组合（复合）关系优先于继承.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 以下关系应该用继承还是组合？
+```cpp
+// 场景：一个 OrderBook 内部使用 std::list 来存储订单
+class OrderBook : public std::list<Order> {};  // 继承
+class OrderBook {
+    std::list<Order> orders;  // 组合
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+应该用组合。OrderBook 和 list 不是 is-a 关系（OrderBook 不是一种 list），而是 has-a / is-implemented-in-terms-of 关系。组合意味着 OrderBook 复用 list 的实现但不受其接口约束。用继承会暴露 list 的全部 public 接口，破坏封装。
+
+</details>
+

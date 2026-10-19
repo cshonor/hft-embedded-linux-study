@@ -139,3 +139,30 @@ public:
 using 声明在 public 继承里是"防遮掩"，在私有继承里是"选择性曝光"。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item33-区分接口继承和实现继承.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 纯虚函数、虚函数（impure virtual）、非虚函数分别表达什么继承语义？
+```cpp
+class Shape {
+    virtual void draw() const = 0;  // ?
+    virtual void error(const string& msg);  // ?
+    int objectId() const;  // ?
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+纯虚函数（`= 0`）：只继承接口，派生类必须实现。
+虚函数（impure）：继承接口 + 默认实现，派生类可 override。
+非虚函数：继承接口 + 强制实现，派生类不应 override（不变性）。
+
+</details>
+

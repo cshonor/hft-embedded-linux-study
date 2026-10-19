@@ -123,3 +123,41 @@ IOC 的特殊标识放自己的成员（`ioc_seq_`），别碰 id。
 永远不在选项里的就是：重定义非虚函数。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item36-避免多层继承里出现名字遮蔽.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 下面代码中 `Derived::func` 遮蔽了 `Base::func(int)`。如何修复？
+```cpp
+class Base {
+public:
+    void func(int x) { /* ... */ }
+};
+class Derived : public Base {
+public:
+    void func(double d) { /* ... */ }
+};
+Derived d;
+d.func(42);  // 调用哪个？
+```
+
+<details>
+<summary>参考答案</summary>
+
+调用 `Derived::func(double)`——`42` 被隐式转为 double。`Base::func(int)` 被名字遮蔽，即使参数类型更匹配也不可用。修复：在 Derived 中使用 using 声明：
+```cpp
+class Derived : public Base {
+public:
+    using Base::func;  // 引入基类的重载
+    void func(double d) { /* ... */ }
+};
+```
+现在 `d.func(42)` 会调用 `Base::func(int)`，`d.func(3.14)` 调用 `Derived::func(double)`。
+
+</details>
+

@@ -134,3 +134,28 @@ public:
 继承列表和构造初始化列表是禁写区。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item42-typename和class在模板里的区别.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 下面代码中 `typename` 的作用是什么？去掉会怎样？
+```cpp
+template<typename T>
+void f() {
+    typename T::iterator it;  // typename 的作用？
+    // T::iterator it;  // 不加 typename 会怎样？
+}
+```
+
+<details>
+<summary>参考答案</summary>
+
+`typename` 告诉编译器 `T::iterator` 是一个类型名，不是变量名。去掉 `typename`，编译器默认假设 `T::iterator` 是变量（因为 `T` 未知时无法确定），所以 `T::iterator it;` 会被解析为变量乘变量——编译错误。规则：模板中依赖模板参数的嵌套类型名前必须加 `typename`（C++20 后可省略，但之前的版本必须加）。
+
+</details>
+

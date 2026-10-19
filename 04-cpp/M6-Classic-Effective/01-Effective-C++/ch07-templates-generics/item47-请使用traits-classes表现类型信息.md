@@ -160,3 +160,44 @@ traits 把"类型的元数据"从"类型的实现"里解放出来——
 这正是本条"用 traits 表现类型信息"的完整含义。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item47-用traits萃取类获取类型信息.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 如何用 traits 类在编译期判断迭代器类型？
+```cpp
+template<typename IterT>
+void advance(IterT& it, int n) {
+    // 如何根据迭代器类型选择不同实现？
+}
+```
+
+<details>
+<summary>参考答案</summary>
+
+用 `iterator_traits` + tag dispatch：
+```cpp
+template<typename IterT>
+void advance(IterT& it, int n) {
+    doAdvance(it, n,
+        typename std::iterator_traits<IterT>::iterator_category());
+}
+template<typename IterT>
+void doAdvance(IterT& it, int n, std::random_access_iterator_tag) {
+    it += n;  // 随机访问迭代器直接 +=
+}
+template<typename IterT>
+void doAdvance(IterT& it, int n, std::input_iterator_tag) {
+    while (n--) ++it;  // 只能逐个 ++
+}
+```
+Traits 类统一了迭代器类型信息的访问方式，tag dispatch 在编译期选择实现，零运行时开销。
+
+</details>
+
+← [条款 47：traits classes 表现类型信息](./item47-请使用traits-classes表现类型信息.md) | [条款 48：了解模板元编程 →](./item48-了解模板元编程.md)

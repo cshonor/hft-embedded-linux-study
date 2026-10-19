@@ -116,3 +116,27 @@ Boost 里哪个组件对口？核心机制是什么？
 自研方案的评估基准线（先问自己：比 Interprocess 好在哪里，才值得手写）。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item55-提升整体开发效率，关注编码规范、工具、测试、评审全流程.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** Boost 库在 C++ 生态中扮演什么角色？举出 3 个被 C++ 标准吸收的 Boost 库。
+
+<details>
+<summary>参考答案</summary>
+
+Boost 是 C++ 标准库的「试验场」——许多 Boost 库后来被纳入标准（TR1/C++11/C++17）。被吸收的例子：
+1) `boost::shared_ptr` → `std::shared_ptr`（C++11）
+2) `boost::regex` → `std::regex`（C++11）
+3) `boost::filesystem` → `std::filesystem`（C++17）
+4) `boost::optional` → `std::optional`（C++17）
+5) `boost::variant` → `std::variant`（C++17）
+学习 Boost 有助于提前了解未来标准方向。
+
+</details>
+

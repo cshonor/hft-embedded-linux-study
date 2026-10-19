@@ -133,3 +133,27 @@ D 是空类（无状态 deleter，如 `std::default_delete`）时基类子对象
 "deleter 无状态化"（状态外移到池单例/全局）是真实的尺寸优化。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item39-谨慎使用私有继承.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 私有继承和组合都能表达 is-implemented-in-terms-of，何时选哪个？
+```cpp
+// 方式A：私有继承
+class Timer : private Widget { /* ... */ };
+// 方式B：组合
+class Timer { Widget w; /* ... */ };
+```
+
+<details>
+<summary>参考答案</summary>
+
+优先用组合（方式B）。私有继承在以下情况才考虑：1) 需要访问 protected 成员；2) 需要重写虚函数。如果基类是空类（EBO，Empty Base Optimization），私有继承可以省 1 字节（组合方式空成员也占至少 1 字节）。其余情况组合更好——更灵活、更易理解。
+
+</details>
+

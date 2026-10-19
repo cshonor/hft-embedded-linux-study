@@ -1,4 +1,4 @@
-# 条款 49：了解 class-specific 的 new/delete
+# 补充条款：了解 class-specific 的 new/delete
 
 ## 本节讲什么
 
@@ -7,7 +7,7 @@
 它是"给某个高频小对象配专用池"的语言机制。本条讲清类内重载的形态、
 继承时的传播规则、以及与容器分配器的分工。
 
-← 上一条 [item48 new-handler](./item48-了解new-handler的行为.md)；
+← 上一条 [item49 new-handler](./item49-了解new-handler的行为.md)；
 下一条 [item50 替换 new/delete 的时机](./item50-了解new和delete的合理替换时机.md)。
 
 ---
@@ -125,3 +125,21 @@ delete 同理镜像：先析构（对象死了），再 `operator delete` 释放
 混用期望（"类内重载了，vector 也该走池"）是这套机制最常见的误解。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item49-重载operatornew、operatordelete遵守常规规则.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 什么情况下需要替换全局 `operator new`/`operator delete`？
+
+<details>
+<summary>参考答案</summary>
+
+常见原因：1) 检测内存泄漏（在 new/delete 中记录分配/释放）；2) 提高性能（用内存池减少 malloc 开销）；3) 统计内存使用量；4) 增加对齐保证（如 16 字节对齐）。替换后必须遵守约定：正确处理 `new(0)`（应分配 1 字节）、循环重试 + new-handler、异常安全。
+
+</details>
+

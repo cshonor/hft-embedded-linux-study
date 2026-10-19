@@ -7,7 +7,7 @@
 Meyers 给出五个正当理由，按价值排序：**检测错误 > 统计埋点 > 性能 >
 对齐 > 定制行为**。前两个几乎零风险该常备，性能理由要先有 profile 证据。
 
-← 上一条 [item49 类内 new/delete](./item49-了解class-specific的new-delete.md)；
+← 上一条 [item49b 类内 new/delete 补充](./item49b-了解class-specific的new-delete.md)；
 下一条 [item51 new/delete 的常规](./item51-编写new和delete时需固守常规.md)。
 
 ---
@@ -124,3 +124,31 @@ operator new/delete 版本，**对齐成为语言级一等公民**，
 还是真有定制需求（NUMA/pmem）？
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item50-写了placementnew，一定要配套写placementdelete.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 替换 `operator new` 时，为什么要处理 size==0 的情况？
+```cpp
+void* operator new(std::size_t size) {
+    if (size == 0) size = 1;  // 为什么？
+    while (true) {
+        void* p = malloc(size);
+        if (p) return p;
+        // new-handler 处理...
+    }
+}
+```
+
+<details>
+<summary>参考答案</summary>
+
+C++ 标准允许 `new T` 中 `T` 是空类（`sizeof(T) == 0`），但 `operator new` 必须返回合法指针。如果不处理 `size==0`，`malloc(0)` 的行为是实现定义的（可能返回 nullptr 或返回不可用的指针）。统一处理为 `size = 1` 保证返回有效内存。同时 `operator delete` 也要能处理来自 `new(0)` 的指针。
+
+</details>
+

@@ -119,3 +119,40 @@ freelist 只减不增，但"活着的对象"计数正常（对象根本没建成
 静态断言两个签名的参数列表一致（→ item52 配对规则速查表）。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item52-遵守placementnewdelete完整配对规则.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** placement new/delete 的名字遮蔽问题如何避免？
+```cpp
+class Base {
+public:
+    static void* operator new(std::size_t, void* p) { return p; }
+};
+class Derived : public Base {
+public:
+    static void* operator new(std::size_t s) { return malloc(s); }
+    // Base::operator new(size, void*) 还能用吗？
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+不能用。`Derived` 中的 `operator new(size_t)` 遮蔽了 `Base` 中的 `operator new(size_t, void*)`。修复：在 Derived 中用 using 声明引入基类版本：
+```cpp
+class Derived : public Base {
+public:
+    using Base::operator new;  // 引入 placement new
+    static void* operator new(std::size_t s) { return malloc(s); }
+};
+```
+或确保不自定义普通 new（让编译器使用全局的）。
+
+</details>
+

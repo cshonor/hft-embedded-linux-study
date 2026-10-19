@@ -118,3 +118,37 @@ handler 选择终止循环（抛异常/abort/注销自己）时，bad_alloc 才�
 从"别让类内重载把 placement 藏掉"开始。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item51-重载全局内存分配函数三思而后行.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 写了 placement new，为什么必须配套写 placement delete？
+```cpp
+class Widget {
+    static void* operator new(std::size_t s, std::ostream& log) {
+        log << "allocating";
+        return ::operator new(s);
+    }
+    // 缺少什么？
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+缺少配套的 placement delete：
+```cpp
+static void operator delete(void* p, std::ostream& log) {
+    log << "freeing";
+    ::operator delete(p);
+}
+```
+如果 `Widget` 构造函数在 placement new 后抛异常，编译器需要调用对应签名的 placement delete 来释放内存。没有配套的 placement delete，内存泄漏。注意：placement delete 只在构造异常时被调用，正常析构走普通 delete。
+
+</details>
+

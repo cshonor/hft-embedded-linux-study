@@ -136,3 +136,33 @@ B 版被遮掩（item33），适合两版本语义等价、选谁都行；
 真实系统常混用：框架边界用①，策略内部热分发用②（→ item35 组合用法）。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item40-谨慎使用多重继承.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 菱形继承中，以下代码有什么问题？
+```cpp
+class File { public: virtual void open() {} };
+class InputFile : public File {};
+class OutputFile : public File {};
+class IOFile : public InputFile, public OutputFile {};
+```
+
+<details>
+<summary>参考答案</summary>
+
+`IOFile` 中有两份 `File` 子对象（来自 InputFile 和 OutputFile 各一份），导致 `File::open()` 有歧义——`IOFile` 对象上调用 `open()` 编译器不知道走哪条路径。解决：虚继承：
+```cpp
+class InputFile : virtual public File {};
+class OutputFile : virtual public File {};
+class IOFile : public InputFile, public OutputFile {};
+```
+虚继承保证只有一份 `File` 子对象。但虚继承有额外开销（虚基类指针），能不用就不用。
+
+</details>
+

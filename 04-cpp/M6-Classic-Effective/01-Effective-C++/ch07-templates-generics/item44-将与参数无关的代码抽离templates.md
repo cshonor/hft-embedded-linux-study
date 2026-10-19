@@ -155,3 +155,39 @@ STL 的 `vector<T*>` 在主流实现里就复用 `vector<void*>` 的代码——
 语义和机器码都与 T 无关的部分（→ 无锁队列的抽离实践）。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item44-把与参数无关的代码抽离模板.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 以下模板会产生代码膨胀，如何消除？
+```cpp
+template<typename T, int N>
+class SquareMatrix {
+    void invert() { /* N×N 矩阵求逆，与 T 无关的逻辑 */ }
+};
+SquareMatrix<double, 5> m1;
+SquareMatrix<double, 10> m2;  // invert() 的代码被实例化两份
+```
+
+<details>
+<summary>参考答案</summary>
+
+将与 N 无关的逻辑抽到非模板基类或独立函数中：
+```cpp
+class SquareMatrixBase {
+    void invert(int n) { /* 通用 NxN 求逆 */ }
+};
+template<typename T, int N>
+class SquareMatrix : private SquareMatrixBase {
+    void invert() { SquareMatrixBase::invert(N); }
+};
+```
+这样 `invert` 的实现只有一份，N 作为参数传入。
+
+</details>
+

@@ -128,3 +128,33 @@ private:
 这就是"接口继承与实现继承分离"在框架设计里的标准答案。
 
 </details>
+
+---
+
+### 补充自测（早期笔记合并）
+
+> 来自早期笔记 `item34-不要重写继承而来的非虚成员函数.md`。该文件内容已并入本节，文件已删除（git 历史可查）。
+
+### 代码自测
+
+**题目 1：** 下面代码输出什么？为什么？
+```cpp
+class Base {
+public:
+    void f() { std::cout << "Base"; }  // 非虚
+};
+class Derived : public Base {
+public:
+    void f() { std::cout << "Derived"; }
+};
+Base* p = new Derived;
+p->f();  // 输出？
+```
+
+<details>
+<summary>参考答案</summary>
+
+输出 `Base`。非虚函数是静态绑定的——`p` 的静态类型是 `Base*`，所以调用 `Base::f()`，不受实际对象类型影响。重新定义非虚函数是错误的——如果行为需要因派生类而异，函数应该声明为 virtual。
+
+</details>
+

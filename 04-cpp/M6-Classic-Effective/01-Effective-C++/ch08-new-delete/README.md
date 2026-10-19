@@ -4,11 +4,11 @@
 
 ## 条款
 
-- [条款 48：了解 new、delete 的各种含义](./item48-了解new、delete的各种含义.md)
-- [条款 49：重载 operator new、operator delete 遵守常规规则](./item49-重载operatornew、operatordelete遵守常规规则.md)
-- [条款 50：写了 placement new，一定要配套写 placement delete](./item50-写了placementnew，一定要配套写placementdelete.md)
-- [条款 51：重载全局内存分配函数三思而后行](./item51-重载全局内存分配函数三思而后行.md)
-- [条款 52：遵守 placement new/delete 完整配对规则](./item52-遵守placementnewdelete完整配对规则.md)
+- [条款 49：了解 new-handler 的行为](./item49-了解new-handler的行为.md)
+- [补充条款：class-specific 的 new/delete](./item49b-了解class-specific的new-delete.md)
+- [条款 50：了解 new 和 delete 的合理替换时机](./item50-了解new和delete的合理替换时机.md)
+- [条款 51：编写 new 和 delete 时需固守常规](./item51-编写new和delete时需固守常规.md)
+- [条款 52：写了 placement new 也要写 placement delete](./item52-写了placement-new也要写placement-delete.md)
 
 
 ## 章节摘要
@@ -43,7 +43,7 @@ delete p;
 
 **`placement new`：** `new (buf) Widget` — 跳过第一步（用已有内存 `buf`），只执行第二步（构造）。
 
-**复习：** → [条款 48：了解 new、delete 的各种含义](./item48-了解new、delete的各种含义.md)
+**复习：** → [了解 new-handler 的行为](./item49-了解new-handler的行为.md)
 </details>
 
 ### Q2: placement new 配对
@@ -72,5 +72,5 @@ p->~Widget();  // 显式析构
 
 **STL 容器底层：** `vector` 扩容时用 `placement new` 在新内存上移动构造元素。
 
-**复习：** → [条款 50：写了 placement new，一定要配套写 placement delete](./item50-写了placementnew，一定要配套写placementdelete.md)
+**复习：** → [了解 new 和 delete 的合理替换时机](./item50-了解new和delete的合理替换时机.md)
 </details>
