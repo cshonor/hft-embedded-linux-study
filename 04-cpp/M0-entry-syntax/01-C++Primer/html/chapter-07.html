@@ -1488,6 +1488,127 @@ public: PlayerB(const std::string&amp; name) { m_Name = name; } };  // 写法B
                                                ^~~~~~~~~~  ~~~~~~~~~~~~
 </code></pre>
 <p>坑在哪：若 <code class="c">m_Age(age)</code> 的实参依赖 <code class="c">m_Name</code>（比如 <code class="c">: m_Age(m_Name.size()), m_Name(name)</code>），而 <code class="c">m_Name</code> 声明在前，程序会<strong>先执行</strong> <code class="c">m_Name.size()</code>——此时 m_Name 还是默认构造的空串，Age 拿到 0 而不是正确值，且不报错。<strong>规则</strong>：列表书写顺序永远照抄声明顺序，让警告无处可报。</p>
+<h3>为什么是冒号：没有第二个位置能放参数</h3>
+<p>成员和基类在构造函数体开始执行<strong>之前</strong>就已经构造完了。控制流进到 <code class="c">{</code> 时，<code class="c">name_</code> 已经是一个活着的 <code class="c">std::string</code>，此时再写 <code class="c">name_ = n</code> 只能是赋值。所以"构造它们所需的实参"必须在进入函数体之前交出去，而语法上只有一处能交：构造函数形参表后面那个 <code class="c">:</code>。</p>
+<pre class="code" data-label="cpp"><code class="c">Person::Person(std::string n, int a)
+    : name_(std::move(n)), age_(a)      // ctor-initializer：函数体之前执行
+{ /* 走到这里，name_ 与 age_ 已经构造完毕 */ }
+</code></pre>
+<p>三处语法细节能看出它不是赋值：</p>
+<ul>
+<li>元素必须写成 <code class="c">成员(实参)</code> 或 <code class="c">成员{实参}</code>，<strong>不能</strong>写成 <code class="c">成员 = 实参</code>——后者在初值列里根本不是合法语法。</li>
+<li>元素之间用逗号，整个列表<strong>不能为空</strong>（写 <code class="c">A() : {}</code> 是语法错误）。</li>
+<li>初值列只能出现在构造函数的<strong>定义</strong>处，声明里不能写。</li>
+</ul>
+<p>前两条有编译器原文可查（gcc 13.2）：</p>
+<pre class="code" data-label="cpp"><code class="c">A(int v) : x = v {}      // 写成赋值
+B() : {}                 // 写成空列表
+</code></pre>
+<pre class="code" data-label="text"><code class="c">error: expected '(' before '=' token
+error: expected '{' before '=' token
+error: expected identifier before '{' token
+</code></pre>
+<p>冒号后面必须紧跟至少一个 <code class="c">成员(...)</code>，这条语法约束本身就说明：初值列不是"赋值语句的集合"，而是一串<strong>构造请求</strong>。</p>
+<p>对照其他语言：Java 在函数体第一行写 <code class="c">super(...)</code>，C# 写 <code class="c">: base(...)</code>，都是"调用"父构造。C++ 没有这种语句，因为成员和基类不是被显式调用，而是<strong>由构造函数隐式构造</strong>，参数只能从初值列走。</p>
+<h3>「两次构造」的准确说法：一次默认构造 + 一次赋值</h3>
+<p>先纠正措辞：<strong>严格讲不是两次构造，是"默认构造 + 赋值"</strong>。但赋值对类类型成员往往等价于重新填一遍，代价和再构造一次接近，口语里就说成了"构造两次"。</p>
+<p>实测（gcc 13.2，<code class="c">-std=c++17 -O0 -fno-elide-constructors</code>，成员类带构造/赋值/析构打印）：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Bad  { Member m; Bad(int x)  { m = x; } };   // 函数体赋值
+struct Good { Member m; Good(int x) : m(x) {} };    // 初值列
+</code></pre>
+<pre class="code" data-label="text"><code class="c">[Bad]  函数体里赋值
+  Member()       默认构造
+  Member(int)    转换构造
+  operator=      赋值
+  ~Member()
+  ~Member()
+[Good] 初值列
+  Member(int)    转换构造
+  ~Member()
+</code></pre>
+<p>Bad 版的完整轨迹：进入函数体之前，<code class="c">m</code> 先被<strong>默认构造</strong>；<code class="c">m = x</code> 里 <code class="c">x</code> 再被<strong>转换构造</strong>成临时对象，然后调 <code class="c">operator=</code>，临时对象立即析构；函数结束时成员才析构。五条记录里有两次构造、一次赋值、两次析构。Good 版只有一次构造。</p>
+<p>代价落在哪：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>成员类型</th>
+<th>不用初值列的额外代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">int</code> / <code class="c">double</code> 等标量</td>
+<td>无。两种写法都是一条存储指令，差别只在"已初始化"还是"未初始化"</td>
+</tr>
+<tr>
+<td><code class="c">std::string</code></td>
+<td>多一次默认构造 + 一次赋值，赋值可能重新分配</td>
+</tr>
+<tr>
+<td><code class="c">std::vector</code></td>
+<td>同上，赋值还可能触发扩容</td>
+</tr>
+<tr>
+<td>自定义类型</td>
+<td>取决于默认构造与 <code class="c">operator=</code> 的实现，可能远贵于一次构造</td>
+</tr>
+</tbody>
+</table></div>
+<p>比性能更硬的是<strong>能不能编译</strong>，见下一节。</p>
+<h3>四种必须在初值列里处理的成员</h3>
+<pre class="code" data-label="cpp"><code class="c">struct Member { Member(int) {} };                 // 无默认构造
+
+struct A { Member m; A() {} };                    // ① 类类型成员无默认构造
+struct B { const int v; B(int x) { v = x; } };    // ② const 成员
+struct C { int&amp; r; C(int&amp; x) { r = x; } };        // ③ 引用成员
+</code></pre>
+<pre class="code" data-label="text"><code class="c">error: no matching function for call to 'Member::Member()'
+error: uninitialized const member in 'const int' [-fpermissive]
+note: 'const int B::v' should be initialized
+error: assignment of read-only member 'B::v'
+error: uninitialized reference member in 'int&amp;' [-fpermissive]
+note: 'int&amp; C::r' should be initialized
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情况</th>
+<th>为什么必须在初值列</th>
+<th>报错关键词</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">const</code> 成员</td>
+<td>构造完成后不能再赋值</td>
+<td><code class="c">uninitialized const member</code> / <code class="c">read-only member</code></td>
+</tr>
+<tr>
+<td>引用成员</td>
+<td>引用必须绑定，且绑定后不能改绑</td>
+<td><code class="c">uninitialized reference member</code></td>
+</tr>
+<tr>
+<td>无默认构造的类类型成员</td>
+<td>函数体之前那一步"默认构造"根本调不到</td>
+<td><code class="c">no matching function for call to ...::Member()</code></td>
+</tr>
+<tr>
+<td>无默认构造的基类</td>
+<td>同理，基类子对象也要先构造</td>
+<td><code class="c">no matching function for call to ...::Base()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>前两条是<strong>语言规则</strong>（不可赋值），后两条是<strong>类型系统</strong>（没有可用的构造）。四条的共同点是：函数体之前那一阶段必须成功，而那一阶段唯一的参数入口就是初值列。</p>
+<h3>基类与成员谁先谁后</h3>
+<p>顺序由标准规定，与列表书写顺序无关：<strong>虚基类 → 直接基类（按声明顺序）→ 成员（按声明顺序）→ 函数体</strong>；析构严格逆序。</p>
+<pre class="code" data-label="cpp"><code class="c">struct D : B1, B2 {
+    M1 m1; M2 m2;
+    D() : m2(0), m1(1), B2(), B1() {}    // 实际执行顺序：B1, B2, m1, m2
+};
+</code></pre>
+<p>写反不会报错，只在 <code class="c">-Wreorder</code> 下给警告。若 <code class="c">m2</code> 的初值依赖 <code class="c">m1</code>，写反就是读到未初始化值——不报错，只出错值。</p>
 <h3>委托构造（C++11）</h3>
 <pre class="code" data-label="cpp"><code class="c">class Sales_data {
 public:
