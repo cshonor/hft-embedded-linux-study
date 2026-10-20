@@ -1660,6 +1660,182 @@ f(&quot;hello&quot;);          // 没 explicit 时：隐式 char*→String，合
 f(String(&quot;hello&quot;));  // 显式构造，始终合法
 </code></pre>
 <p><code class="c">explicit</code> 防止"一个参数的构造函数"被编译器用来做意外的隐式类型转换。</p>
+<h4>术语：这种构造函数叫「转换构造函数」</h4>
+<p>C++ Primer §7.5.4 的说法更精确：<strong>只接受一个实参、且没有 <code class="c">explicit</code> 的构造函数，定义了一条「从该实参类型到类类型」的隐式转换规则</strong>——这样的构造函数叫<strong>转换构造函数（converting constructor）</strong>。也就是说，你写一个单参构造函数的同时，等于<strong>顺手给编译器开了一条隐式转换通道</strong>，这是 C 程序员最陌生的 C++ 特性（C 的 struct 没有这种"构造函数顺带当转换器"的行为）。</p>
+<pre class="code" data-label="cpp"><code class="c">class Entity {                       // Cherno 视频里的例子
+    std::string m_Name; int m_Age;
+public:
+    Entity(const std::string&amp; name) : m_Name(name), m_Age(-1) {}
+    Entity(int age)                 : m_Name(&quot;Unknown&quot;), m_Age(age) {}
+};
+void PrintEntity(const Entity&amp;);
+</code></pre>
+<p>这个类<strong>同时开了两条口子</strong>：<code class="c">std::string → Entity</code>、<code class="c">int → Entity</code>。只要某个位置要求 <code class="c">Entity</code>，你递一个 <code class="c">int</code> 或一个 <code class="c">string</code> 进去，编译器都会自己造一个临时 <code class="c">Entity</code> 出来。</p>
+<h4>实测：<code class="c">22</code> 真的变成了 Entity</h4>
+<pre class="code" data-label="cpp"><code class="c">Entity a = 22;                       // 隐式调用 Entity(int)
+Entity b = std::string(&quot;Cherno&quot;);    // 隐式调用 Entity(const std::string&amp;)
+PrintEntity(22);                     // 同样：造临时 Entity 再传进去
+</code></pre>
+<p>clang 23.1.0（<code class="c">-std=c++17</code>）实测输出：</p>
+<pre class="code" data-label="code"><code class="c">Entity(Unknown, 22)      ← a = 22
+Entity(Cherno, -1)       ← b = string
+Entity(Unknown, 22)      ← PrintEntity(22)
+Entity(Cherno, -1)
+</code></pre>
+<p><strong>没有一个 <code class="c">Entity</code> 字样出现在调用点</strong>——<code class="c">PrintEntity(22)</code> 看起来像传了个数字，实际传进去的是一个 <code class="c">m_Name="Unknown"</code>、<code class="c">m_Age=22</code> 的对象。这就是隐式转换最阴的地方：<strong>调用点看不出发生了什么</strong>。</p>
+<h4><code class="c">explicit</code> 只挡「拷贝初始化」，不挡「直接初始化」</h4>
+<p>这是最容易记反的一条。<code class="c">explicit</code> 的作用范围是"需要隐式转换的场合"，即<strong>拷贝初始化</strong>（<code class="c">=</code> 和传参）；直接写出构造形式（<code class="c">()</code>/<code class="c">{}</code>）本来就是显式构造，不受影响：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>类别</th>
+<th style="text-align: center;">不加 <code class="c">explicit</code></th>
+<th style="text-align: center;">加 <code class="c">explicit</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">Entity a = 22;</code></td>
+<td>拷贝初始化</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td><code class="c">PrintEntity(22)</code></td>
+<td>传参（按拷贝初始化处理）</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td><code class="c">Entity a(22);</code></td>
+<td>直接初始化</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td><code class="c">Entity a{22};</code></td>
+<td>直接初始化（列表）</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td><code class="c">PrintEntity(Entity(22))</code></td>
+<td>显式构造再传</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+</tbody>
+</table></div>
+<p>加 <code class="c">explicit</code> 后 clang 实测报错原文（两条构造函数都加）：</p>
+<pre class="code" data-label="code"><code class="c">error: no viable conversion from 'int' to 'Entity'
+    Entity a = 22;
+           ^   ~~
+note: explicit constructor is not a candidate
+    explicit Entity(int age) : m_Name(&quot;Unknown&quot;), m_Age(age) {}
+            ^
+</code></pre>
+<p>注意措辞是 <strong>"explicit constructor is not a candidate"</strong>——函数在，但不参与隐式转换的候选集；改成 <code class="c">Entity a(22);</code> 立刻编译通过。</p>
+<h4>反直觉的一点：字符串字面量反而不行</h4>
+<pre class="code" data-label="cpp"><code class="c">PrintEntity(&quot;Cherno&quot;);   // ❌ 即使构造函数不加 explicit 也编不过
+</code></pre>
+<p><code class="c">"Cherno"</code> 是 <code class="c">const char*</code>，要走到 <code class="c">Entity</code> 得经过 <strong><code class="c">const char* → std::string → Entity</code></strong>，这是<strong>两次用户定义转换</strong>。C++ 规定：<strong>一条隐式转换序列里最多只允许一次用户定义转换</strong>（前后各可接若干标准转换），所以这条路直接死。实测报错：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching function for call to 'PrintEntity'
+    PrintEntity(&quot;Cherno&quot;);
+    ^~~~~~~~~~~
+note: candidate function not viable: no known conversion from 'const char[7]' to 'const Entity'
+</code></pre>
+<p>修法只有两个：<strong>减少一次用户转换</strong>（<code class="c">PrintEntity(std::string("Cherno"))</code>）或<strong>自己显式构造</strong>（<code class="c">PrintEntity(Entity("Cherno"))</code>）。这条规则和另一端的转换运算符是一套东西，见 <a href="chapter-14.html#s-14-3">14.3 类型转换运算符</a>。</p>
+<h4>C++11 起：多参数构造函数也能用 <code class="c">explicit</code>（挡住隐式列表初始化）</h4>
+<p><code class="c">explicit</code> 不是单参构造的专利。C++11 有了列表初始化之后，<code class="c">f({1,2})</code> 这种"拿花括号列表当实参"的写法本身也是一种隐式转换（copy-list-initialization），多参构造函数加了 <code class="c">explicit</code> 一样挡得住：</p>
+<pre class="code" data-label="cpp"><code class="c">struct B { explicit B(int a, int b) {} };
+void f(B);
+
+f({1, 2});     // ❌ 隐式列表初始化被 explicit 挡住
+f(B{1, 2});    // ✅ 显式构造
+</code></pre>
+<p>实测（clang 23.1.0，<code class="c">-std=c++17</code>）：<code class="c">f({1,2})</code> 报 <code class="c">error: no matching function for call to 'f'</code>；把 <code class="c">explicit</code> 去掉立刻编译通过。</p>
+<p>所以 §7.5.4 说的"单参数"只是<strong>最典型的场景</strong>，不是 <code class="c">explicit</code> 的能力边界。判断标准始终只有一个：<strong>这次初始化是不是隐式发生的</strong>——是，就受 <code class="c">explicit</code> 管；不是（你亲手写了 <code class="c">T(...)</code>/<code class="c">T{...}</code>），就不管。</p>
+<blockquote>
+<p><strong>和 CTAD 区分开</strong>（C++17 类模板参数推导）：两种写法都带 <code class="c">{}</code>，但机制完全不同，实测对比：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>机制</th>
+<th>加 <code class="c">explicit</code> 后</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">Box b{1, 2};</code></td>
+<td><strong>CTAD</strong>：推导发生在"带初始化器的变量声明"上，本质是直接初始化</td>
+<td>✅ 不受影响（实测通过）</td>
+</tr>
+<tr>
+<td><code class="c">foo({1, 2})</code></td>
+<td><strong>隐式列表初始化</strong>：函数实参位置<strong>不做 CTAD</strong></td>
+<td>❌ 被拦下（实测 <code class="c">no matching function</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p>再补一条：模板函数 <code class="c">template&lt;class T&gt; void g(Box&lt;T&gt;)</code> 配 <code class="c">g({1,2})</code> 连推导都做不了（实测同样 <code class="c">no matching function for call to 'g'</code>）——CTAD 只在"明写了类型名"的位置（变量声明、<code class="c">new</code>、函数式强转）发生。</p>
+</blockquote>
+<h4>C++20：<code class="c">explicit(bool)</code> 条件 explicit</h4>
+<p>C++20 允许给 <code class="c">explicit</code> 传一个编译期布尔值，让"是否允许隐式"变成可计算的：</p>
+<pre class="code" data-label="cpp"><code class="c">struct C { explicit(true)  C(int) {} };   // 等价普通 explicit：永远禁止隐式
+struct D { explicit(false) D(int) {} };   // 等价不加：允许隐式
+void g(C); void h(D);
+g(1);   // ❌
+h(1);   // ✅
+</code></pre>
+<p>实测（<code class="c">-std=c++20</code>）：<code class="c">g(1)</code> 报 <code class="c">no matching function for call to 'g'</code>，<code class="c">h(1)</code> 正常通过。真正的用途在模板——按类型特性决定要不要开隐式口子：</p>
+<pre class="code" data-label="cpp"><code class="c">template&lt;class T&gt;
+struct Wrapper {
+    // 示意：T 能无损转成 int 才开放隐式转换，否则强制显式
+    explicit(!std::is_convertible_v&lt;T, int&gt;) Wrapper(T) {}
+};
+</code></pre>
+<blockquote>
+<p>⚠ <strong>两件事别记混</strong>：<code class="c">explicit</code> 修饰<strong>转换函数</strong>（<code class="c">explicit operator bool()</code>）是 <strong>C++11</strong> 就有的（实测 <code class="c">-std=c++11</code> 编译通过），C++20 新增的只是<strong>条件版 <code class="c">explicit(bool)</code></strong>。转换函数那半边见 <a href="chapter-14.html#s-14-3">14.3 类型转换运算符</a>。</p>
+</blockquote>
+<h4>什么时候该加 <code class="c">explicit</code></h4>
+<p><strong>默认都加，需要隐式时再摘。</strong> 判断依据是这个转换在语义上是否真的"等价"：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>转换</th>
+<th>该不该隐式</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">std::string → Entity</code>（名字）</td>
+<td>可以商量</td>
+<td>语义直观，但仍有歧义风险</td>
+</tr>
+<tr>
+<td><code class="c">int → Entity</code>（年龄）</td>
+<td>❌ 加 explicit</td>
+<td>"22" 到底是年龄还是 ID？读代码的人看不出来</td>
+</tr>
+<tr>
+<td><code class="c">const char* → std::string</code></td>
+<td>✅ 标准库就没加</td>
+<td>太常用，强制显式会很啰嗦</td>
+</tr>
+<tr>
+<td><code class="c">int → 价格/数量/时长</code> 这类强类型</td>
+<td>❌ 加 explicit</td>
+<td>单位语义不同，隐式转换是事故源头</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 视角</strong>：行情里的 <code class="c">Price</code>、<code class="c">Qty</code>、<code class="c">Timestamp</code> 这类"强类型包装"（都是一个 <code class="c">int64_t</code> 或 <code class="c">double</code> 裹一层），<strong>构造函数一律 <code class="c">explicit</code></strong>。否则 <code class="c">calc(price, 100)</code> 里的 <code class="c">100</code> 会被悄悄当成价格，<code class="c">calc(qty, price)</code> 也能编译通过——单位错误从"编译期报错"退化成"跑出来数字不对"，这正是隐式转换在交易系统里最贵的一类代价。宁可多写 <code class="c">Price{100}</code> 几个字符。</p>
+<blockquote>
+<p>内置类型那半边的隐式转换（整型提升、算术转换、数组退化）规则完全独立，见 <a href="chapter-04.html#s-4-11-1">4.11.1 隐式类型转换</a>；本节只讲"类类型"这一半。</p>
+</blockquote>
 <h3>私有构造函数：阻止实例化</h3>
 <p>构造函数也有访问级别——把它放进 <code class="c">private</code>，外部就<strong>不能创建对象</strong>了（Cherno 构造函数集演示）。典型场景：<strong>纯静态工具类</strong>，方法全是 <code class="c">static</code>，实例化没有任何意义，干脆把构造函数私有化，谁写 <code class="c">Log l;</code> 谁编译报错：</p>
 <pre class="code" data-label="cpp"><code class="c">class Log {
@@ -1851,6 +2027,34 @@ Vector2D c(5.0);         // (5,5)，需要 explicit 也能用
 <details>
 <summary>答案</summary>
 <p>能编译——<code class="c">Util</code> 没声明任何构造函数，编译器自动合成默认构造，<code class="c">Util u;</code> 合法；静态成员函数也能通过对象调用（<code class="c">u.twice(21)</code> 等价于 <code class="c">Util::twice(21)</code>，不访问 this）。问题在于 <code class="c">Util</code> 是纯静态工具类，<code class="c">u</code> 是个没有状态的死对象，<code class="c">u.twice()</code> 的写法还会误导读者以为它是普通成员函数。<strong>杜绝</strong>：加 <code class="c">Util() = delete;</code>（或私有默认构造），<code class="c">Util u;</code> 立即编译错误 <code class="c">call to deleted constructor of 'Util'</code>，逼着所有人写 <code class="c">Util::twice(21)</code>。</p>
+</details>
+<p><strong>7. 踩坑题</strong>（<code class="c">explicit</code> 综合）：下面哪几行编译失败？</p>
+<pre class="code" data-label="cpp"><code class="c">struct Foo { explicit Foo(double d) {} };
+void test(Foo f) {}
+
+int main(){
+    test(3.14);    // ①
+    Foo f1(2.5);   // ②
+    Foo f2 = 1.0;  // ③
+    Foo f3{5.0};   // ④
+}
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong>① 和 ③ 失败，②④ 通过。</strong> 实测（clang 23.1.0，<code class="c">-std=c++17</code>）报错位置：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching function for call to 'test'                 ← ①（第 4 行）
+error: no viable conversion from 'double' to 'Foo'             ← ③（第 6 行）
+</code></pre>
+<p>只保留 ②④ 的版本一次编译通过。</p>
+<p>逐行理由：</p>
+<ul>
+<li><strong>① <code class="c">test(3.14)</code> 失败</strong>：传参按<strong>拷贝初始化</strong>处理，需要隐式转换 → 被 <code class="c">explicit</code> 挡住。<strong>注意这里 <code class="c">3.14</code> 就是 <code class="c">double</code>，与 <code class="c">Foo(double)</code> 精确匹配、一步类型转换都不需要</strong>——<code class="c">explicit</code> 挡的是"隐式"这个动作本身，与要不要转换类型无关。这是最容易想错的一点：别以为"类型对得上就没事"。</li>
+<li><strong>② <code class="c">Foo f1(2.5)</code> 通过</strong>：<strong>直接初始化</strong>，你亲手写出了构造形式，不受 <code class="c">explicit</code> 管。</li>
+<li><strong>③ <code class="c">Foo f2 = 1.0</code> 失败</strong>：拷贝初始化的标准形态。</li>
+<li><strong>④ <code class="c">Foo f3{5.0}</code> 通过</strong>：<strong>直接列表初始化</strong>，同样属于显式构造。</li>
+</ul>
+<p>一句话判据：<strong>看等号还是括号</strong>——<code class="c">=</code> 和"把值直接塞给形参"是隐式（受管），<code class="c">()</code> / <code class="c">{}</code> 紧跟类型名是显式（不受管）。</p>
+<p>复习：→ <a href="#explicit-抑制隐式转换">explicit 抑制隐式转换</a></p>
 </details>
 <h2>可跑的例子</h2>
 <p><strong><code class="c">examples/7.5-constructors.cpp</code></strong> —— 委托构造 + const/引用成员的强制初始化列表。</p>

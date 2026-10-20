@@ -277,6 +277,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-14-1"><span class="n">14.1</span>运算符重载</a>
+          <a href="#s-14-1-1"><span class="n">14.1.1</span>运算符的候选集：成员、非成员与 ADL</a>
           <a href="#s-14-2"><span class="n">14.2</span>函数调用运算符与函数对象</a>
           <a href="#s-14-3"><span class="n">14.3</span>类型转换运算符</a>
           <a href="#s-14-4"><span class="n">14.4</span>输入输出运算符</a>
@@ -314,7 +315,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Lippman《C++ Primer 5e》· 新手只读 10 章（ch01–08 + ch12/13）</div>
           <h1>第 14 章 操作重载与类型转换</h1>
           <div class="meta">
-<span>book <b>M0-entry-syntax · 01-C++Primer</b></span><span>chapter <b>Ch 14</b></span><span>sections <b>5</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>M0-entry-syntax · 01-C++Primer</b></span><span>chapter <b>Ch 14</b></span><span>sections <b>6</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -397,6 +398,7 @@ s2.operator&gt;(s1);        // 底层真实样子（这样写也完全合法）
 </code></pre>
 <p><code class="c">5</code> 不是 <code class="c">Student</code>，没有 <code class="c">Student::operator&gt;</code> 可以调，成员版够不着。要支持只能写非成员 <code class="c">bool operator&gt;(int, const Student&amp;)</code>。这也正是 <code class="c">operator&lt;&lt;</code> 必须非成员的原因（<code class="c">cout &lt;&lt; s</code> 左边是 <code class="c">ostream</code>），见 <a href="#常见错误">常见错误 2</a> 和 <a href="#s-14-4">14.4</a>。</p>
 <blockquote>
+<p><strong>候选从哪来</strong>：成员候选只取自左操作数类型，非成员候选按非限定查找 + ADL 取两侧实参——所以右操作数所在类里的<strong>友元</strong>在 <code class="c">A + B</code> 时同样进候选。完整规则与二义性实测见 <a href="chapter-14.html#s-14-1-1">14.1.1</a>。</p>
 <p>顺带一个实测到的小坑：<code class="c">s1 &gt; s2;</code> 单独成句（丢弃比较结果）时，clang 会报 <code class="c">warning: relational comparison result unused [-Wunused-comparison]</code>——它把重载后的 <code class="c">&gt;</code> 仍当比较运算符看待。写成 <code class="c">s1.operator&gt;(s2);</code> 就没这条警告。</p>
 </blockquote>
 <h3>命名规则：<code class="c">operator</code> 关键字 + 符号（但有四类强制成员）</h3>
@@ -635,6 +637,316 @@ bid == ask ? false
 <li>C 程序员迁移：<code class="c">add(a,b)</code> 函数 → <code class="c">a+b</code> 运算符（让自定义类型像内置类型）</li>
 </ul>
       </section>
+      <section class="section" id="s-14-1-1">
+        <div class="sec-head"><div class="sec-no">14.1</div><h2>.1 运算符的候选集：成员、非成员与 ADL</h2></div>
+<p><a href="#s-14-1">← 14.1 运算符重载</a> | <a href="#intro">第 14 章</a> | <a href="#s-14-2">14.2 函数调用运算符 →</a></p>
+<h2>本节讲什么</h2>
+<p><a href="#s-14-1">14.1</a> 讲"成员版运算符的左操作数是 <code class="c">this</code>"。这一节回答它下游的三个问题：</p>
+<ul>
+<li><code class="c">L + R</code> 发生时，编译器到底会去哪些地方找 <code class="c">operator+</code>？</li>
+<li>A、B 两个类各自重载了 <code class="c">+</code>，<code class="c">A + B</code> 与 <code class="c">B + A</code> 分别调谁？</li>
+<li>成员版和自由版同时存在，会怎样？</li>
+</ul>
+<p>第二个问题的常见答案是"左操作数决定一切，B 的重载完全不会被考虑"。<strong>这句话对成员版本成立，对自由函数版本不成立</strong>——这是本节要纠正的核心。</p>
+<h2>一、先看四个表达式的结果</h2>
+<pre class="code" data-label="cpp"><code class="c">struct A { int v; A operator+(const B&amp;) const; };   // A 的成员
+struct B { int v; B operator+(const A&amp;) const; };   // B 的成员
+
+struct C { int v; explicit C(int x) : v(x) {} };
+C operator+(int lhs, const C&amp; rhs);                // 自由函数：支持 int 在左边
+</code></pre>
+<pre class="code" data-label="cpp"><code class="c">a + b;      // A{} + B{}
+b + a;      // B{} + A{}
+10 + c;     // int + C
+</code></pre>
+<p>实测（gcc 13.2，<code class="c">-std=c++17 -O0</code>）：</p>
+<pre class="code" data-label="text"><code class="c">A::operator+(B)
+B::operator+(A)
+free operator+(int, C)
+</code></pre>
+<p>三行的去向各不相同：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>表达式</th>
+<th>选中</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">a + b</code></td>
+<td><code class="c">A::operator+(const B&amp;)</code></td>
+<td>左操作数是 <code class="c">A</code>，成员候选只在 <code class="c">A</code> 里找</td>
+</tr>
+<tr>
+<td><code class="c">b + a</code></td>
+<td><code class="c">B::operator+(const A&amp;)</code></td>
+<td>左操作数换成 <code class="c">B</code>，成员候选换成 <code class="c">B</code> 的</td>
+</tr>
+<tr>
+<td><code class="c">10 + c</code></td>
+<td>自由函数 <code class="c">operator+(int, C)</code></td>
+<td>成员版要求左操作数是 <code class="c">C</code>，<code class="c">int</code> 够不着</td>
+</tr>
+</tbody>
+</table></div>
+<p>前两行支持"成员版左边固定是调用者"这条结论。第三行说明成员版的硬伤：<strong>左操作数不能是别的类型，哪怕它能隐式转换成自己</strong>（<code class="c">C(int)</code> 还是 <code class="c">explicit</code> 的，本来就不许隐式转换）。</p>
+<h2>二、候选集是怎么来的</h2>
+<p><code class="c">L @ R</code> 的运算符重载决议分三步取候选（标准里是 [over.match.oper]）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>来源</th>
+<th>内容</th>
+<th>谁进候选</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>成员候选</td>
+<td>在<strong>左操作数类型</strong>（含基类）里限定查找 <code class="c">operator@</code></td>
+<td>只有 <code class="c">L</code> 的成员</td>
+</tr>
+<tr>
+<td>非成员候选</td>
+<td>非限定查找 + <strong>ADL</strong>（实参关联命名空间/类）</td>
+<td>名字空间里的自由函数、以及通过 ADL 找到的友元</td>
+</tr>
+<tr>
+<td>内置候选</td>
+<td>语言内建的运算符形式</td>
+<td>基本类型运算</td>
+</tr>
+</tbody>
+</table></div>
+<p>拿到候选集之后，才进入 <a href="chapter-06.html#s-6-6">6.6</a> 讲的那套"可行集 → 最佳匹配 → 二义性"流程。</p>
+<p>关键在第二行：<strong>非成员候选是按实参做 ADL 找的，两个操作数的关联命名空间都会被查</strong>。所以：</p>
+<ul>
+<li><code class="c">B</code> 的<strong>成员</strong> <code class="c">operator+</code>：只有 <code class="c">B</code> 在左边时才成为候选，因为它属于"成员候选"这一类，而成员候选只从左操作数取。</li>
+<li><code class="c">B</code> 里定义的<strong>友元自由函数</strong>：<code class="c">A + B</code> 时会被 ADL 拉进候选集，因为 <code class="c">B</code> 是实参。</li>
+</ul>
+<p>原解释漏掉的就是后半句。成员和友元是两种东西，不能一起判。</p>
+<h2>三、反例：B 里的 friend 在 <code class="c">A + B</code> 里确实进入候选</h2>
+<pre class="code" data-label="cpp"><code class="c">struct B;
+
+struct A {
+    int v;
+    A operator+(const B&amp;) const;          // A 的成员
+};
+
+struct B {
+    int v;
+    friend A operator+(const A&amp;, const B&amp;) {   // 写在 B 里，B 在右边
+        return A{0};
+    }
+};
+</code></pre>
+<p><code class="c">a + b</code> 编译（<code class="c">-std=c++17 -pedantic-errors</code>）：</p>
+<pre class="code" data-label="text"><code class="c">error: ambiguous overload for 'operator+' (operand types are 'A' and 'B')
+note: candidate: 'A A::operator+(const B&amp;) const'
+note: candidate: 'A operator+(const A&amp;, const B&amp;)'
+</code></pre>
+<p>报的是<strong>二义性</strong>，不是"找不到"。两个都进了候选集，且都是精确匹配，谁也无法胜出。这正好证明 B 的友元确实被 ADL 找到了——如果它不在候选集里，这里会安静地调 <code class="c">A::operator+</code>。</p>
+<h2>四、成员 + 自由同时存在：标准说二义，gcc 默认只警告</h2>
+<p>用户那组 Quiz 就是这种形态：</p>
+<pre class="code" data-label="cpp"><code class="c">struct X {
+    X operator+(const X&amp;) const { return *this; }   // 成员
+};
+X operator+(const X&amp; a, const X&amp;) { return a; }     // 自由
+</code></pre>
+<p><code class="c">a + b</code> 的结果分三层看：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层面</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>标准</td>
+<td><strong>二义性，ill-formed</strong></td>
+</tr>
+<tr>
+<td>gcc 13.2 默认（<code class="c">-Wall -Wextra</code>）</td>
+<td><strong>只警告</strong>，并挑自由函数执行</td>
+</tr>
+<tr>
+<td>gcc 13.2 <code class="c">-pedantic-errors</code></td>
+<td><code class="c">error: ambiguous overload</code>，编译失败</td>
+</tr>
+</tbody>
+</table></div>
+<p>默认档的警告原文：</p>
+<pre class="code" data-label="text"><code class="c">warning: ISO C++ says that these are ambiguous, even though the worst conversion
+for the first is better than the worst conversion for the second:
+note: candidate 1: 'X operator+(const X&amp;, const X&amp;)'
+note: candidate 2: 'X X::operator+(const X&amp;) const'
+</code></pre>
+<p>程序实际输出 <code class="c">free +</code>——gcc 按自己的偏好选了非成员版本。</p>
+<p>这条差异的工程含义很直接：<strong>同一份代码在 gcc 下只是警告、在新版 clang 下可能是错误</strong>。写库时不要同时提供成员版和自由版，也不要依赖"gcc 能过"来判定正确性。</p>
+<blockquote>
+<p>注意报错里那句 <code class="c">the worst conversion for the first is better</code>：gcc 认为非成员版的隐式对象参数不存在，所以它的"最差转换"更好。这是 gcc 的判定路径，<strong>不是标准规则</strong>；标准在这里没有"成员劣于非成员"的条款，因此结论就是二义。</p>
+</blockquote>
+<h2>五、成员版与自由版的取舍</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>成员版</th>
+<th>自由版（含友元）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>左操作数</td>
+<td>必须是本类对象</td>
+<td>任意，参数表自己定</td>
+</tr>
+<tr>
+<td>左操作数隐式转换</td>
+<td><strong>不参与</strong>（不会把 <code class="c">10</code> 转成 <code class="c">C</code> 再调 <code class="c">C::operator+</code>）</td>
+<td>参与，两侧对称</td>
+</tr>
+<tr>
+<td>访问私有成员</td>
+<td>天然可以</td>
+<td>需要 <code class="c">friend</code> 或用公开接口</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td><code class="c">= += -= [] () -&gt; ++ --</code></td>
+<td><code class="c">+ - * / == &lt; &lt;&lt; &gt;&gt;</code></td>
+</tr>
+<tr>
+<td>二义风险</td>
+<td>只提供一种时无</td>
+<td>与成员同时提供时二义</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">10 + price</code> 这类"内置类型在左边"的写法，只有自由版能支持：</p>
+<pre class="code" data-label="cpp"><code class="c">Price operator+(int ticks, const Price&amp; p);   // 10 + p 可行
+Price operator+(const Price&amp; p, int ticks);   // p + 10 可行
+</code></pre>
+<p>反之，<code class="c">operator+=</code> 必须改自身，天然是成员，这一点和 <code class="c">operator+</code> 的分工正好构成"成员负责就地改、自由负责产出新值"的惯用法（<a href="#s-14-1">14.1</a> 的可跑例子里就是 <code class="c">lhs += rhs</code> 复用实现）。</p>
+<h2>六、hidden friend：只通过 ADL 可见的写法</h2>
+<pre class="code" data-label="cpp"><code class="c">class Price {
+public:
+    friend Price operator+(const Price&amp; a, const Price&amp; b) {   // 类内定义
+        return Price{a.ticks + b.ticks};
+    }
+private:
+    long ticks;
+};
+</code></pre>
+<p>类内定义的友元有一个特殊性质：<strong>它不进普通的名字查找，只能通过 ADL 找到</strong>。好处是：</p>
+<ul>
+<li>不会污染所在命名空间的候选集，减少意外匹配；</li>
+<li>只在实参涉及 <code class="c">Price</code> 时出现，<code class="c">1 + 2</code> 之类的内置运算不受影响；</li>
+<li>仍然能访问私有成员。</li>
+</ul>
+<p>代价是它"隐身"：在类外直接写 <code class="c">operator+(a, b)</code> 调用是找不到的（除非另外在命名空间作用域声明一次），只能靠运算符语法或 ADL 触发。</p>
+<p>这与"在命名空间里写一个普通自由函数"不同：后者在非限定查找阶段就被看见，任何一次 <code class="c">operator+</code> 决议都会把它拉进候选。</p>
+<h2>和 C 的区别</h2>
+<p>C 没有运算符重载，也就没有"候选集从哪来"这个问题：</p>
+<pre class="code" data-label="C"><code class="c">struct Price { long ticks; };
+struct Price price_add(struct Price a, struct Price b);
+
+struct Price c = price_add(a, b);   /* 名字唯一，没有二义 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>C</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>运算符语义</td>
+<td>语言固定</td>
+<td>可按类型重定义</td>
+</tr>
+<tr>
+<td>名字解析</td>
+<td>单一函数名</td>
+<td>成员候选 + 非成员候选 + ADL</td>
+</tr>
+<tr>
+<td>二义性</td>
+<td>不存在</td>
+<td>每个运算符表达式都可能二义</td>
+</tr>
+<tr>
+<td>交换律写法</td>
+<td>无（只能写函数）</td>
+<td>自由版可让 <code class="c">int + T</code> 与 <code class="c">T + int</code> 都成立</td>
+</tr>
+</tbody>
+</table></div>
+<p>C 的"没有二义"是名字唯一换来的；C++ 的灵活性用候选集复杂度买单，代价集中在诊断信息上——遇到运算符报错，第一件事是看清候选来自哪一侧。</p>
+<h2>HFT / 嵌入式关联</h2>
+<ol>
+<li>
+<p><strong>运算符决议全在编译期</strong>，两种写法生成的调用都是直接 <code class="c">call</code>（内联后无差别）。选成员还是自由，不影响运行期开销。</p>
+</li>
+<li>
+<p><strong>价格类型用自由版</strong>：<code class="c">Price + int</code>、<code class="c">int + Price</code>、<code class="c">Price - Price</code> 三种组合都要支持，成员版只能覆盖"自己在前"的一种。行情/订单簿代码里 <code class="c">bid + spread</code> 这类混算很常见。</p>
+</li>
+<li>
+<p><strong>不要在同一个类上同时提供成员版和自由版</strong>。gcc 只警告的行为会掩盖问题，换编译器（clang / MSVC）或升级标准档位就可能变成错误；库接口尤其不能赌。</p>
+</li>
+<li>
+<p><strong>hidden friend 适合库的头文件</strong>：它把重载集限制在"实参涉及本类型"时才出现，避免用户代码里同名自由函数被意外拉进候选，减少诊断噪音。</p>
+</li>
+</ol>
+<h2>常见错误</h2>
+<p><strong>1. 以为 <code class="c">A + B</code> 只看 A 的重载</strong></p>
+<p>成员候选确实只看左操作数，但非成员候选按 ADL 查两侧实参。B 里定义的友元 <code class="c">operator+(const A&amp;, const B&amp;)</code> 会进入候选，并可能与 A 的成员构成二义。</p>
+<p><strong>2. 成员版想让左操作数隐式转换</strong></p>
+<pre class="code" data-label="cpp"><code class="c">struct C { C(int); C operator+(const C&amp;) const; };
+10 + c;      // 仍然不可行
+</code></pre>
+<p>成员候选的隐式对象参数不做用户定义转换，<code class="c">10</code> 不会被转成 <code class="c">C</code> 再去调 <code class="c">C::operator+</code>。要支持就写自由函数。</p>
+<p><strong>3. 同时提供成员版和自由版</strong></p>
+<p>标准判二义（ill-formed）。gcc 默认只警告并选自由版，clang 直接报错——跨编译器行为不一致，属于必须消除的设计。</p>
+<p><strong>4. 把 <code class="c">operator&lt;&lt;</code> 写成成员</strong></p>
+<p><code class="c">cout &lt;&lt; obj</code> 的左操作数是 <code class="c">ostream</code>。写成成员会变成 <code class="c">obj.operator&lt;&lt;(cout)</code>，语义反了。详见 <a href="#s-14-4">14.4</a>。</p>
+<h2>代码自测</h2>
+<p><strong>1（判定）</strong> 下面这行调哪个？会编译报错吗？</p>
+<pre class="code" data-label="cpp"><code class="c">struct X {
+    X operator+(const X&amp;) const { return *this; }
+};
+X operator+(const X&amp; a, const X&amp;) { return a; }
+X a, b;
+a + b;
+</code></pre>
+<p><strong>2（候选集）</strong> <code class="c">struct A { A operator+(const B&amp;) const; };</code> 且 <code class="c">B</code> 里定义了友元 <code class="c">friend A operator+(const A&amp;, const B&amp;);</code>，<code class="c">a + b</code> 会怎样？</p>
+<p><strong>3（隐式转换）</strong> 为什么 <code class="c">10 + price</code> 用成员版做不到，用自由函数可以？</p>
+<p><strong>4（hidden friend）</strong> 类内定义的友元运算符，与命名空间里的普通自由函数，在查找到方式上有什么区别？</p>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>
+<p>按标准是二义性（ill-formed）。实测 gcc 13.2 默认只给 <code class="c">warning: ISO C++ says that these are ambiguous...</code> 并执行自由版（输出 <code class="c">free +</code>）；加 <code class="c">-pedantic-errors</code> 变成 <code class="c">error: ambiguous overload for 'operator+'</code>。不要依赖默认档的宽容。</p>
+</li>
+<li>
+<p>两个候选都进候选集：<code class="c">A::operator+(const B&amp;)</code> 来自成员候选，<code class="c">B</code> 里的友元来自 ADL。二者都是精确匹配，构成二义性（<code class="c">-pedantic-errors</code> 下报 <code class="c">ambiguous overload</code>，且两个候选都被列出）。这说明"右操作数所在的类里的友元"并非不可见。</p>
+</li>
+<li>
+<p>成员候选的隐式对象参数来自左操作数，且不参与用户定义转换——<code class="c">10</code> 是 <code class="c">int</code>，不会先转成 <code class="c">Price</code> 再去调 <code class="c">Price::operator+</code>。自由函数的第一形参可以直接写 <code class="c">int</code>，所以天然支持。</p>
+</li>
+<li>
+<p>类内定义的友元<strong>不进普通名字查找</strong>，只能通过 ADL（实参涉及该类时）被找到；命名空间里的普通自由函数在非限定查找阶段就可见，任何同名运算符表达式都可能把它拉进候选集。</p>
+</li>
+</ol>
+</details>
+<hr />
+<p><a href="#s-14-1">← 14.1 运算符重载</a> | <a href="#intro">第 14 章</a> | <a href="chapter-06.html#s-6-6">6.6 函数匹配</a></p>
+      </section>
       <section class="section" id="s-14-2">
         <div class="sec-head"><div class="sec-no">14.2</div><h2>函数调用运算符与函数对象</h2></div>
 <h2>本节讲什么</h2>
@@ -838,6 +1150,207 @@ if (s) { /* s 转 bool 为真 */ }   // OK：if/while 条件中 explicit bool �
 bool b = s;                       // 错误：explicit 禁止隐式
 </code></pre>
 <p><code class="c">operator bool</code> 几乎总是应该 <code class="c">explicit</code>——否则对象会在各种意外处转 bool（如 <code class="c">int x = obj + 1</code> 可能先转 bool 再加）。</p>
+<h4>布尔语境清单：<code class="c">explicit operator bool</code> 在这些地方照用不误</h4>
+<p><code class="c">explicit</code> 挡的是隐式转换，但<strong>布尔语境（boolean context，也称 contextual conversion）是语言特例</strong>——上下文明确要求 <code class="c">bool</code> 的地方，允许对 <code class="c">explicit operator bool</code> 做转换。实测（clang 23.1.0，<code class="c">-std=c++17</code>）下面这些<strong>全部通过</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">struct S { explicit operator bool() const { return true; } };
+S s;
+if (s) { }                 // ✅ if
+while (s) { break; }       // ✅ while
+for (; s;) { break; }      // ✅ for 的条件
+bool a = !s;               // ✅ 逻辑非
+bool c = s &amp;&amp; true;        // ✅ &amp;&amp;
+bool d = s || false;       // ✅ ||
+bool e = s ? true : false; // ✅ 三元条件
+bool g = static_cast&lt;bool&gt;(s);  // ✅ 显式转换（当然行）
+bool b = s;                // ❌ 拷贝初始化——不在布尔语境里
+f(s);                      // ❌ 传给 f(int)——更不行
+</code></pre>
+<p>这就是智能指针、<code class="c">std::optional</code>、<code class="c">std::ifstream</code> 的设计依据：<strong><code class="c">if (ptr)</code> 能用，但 <code class="c">int n = ptr;</code> 不行</strong>。标准库里凡是"能当条件用"的类型，都是这条规则的产物。</p>
+<h4>为什么必须 <code class="c">explicit</code>：不加的后果是实测出来的</h4>
+<pre class="code" data-label="cpp"><code class="c">struct S { operator bool() const { return true; } };   // 不加 explicit
+void f(int x);
+S s;
+f(s);          // 静默通过！
+int n = s + 1; // 更糟
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">f 收到 int = 1
+s + 1 = 2
+</code></pre>
+<p><strong>一个对象被静默当成整数 1 参与算术</strong>。<code class="c">S → bool</code> 是一次用户定义转换，<code class="c">bool → int</code> 是标准转换，两者串起来完全合法（正符合"一次用户定义转换 + 前后若干标准转换"的规则）。加上 <code class="c">explicit</code> 后，这两行立刻变成 3 条编译错误。</p>
+<p>所以 <code class="c">operator bool</code> 不加 <code class="c">explicit</code> 不是风格问题，是事故隐患——它把类型检查悄悄关掉了。</p>
+<h4><code class="c">explicit</code> 能加在哪：只有两处</h4>
+<p>编译器管得很死，写在别处直接报错，实测原文：</p>
+<pre class="code" data-label="code"><code class="c">error: 'explicit' can only be applied to a constructor or conversion function
+    explicit void g() {}
+            ^
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>能加</th>
+<th>不能加</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>构造函数（单参、多参都行；多参挡的是 <code class="c">f({1,2})</code>）</td>
+<td>普通成员函数、静态成员函数</td>
+</tr>
+<tr>
+<td>转换函数 <code class="c">operator T()</code>（<strong>C++11</strong> 起）</td>
+<td>析构函数</td>
+</tr>
+<tr>
+<td>条件版 <code class="c">explicit(bool)</code>（<strong>C++20</strong> 起，上两处都能用）</td>
+<td>非转换的运算符重载（<code class="c">operator+</code>、<code class="c">operator()</code>、<code class="c">operator[]</code> 等）</td>
+</tr>
+<tr>
+<td></td>
+<td>全局函数</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>常见记混点：<code class="c">explicit</code> 修饰转换函数是 <strong>C++11</strong> 引入的；<strong>C++20</strong> 新增的是<strong>条件版 <code class="c">explicit(bool)</code></strong>（如标准库 <code class="c">std::optional&lt;T&gt;</code> 的构造函数用它按类型特性开关隐式转换），不是"转换函数到 C++20 才能加 explicit"。</p>
+</blockquote>
+<h3>速查表：<code class="c">explicit</code> 构造函数 vs <code class="c">explicit</code> 转换函数</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">explicit</code> 构造函数</th>
+<th><code class="c">explicit</code> 转换函数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>挡的方向</td>
+<td><strong>别人 → 我</strong>（拿实参类型偷偷造出本类对象）</td>
+<td><strong>我 → 别人</strong>（本类对象偷偷变成别的类型）</td>
+</tr>
+<tr>
+<td>典型写法</td>
+<td><code class="c">explicit Price(int64_t);</code></td>
+<td><code class="c">explicit operator bool() const;</code></td>
+</tr>
+<tr>
+<td>挡住</td>
+<td><code class="c">Price p = 100;</code>、<code class="c">f(100)</code>、<code class="c">f({1,2})</code></td>
+<td><code class="c">bool b = s;</code>、<code class="c">f(s)</code>、<code class="c">s + 1</code></td>
+</tr>
+<tr>
+<td>不挡</td>
+<td><code class="c">Price p(100);</code>、<code class="c">Price p{100};</code>、<code class="c">f(Price(100))</code></td>
+<td><code class="c">static_cast&lt;bool&gt;(s)</code>、<code class="c">if (s)</code>（布尔语境）</td>
+</tr>
+<tr>
+<td>引入版本</td>
+<td>C++98</td>
+<td><strong>C++11</strong>（C++20 起可写 <code class="c">explicit(bool)</code>）</td>
+</tr>
+<tr>
+<td>默认建议</td>
+<td>单参一律加；多参若不想被 <code class="c">{a,b}</code> 偷换也加</td>
+<td><code class="c">operator bool</code> <strong>一律加</strong>；数值型转换尽量别定义，改用具名函数</td>
+</tr>
+<tr>
+<td>详见</td>
+<td><a href="chapter-07.html#s-7-5">7.5 构造函数 · explicit</a></td>
+<td>本节</td>
+</tr>
+</tbody>
+</table></div>
+<h3>一条转换序列里最多只允许一次用户定义转换</h3>
+<p>这是隐式转换最重要的一条<strong>结构性约束</strong>，也是很多"看着应该能转、编译器却说不"的根源。一条完整的隐式转换序列长这样：</p>
+<pre class="code" data-label="code"><code class="c">源类型 ──[标准转换序列]──▶ [用户定义转换：最多 1 次] ──[标准转换序列]──▶ 目标类型
+         整型提升/算术转换       转换构造 或 转换运算符        整型提升/算术转换
+</code></pre>
+<p>两端的标准转换随便走几步都行，<strong>中间那次用户定义转换只能有一次</strong>。实测（clang 23.1.0，<code class="c">-std=c++17</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">struct A { A(int) {} };                        // int -&gt; A：转换构造函数
+struct B { operator A() const { return A(0); } };  // B -&gt; A：转换运算符
+struct C { operator B() const { return B{}; } };   // C -&gt; B：转换运算符
+void h(A);
+
+h(B{});   // ✅ B -&gt; A，一次用户定义转换，编译通过（运行时打印 A(int)）
+h(C{});   // ❌ C -&gt; B -&gt; A，两次用户定义转换
+</code></pre>
+<p>第二条报错原文：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching function for call to 'h'
+    h(C{});
+    ^
+note: candidate function not viable: no known conversion from 'C' to 'A' for 1st argument
+    void h(A) {}
+         ^ ~
+</code></pre>
+<p>注意报错措辞是 <strong>"no known conversion from 'C' to 'A'"</strong>——编译器不是不知道 <code class="c">C→B</code>、<code class="c">B→A</code> 各自怎么走，而是<strong>拒绝把它们串起来</strong>。</p>
+<p>同一条规则在另一端也成立，而且更常见：<code class="c">PrintEntity("Cherno")</code> 走的是 <code class="c">const char* → std::string → Entity</code>，同样是两次用户定义转换，即使 <code class="c">Entity(const std::string&amp;)</code> 没加 <code class="c">explicit</code> 也编不过。修法只有两个：<strong>砍掉一次</strong>（先自己转成中间类型）或<strong>显式构造</strong>（见 <a href="chapter-07.html#s-7-5">7.5 构造函数 · explicit 抑制隐式转换</a>）。</p>
+<h3>重载决议怎么给转换排序</h3>
+<p>多个候选函数都能"转得过去"时，编译器按<strong>转换等级</strong>挑最优的，从好到差：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>等级</th>
+<th>含义</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. 精确匹配</td>
+<td>类型完全相同，或只加 <code class="c">const</code>、数组退化</td>
+<td><code class="c">f(int)</code> 收 <code class="c">int</code></td>
+</tr>
+<tr>
+<td>2. 提升</td>
+<td>整型提升、浮点提升</td>
+<td><code class="c">char → int</code>、<code class="c">float → double</code></td>
+</tr>
+<tr>
+<td>3. 标准转换</td>
+<td>算术转换、指针转换、布尔转换</td>
+<td><code class="c">int → double</code>、<code class="c">int → bool</code></td>
+</tr>
+<tr>
+<td>4. 用户定义转换</td>
+<td>转换构造 / 转换运算符</td>
+<td><code class="c">int → Entity</code></td>
+</tr>
+<tr>
+<td>5. 省略号</td>
+<td><code class="c">...</code> 可变参数</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>提升优于标准转换</strong>，这点容易被忽略。实测（两个重载 <code class="c">f(int)</code> / <code class="c">f(double)</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>选中</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">f(1)</code></td>
+<td><code class="c">f(int)</code></td>
+<td>精确匹配</td>
+</tr>
+<tr>
+<td><code class="c">f('x')</code></td>
+<td><strong><code class="c">f(int)</code></strong></td>
+<td><code class="c">char→int</code> 是<strong>提升</strong>，等级高于 <code class="c">char→double</code> 的标准转换</td>
+</tr>
+<tr>
+<td><code class="c">f(1.0f)</code></td>
+<td><code class="c">f(double)</code></td>
+<td><code class="c">float→double</code> 是浮点提升；int 那条要走标准转换</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键点</strong>：如果同一等级上有两条一样好的路径，就是<strong>二义性</strong>（见上文"转换二义性"）——编译器不会"挑一个看起来更合理的"，而是直接报错。所以类的转换接口宁缺毋滥：每多一条隐式转换路径，二义性的面积就大一圈。</p>
 <h2>和 C 的区别</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -925,6 +1438,35 @@ if (f) { /* 文件打开成功 */ }    // OK：条件上下文，explicit bool �
 f + 1;                           // 错误：explicit 禁止算术中转 bool
 </code></pre>
 <p>要 explicit 因为：1) 防止 <code class="c">f + 1</code> 这类算术意外把 f 转 bool 再转 int（0/1+1）；2) 防止 <code class="c">int n = f</code> 这种意外赋值；3) 保留 <code class="c">if (f)</code> 的便利（条件上下文允许 explicit bool）。这是 C++11 的"safe bool idiom"，比 C++03 的复杂 hack 简洁得多。C 里 FILE* 直接当 bool 用（NULL 检查），但 C++ 包装类需要 explicit operator bool 才安全。</p>
+</details>
+<p><strong>5. 踩坑题</strong>（布尔语境）：下面哪几行编译失败？</p>
+<pre class="code" data-label="cpp"><code class="c">struct S { explicit operator bool() const { return true; } };
+void f(int);
+
+int main() {
+    S s;
+    if (s) {}    // ①
+    f(s);        // ②
+    bool b = s;  // ③
+}
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong>② 和 ③ 失败，① 通过。</strong> 实测报错位置：</p>
+<pre class="code" data-label="code"><code class="c">error: no matching function for call to 'f'                    ← ②
+error: no viable conversion from 'S' to 'bool'                 ← ③
+</code></pre>
+<p>逐行理由：</p>
+<ul>
+<li><strong>① <code class="c">if (s)</code> 通过</strong>：这是<strong>布尔语境</strong>，语言特例——<code class="c">explicit operator bool</code> 在 <code class="c">if/while/for 条件/!/&amp;&amp;/||/?:</code> 里允许转换。这正是智能指针 <code class="c">if (ptr)</code> 能用的原因。</li>
+<li><strong>② <code class="c">f(s)</code> 失败</strong>：传参是拷贝初始化，不是布尔语境；而且目标是 <code class="c">int</code>，<code class="c">explicit operator bool</code> 既不能被隐式调用，也不该让你"把对象当整数传进去"。<blockquote>
+<p>对照实测：把 <code class="c">explicit</code> 去掉，这行<strong>立刻通过</strong>，而且 <code class="c">f</code> 收到的是 <strong>1</strong>（<code class="c">S → bool → int</code>），<code class="c">s + 1</code> 算出 <strong>2</strong>。这就是不加 explicit 的真实代价。</p>
+</blockquote>
+</li>
+<li><strong>③ <code class="c">bool b = s</code> 失败</strong>：拷贝初始化的标准形态，被 <code class="c">explicit</code> 挡住。要写成 <code class="c">bool b(s);</code> 或 <code class="c">static_cast&lt;bool&gt;(s)</code>。</li>
+</ul>
+<p>一句话：<strong><code class="c">explicit operator bool</code> 只开 <code class="c">if</code> 这一扇门</strong>，别的门全关。</p>
+<p>复习：→ <a href="#转换为-bool">转换为 bool</a></p>
 </details>
 <h2>可跑的例子</h2>
 <p><strong><code class="c">examples/14.3-bool-conversion.cpp</code></strong> —— explicit operator bool：只开 if() 这一扇门。</p>
