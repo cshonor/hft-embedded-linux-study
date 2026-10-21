@@ -1394,6 +1394,147 @@ main.cpp        ──编译──►  main.o
 想让别人「直接跑你的程序」  →  .exe（一般不需要给 .h）
 </code></pre>
 <p>HFT 里核心策略/行情解析常做成 <strong>静态库或动态库 + 头文件</strong>，交易主程序只链接接口，实现藏在二进制里。</p>
+<h2>静态链接 vs 动态链接：工程上怎么选</h2>
+<p>上一张表只回答了"有哪几种产物"，真正的工程问题是<strong>链哪一种</strong>。下面全是实测数据（Pi 5 / Debian 13 / gcc 14.2 / g++ -std=c++17）。</p>
+<h3>一张表定选择</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>静态链接（.a）</th>
+<th>动态链接（.so）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>代码何时合并</td>
+<td>编译链接期，拷进产物</td>
+<td>运行期，操作系统加载</td>
+</tr>
+<tr>
+<td>产物大小</td>
+<td>大</td>
+<td>小</td>
+</tr>
+<tr>
+<td>运行时依赖</td>
+<td>无，自带</td>
+<td>必须有 .so</td>
+</tr>
+<tr>
+<td>升级库</td>
+<td>重新编译链接整个项目</td>
+<td>替换 .so 即可（<strong>ABI 兼容</strong>前提）</td>
+</tr>
+<tr>
+<td>内存占用</td>
+<td>每个程序一份副本</td>
+<td>多进程共享同一份物理页</td>
+</tr>
+<tr>
+<td>找不到库的报错</td>
+<td>链接期 <code class="c">undefined reference</code></td>
+<td>运行期 <code class="c">cannot open shared object file</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>体积实测</strong>（同样是 hello world）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>程序</th>
+<th>动态</th>
+<th>全静态 <code class="c">-static</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C（<code class="c">printf</code>）</td>
+<td>70,440 B</td>
+<td>704,944 B（约 10 倍）</td>
+</tr>
+<tr>
+<td>C++（<code class="c">std::string</code> + <code class="c">cout</code>）</td>
+<td>74,160 B</td>
+<td><strong>2,251,248 B（约 30 倍）</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>C++ 静态化的代价远大于 C——多出来的是 C++ 运行时（异常、RTTI、静态初始化）。</p>
+<h3>澄清一个常见误解：「静态链接会把整个 libc 打包进去」</h3>
+<p>结论对，<strong>机制描述错</strong>。<code class="c">.a</code> 是 <code class="c">.o</code> 的归档包，链接器只抽出<strong>能补齐当前未定义符号</strong>的那些成员：</p>
+<pre class="code" data-label="shell"><code class="c"># 实测：.a 里塞两个 .o，其中 unused.o 里的函数没人调用
+ar rcs libadd.a mylib.o unused.o
+gcc main.c -L. -ladd -o app
+nm app | grep -c never_called      # → 0，根本没进产物
+</code></pre>
+<p>之所以 <code class="c">-static</code> 仍然让体积暴涨，是因为 libc 的间接依赖（locale、iconv 等）被连带拉了进来，不是因为"整包拷贝"。面试时说"按需抽取 + 连带依赖"，比说"整个塞进去"更准确。</p>
+<h3>C++ 的常用折中：<code class="c">-static-libstdc++</code></h3>
+<p>C++ 全静态要 2.25 MB，工程上更常见的是<strong>只静态链 C++ 运行时，libc 保持动态</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">g++ -std=c++17 hi.cpp -o app -static-libstdc++
+ldd app | grep libstdc++          # → 空，libstdc++ 已不在依赖里
+</code></pre>
+<p>实测体积 1,537,168 B（比全静态的 2,251,248 B 小），而且目标机器不需要装版本匹配的 <code class="c">libstdc++.so.6</code>，跨发行版分发时这一句很实用。</p>
+<h3>第三种方式：运行期手动加载 <code class="c">dlopen</code>（插件化）</h3>
+<p>普通动态链接是「程序一启动 OS 自动加载 .so」；<code class="c">dlopen</code> 是「运行到你这行代码才加载」：</p>
+<pre class="code" data-label="cpp"><code class="c">void* h = dlopen(&quot;./libplugin.so&quot;, RTLD_LAZY);          // 打开
+auto add = (int(*)(int, int))dlsym(h, &quot;add&quot;);            // 取函数地址
+printf(&quot;%d\n&quot;, add(3, 4));
+dlclose(h);                                              // 卸载
+</code></pre>
+<pre class="code" data-label="shell"><code class="c">g++ -std=c++17 -fPIC -shared -o libplugin.so plugin.cpp  # 插件必须 -fPIC -shared
+g++ -std=c++17 host.cpp -o host -ldl                     # 主程序必须 -ldl
+</code></pre>
+<p>与主程序的链接期毫无关系——<code class="c">ldd host</code> 里查不到插件。机器人上位机的插件、相机/雷达驱动模块、Qt 插件都是这个模式。</p>
+<h3>⚠ C++ 用 <code class="c">dlopen</code> 必踩的坑：name mangling</h3>
+<p>C 里 <code class="c">dlsym(h, "add")</code> 直接拿到；C++ 里符号名被改编了。<strong>实测</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">nm -D libplugin.so | grep -E &quot;add|mul&quot;
+  0000000000000588 T add        ← extern &quot;C&quot; 声明的，名字没变
+  00000000000005a8 T _Z3mulii   ← 普通 C++ 函数，名字被改编
+</code></pre>
+<pre class="code" data-label="text"><code class="c">dlsym(&quot;add&quot;)  = 成功
+dlsym(&quot;mul&quot;)  = 失败            ← 拿不到，返回 NULL
+</code></pre>
+<p><strong>所以插件导出的接口必须包 <code class="c">extern "C"</code></strong>，否则 <code class="c">dlsym</code> 拿空指针（1.5.2 下面「和 C 的区别」那节讲过 name mangling，这里是它在 <code class="c">dlopen</code> 上的直接后果）：</p>
+<pre class="code" data-label="cpp"><code class="c">extern &quot;C&quot; int add(int a, int b) { return a + b; }   // 插件接口的标准写法
+</code></pre>
+<h3>⚠ 还有一个 C 没有的坑：C++ 动态库的 ABI</h3>
+<p>C 的 <code class="c">.so</code> 只要函数签名一致就能换；C++ 远没这么轻松：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>风险点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">std::string</code> 有两套 ABI</td>
+<td>gcc 5 起新旧 ABI 由 <code class="c">_GLIBCXX_USE_CXX11_ABI</code> 控制，库和主程序不一致就崩</td>
+</tr>
+<tr>
+<td>STL 容器跨 <code class="c">.so</code> 边界</td>
+<td>不要在接口上传 <code class="c">std::string</code> / <code class="c">std::vector</code>——编译器版本一变，成员布局就可能对不上</td>
+</tr>
+<tr>
+<td>异常 / RTTI 跨边界</td>
+<td>跨 <code class="c">.so</code> <code class="c">throw</code> 需要两边运行时一致</td>
+</tr>
+<tr>
+<td>接口建议</td>
+<td>对外接口用 C 风格（<code class="c">const char*</code>、定长 POD 结构体），内部随便用 C++</td>
+</tr>
+</tbody>
+</table></div>
+<p>这也是很多 C++ SDK 只肯发<strong>静态库</strong>，或者把对外接口做成 C API 的原因——"换个 .so 就行"在 C++ 里是有条件的。</p>
+<blockquote>
+<p>想往深里挖，这个主题在另外两条线上有更完整的展开：
+- 工具链视角（含 Windows 上 <code class="c">.lib</code> 有两种身份、导入库）：<a href="../../../../01.7-platform-toolchain/html/chapter-01.html#s-1-2">01.7 1.2 四件套解剖</a>
+- C 侧深水区（链接过程、GOT/PLT 延迟绑定、SONAME 版本管理、循环依赖、符号介入）：
+  <a href="../../../../01-c-language/05-embedded-kernel-practice/html/chapter-06.html#s-6-13">6.13 链接静态库</a> ·
+  <a href="../../../../01-c-language/05-embedded-kernel-practice/html/chapter-06.html#s-6-14">6.14 动态链接</a> ·
+  <a href="../../../../01-c-language/05-embedded-kernel-practice/html/chapter-06.html#s-6-15">6.15 插件的工作原理</a></p>
+</blockquote>
 <h2>头文件长什么样？（<code class="c">Sales_item.h</code> 极简版）</h2>
 <pre class="code" data-label="cpp"><code class="c">#pragma once              // 防止头文件被重复包含（也可用 #ifndef 守卫）
 
@@ -1496,6 +1637,14 @@ int main() {
 c_function();                // 链接报错：找不到 _Z11c_functionv
 </code></pre>
 <p>C++ 默认按改编后的名字找，但 C 库里是原名。要 <code class="c">extern "C" { #include "c_lib.h" }</code>。</p>
+<p><strong>4. 插件的 <code class="c">dlsym</code> 拿不到函数（返回 NULL）</strong></p>
+<pre class="code" data-label="cpp"><code class="c">int (*f)(int,int) = (int(*)(int,int))dlsym(h, &quot;mul&quot;);   // → NULL
+</code></pre>
+<p>原因：C++ 函数符号被改编成 <code class="c">_Z3mulii</code>，<code class="c">dlsym("mul")</code> 自然找不到。<strong>修正</strong>：插件导出接口用 <code class="c">extern "C"</code> 声明，编译后 <code class="c">nm -D libplugin.so</code> 看到的必须是原名 <code class="c">mul</code> 而不是 <code class="c">_Z3mulii</code>。</p>
+<p><strong>5. 升级 <code class="c">.so</code> 后程序在 <code class="c">std::string</code> 上崩溃</strong></p>
+<pre class="code" data-label="cpp"><code class="c">// 库接口：void set_name(std::string s);   ← 危险
+</code></pre>
+<p>原因：C++ 没有稳定的 ABI，<code class="c">std::string</code>/<code class="c">std::vector</code> 的成员布局随编译器版本和 <code class="c">_GLIBCXX_USE_CXX11_ABI</code> 变化。库换了编译器版本，主程序没重编 → 布局对不上 → 崩。<strong>修正</strong>：接口改成 C 风格（<code class="c">const char*</code> / 定长结构体 + 长度），或整体重新编译。</p>
 <h2>自测题</h2>
 <p><strong>1（选择）</strong> 下面哪个是 C++ 相对 C 在编译链接上的特有问题？
 - A. 头文件重复包含
@@ -1503,12 +1652,22 @@ c_function();                // 链接报错：找不到 _Z11c_functionv
 - C. <code class="c">.o</code> 文件格式不同</p>
 <p><strong>2（判断）</strong> <code class="c">#pragma once</code> 和 <code class="c">#ifndef</code> 守卫作用相同，都是防头文件重复包含。</p>
 <p><strong>3（踩坑）</strong> 编译命令 <code class="c">g++ main.cpp</code> 报 <code class="c">undefined reference to Sales_item::isbn()</code>，最可能的原因是什么？</p>
+<p><strong>4（判断）</strong> 「静态链接会把整个 libc 的代码都拷进你的可执行文件」——这句话对吗？</p>
+<p><strong>5（选择）</strong> 一个用 C++ 写的插件 <code class="c">.so</code>，主程序用 <code class="c">dlsym(h, "process")</code> 取函数却拿到 NULL，最可能的原因是：
+- A. 忘了加 <code class="c">-ldl</code>
+- B. 插件没用 <code class="c">-fPIC</code> 编译
+- C. <code class="c">process</code> 没有用 <code class="c">extern "C"</code> 声明，符号被改编成 <code class="c">_Z7processi</code>
+- D. <code class="c">dlopen</code> 的路径写错了</p>
+<p><strong>6（应用）</strong> 分发一个 C++ 程序到没装开发工具的目标机，既要让它能跑、又不想体积太大，该怎么编译？</p>
 <details>
 <summary>参考答案</summary>
 <ol>
 <li>B。名字改编是 C++ 独有（因重载），C 没有这个问题。头文件重复包含两边都有，<code class="c">.o</code> 格式也通用。</li>
 <li>对。两者都防重复包含。<code class="c">#pragma once</code> 更简洁但非标准（虽主流支持）；<code class="c">#ifndef</code> 是标准 C/C++，可移植性最好。</li>
 <li><code class="c">Sales_item.cpp</code> 没参与编译/链接。要写 <code class="c">g++ main.cpp Sales_item.cpp</code>，或分开 <code class="c">g++ -c main.cpp</code>、<code class="c">g++ -c Sales_item.cpp</code> 再 <code class="c">g++ main.o Sales_item.o</code>。</li>
+<li><strong>不完全对</strong>——结论对，机制错。<code class="c">.a</code> 是 <code class="c">.o</code> 的归档，链接器只抽取<strong>能补齐当前未定义符号</strong>的成员（实测：<code class="c">.a</code> 里没人调用的 <code class="c">unused.o</code> 不会进最终二进制）。体积暴涨是因为 <code class="c">-static</code> 把 libc 的间接依赖（locale/iconv 等）连带拉了进来，不是整包拷贝。</li>
+<li>C。name mangling：<code class="c">nm -D</code> 里看到的是 <code class="c">_Z7processi</code> 而不是 <code class="c">process</code>。A 的后果是链接期报 <code class="c">undefined reference to dlopen</code>，B 会导致 <code class="c">dlopen</code> 阶段失败，D 会让 <code class="c">dlopen</code> 本身返回 NULL 而不是 <code class="c">dlsym</code> 失败。</li>
+<li><code class="c">g++ -std=c++17 main.cpp -o app -static-libstdc++</code>。把 C++ 运行时静态链进去，目标机不必有匹配版本的 <code class="c">libstdc++.so.6</code>；libc 仍保持动态，体积比全静态小（实测 1.5 MB vs 2.25 MB）。若要完全自包含再用 <code class="c">-static</code>。</li>
 </ol>
 </details>
 <h2>延伸</h2>
