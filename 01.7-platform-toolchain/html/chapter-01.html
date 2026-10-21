@@ -686,6 +686,124 @@ Target: arm64-apple-darwin27.0.0
 </tr>
 </tbody>
 </table></div>
+<h3>第三方库为什么总是「include/ + lib/」两件套</h3>
+<p>上一张表列了 <code class="c">.a</code> <code class="c">.lib</code> <code class="c">.so</code> <code class="c">.dylib</code> 这些后缀，但没回答一个更基本的问题：
+<strong>为什么 download 一个库，解压出来永远是两个目录，而不是一坨源码？</strong></p>
+<pre class="code" data-label="text"><code class="c">MyLib/
+├── include/add.h        ← 头文件：只有一行声明  int add(int a, int b);
+└── lib/
+    ├── libadd.a         ← 静态库（预编译好的 .o 打包）
+    └── libadd.dylib     ← 动态库
+</code></pre>
+<p>答案藏在上表的<strong>分工</strong>里：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>角色</th>
+<th>需要的东西</th>
+<th>来自</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>编译器</strong>（<code class="c">clang</code>/<code class="c">cl</code>）处理你的 <code class="c">.cpp</code></td>
+<td>只要知道「<code class="c">add</code> 长什么样」→ <strong>声明</strong></td>
+<td><code class="c">include/add.h</code></td>
+</tr>
+<tr>
+<td><strong>链接器</strong>（<code class="c">ld64</code>/<code class="c">link</code>）拼成品</td>
+<td>要真正的机器码 / 符号表</td>
+<td><code class="c">lib/</code> 里的二进制</td>
+</tr>
+<tr>
+<td><strong>加载器</strong>（运行时）</td>
+<td>动态库本体</td>
+<td><code class="c">lib/</code> 里的 <code class="c">.dylib</code>/<code class="c">.dll</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>所以库作者<strong>不用给源码</strong>：声明给编译器看，实现以编译好的二进制给链接器看——两边对上就能链接成功。这也是闭源库的标准分发形态。</p>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++20 -c main.cpp -I MyLib/include -o main.o   # -I：告诉编译器去哪找声明
+clang++ main.o -L MyLib/lib -ladd -o app                    # -L/-l：告诉链接器去哪找实现
+</code></pre>
+<p><strong><code class="c">-I</code> 管编译期，<code class="c">-L</code> 管链接期</strong>——CMake 里的 <code class="c">target_include_directories</code> 和 <code class="c">target_link_libraries</code> 就各自对应这两个（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/01.5-cmake-build/03-libraries-multi-dir/README.md">01.5 第 3 章</a>）。</p>
+<h3>静态 vs 动态：本机实测（clang 23.1.0，macOS）</h3>
+<p>同一个 <code class="c">add()</code> ，两种打包方式，<code class="c">MyLib/include/add.h</code> 完全不动，只换 <code class="c">lib/</code> 里的内容：</p>
+<pre class="code" data-label="shell"><code class="c"># 静态库：先把源码编成 .o，再用 ar 打包
+ar rcs MyLib/lib/libadd.a add.o
+clang++ main.o -L MyLib/lib -ladd -o app_static
+
+# 动态库：-shared 一步生成
+clang++ -std=c++20 -shared -fPIC add.cpp -o MyLib/lib/libadd.dylib
+clang++ main.cpp -I MyLib/include -L MyLib/lib -ladd -o app_dyn
+</code></pre>
+<p>两个程序都能跑，输出都是 <code class="c">7</code>。区别只有一串命令能看出来：</p>
+<pre class="code" data-label="shell"><code class="c">nm MyLib/lib/libadd.a          # 静态库：符号就躺在里面
+  MyLib/lib/libadd.a(add.o):
+  0000000000000000 T __Z3addii        ← T = 已定义的机器码
+
+otool -L app_dyn                # 动态库：可执行文件里只留了一张&quot;欠条&quot;
+  @rpath/libadd.dylib (compatibility version 0.0.0, current version 0.0.0)
+</code></pre>
+<p><strong>删库实验</strong>（最有说服力的一个）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th><code class="c">app_static</code></th>
+<th><code class="c">app_dyn</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>删掉 <code class="c">lib/</code> 里的库文件后运行</td>
+<td>✅ 照样输出 <code class="c">7</code></td>
+<td>❌ <code class="c">dyld: Library not loaded: @rpath/libadd.dylib</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>这就是本质差别：<strong>静态库在链接时被拷进了可执行文件</strong>（之后自包含，删库无感）；
+<strong>动态库只有运行 dlopen 的时候才被加载</strong>（二进制里记的只是名字，库不在就起不来）。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>静态库 <code class="c">.a</code> / <code class="c">.lib</code></th>
+<th>动态库 <code class="c">.dylib</code> / <code class="c">.so</code> / <code class="c">.dll</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>代码进你的程序</td>
+<td>链接期拷贝进去</td>
+<td>运行期才加载</td>
+</tr>
+<tr>
+<td>分发</td>
+<td>只发一个可执行文件</td>
+<td>必须连库一起发</td>
+</tr>
+<tr>
+<td>更新库</td>
+<td>全量重新链接</td>
+<td>换 <code class="c">.so</code> 即可（ABI 兼容前提）</td>
+</tr>
+<tr>
+<td>磁盘/内存</td>
+<td>每个程序一份拷贝</td>
+<td>多进程共享一份（Linux 页面共享）</td>
+</tr>
+<tr>
+<td>找不到库的报错</td>
+<td>链接期：<code class="c">undefined symbols</code>（<code class="c">-lxxx</code> 没给对）</td>
+<td>运行期：<code class="c">Library not loaded</code> / <code class="c">cannot open shared object file</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>Linux 上等价命令：<code class="c">ldd ./app</code> 看依赖、<code class="c">readelf -d</code> 看 dynamic section、<code class="c">nm -D</code> 看动态符号；
+macOS 是 <code class="c">otool -L</code> / <code class="c">nm -m</code>。概念完全一致，命令不同而已。</p>
+</blockquote>
 <h3>关键洞察：CMake 为什么能横跨两边</h3>
 <p>MSBuild 的输入是 XML，make 的输入是 Makefile，你看过去是两套完全不同的东西 ——
 <strong>CMake 的作用就是在它们之上再抽一层</strong>：</p>
