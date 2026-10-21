@@ -396,15 +396,95 @@ std::tuple_element&lt;0, decltype(t)&gt;::type;   // int
 std::string name; int age;
 std::tie(name, age) = get_person();
 
+// tie + std::ignore：跳过不想要的中间元素
+std::tuple&lt;int, double, std::string&gt; t{1, 9.9, &quot;cpp&quot;};
+int n; std::string s;
+std::tie(n, std::ignore, s) = t;   // 只要第 0、2 个，跳过 double
+// 实测（clang 23.1.0）：n=1 s=&quot;cpp&quot;
+
 // C++17：结构化绑定（更优雅）
 auto [name, age] = get_person();
 </code></pre>
+<blockquote>
+<p>补充：<code class="c">std::get</code> 还能<strong>按类型</strong>取（C++14）：<code class="c">std::get&lt;int&gt;(t)</code>，前提是该类型在 tuple 中<strong>唯一</strong>，否则编译报二义性（见常见错误 2）。另外 <code class="c">tuple&lt;&gt;</code>（0 个元素）和 <code class="c">tuple&lt;int&gt;</code>（1 个）也合法——<code class="c">tuple_size</code> 实测为 0 / 1，工程上极少用，但模板本身没有"≥2 个"的限制。</p>
+</blockquote>
 <h3>4. tuple 的常见场景</h3>
 <ul>
 <li><strong>函数返回多值</strong>：<code class="c">return std::make_tuple(result, status, error_msg);</code></li>
 <li><strong>异构数据临时打包</strong>：把不同类型数据一起传递，避免定义专用 struct</li>
 <li><strong>模板元编程</strong>：作为"类型列表"载体</li>
 </ul>
+<h3>5. get 的下标必须是编译期常量（面试重点）</h3>
+<p><code class="c">std::get&lt;N&gt;(t)</code> 的 <code class="c">N</code> 是<strong>模板参数</strong>，在编译期实例化，所以不能用运行期变量：</p>
+<pre class="code" data-label="cpp"><code class="c">std::tuple&lt;int, double&gt; t{1, 2.0};
+int idx = 1;
+auto v = std::get&lt;idx&gt;(t);   // ❌ 编译错误
+</code></pre>
+<p>实测（clang 23.1.0）：<code class="c">error: no matching function for call to 'get'</code>。</p>
+<p><strong>推论</strong>：tuple <strong>不能像数组那样用 for 循环按下标遍历</strong>——下标必须编译期可知。要遍历，得把"运行期循环"改写成"编译期展开"，见下一节。</p>
+<h3>6. 遍历 tuple 的三种写法（实测输出一致）</h3>
+<p>三种写法对 <code class="c">std::tuple&lt;int, double, std::string&gt; t{42, 3.14, "hft"}</code> 的输出均为 <code class="c">42 3.14 hft</code>。</p>
+<p><strong>写法一：模板递归 + 偏特化终止（C++11 唯一出路，面试最常考）</strong></p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;size_t I = 0, typename... Ts&gt;
+struct TuplePrinter {
+    static void print(const std::tuple&lt;Ts...&gt;&amp; t) {
+        std::cout &lt;&lt; std::get&lt;I&gt;(t) &lt;&lt; &quot; &quot;;
+        TuplePrinter&lt;I + 1, Ts...&gt;::print(t);   // 编译期递归
+    }
+};
+template &lt;typename... Ts&gt;                       // 递归终止：下标越界时命中此偏特化
+struct TuplePrinter&lt;sizeof...(Ts), Ts...&gt; {
+    static void print(const std::tuple&lt;Ts...&gt;&amp;) {}
+};
+// 调用注意类型包要拼对：TuplePrinter&lt;0, int, double, std::string&gt;::print(t);
+</code></pre>
+<p><strong>写法二：index_sequence + 折叠表达式（C++17，工程主流）</strong></p>
+<pre class="code" data-label="cpp"><code class="c">template &lt;typename Tuple, size_t... Is&gt;
+void printImpl(const Tuple&amp; t, std::index_sequence&lt;Is...&gt;) {
+    ((std::cout &lt;&lt; std::get&lt;Is&gt;(t) &lt;&lt; &quot; &quot;), ...);   // 折叠展开，编译期生成 N 条语句
+}
+template &lt;typename Tuple&gt;
+void printTuple(const Tuple&amp; t) {
+    printImpl(t, std::make_index_sequence&lt;std::tuple_size_v&lt;Tuple&gt;&gt;{});
+}
+</code></pre>
+<p><code class="c">make_index_sequence&lt;N&gt;</code> 在编译期生成下标包 <code class="c">0,1,...,N-1</code>，包展开后每个下标都是编译期常量，正好满足 <code class="c">get</code> 的要求。机制见 <a href="chapter-19.html#s-19-6">19.6 可变参数模板</a>。</p>
+<p><strong>写法三：std::apply + 折叠（C++17，最贴近真实用法）</strong></p>
+<pre class="code" data-label="cpp"><code class="c">std::apply([](const auto&amp;... args) {
+    ((std::cout &lt;&lt; args &lt;&lt; &quot; &quot;), ...);
+}, t);   // 把整个 tuple 当函数参数包展开喂给 lambda
+</code></pre>
+<p><code class="c">apply</code> 的价值不止打印——它是"tuple 存参数 → 展开调回调"的标准件（比如从配置 tuple 取参数调函数）。</p>
+<h3>7. pair / tuple / struct 怎么选（工程准则）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>选谁</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>刚好两个值（错误码+消息、map 键值）</td>
+<td><code class="c">pair</code></td>
+<td>最简单，<code class="c">first/second</code> 约定俗成</td>
+</tr>
+<tr>
+<td>3 个及以上，<strong>一次性临时</strong>打包</td>
+<td><code class="c">tuple</code></td>
+<td>即用即写，配合结构化绑定一行解包</td>
+</tr>
+<tr>
+<td>组合<strong>反复出现</strong>、字段需要名字</td>
+<td><strong>具名 struct</strong></td>
+<td><code class="c">get&lt;2&gt;(t)</code> 毫无可读性，<code class="c">result.ip</code> 一目了然；还能加方法</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>经验法则：<code class="c">get&lt;0&gt;/get&lt;1&gt;</code> 没有名字，可读性差。<strong>超过 3 个元素，工程上一般直接写 struct，不用 tuple</strong>。判断"临时还是反复出现"：这个组合如果只在一个函数的返回处出现一次，tuple 够用；如果要在多处传来传去（比如网络代码里的"时间戳+价格+成交量"），就该具名。</p>
+</blockquote>
 <h2>和 C 的区别</h2>
 <p>C 没有 <code class="c">tuple</code>，要返回多个不同类型值只能定义 <code class="c">struct</code> 或用 <code class="c">void*</code>：</p>
 <div class="tbl-wrap"><table>
@@ -498,7 +578,25 @@ int main() {
 <summary>答案</summary>
 <p><code class="c">std::tie(x, y)</code> 只是构造了一个引用 tuple，没有赋值——<code class="c">x</code>/<code class="c">y</code> 仍为未初始化。正确写法是 <code class="c">std::tie(x, y) = get_coords();</code>（tie 在等号左边）。或用 C++17 结构化绑定：<code class="c">auto [x, y] = get_coords();</code>。</p>
 </details>
-<p><strong>4. 应用题</strong>：写一个函数 <code class="c">divide(int a, int b)</code> 返回 <code class="c">(商, 余数, 是否成功)</code>，成功时 <code class="c">true</code>，除零时 <code class="c">false</code>。用 <code class="c">tuple</code> 返回，调用方用结构化绑定接收。</p>
+<p><strong>4. 判断题</strong>：下面代码能通过编译吗？</p>
+<pre class="code" data-label="cpp"><code class="c">std::tuple&lt;int, double, std::string&gt; t{1, 2.0, &quot;x&quot;};
+for (int i = 0; i &lt; 3; ++i)
+    std::cout &lt;&lt; std::get&lt;i&gt;(t) &lt;&lt; &quot;\n&quot;;   // 用循环变量当下标
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong>不能</strong>。<code class="c">get&lt;N&gt;</code> 的 <code class="c">N</code> 是模板参数，必须编译期常量；<code class="c">i</code> 是运行期变量，编译报 <code class="c">no matching function for call to 'get'</code>。tuple 的"遍历"只能在编译期展开：模板递归（C++11）、<code class="c">index_sequence</code> + 折叠表达式（C++17）、<code class="c">std::apply</code>（C++17）——见核心用法第 5、6 节。</p>
+</details>
+<p><strong>5. 应用题</strong>：函数要同时返回"错误码、收到的字节数、对方 IP 字符串"，选 pair、tuple 还是 struct？</p>
+<details>
+<summary>答案</summary>
+<p>3 个值，pair 出局。tuple 能编过且能跑，但 IP 字段要 <code class="c">get&lt;2&gt;(t)</code> 访问，可读性差；而这个组合在解析、日志、统计多处都会用到（<strong>反复出现</strong>）——按第 7 节的准则应写具名 struct：</p>
+<pre class="code" data-label="cpp"><code class="c">struct RecvResult { int err; size_t bytes; std::string ip; };
+// 调用方：auto [err, bytes, ip] = recv(...); 结构化绑定对聚合 struct 同样可用
+</code></pre>
+<p>tuple 的甜区是"只在一个返回处出现一次"的临时打包。</p>
+</details>
+<p><strong>6. 应用题</strong>：写一个函数 <code class="c">divide(int a, int b)</code> 返回 <code class="c">(商, 余数, 是否成功)</code>，成功时 <code class="c">true</code>，除零时 <code class="c">false</code>。用 <code class="c">tuple</code> 返回，调用方用结构化绑定接收。</p>
 <details>
 <summary>答案</summary>
 <pre class="code" data-label="cpp"><code class="c">#include &lt;tuple&gt;
