@@ -595,7 +595,7 @@ HasPtr b = a;    // 自动调拷贝构造，深拷贝，安全
 <p>这是 C→C++ 在"资源管理正确性"上的根本提升——把易错的拷贝行为交给类设计者一次性写对，使用者无脑用也不出错。</p>
 <h2>常见错误</h2>
 <ol>
-<li><strong>浅拷贝导致双 delete</strong>：类含指针但没自定义拷贝控制，默认浅拷贝 → 双 free。<strong>修正</strong>：自定义拷贝构造/赋值做深拷贝，或用智能指针/值语义避免。</li>
+<li><strong>浅拷贝导致双 delete</strong>：类含指针但没自定义拷贝控制，默认浅拷贝 → 双 free。<strong>修正</strong>：自定义拷贝构造/赋值做深拷贝，或 <code class="c">=delete</code> 禁止拷贝，或用智能指针/值语义避免。<strong>注意</strong>：这条只针对"拥有型"裸指针（本类 new、析构 delete）；视图型裸指针（只指向外部内存、析构不 delete，见 13.2）默认浅拷贝是安全的，不需要手写。</li>
 <li><strong>拷贝赋值不处理自赋值</strong>：<code class="c">a = a</code> 时，若先 <code class="c">delete ps</code> 再用 <code class="c">rhs.ps</code>，rhs 就是 <em>this，已 delete → UB。</em><em>修正</em>*：先 new 新的再 delete 旧的（上例写法），或检查自赋值。</li>
 <li><strong>拷贝赋值不异常安全</strong>：<code class="c">delete ps; ps = new string(*rhs.ps);</code> —— 若 new 抛异常，ps 已 delete，对象处于无效状态。<strong>修正</strong>：先 new 成功再 delete 旧（上例写法）。</li>
 <li><strong>手动调析构</strong>：<code class="c">e.~Entity();</code> 是合法语法，但栈对象出作用域时会<strong>再析构一次</strong> → 析构体内的 <code class="c">delete[]</code> 执行两次 → double free（实测 SIGABRT）。<strong>规则</strong>：栈/堆对象永远让编译器调析构；只有 placement new 出来的对象才手动 <code class="c">p-&gt;~T()</code>。</li>
@@ -756,6 +756,46 @@ dtor a        ← main 收尾
 </tr>
 </tbody>
 </table></div>
+<h3>拥有型 vs 视图型裸指针：判别标准是"谁负责 delete"</h3>
+<p>"类含裸指针"这条要再细分——不是所有含指针的类都需要手写拷贝控制。先问一句：<strong>这块内存是本类 new 出来、析构负责 delete 的吗？</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指针性质</th>
+<th>典型例子</th>
+<th>默认浅拷贝</th>
+<th>要动手吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>拥有型</strong>：自己 new、析构 delete</td>
+<td><code class="c">MyBuffer</code> 的 <code class="c">char* buf</code></td>
+<td>两个对象指向同一块 → 双 free 崩溃</td>
+<td>✅ 手写深拷贝（三法则），或 <code class="c">=delete</code> 禁拷贝</td>
+</tr>
+<tr>
+<td><strong>视图型</strong>：只指向外部内存，析构不 delete</td>
+<td><code class="c">StringView</code> 的 <code class="c">const char* data</code></td>
+<td>完全安全</td>
+<td>❌ 默认即可</td>
+</tr>
+</tbody>
+</table></div>
+<p>视图型的例子——默认浅拷贝指针，安全：</p>
+<pre class="code" data-label="cpp"><code class="c">struct StringView {
+    const char* data;   // 只引用外部内存（如别人的栈数组），本类不负责释放
+    int len;
+    // 不写拷贝构造、不写析构 delete —— 默认浅拷贝指针，安全
+};
+
+char arr[] = &quot;hello&quot;;
+StringView s1{arr, 5};
+StringView s2 = s1;     // s2.data == s1.data，无妨：谁都不 delete 它
+</code></pre>
+<p>判别口诀：<strong>谁 new 谁 delete，谁拥有谁负责</strong>。只有"本类负责 new、析构负责 delete"的拥有型指针才触发三法则；视图型指针浅拷贝只是多一份"看"的视角，没有所有权冲突。</p>
+<p>标准库里 <code class="c">std::string_view</code>、<code class="c">std::span</code> 就是刻意的视图型设计——成员只是"指针 + 长度"，拷贝即复制指针，绝不拥有。HFT 里行情/协议解码也常用这种非拥有视图做零拷贝，唯一约束是<strong>视图的寿命不能超过底层数据</strong>（底层数组先死，视图就是悬垂指针——那是寿命问题，不是拷贝问题）。</p>
+<p>✅ <strong>经验建议</strong>：只要类里有自己管理、需要在析构里 <code class="c">delete</code> 释放的裸指针成员，最好手写拷贝构造（配套拷贝赋值、析构，三法则）；不想写深拷贝就直接 <code class="c">MyBuffer(const MyBuffer&amp;) = delete;</code> 禁止拷贝，从根源避免浅拷贝 bug——不要依赖默认拷贝构造。反过来，指针只是指向外部内存、本类不释放的视图型，默认拷贝完全够用，不用手写。</p>
 <h3>现代建议：零法则（Rule of Zero）</h3>
 <p><strong>优先让类的成员自己管理资源</strong>（用智能指针、容器、RAII 类型），让编译器生成的默认拷贝控制自动正确工作，<strong>不手写拷贝控制</strong>。</p>
 <pre class="code" data-label="cpp"><code class="c">// 零法则：成员自己管资源，默认拷贝控制正确

@@ -357,6 +357,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">12.1</div><h2>智能指针</h2></div>
 <h2>本节讲什么</h2>
 <p>C++ 的<strong>智能指针</strong>：<code class="c">unique_ptr</code>（独占）、<code class="c">shared_ptr</code>（共享，引用计数）、<code class="c">weak_ptr</code>（弱引用）。它们用 RAII 自动管理动态内存，<strong>几乎消灭内存泄漏和悬垂指针</strong>。这是 C 程序员必须重点学的——C 的 <code class="c">malloc/free</code> 全靠手动，错了就泄漏或崩溃。</p>
+<p><code class="c">unique_ptr</code> 的规则很简单（独占 + 移动），本节更多的篇幅在 <code class="c">shared_ptr</code> 和 <code class="c">weak_ptr</code>：<strong>控制块</strong>是什么、为什么"一个对象只能有一个控制块"、<code class="c">enable_shared_from_this</code> 解决什么问题、线程安全到底安全到哪一层、以及每一次拷贝要付多少纳秒。这些是真正会在工程里咬人的地方。</p>
 <h2>核心用法</h2>
 <h3>unique_ptr：独占所有权</h3>
 <pre class="code" data-label="cpp"><code class="c">#include &lt;memory&gt;
@@ -368,9 +369,19 @@ std::unique_ptr&lt;int&gt; p2 = std::move(p);   // 只能移动，p 变 nullptr
 // p2 出作用域自动 delete，不用手动
 </code></pre>
 <ul>
-<li>零开销抽象（与裸指针同大小、同性能）</li>
+<li>零开销抽象（与裸指针同大小、同性能，实测见下文内存布局一节）</li>
 <li>所有权清晰：谁持有谁负责释放</li>
 </ul>
+<h4>构造必须显式：<code class="c">unique_ptr</code> 的构造函数是 <code class="c">explicit</code></h4>
+<pre class="code" data-label="cpp"><code class="c">std::unique_ptr&lt;Entity&gt; e = new Entity();   // ❌ 编译失败
+</code></pre>
+<p>clang 23 + libc++ 实测报错，直接指向标准库源码：</p>
+<pre class="code" data-label="code"><code class="c">error: no viable conversion from 'Entity *' to 'std::unique_ptr&lt;Entity&gt;'
+note: explicit constructor is not a candidate
+    explicit unique_ptr(pointer __p) _NOEXCEPT   ← libc++ __memory/unique_ptr.h:163
+</code></pre>
+<p>必须写成 <code class="c">std::unique_ptr&lt;Entity&gt; e(new Entity());</code>（直接初始化）或 <code class="c">auto e = std::make_unique&lt;Entity&gt;();</code>（C++14 起推荐）。</p>
+<p>有意思的是标准委员会的取舍：同一个类里 <code class="c">unique_ptr(nullptr_t)</code> <strong>没有</strong>加 <code class="c">explicit</code>，<code class="c">std::unique_ptr&lt;Entity&gt; e = nullptr;</code> 实测合法。<strong>接管裸指针的所有权是危险动作，必须你显式写出来；"空就是空"语义无害，放行。</strong> 完整讨论见 <a href="chapter-07.html#s-7-5">7.5 构造函数 · explicit</a>。</p>
 <h3>shared_ptr：共享所有权（引用计数）</h3>
 <pre class="code" data-label="cpp"><code class="c">std::shared_ptr&lt;int&gt; p1 = std::make_shared&lt;int&gt;(42);
 std::shared_ptr&lt;int&gt; p2 = p1;       // 引用计数 +1
@@ -379,9 +390,232 @@ std::cout &lt;&lt; p1.use_count();        // 2
 </code></pre>
 <ul>
 <li>多个 shared_ptr 共享同一对象</li>
-<li>引用计数有原子操作开销（比 unique_ptr 慢）</li>
+<li>引用计数有原子操作开销（比 unique_ptr 慢，实测数据见下）</li>
 <li>适合"所有权不明确、多处共享"的场景</li>
 </ul>
+<h4>控制块：shared_ptr 真正的开销所在</h4>
+<p><code class="c">shared_ptr</code> 比 <code class="c">unique_ptr</code> 多出来的那一根指针，指向的是<strong>控制块（control block）</strong>——一块独立的堆内存，里面大致装着：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>控制块内容</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>强引用计数（use_count）</td>
+<td>多少个 <code class="c">shared_ptr</code> 持有对象；归 0 → 析构对象</td>
+</tr>
+<tr>
+<td>弱引用计数（weak_count）</td>
+<td>多少个 <code class="c">weak_ptr</code> 观察它；<strong>强、弱都归 0 → 释放控制块本身</strong></td>
+</tr>
+<tr>
+<td>删除器（deleter）</td>
+<td>类型擦除后存在这里</td>
+</tr>
+<tr>
+<td>分配器（allocator）</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<p>这不是抽象描述，libc++ 的控制块就是两个 <code class="c">long</code>（<code class="c">__memory/shared_count.h</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">class __shared_count {  long __shared_owners_;      };            // :50  强计数
+class __shared_weak_count : public __shared_count {
+    long __shared_weak_owners_;                                   // :82  弱计数
+    void __add_weak() { __libcpp_atomic_refcount_increment(__shared_weak_owners_); }   // :99
+    void __release_shared() {                                     // :100
+        if (__shared_count::__release_shared())   // 强计数归零 → 销毁对象
+            __release_weak();                     // 同时自动放掉自己占的那一份弱计数
+    }
+};
+long use_count() const { return __atomic_load_n(&amp;__shared_owners_, __ATOMIC_RELAXED) + 1; }  // :74
+</code></pre>
+<p>三个能从源码直接读出来的事实：</p>
+<ol>
+<li><strong>两个计数是分开的</strong>，弱计数管的是控制块本身的寿命。</li>
+<li><strong>强计数归零时会顺带减一次弱计数</strong>（<code class="c">__release_shared()</code> 里那行）——所以"弱计数 = weak_ptr 个数 + 1（shared_ptr 群体自己占一份）"，最后一批 <code class="c">shared_ptr</code> 走人时，这一份才交还。</li>
+<li><code class="c">use_count()</code> 的实现是 <strong>relaxed load</strong>——它只给一个快照，并发场景下不可靠，<strong>别拿它做判断</strong>，<code class="c">expired()</code> 才是对的（libc++ 里 <code class="c">expired()</code> 就是 <code class="c">use_count() == 0</code>，<code class="c">shared_ptr.h:1228</code>）。</li>
+</ol>
+<p><strong>控制块只在三种情况下被创建</strong>（记住这个，能避开 90% 的 <code class="c">shared_ptr</code> 事故）：</p>
+<ol>
+<li><code class="c">make_shared&lt;T&gt;(...)</code> —— 对象与控制块<strong>同一块内存</strong></li>
+<li>从裸指针构造 <code class="c">shared_ptr&lt;T&gt;(new T)</code> / <code class="c">shared_ptr&lt;T&gt;(raw)</code> —— 对象独立，控制块另分配</li>
+<li>从 <code class="c">unique_ptr&lt;T&gt;&amp;&amp;</code> 移动构造 —— 接管所有权并新建控制块</li>
+</ol>
+<p><strong>铁律：同一个对象只能有一个控制块。</strong> 一旦让同一个裸指针生成两个控制块，两个计数各自归零，就会 delete 两次：</p>
+<pre class="code" data-label="cpp"><code class="c">T* raw = new T{42};
+std::shared_ptr&lt;T&gt; a(raw);
+std::shared_ptr&lt;T&gt; b(raw);     // 第二个独立控制块
+</code></pre>
+<p>实测输出（clang 23 / libc++）：</p>
+<pre class="code" data-label="code"><code class="c">  a.use_count=1  b.use_count=1  (都是 1 —— 各自一个控制块)
+  [析构] T(42)
+  [析构] T(42)            ← 析构两次，未定义行为
+</code></pre>
+<p>同样的错误换成成员函数里 <code class="c">return std::shared_ptr&lt;Bad&gt;(this);</code> 的形式，实测直接 <strong>SIGABRT（退出码 134）</strong>。所以规则很硬：<strong>一旦把裸指针交给 <code class="c">shared_ptr</code>，之后就只能通过拷贝 <code class="c">shared_ptr</code> 来传播，绝不能再拿 <code class="c">get()</code> 去造第二个。</strong></p>
+<h4>删除器：shared_ptr 类型擦除，unique_ptr 不擦除</h4>
+<p>这是两者一个容易被忽略的差别，实测（同一个 64 字节的删除器类型）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th style="text-align: center;"><code class="c">sizeof</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">shared_ptr&lt;int&gt;</code>（配任意删除器：lambda / 函数指针 / 64 字节仿函数）</td>
+<td style="text-align: center;"><strong>16</strong>（全一样）</td>
+</tr>
+<tr>
+<td><code class="c">unique_ptr&lt;int&gt;</code></td>
+<td style="text-align: center;">8</td>
+</tr>
+<tr>
+<td><code class="c">unique_ptr&lt;int, BigDeleter&gt;</code>（64 字节状态）</td>
+<td style="text-align: center;"><strong>72</strong></td>
+</tr>
+<tr>
+<td><code class="c">unique_ptr&lt;int, void(*)(int*)&gt;</code></td>
+<td style="text-align: center;">16</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">unique_ptr</code> 的删除器是<strong>类型的一部分</strong>（编译期绑定，零开销但会撑大对象）；<code class="c">shared_ptr</code> 的删除器被<strong>类型擦除</strong>后塞进控制块——代价是运行时间接调用，好处是 <code class="c">shared_ptr&lt;T&gt;</code> 的类型与删除器无关，可以放进同一个容器、跨 API 传递。</p>
+<h4>enable_shared_from_this：安全地交出"指向自己的 shared_ptr"</h4>
+<p>上面那条铁律带来一个实际问题：成员函数内部只有 <code class="c">this</code>，怎么返回一个共享所有权的 <code class="c">shared_ptr</code>？<strong>不能</strong>写 <code class="c">shared_ptr&lt;T&gt;(this)</code>（那就是铁律禁止的第二个控制块），正确做法是继承 <code class="c">std::enable_shared_from_this&lt;T&gt;</code> 后调 <code class="c">shared_from_this()</code>：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Good : std::enable_shared_from_this&lt;Good&gt; {
+    std::shared_ptr&lt;Good&gt; self() { return shared_from_this(); }   // 复用已有控制块
+};
+</code></pre>
+<p>对照实测：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">shared_ptr&lt;Bad&gt;(this)</code></td>
+<td><code class="c">use_count</code> 各为 1；析构两次 → <strong>SIGABRT 134</strong></td>
+</tr>
+<tr>
+<td><code class="c">shared_from_this()</code></td>
+<td><code class="c">use_count</code> = 2（同一控制块）；析构一次 ✅</td>
+</tr>
+<tr>
+<td>栈对象上调 <code class="c">shared_from_this()</code></td>
+<td>抛 <code class="c">std::bad_weak_ptr: bad_weak_ptr</code></td>
+</tr>
+<tr>
+<td>构造函数里调 <code class="c">shared_from_this()</code></td>
+<td>同样抛 <code class="c">bad_weak_ptr</code>（此时还没有任何 <code class="c">shared_ptr</code> 指向它）</td>
+</tr>
+</tbody>
+</table></div>
+<p>后两条是同一个原因：<code class="c">shared_from_this()</code> 依赖对象内部那个 <code class="c">weak_ptr</code>，而它要等 <code class="c">shared_ptr</code> 构造完成才会被赋值。<strong>配套的工程写法</strong>是把构造函数设为私有、只暴露工厂函数，从类型层面杜绝栈对象和 <code class="c">shared_ptr&lt;T&gt;(this)</code>：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Safe : std::enable_shared_from_this&lt;Safe&gt; {
+    static std::shared_ptr&lt;Safe&gt; create() { return std::shared_ptr&lt;Safe&gt;(new Safe); }
+    std::shared_ptr&lt;Safe&gt; self() { return shared_from_this(); }
+private:
+    Safe() = default;      // 强制走工厂
+};
+</code></pre>
+<h4>线程安全：到底安全到哪一层</h4>
+<p>"shared_ptr 线程安全"这句话是有严格边界的。用 ThreadSanitizer（<code class="c">-fsanitize=thread</code>）实测三种场景：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>TSan 结果</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 每个线程持<strong>自己的副本</strong>，并发拷贝/销毁（4 线程 × 10000 次）</td>
+<td><strong>无告警</strong>，<code class="c">use_count()</code> 最终精确回到 1</td>
+<td>引用计数的增减是<strong>原子</strong>的 ✅</td>
+</tr>
+<tr>
+<td>② 每个线程持<strong>自己的副本</strong>，但并发写对象内部字段</td>
+<td><strong>data race</strong>（heap block）</td>
+<td>对象本身<strong>不受任何保护</strong> ❌</td>
+</tr>
+<tr>
+<td>③ 多线程读写<strong>同一个 <code class="c">shared_ptr</code> 变量</strong>（一个 <code class="c">reset</code>、一个拷贝）</td>
+<td><strong>data race</strong>（stack of main thread）</td>
+<td><code class="c">shared_ptr</code> 实例本身<strong>不是</strong>线程安全的 ❌</td>
+</tr>
+</tbody>
+</table></div>
+<p>拆开说就是三条：</p>
+<ol>
+<li><strong>不同 <code class="c">shared_ptr</code> 实例</strong>（哪怕指向同一对象）<strong>并发读写是安全的</strong>——计数是原子的。</li>
+<li><strong>同一个 <code class="c">shared_ptr</code> 实例</strong>被多线程同时读写<strong>不安全</strong>（跟 <code class="c">int</code> 一样需要加锁 / <code class="c">atomic_load</code> 系列自由函数）。</li>
+<li><strong>指向的对象</strong>本身<strong>完全不受保护</strong>——<code class="c">shared_ptr</code> 只管生命周期，不管数据竞争。实测 4 线程各加 2000 次，TSan 下 <code class="c">counter</code> 只有 4000（应为 8000）；而 <code class="c">-O2</code> 不开 TSan 时恰好是 8000——<strong>这正是竞态最阴的地方：它不保证出错</strong>。</li>
+</ol>
+<p><strong>HFT 提醒</strong>：别把 <code class="c">shared_ptr</code> 当成"线程安全的对象容器"。行情回调线程与策略线程共享一个 <code class="c">OrderBook</code> 时，<code class="c">shared_ptr</code> 只保证它活着，读写字段该加锁还得加锁。</p>
+<h4>性能实测：每一次拷贝都在做原子操作</h4>
+<p>本机实测（clang 23.1.0，<code class="c">-O2</code>，arm64，2000 万次循环）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th style="text-align: right;">耗时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>裸指针赋值（基准）</td>
+<td style="text-align: right;">~0 ns（被优化掉）</td>
+</tr>
+<tr>
+<td><code class="c">unique_ptr</code> move</td>
+<td style="text-align: right;">~0 ns（编译期所有权转移，运行时无操作）</td>
+</tr>
+<tr>
+<td><code class="c">shared_ptr</code> <strong>拷贝 + 析构</strong></td>
+<td style="text-align: right;"><strong>≈ 14.9 ns</strong></td>
+</tr>
+<tr>
+<td><code class="c">weak_ptr::lock()</code> 一次</td>
+<td style="text-align: right;"><strong>≈ 13.8 ns</strong></td>
+</tr>
+<tr>
+<td><code class="c">weak_ptr::expired()</code> 一次</td>
+<td style="text-align: right;">≈ 0.31 ns（只读计数）</td>
+</tr>
+<tr>
+<td>函数<strong>传值</strong> <code class="c">shared_ptr</code></td>
+<td style="text-align: right;">≈ 14.9 ns</td>
+</tr>
+<tr>
+<td>函数传 <code class="c">const shared_ptr&amp;</code></td>
+<td style="text-align: right;">~0 ns（不计数）</td>
+</tr>
+</tbody>
+</table></div>
+<p>单次 15 ns 看着小，但换算一下：<strong>一秒里光是拷贝 <code class="c">shared_ptr</code> 6700 万次就吃掉 1 秒 CPU</strong>。热路径上的两条硬规则——</p>
+<ul>
+<li>函数参数<strong>能传 <code class="c">const shared_ptr&amp;</code> 就别传值</strong>（传值只是为了"参与所有权"，大多数时候并不需要）；</li>
+<li>只在<strong>跨线程移交所有权</strong>时才值得为原子计数付这个钱，其余一律 <code class="c">unique_ptr</code> 或栈对象。</li>
+</ul>
+<h4>其他常用操作</h4>
+<pre class="code" data-label="cpp"><code class="c">auto po = std::make_shared&lt;Outer&gt;();
+std::shared_ptr&lt;int&gt; pb(po, &amp;po-&gt;b);   // 别名构造：指向成员 b，但共享 Outer 的控制块
+// po 出作用域后对象不析构 —— pb 把整个 Outer 保活了（实测：Outer 在 pb 释放时才析构）
+
+auto arr = std::make_shared&lt;int[]&gt;(5); // C++20 起 make_shared 支持数组；C++17 可用
+                                       // shared_ptr&lt;int&gt;(new int[5], std::default_delete&lt;int[]&gt;())
+std::shared_ptr&lt;Outer&gt; sp = std::move(up);   // unique_ptr → shared_ptr：此时才建控制块
+</code></pre>
+<p>别名构造那条实测很关键：<code class="c">shared_ptr&lt;int&gt;</code> 指向的是一个 <code class="c">int</code> 成员，但它持有的是<strong>整个 <code class="c">Outer</code> 的控制块</strong>，所以外层对象会被延长生命周期——这是 <code class="c">shared_ptr</code> 区别于裸指针的核心能力之一。</p>
 <h3>weak_ptr：弱引用（不增加计数）</h3>
 <pre class="code" data-label="cpp"><code class="c">std::shared_ptr&lt;int&gt; sp = std::make_shared&lt;int&gt;(42);
 std::weak_ptr&lt;int&gt; wp = sp;    // 不增加计数
@@ -395,6 +629,323 @@ if (auto p = wp.lock()) {      // lock() 尝试升级为 shared_ptr
 <li>解决 shared_ptr <strong>循环引用</strong>（互相引用导致永不释放）</li>
 <li>观察 shared_ptr 但不拥有</li>
 </ul>
+<h4><code class="c">weak_ptr</code> 的三个操作与 <code class="c">lock()</code> 的原子性</h4>
+<p><code class="c">weak_ptr</code> <strong>不能直接解引用</strong>（它没有 <code class="c">operator*</code>、<code class="c">operator-&gt;</code>，也没有 <code class="c">get()</code>）——这是故意的：想用就必须先"升级"，而升级会失败，逼你处理"对象已经没了"这种情况。实测三种写法的报错原文：</p>
+<pre class="code" data-label="cpp"><code class="c">std::weak_ptr&lt;S&gt; wp = sp;
+wp-&gt;x;      // error: member reference type 'std::weak_ptr&lt;S&gt;' is not a pointer
+*wp;        // error: indirection requires pointer operand ('std::weak_ptr&lt;S&gt;' invalid)
+wp.get();   // error: no member named 'get' in 'std::weak_ptr&lt;S&gt;'
+</code></pre>
+<p>标准里的说法更直接（cppreference）：<em>"It is not possible to access the stored pointer in a <code class="c">weak_ptr</code> without locking it into a <code class="c">shared_ptr</code>."</em> 而 <code class="c">lock()</code> 的语义是<strong>临时所有权</strong>——升级成功后，即便原来的 <code class="c">shared_ptr</code> 全部销毁，对象也会活到你这个临时 <code class="c">shared_ptr</code> 析构为止。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>语义</th>
+<th style="text-align: right;">实测耗时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">expired()</code></td>
+<td>对象是否已释放（<code class="c">use_count() == 0</code>）</td>
+<td style="text-align: right;">≈ 0.31 ns</td>
+</tr>
+<tr>
+<td><code class="c">lock()</code></td>
+<td><strong>原子地</strong>尝试升级；成功返回 <code class="c">shared_ptr</code>（计数 +1），失败返回空</td>
+<td style="text-align: right;">≈ 13.8 ns</td>
+</tr>
+<tr>
+<td><code class="c">use_count()</code></td>
+<td>当前强计数（只用于调试，别拿它做判断）</td>
+<td style="text-align: right;">—</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">lock()</code> 的原子性是 <code class="c">weak_ptr</code> 存在的全部意义：多线程下"检查"和"获取"必须是一步完成的，否则中间会被别的线程把对象释放掉。所以<strong>反模式</strong>是：</p>
+<pre class="code" data-label="cpp"><code class="c">if (!w.expired()) {          // ① 检查：此刻还活着
+    auto s = w.lock();       // ② 获取：中间可能已被其他线程 reset
+    use(s);                  //    这里 s 可能是空的
+}
+</code></pre>
+<p>两步之间是个窗口。实测（一个线程 <code class="c">reset()</code>，另一个线程循环 <code class="c">lock()</code> 后<strong>不判空</strong>直接解引用）：<strong>稳定 SIGSEGV，退出码 139</strong>；而改成 <code class="c">if (auto s = w.lock()) { ... }</code> 的写法，200 轮 × 20 万次全部安全通过。</p>
+<p><strong>正确写法永远只有一种：<code class="c">lock()</code> 的返回值当场判空，判空和使用之间不能有其他判断。</strong></p>
+<pre class="code" data-label="cpp"><code class="c">if (auto s = w.lock()) {   // 升级成功 + 判空，一步完成
+    use(*s);               // 在 s 的作用域内，对象保证存活
+}                          // s 析构 → 计数 -1
+</code></pre>
+<h4>对象死了，控制块还活着</h4>
+<p><code class="c">weak_ptr</code> 指向的是<strong>控制块</strong>，不是对象。所以对象的析构和控制块的释放是两个独立时刻：</p>
+<pre class="code" data-label="code"><code class="c">作用域内：expired=0, use_count=1
+  [析构] Outer              ← 强计数归 0，对象先析构
+作用域外：expired=1
+  lock() 返回空? 是
+</code></pre>
+<p>对象已经析构了，<code class="c">weak_ptr</code> 依然有效（<code class="c">expired()</code> 正确返回 <code class="c">true</code>，<code class="c">lock()</code> 正确返回空）——因为控制块要等<strong>弱计数也归 0</strong> 才释放。这正是前面「<code class="c">make_shared</code> 隐藏代价」那条实测的机制来源：<code class="c">make_shared</code> 把对象和控制块放在同一块内存里，<code class="c">weak_ptr</code> 让控制块活着，就等于让<strong>整块内存</strong>（含已经析构的对象占的那部分）活着。</p>
+<p><strong>思考题：只要还有 <code class="c">weak_ptr</code> 存在，控制块会不会留在内存里？——会，而且是一块实打实占用着的堆内存。</strong> 用重载的 <code class="c">operator new</code>/<code class="c">delete</code> 把每次分配/归还的地址打出来，<code class="c">shared_ptr&lt;Obj&gt;(new Obj)</code> 场景（<code class="c">Obj</code> 含 64 字节）的完整时间线：</p>
+<pre class="code" data-label="code"><code class="c">      [分配] 0x145604bc0  64 字节      ← 业务对象
+      [分配] 0x145604c40  32 字节      ← 控制块（两个 long + vptr）
+  -- sp.reset() --
+    [析构] Obj（业务对象销毁）
+      [归还] 0x145604bc0               ← 只还了对象那 64 字节
+  归还次数 = 1（控制块没还）
+  expired()=1  lock()为空? 是  use_count=0   ← weak_ptr 照样能查，查得准
+      [归还] 0x145604c40               ← weak_ptr 离开作用域，控制块才还
+  总分配 2 次，总归还 2 次
+</code></pre>
+<p>三个结论：</p>
+<ol>
+<li><strong>业务对象和控制块是两块独立内存</strong>（<code class="c">make_shared</code> 除外），前者随强计数归零立即释放，后者要等弱计数归零。</li>
+<li><strong>对象没了之后 <code class="c">weak_ptr</code> 还能用，靠的就是这块没被释放的控制块</strong>——<code class="c">expired()</code> / <code class="c">lock()</code> 查的是控制块里的计数，不碰对象内存，所以永远安全。</li>
+<li><strong>代价</strong>：一个 <code class="c">weak_ptr</code> 至少让 32 字节（控制块）赖在堆上；用 <code class="c">make_shared</code> 的话更狠——实测一次分配 <strong>88 字节</strong>（64 + 24 对齐后），<code class="c">reset()</code> 后<strong>整块都不还</strong>，<code class="c">weak_ptr</code> 走了才还。</li>
+</ol>
+<h4>和裸指针的根本区别：能不能可靠地问"你还活着吗"</h4>
+<p>这是 <code class="c">weak_ptr</code> 存在的全部理由。裸指针做不到的原因不是"忘了判空"，而是<strong>释放之后它连判的资格都没有</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">int* p = new int(42);
+delete p;
+printf(&quot;%p，p != nullptr 成立? %s\n&quot;, (void*)p, p != nullptr ? &quot;是&quot; : &quot;否&quot;);   // → 是
+printf(&quot;%d\n&quot;, *p);     // &quot;看起来有判空保护&quot;的代码，照样读野内存
+</code></pre>
+<p>实测输出 + ASan 报告：</p>
+<pre class="code" data-label="code"><code class="c">  delete 后 p = 0x6020000009b0，p != nullptr 成立? 是
+==61157==ERROR: AddressSanitizer: heap-use-after-free on address 0x6020000009b0
+SUMMARY: AddressSanitizer: heap-use-after-free raw_uaf.cpp:8 in main
+</code></pre>
+<p><code class="c">delete</code> 只把内存还给分配器，<strong>不会把 <code class="c">p</code> 改成 nullptr</strong>（<code class="c">p</code> 是调用方栈上的一个变量，<code class="c">delete</code> 碰不到它）。那块内存什么时候被复用、被写成什么，完全不受你控制——<strong>没有任何可靠手段判断它是否还有效</strong>，包括读它的内容（那是 UB，ASan 直接报错）。</p>
+<p><code class="c">weak_ptr</code> 则反过来：它根本<strong>不存"对象在哪"这个可失效的信息用于访问</strong>，它存的是控制块地址；对象死了控制块还在，<code class="c">expired()</code> 就能给出<strong>确定的正确答案</strong>。一句话——<strong>裸指针问不出"还活着吗"，<code class="c">weak_ptr</code> 问得出。</strong></p>
+<h4>多线程下的四个坑（<code class="c">expired()</code> / <code class="c">lock()</code>）</h4>
+<p>思考题："<code class="c">expired()</code> 和 <code class="c">lock()</code> 在多线程下有什么坑？"——拆开是四个，前两个致命：</p>
+<p><strong>坑 1：两步走 = TOCTOU 窗口。</strong> <code class="c">if (!w.expired()) { auto s = w.lock(); }</code> 的检查和获取之间，别的线程随时可能把最后一个 <code class="c">shared_ptr</code> 释放掉。上面已实测：<code class="c">lock()</code> 后不判空直接解引用，<strong>稳定 SIGSEGV（139）</strong>。正确写法只有 <code class="c">if (auto s = w.lock()) { ... }</code> 一种。</p>
+<p>靠"跑很多次撞运气"是不够有说服力的，所以 <code class="c">examples/12.1-weak-ptr-race.cpp</code> 用两个 <code class="c">atomic</code> 标志把线程顺序钉死，<strong>让这个竞态 100% 复现</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">std::thread victim([&amp;]{
+    if (!wp.expired()) {        // ① 此刻还活着
+        while (!released) {}    // ② 窗口：等 killer 抢先释放
+        auto s = wp.lock();     // ③ 已经太晚，返回空
+        printf(&quot;%d&quot;, *s);       // ④ 空指针解引用
+    }
+});
+std::thread killer([&amp;]{ while (!checked) {} sp.reset(); released = true; });
+</code></pre>
+<p>实测两种写法的对照：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">if (auto s = wp.lock())</code>（默认参数）</td>
+<td><code class="c">[正确写法] lock() 返回空 —— 对象已释放，安全避开</code>，退出码 0</td>
+</tr>
+<tr>
+<td><code class="c">if (!wp.expired()) { wp.lock() ... }</code>（<code class="c">./race bad</code>）</td>
+<td><strong>退出码 139（SIGSEGV）</strong>，最后一行 printf 根本打不出来</td>
+</tr>
+</tbody>
+</table></div>
+<p>注意正确写法那一行是<strong>故意等到对方释放之后才 <code class="c">lock()</code></strong> 的，照样安全——这正是"原子"的含义：它不依赖你抢得多快。</p>
+<p><strong>坑 2：别拿 <code class="c">use_count()</code> 当判断。</strong> libc++ 里它是 <code class="c">__atomic_load_n(..., __ATOMIC_RELAXED)</code>——一次不加同步的 relaxed 读，只是个快照。而且哪怕你读到 <code class="c">use_count() == 1</code>，下一刻它可能就是 0。<strong>判存活只能用 <code class="c">expired()</code> / <code class="c">lock()</code>，<code class="c">use_count()</code> 只配出现在调试日志里。</strong></p>
+<p><strong>坑 3：<code class="c">lock()</code> 成功后别把裸指针存下来。</strong> <code class="c">lock()</code> 赋予的是<strong>临时所有权</strong>，只在你持有那个 <code class="c">shared_ptr</code> 期间有效：</p>
+<pre class="code" data-label="cpp"><code class="c">if (auto s = w.lock()) {
+    cached_raw_ = s.get();     // ❌ s 一析构，cached_raw_ 就悬垂
+}
+</code></pre>
+<p>要长期持有就把 <code class="c">shared_ptr</code> 本身存下来（成员也是 <code class="c">shared_ptr</code>），或者干脆重新设计所有权。</p>
+<p><strong>坑 4：<code class="c">weak_ptr</code> 实例本身也不是线程安全的。</strong> 它跟 <code class="c">shared_ptr</code> 一样是普通对象——多个线程读写<strong>同一个</strong> <code class="c">weak_ptr</code> 变量（一个赋值、一个 <code class="c">lock()</code>）同样是 data race，需要 <code class="c">std::atomic&lt;std::weak_ptr&lt;T&gt;&gt;</code>（C++20）或加锁。不同实例并发 <code class="c">lock()</code> 同一个控制块则是安全的（计数是原子的）。</p>
+<h4>循环引用：父子节点的经典写法</h4>
+<p><code class="c">weak_ptr</code> 诞生的原因就是破环。<strong>最经典的模式是"父拥有子，子回看父"</strong>——父 → 子用 <code class="c">shared_ptr</code>（所有权），子 → 父用 <code class="c">weak_ptr</code>（只是个反向索引）：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Parent {
+    std::vector&lt;std::shared_ptr&lt;Child&gt;&gt; children;   // 拥有
+};
+struct Child {
+    std::weak_ptr&lt;Parent&gt; parent;                   // 只是回看，不参与生死
+    void who_is_my_parent() const {
+        if (auto p = parent.lock()) use(p-&gt;name);   // 用之前必须 lock()
+        else /* 父已不在 */;
+    }
+};
+</code></pre>
+<p>实测对照（<code class="c">examples/12.1-weak-ptr-cycle.cpp</code>，用重载的全局 <code class="c">operator new</code>/<code class="c">delete</code> 计数）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>父子都 <code class="c">shared_ptr</code></th>
+<th>子用 <code class="c">weak_ptr</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>离开作用域前</td>
+<td><code class="c">parent.use_count=2</code>、<code class="c">child.use_count=2</code></td>
+<td><code class="c">parent.use_count=**1**</code>、<code class="c">child.use_count=2</code></td>
+</tr>
+<tr>
+<td>析构</td>
+<td><strong>一个都没打</strong></td>
+<td>Parent、Child 都正常析构</td>
+</tr>
+<tr>
+<td>分配 / 归还</td>
+<td><strong>3 次 / 0 次</strong></td>
+<td>3 次 / 3 次</td>
+</tr>
+</tbody>
+</table></div>
+<p>"析构没打印"只是间接证据，更硬的是交给 LeakSanitizer：</p>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -fsanitize=address -g 12.1-weak-ptr-cycle.cpp -o /tmp/cyc_asan
+ASAN_OPTIONS=detect_leaks=1 /tmp/cyc_asan
+# SUMMARY: AddressSanitizer: 152 byte(s) leaked in 3 allocation(s).
+</code></pre>
+<p><strong>152 字节、3 个分配</strong>——对象、控制块、vector 的内部缓冲区，一个都没还。</p>
+<p>判断该在哪一侧放 <code class="c">weak_ptr</code> 的规则很朴素：<strong>谁是谁的"组成部分"，谁就有所有权</strong>。Parent 消失时 Child 必然无意义 → Parent 拥有 Child；反过来 Child 只是要知道自己挂在谁下面 → 弱引用。两边都"拥有"就一定是错的（树、图、观察者列表都是这个套路）。</p>
+<h4>用途不止破环：缓存 / 观察者</h4>
+<p><code class="c">weak_ptr</code> 的经典用法确实是打破 <code class="c">shared_ptr</code> 循环（见 <a href="#可跑的例子">可跑的例子</a>），但它在"<strong>缓存</strong>"场景里同样不可替代——缓存想<strong>复用</strong>对象，但不该<strong>延长</strong>对象的生命周期：</p>
+<pre class="code" data-label="cpp"><code class="c">class SnapshotCache {
+    std::unordered_map&lt;std::string, std::weak_ptr&lt;Snapshot&gt;&gt; cache_;   // 只存弱引用
+public:
+    std::shared_ptr&lt;Snapshot&gt; get(const std::string&amp; sym, long seq) {
+        if (auto it = cache_.find(sym); it != cache_.end())
+            if (auto hit = it-&gt;second.lock()) return hit;   // 还活着 → 复用
+        auto fresh = std::make_shared&lt;Snapshot&gt;(sym, seq);  // 已失效 → 重建
+        cache_[sym] = fresh;
+        return fresh;
+    }
+};
+</code></pre>
+<p>实测流程：</p>
+<pre class="code" data-label="code"><code class="c">-- 第一次取 --        [构造] 快照 600519#1
+-- 第二次取 --        [命中缓存] 600519#1        同一对象? 是
+-- 外部全释放后再取 -- [析构] 快照 600519#1
+                     [缓存条目已失效] 600519
+                     [构造] 快照 600519#2
+</code></pre>
+<p>如果这里存的是 <code class="c">shared_ptr</code>，缓存就会把所有快照永远钉在内存里——那是另一种形式的泄漏。<strong>判断标准</strong>：<code class="c">map</code> 只是"索引"，不参与所有权 → 用 <code class="c">weak_ptr</code>。</p>
+<p><strong>HFT 提醒</strong>：<code class="c">weak_ptr</code> 自身也是 16 字节、<code class="c">lock()</code> 一次 ≈ 13.8 ns（跟 <code class="c">shared_ptr</code> 拷贝同量级）。缓存命中走的是热路径，别在每次行情 tick 上都 <code class="c">lock()</code>——要么把升级后的 <code class="c">shared_ptr</code> 在本次处理中一直持有，要么直接裸指针 + 明确的所有权契约。</p>
+<h2>内存布局与开销实测</h2>
+<p>以下数据均为本机实测（clang 23.1.0 / libc++，arm64 macOS，<code class="c">-std=c++17</code>），不是"据说"。</p>
+<h3>大小：谁真的零开销</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th style="text-align: center;"><code class="c">sizeof</code></th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">int*</code>（基准）</td>
+<td style="text-align: center;">8</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">unique_ptr&lt;int&gt;</code></td>
+<td style="text-align: center;"><strong>8</strong></td>
+<td>与裸指针<strong>完全同大小</strong>——所谓"零开销"是真的</td>
+</tr>
+<tr>
+<td><code class="c">unique_ptr&lt;int, 无捕获 lambda&gt;</code></td>
+<td style="text-align: center;"><strong>8</strong></td>
+<td>无状态删除器被<strong>空基类优化（EBO）</strong>压掉了，仍是 8</td>
+</tr>
+<tr>
+<td><code class="c">unique_ptr&lt;int, 捕获 int 的 lambda&gt;</code></td>
+<td style="text-align: center;">16</td>
+<td>删除器有状态 → 指针 8 + 状态 4 + 对齐 = 16</td>
+</tr>
+<tr>
+<td><code class="c">shared_ptr&lt;int&gt;</code></td>
+<td style="text-align: center;"><strong>16</strong></td>
+<td>两个指针：对象指针 + 控制块指针</td>
+</tr>
+<tr>
+<td><code class="c">weak_ptr&lt;int&gt;</code></td>
+<td style="text-align: center;">16</td>
+<td>同样指向控制块</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论</strong>：<code class="c">unique_ptr</code> 带无状态删除器（绝大多数场景）是真正的零开销；一旦删除器捕获了东西，它就不再"免费"。<code class="c">shared_ptr</code> 无论如何都是两个指针，因为它必须能找到控制块。</p>
+<h3>分配次数：<code class="c">make_shared</code> 到底省在哪</h3>
+<p>重载全局 <code class="c">operator new</code> 计数后实测：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th style="text-align: center;">分配次数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">make_shared&lt;Big&gt;()</code></td>
+<td style="text-align: center;"><strong>1</strong></td>
+</tr>
+<tr>
+<td><code class="c">shared_ptr&lt;Big&gt;(new Big())</code></td>
+<td style="text-align: center;"><strong>2</strong></td>
+</tr>
+<tr>
+<td><code class="c">make_unique&lt;Big&gt;()</code></td>
+<td style="text-align: center;">1</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">make_shared</code> 把<strong>对象和控制块放进同一块内存</strong>，少一次堆分配——这是"优先用 <code class="c">make_*</code>"这条建议的实证依据，不只是异常安全那么简单。</p>
+<h3><code class="c">make_shared</code> 的隐藏代价：对象已析构 ≠ 内存已归还</h3>
+<p>少一次分配不是白来的。还是上面那个结构（<code class="c">Big</code> 含 64 字节），实测对照：</p>
+<pre class="code" data-label="code"><code class="c">A. make_shared&lt;Big&gt;()            → p.reset() 后：已析构，归还内存 0 次
+                                   w 也销毁后：归还内存 1 次
+B. shared_ptr&lt;Big&gt;(new Big())    → p.reset() 后：已析构，归还内存 1 次
+                                   w 也销毁后：归还内存 2 次
+</code></pre>
+<p>两组的析构函数都执行了（<code class="c">[析构] Big</code> 都打了），但 <strong>A 组在 <code class="c">reset()</code> 之后那 64 字节并没还给系统</strong>——因为对象和控制块在同一块内存，只要还有一个 <code class="c">weak_ptr</code> 活着，整块都不能释放。B 组对象内存是独立的，引用计数归零就立刻归还，只有控制块留到最后。</p>
+<p><strong>什么时候会真的咬到</strong>：大对象 + 长期存活的 <code class="c">weak_ptr</code>（典型如"行情快照缓存"——对象不用了但缓存里还挂着弱引用）。此时内存占用会一直挂到最后一个 <code class="c">weak_ptr</code> 消失。</p>
+<h3>HFT 视角怎么选</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>选择</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>热路径、独占所有权</td>
+<td><strong>栈对象 &gt; <code class="c">unique_ptr</code></strong></td>
+<td>8 字节、无原子操作、无控制块</td>
+</tr>
+<tr>
+<td>确实需要多处持有</td>
+<td><code class="c">shared_ptr</code></td>
+<td>接受 16 字节 + 原子计数 + 控制块</td>
+</tr>
+<tr>
+<td>函数参数只是"用一下"</td>
+<td><code class="c">const shared_ptr&amp;</code></td>
+<td>传值要多付 ≈ 14.9 ns 的原子加减（实测），不参与所有权就别传值</td>
+</tr>
+<tr>
+<td>跨线程移交所有权</td>
+<td><code class="c">shared_ptr</code>（<strong>传值</strong>）</td>
+<td>只有这一种情况，原子计数的开销是值得的</td>
+</tr>
+<tr>
+<td>大对象 + 长生命周期 <code class="c">weak_ptr</code></td>
+<td>慎用 <code class="c">make_shared</code></td>
+<td>内存归还会被 <code class="c">weak_ptr</code> 拖住，可改 <code class="c">shared_ptr(new T)</code></td>
+</tr>
+<tr>
+<td>需要观察但不拥有（缓存/观察者列表）</td>
+<td><code class="c">weak_ptr</code></td>
+<td>必须 <code class="c">lock()</code> 后才能用，天然防悬垂；也避免把对象永久钉在内存里</td>
+</tr>
+</tbody>
+</table></div>
 <h2>和 C 的区别</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -459,6 +1010,14 @@ void f() {
 <li><strong><code class="c">shared_ptr</code> 循环引用</strong>：A 持有 B 的 shared_ptr，B 持有 A 的 shared_ptr，引用计数永不归 0，内存泄漏。<strong>修正</strong>：一方用 <code class="c">weak_ptr</code> 打破环。</li>
 <li><strong>用 <code class="c">new</code> 构造 shared_ptr 多次</strong>：<code class="c">shared_ptr&lt;int&gt; p(new int); shared_ptr&lt;int&gt; q(new int);</code> —— 若误写 <code class="c">shared_ptr&lt;int&gt; q(p.get())</code> 会创建两个独立计数，双 delete。<strong>修正</strong>：用 <code class="c">make_shared</code>，或用 shared_ptr 拷贝构造。</li>
 <li><strong><code class="c">make_unique</code>/<code class="c">make_shared</code> 与直接 <code class="c">new</code> 选择</strong>：优先 <code class="c">make_*</code>——一次分配（对象+计数一起）、异常安全、性能更好。除非要自定义删除器或初始化列表，才用 <code class="c">new</code>。</li>
+<li><strong><code class="c">make_shared</code> 配长生命周期 <code class="c">weak_ptr</code>：对象析构了但内存没还</strong>——<code class="c">make_shared</code> 把对象和控制块放进同一块内存，只要还有一个 <code class="c">weak_ptr</code> 活着，整块就不能释放（实测：<code class="c">reset()</code> 后对象已析构，但归还内存 <strong>0 次</strong>）。<strong>修正</strong>：大对象且要长期留 <code class="c">weak_ptr</code> 时改用 <code class="c">std::shared_ptr&lt;T&gt;(new T)</code>，让对象内存独立，计数归零立即归还。</li>
+<li><strong>用 <code class="c">=</code> 从裸指针构造</strong>：<code class="c">std::unique_ptr&lt;T&gt; p = new T();</code> 编译失败（构造函数是 <code class="c">explicit</code>），很多人以为是"智能指针不能用 new"。<strong>修正</strong>：<code class="c">std::unique_ptr&lt;T&gt; p(new T());</code> 或 <code class="c">auto p = std::make_unique&lt;T&gt;();</code>。</li>
+<li><strong>同一个裸指针造出两个控制块</strong>：<code class="c">shared_ptr&lt;T&gt; a(raw); shared_ptr&lt;T&gt; b(raw);</code> 或成员函数里 <code class="c">return shared_ptr&lt;T&gt;(this);</code> —— 两个计数各自归零，<strong>delete 两次</strong>（实测：析构打印两遍；换种写法直接 SIGABRT 134）。<strong>修正</strong>：传播所有权只能拷贝 <code class="c">shared_ptr</code>；需要"交出指向自己的 shared_ptr"就继承 <code class="c">enable_shared_from_this</code> 并调 <code class="c">shared_from_this()</code>（详见<a href="#enable_shared_from_this安全地交出指向自己的-shared_ptr">上文</a>）。</li>
+<li><strong><code class="c">expired()</code> 之后再用 <code class="c">lock()</code></strong>：两步之间有窗口，别的线程可能已经释放对象；实测不判空直接解引用会 <strong>SIGSEGV（139）</strong>。<strong>修正</strong>：只用一步 <code class="c">if (auto s = w.lock()) { ... }</code>。</li>
+<li><strong>以为 <code class="c">shared_ptr</code> 让对象线程安全</strong>：它只保证"对象活着"，不保证"字段读写安全"。TSan 实测 4 线程各加 2000 次，结果 4000（应为 8000）。<strong>修正</strong>：对象内部字段自己加锁或用原子类型。</li>
+<li><strong>热路径传值 <code class="c">shared_ptr</code></strong>：每次拷贝一次原子加减，实测 ≈ 14.9 ns/次。<strong>修正</strong>：不需要参与所有权就传 <code class="c">const shared_ptr&amp;</code>（≈0 ns），能用 <code class="c">unique_ptr</code>/栈对象就别升到 <code class="c">shared_ptr</code>。</li>
+<li><strong><code class="c">lock()</code> 成功后把裸指针存下来</strong>：<code class="c">lock()</code> 给的是<strong>临时所有权</strong>，临时 <code class="c">shared_ptr</code> 一析构，<code class="c">get()</code> 出来的裸指针就悬垂。<strong>修正</strong>：要长期持有就存 <code class="c">shared_ptr</code> 本身。</li>
+<li><strong>父子/树结构里双向都用 <code class="c">shared_ptr</code></strong>：成环泄漏。实测 ASan 报告 <code class="c">152 byte(s) leaked in 3 allocation(s)</code>。<strong>修正</strong>：按"谁是谁的组成部分"确定所有权方向，反向那一侧用 <code class="c">weak_ptr</code>（详见<a href="#循环引用父子节点的经典写法">父子节点经典写法</a>）。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：下面哪个智能指针<strong>不能拷贝</strong>，只能移动？
@@ -510,6 +1069,104 @@ void use() {
 </code></pre>
 <p>优势：1) 异常安全——任何路径都 fclose；2) 不用记着 fclose；3) 所有权明确（unique_ptr 持有）。C 版要 goto cleanup 或 try/catch，繁琐易错。这是 C++ 用 RAII 包装 C 资源的典型模式。</p>
 </details>
+<p><strong>5. 踩坑题</strong>：下面这行为什么编译失败？有几种改法？</p>
+<pre class="code" data-label="cpp"><code class="c">std::unique_ptr&lt;Entity&gt; entity = new Entity();
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong><code class="c">unique_ptr</code> 的单参构造函数是 <code class="c">explicit</code> 的</strong>（实测报错 <code class="c">explicit constructor is not a candidate</code>，声明在 libc++ <code class="c">__memory/unique_ptr.h:163</code>）。<code class="c">= new Entity()</code> 是<strong>拷贝初始化</strong>，需要隐式转换，被 <code class="c">explicit</code> 挡住。它是拷贝初始化，不是"智能指针不能用 new"。</p>
+<p>三种改法：</p>
+<pre class="code" data-label="cpp"><code class="c">std::unique_ptr&lt;Entity&gt; a(new Entity());   // 直接初始化：explicit 管不着
+auto b = std::make_unique&lt;Entity&gt;();       // C++14 起推荐
+std::unique_ptr&lt;Entity&gt; c = std::make_unique&lt;Entity&gt;();  // 也行（make_unique 返回的已是 unique_ptr）
+</code></pre>
+<p>顺带一个对照：<code class="c">std::unique_ptr&lt;Entity&gt; d = nullptr;</code> <strong>是合法的</strong>——<code class="c">unique_ptr(nullptr_t)</code> 没加 <code class="c">explicit</code>。标准委员会的判断是：接管裸指针所有权是危险动作，必须显式；"空"语义无害，放行。</p>
+<p>复习：→ <a href="chapter-07.html#s-7-5">7.5 构造函数 · explicit</a></p>
+</details>
+<p><strong>6. 踩坑题</strong>：下面这段代码运行时崩溃（或析构两次），为什么？怎么改？</p>
+<pre class="code" data-label="cpp"><code class="c">struct Node : std::enable_shared_from_this&lt;Node&gt; {
+    std::shared_ptr&lt;Node&gt; child;
+    void add_child(std::shared_ptr&lt;Node&gt; c) { child = c; }
+    std::shared_ptr&lt;Node&gt; self_bad()  { return std::shared_ptr&lt;Node&gt;(this); }  // ①
+    std::shared_ptr&lt;Node&gt; self_good() { return shared_from_this(); }           // ②
+};
+auto n = std::make_shared&lt;Node&gt;();
+auto x = n-&gt;self_bad();
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong>① 制造了第二个控制块。</strong> <code class="c">this</code> 是裸指针，用裸指针构造 <code class="c">shared_ptr</code> 一定是新建控制块；而 <code class="c">n</code> 早就有一个控制块了。两个控制块的强计数各自为 1，各自归零时都会 delete 同一块内存 → 实测 <code class="c">[析构]</code> 打印两遍，实际工程中常表现为 <strong>SIGABRT（退出码 134）</strong> 或堆损坏。</p>
+<p><strong>② 是对的</strong>：<code class="c">shared_from_this()</code> 返回的是<strong>复用现有控制块</strong>的 <code class="c">shared_ptr</code>，计数从 1 变 2，只析构一次。</p>
+<p>铁律：<strong>一个对象只能有一个控制块</strong>。推论——把裸指针交给 <code class="c">shared_ptr</code> 之后，就只能通过拷贝 <code class="c">shared_ptr</code> 传播所有权，绝不能再用 <code class="c">get()</code> / <code class="c">this</code> 去造第二个。</p>
+<p>另外注意：<code class="c">shared_from_this()</code> 要求对象<strong>当前已被某个 <code class="c">shared_ptr</code> 持有</strong>，否则抛 <code class="c">std::bad_weak_ptr</code>（栈对象上调用、构造函数里调用都会抛，这两个都实测过）。</p>
+</details>
+<p><strong>7. 判断题</strong>：4 个线程各持有一份指向同一对象的 <code class="c">shared_ptr</code> 副本，并发地对 <code class="c">obj-&gt;counter += 1</code>，是线程安全的。</p>
+<details>
+<summary>答案</summary>
+<p><strong>错。</strong> 要分清楚两层：</p>
+<ul>
+<li>✅ <strong>引用计数</strong>是原子的——4 线程各拷贝 10000 次，TSan 无告警，<code class="c">use_count()</code> 精确回到 1；</li>
+<li>❌ <strong>对象本身</strong>没有任何保护——<code class="c">counter += 1</code> 是读-改-写三步，TSan 报 data race，4 线程各加 2000 次实测只得到 <strong>4000</strong>（应为 8000）。</li>
+</ul>
+<p><code class="c">shared_ptr</code> 只管<strong>生命周期</strong>，不管<strong>数据竞争</strong>。要让 <code class="c">counter</code> 安全，得自己加锁或改成 <code class="c">std::atomic&lt;long&gt;</code>。</p>
+<p>最阴的一点是：<code class="c">-O2</code> 不开 TSan 跑同一个程序，结果<strong>恰好是 8000</strong>——竞态不保证出错，只是随时可能出错。所以别用"我跑了好几遍都对"来证明线程安全。</p>
+</details>
+<p><strong>8. 应用题</strong>：写一个"行情快照缓存"——按 symbol 缓存快照对象，外部没人持有时缓存条目自动失效（不能把对象永久钉在内存里），外部有人持有时重复取要拿到同一个对象。</p>
+<details>
+<summary>答案</summary>
+<p>关键是缓存容器存 <strong><code class="c">weak_ptr</code></strong> 而不是 <code class="c">shared_ptr</code>：</p>
+<pre class="code" data-label="cpp"><code class="c">class SnapshotCache {
+    std::unordered_map&lt;std::string, std::weak_ptr&lt;Snapshot&gt;&gt; cache_;
+public:
+    std::shared_ptr&lt;Snapshot&gt; get(const std::string&amp; sym, long seq) {
+        if (auto it = cache_.find(sym); it != cache_.end())
+            if (auto hit = it-&gt;second.lock()) return hit;          // 还活着 → 复用
+        auto fresh = std::make_shared&lt;Snapshot&gt;(sym, seq);         // 已失效 → 重建
+        cache_[sym] = fresh;
+        return fresh;
+    }
+};
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">-- 第一次取 --        [构造] 快照 600519#1
+-- 第二次取 --        [命中缓存] 600519#1        同一对象? 是
+-- 外部全释放后再取 -- [析构] 快照 600519#1
+                     [缓存条目已失效] 600519
+                     [构造] 快照 600519#2
+</code></pre>
+<p>如果 <code class="c">cache_</code> 存的是 <code class="c">shared_ptr</code>，缓存自己就把每个快照的计数永久 +1，对象永远不释放——那是另一种泄漏。<strong>判断标准</strong>：容器只是索引、不参与所有权 → <code class="c">weak_ptr</code>。</p>
+<p>注意 <code class="c">lock()</code> 一次 ≈ 13.8 ns，别在每个 tick 上重复升级；一次处理中升级一次、然后一直持有那个 <code class="c">shared_ptr</code>。</p>
+</details>
+<p><strong>9. 思考题</strong>：<code class="c">weak_ptr</code> 的 <code class="c">expired()</code> 和 <code class="c">lock()</code> 在多线程下有什么坑？</p>
+<details>
+<summary>答案</summary>
+<p>四个，其中前两个会直接导致崩溃或 UB：</p>
+<p><strong>① 两步走有 TOCTOU 窗口。</strong> <code class="c">if (!w.expired()) { auto s = w.lock(); ... }</code> —— 检查完到 <code class="c">lock()</code> 之间，别的线程可能已经把最后一个 <code class="c">shared_ptr</code> 释放了。实测：<code class="c">lock()</code> 后不判空直接解引用，<strong>稳定 SIGSEGV（139）</strong>。正确写法只有一种：<code class="c">if (auto s = w.lock()) { ... }</code>，检查和使用必须是一步。</p>
+<p><strong>② <code class="c">use_count()</code> 不能当判断用。</strong> libc++ 实现是 <code class="c">__atomic_load_n(&amp;__shared_owners_, __ATOMIC_RELAXED)</code>——一次不加同步的 relaxed 读，只是快照；就算读到 1，下一刻也可能是 0。判存活只能用 <code class="c">expired()</code> / <code class="c">lock()</code>。</p>
+<p><strong>③ <code class="c">lock()</code> 给的是临时所有权。</strong> 升级成功后别把 <code class="c">s.get()</code> 存到成员里长期用——临时 <code class="c">shared_ptr</code> 一析构，那个裸指针就悬垂了。要长期持有就存 <code class="c">shared_ptr</code> 本身。</p>
+<p><strong>④ <code class="c">weak_ptr</code> 实例本身也不是线程安全的。</strong> 多线程读写<strong>同一个</strong> <code class="c">weak_ptr</code> 变量（一个赋值、一个 <code class="c">lock()</code>）同样是 data race；需要 <code class="c">std::atomic&lt;std::weak_ptr&lt;T&gt;&gt;</code>（C++20）或加锁。但<strong>不同</strong> <code class="c">weak_ptr</code> 实例并发 <code class="c">lock()</code> 同一控制块是安全的——计数是原子的。</p>
+<p>一句话总结：<code class="c">lock()</code> 是原子操作，所以<strong>把判断和使用合并成一次 <code class="c">lock()</code></strong>，剩下三个坑就都绕开了。</p>
+</details>
+<p><strong>10. 思考题</strong>：<code class="c">weak_count</code> 是控制块的计数。如果业务对象已经销毁、但还有 <code class="c">weak_ptr</code> 活着，<strong>控制块会不会继续留在内存里</strong>？</p>
+<details>
+<summary>答案</summary>
+<p><strong>会。</strong> 这正是设计如此——控制块的寿命由 <code class="c">weak_count</code> 决定，与业务对象无关。</p>
+<p>实测时间线（<code class="c">shared_ptr&lt;Obj&gt;(new Obj)</code>，<code class="c">Obj</code> 含 64 字节，重载 <code class="c">operator new/delete</code> 打印地址）：</p>
+<pre class="code" data-label="code"><code class="c">  [分配] 0x145604bc0  64 字节     ← 业务对象
+  [分配] 0x145604c40  32 字节     ← 控制块
+  sp.reset()
+    [析构] Obj
+    [归还] 0x145604bc0            ← 只还了对象，控制块不还
+  expired()=1  lock() 为空? 是    ← weak_ptr 照常查询，且查得准
+    [归还] 0x145604c40            ← weak_ptr 离开作用域才还
+</code></pre>
+<p>三层含义：</p>
+<ol>
+<li>业务对象与控制块是<strong>两块独立内存</strong>（<code class="c">make_shared</code> 除外），强计数归零只释放前者。</li>
+<li><code class="c">weak_ptr</code> 在对象死后还能正确回答 <code class="c">expired()</code> / <code class="c">lock()</code>，靠的就是这块<strong>没被释放的控制块</strong>——它查的是控制块里的计数，从不碰已经失效的对象内存。</li>
+<li><strong>这笔内存是有代价的</strong>：一个 <code class="c">weak_ptr</code> 至少让 32 字节（控制块）赖在堆上；用 <code class="c">make_shared</code> 更狠，对象和控制块是同一块（实测共 88 字节），<code class="c">reset()</code> 后<strong>整块都不还</strong>，直到最后一个 <code class="c">weak_ptr</code> 消失。这也是前面「<code class="c">make_shared</code> 隐藏代价」那条实测的机制来源。</li>
+</ol>
+</details>
 <h2>可跑的例子</h2>
 <p><strong><code class="c">examples/12.1-smart-pointers.cpp</code></strong> —— 看引用计数怎么变、循环引用怎么泄漏。</p>
 <pre class="code" data-label="shell"><code class="c">clang++ -std=c++20 12.1-smart-pointers.cpp -o /tmp/demo &amp;&amp; /tmp/demo
@@ -549,16 +1206,66 @@ void use() {
 <tr>
 <td><code class="c">weak_ptr</code></td>
 <td>观察，不影响生命周期</td>
-<td>打破 <code class="c">shared_ptr</code> 的循环</td>
+<td>打破 <code class="c">shared_ptr</code> 的循环；只索引不拥有的缓存</td>
 </tr>
 </tbody>
 </table></div>
+<p><strong><code class="c">examples/12.1-weak-ptr-race.cpp</code></strong> —— <code class="c">expired()</code> + <code class="c">lock()</code> 的竞态，<strong>确定性复现</strong>（用两个 atomic 标志钉死线程顺序，不靠撞运气）：</p>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 12.1-weak-ptr-race.cpp -o /tmp/race &amp;&amp; /tmp/race        # 正确写法
+/tmp/race bad                                                              # 错误写法
+</code></pre>
+<p>真实输出：</p>
+<pre class="code" data-label="code"><code class="c">== 正确写法：一次 lock()，检查与获取是原子的 ==
+  [正确写法] lock() 返回空 —— 对象已释放，安全避开
+  进程正常结束。                    退出码=0
+
+== 错误写法：expired() 之后再 lock() ==
+  退出码=139（SIGSEGV）             最后一行 printf 根本没打出来
+</code></pre>
+<p><strong><code class="c">examples/12.1-weak-ptr-cycle.cpp</code></strong> —— 循环引用泄漏 → <code class="c">weak_ptr</code> 修复（父子节点版）：</p>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 12.1-weak-ptr-cycle.cpp -o /tmp/cyc &amp;&amp; /tmp/cyc
+/tmp/cyc race                      # 多线程崩溃演示（会 SIGSEGV）
+
+# 泄漏的字节级证据：
+clang++ -std=c++17 -fsanitize=address -g 12.1-weak-ptr-cycle.cpp -o /tmp/cyc_asan
+ASAN_OPTIONS=detect_leaks=1 /tmp/cyc_asan
+</code></pre>
+<p>真实输出（节选）：</p>
+<pre class="code" data-label="code"><code class="c">== 1. 循环引用：父子互相 shared_ptr（泄漏）==
+  parent.use_count=2  child.use_count=2
+  ↑ 没有任何 [析构] —— 计数归不了零，泄漏
+  分配 3 次，归还 0 次（差 3）
+
+== 2. 子用 weak_ptr 回看父（修复）==
+  parent.use_count=1  child.use_count=2（父仍是 1）
+    [析构] Parent(root)
+    [析构] Child(leaf)
+  分配 3 次，归还 3 次（差 0）
+</code></pre>
+<p>ASan 版最后一行：<code class="c">SUMMARY: AddressSanitizer: 152 byte(s) leaked in 3 allocation(s).</code></p>
+<p><strong><code class="c">examples/12.1-shared-weak-ptr.cpp</code></strong> —— 本节 shared_ptr / weak_ptr 深入内容的实测，按段号选择：</p>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++20 12.1-shared-weak-ptr.cpp -o /tmp/sw &amp;&amp; /tmp/sw        # 跑除崩溃演示外的全部
+/tmp/sw 5      # 只跑第 5 段（weak_ptr 与控制块寿命）
+/tmp/sw crash  # 第 2 段：双控制块，故意触发 UB
+</code></pre>
+<p>崩溃演示单独跑的真实输出：</p>
+<pre class="code" data-label="code"><code class="c">  a.use_count=1  b.use_count=1  (各自为 1)
+    [析构] T(42)
+    [析构] T(0)        ← v 已是 0：第一次 delete 后内存就被回收改写了
+  退出码=134（SIGABRT）
+</code></pre>
+<p>第 3 段（正确用法）对照：<code class="c">p.use_count=2 q.use_count=2</code>，<code class="c">[析构] Good</code> 只打一遍。</p>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §12.1：智能指针</li>
 <li>下一节：§12.2 直接内存管理</li>
 <li>C 程序员迁移：<code class="c">malloc/free</code> → <code class="c">unique_ptr</code>/<code class="c">shared_ptr</code>（RAII 几乎消灭泄漏）</li>
 <li>HFT 视角：热路径避免 shared_ptr（原子计数有开销），优先 unique_ptr 或栈对象</li>
+<li>三个容易记混的边界，一句话各记一条：</li>
+<li><strong>控制块</strong>：一个对象只能有一个，裸指针交出去后只能靠拷贝传播 → <a href="#enable_shared_from_this安全地交出指向自己的-shared_ptr"><code class="c">enable_shared_from_this</code></a></li>
+<li><strong>线程安全</strong>：<code class="c">shared_ptr</code> 只保证对象<strong>活着</strong>，不保证字段读写安全 → <a href="#线程安全到底安全到哪一层">TSan 实测</a></li>
+<li><strong><code class="c">weak_ptr</code></strong>：<code class="c">lock()</code> 是原子的，<code class="c">expired()</code> + <code class="c">lock()</code> 两步走有窗口 → <a href="#weak_ptr-的三个操作与-lock-的原子性">反模式实测</a></li>
+<li>验证手法备忘：分配/归还次数用重载全局 <code class="c">operator new</code>/<code class="c">operator delete</code> 计数；线程安全用 <code class="c">-fsanitize=thread</code>；单次耗时用 <code class="c">steady_clock</code> + 千万级循环。三者都比"我觉得"可靠。</li>
 </ul>
       </section>
       <section class="section" id="s-12-2">
