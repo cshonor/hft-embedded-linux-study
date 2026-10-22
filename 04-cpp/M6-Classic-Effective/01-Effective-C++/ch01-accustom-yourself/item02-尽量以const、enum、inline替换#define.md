@@ -152,6 +152,45 @@ BAD_MAX(3,2)+10                // 展开成 3>2?3:2+10 → ?: 优先级低于 +
 | 重载 / 重载决议 | ❌ 宏不参与重载 | ✅ 可与普通函数、其他模板重载决议（见 [C++Primer 16.3 §2.5](../../../../04-cpp/M0-entry-syntax/01-C++Primer/ch16-templates/16.3-模板实参推断.md)） |
 | 递归展开 | ❌ 宏不能递归 | ✅ 模板可递归实例化——tuple 遍历的模板递归写法（见 [C++Primer 17.1 §6](../../../../04-cpp/M0-entry-syntax/01-C++Primer/ch17-special-library-facilities/17.1-tuple元组.md)） |
 
+### 三者对比：宏 / 模板 / constexpr（同题实测）
+
+`constexpr` 函数不是模板的替代品，两者解决不同维度的问题——**模板管"类型泛化"，constexpr 管"编译期求值"，宏两者都假装能干但都不安全**。同一个 `SQUARE` 三种写法实测（clang 23.1.0）：
+
+```cpp
+#define SQUARE_MACRO(X) ((X)*(X))                 // 预处理期：文本替换
+template<typename T>
+T square_tpl(T x) { return x * x; }               // 编译期实例化：泛型 + 运行期调用
+constexpr int square_cx(int x) { return x * x; }  // 编译期可求值：结果能当常量
+```
+
+| 维度 | `#define` 宏 | 模板函数 | `constexpr` 函数 |
+|------|-------------|----------|-------------------|
+| 处理阶段 | 预处理期（纯文本替换） | 编译期（类型感知实例化） | 编译期（可求值）+ 运行期（也能跑） |
+| 类型检查 | ❌ | ✅ | ✅ |
+| 参数求值 | 可能多次（坑 2） | 恰好一次 | 恰好一次 |
+| 类型泛化 | ❌ | ✅ `square_tpl(2.5)` 实测 6.25 | ✅（配模板，见下） |
+| 结果当编译期常量（数组长度/`static_assert`/模板实参） | ✅（碰巧是文本） | ❌ | ✅ `constexpr int N = square_cx(4);` 实测 N=16 |
+| 符号表（调试） | ❌ | ✅ `__Z10square_tplIdET_S0_` | ✅ `__Z9square_cxi` |
+| C 语言可用 | ✅ | ❌ C++ 专属 | ❌ C23 前没有 |
+
+**实测里两个关键证据**：
+
+1. **模板函数的返回值不是常量表达式**：`int arr[square_tpl(4)];` 在 clang 默认下能编过——但那是 **VLA 扩展**在掩护（`-pedantic-errors` 实测报 `variable length arrays in C++ are a Clang extension`）；换 `constexpr` 版同开关下干净通过。想要"泛型 + 编译期常量"，两者要合体：
+
+```cpp
+template<typename T>
+constexpr T square(T x) { return x * x; }   // constexpr 函数模板
+constexpr int    a = square(4);             // 实测 16，可当数组长度
+constexpr double d = square(2.5);           // 实测 6.25
+static_assert(square(4) == 16);
+```
+
+2. **宏的坑在 constexpr 里全消失**：`square_cx(a+1)` 实测 = **16**（宏版无括号时 = 7）；`square_cx(a++)` 也只加一次——它真的是函数调用，参数先求值。
+
+选型口诀：**常量 → `constexpr` 变量；形似函数的宏 → `constexpr` 函数（需要泛型就加模板）；类型泛化的类/函数 → 模板；`#include`/条件编译 → 宏（仅此领域）**。
+
+constexpr 的完整体系（C++11 函数体限制 → C++14 放宽 → 字面类 → `if constexpr`）见 [C++Primer 2.4.3 constexpr 详解](../../../../04-cpp/M0-entry-syntax/01-C++Primer/ch02-variables-and-basic-types/2.4-const-qualifier/2.4.3-constexpr详解.md)。
+
 C++11 起也可用 **`constexpr` 函数** 处理编译期可算的「宏函数」场景。
 
 ---
@@ -218,5 +257,23 @@ b = **7**。展开成 `a+1*a+1` = 3+3+1——参数没加括号，乘法优先�
 <summary>参考答案</summary>
 
 x=5 时加**两次**（实测 m=6、事后 x=7）：条件 `(x++)>(y)` 为真，又命中 `(x++)` 分支，两处都执行。x=1 时只加**一次**（实测 m=2、x=2）：条件为假，只走 `(y)` 分支。同一个宏，坑是否触发**取决于运行期数据**——这就是函数式宏的测试盲区：用例没选到"参数赢"的分支，双求值 bug 就潜伏着。模板函数里实参永远先求值一次，与数据无关。
+
+</details>
+
+**题目 4：** 下面代码在 clang 默认开关下编译通过，为什么说它仍然是错的？
+
+```cpp
+template<typename T>
+T square_tpl(T x) { return x * x; }
+int main() {
+    int arr[square_tpl(4)];   // 想让数组长度 = 16
+    return arr[0];
+}
+```
+
+<details>
+<summary>参考答案</summary>
+
+模板函数调用是**运行期值**，不是常量表达式——`int arr[运行期值]` 在标准 C++ 里非法。clang 默认放行是因为把它当成了 **VLA 扩展**（`-pedantic-errors` 实测报 `variable length arrays in C++ are a Clang extension`），GCC 同理。修正：给函数加 `constexpr`——`template<typename T> constexpr T square(T x)`，`square_tpl(4)` 就成了编译期常量，`arr` 是正经的定长数组（也才能用于 `static_assert`、模板实参）。MSVC 不支持 VLA 扩展，这段代码在 MSVC 直接编译失败——换编译器立刻暴露。
 
 </details>

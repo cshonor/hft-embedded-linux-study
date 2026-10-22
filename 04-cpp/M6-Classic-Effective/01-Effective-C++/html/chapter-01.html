@@ -611,6 +611,82 @@ BAD_MAX(3,2)+10                // 展开成 3&gt;2?3:2+10 → ?: 优先级低于
 </tr>
 </tbody>
 </table></div>
+<h3>三者对比：宏 / 模板 / constexpr（同题实测）</h3>
+<p><code class="c">constexpr</code> 函数不是模板的替代品，两者解决不同维度的问题——<strong>模板管"类型泛化"，constexpr 管"编译期求值"，宏两者都假装能干但都不安全</strong>。同一个 <code class="c">SQUARE</code> 三种写法实测（clang 23.1.0）：</p>
+<pre class="code" data-label="cpp"><code class="c">#define SQUARE_MACRO(X) ((X)*(X))                 // 预处理期：文本替换
+template&lt;typename T&gt;
+T square_tpl(T x) { return x * x; }               // 编译期实例化：泛型 + 运行期调用
+constexpr int square_cx(int x) { return x * x; }  // 编译期可求值：结果能当常量
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th><code class="c">#define</code> 宏</th>
+<th>模板函数</th>
+<th><code class="c">constexpr</code> 函数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>处理阶段</td>
+<td>预处理期（纯文本替换）</td>
+<td>编译期（类型感知实例化）</td>
+<td>编译期（可求值）+ 运行期（也能跑）</td>
+</tr>
+<tr>
+<td>类型检查</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>参数求值</td>
+<td>可能多次（坑 2）</td>
+<td>恰好一次</td>
+<td>恰好一次</td>
+</tr>
+<tr>
+<td>类型泛化</td>
+<td>❌</td>
+<td>✅ <code class="c">square_tpl(2.5)</code> 实测 6.25</td>
+<td>✅（配模板，见下）</td>
+</tr>
+<tr>
+<td>结果当编译期常量（数组长度/<code class="c">static_assert</code>/模板实参）</td>
+<td>✅（碰巧是文本）</td>
+<td>❌</td>
+<td>✅ <code class="c">constexpr int N = square_cx(4);</code> 实测 N=16</td>
+</tr>
+<tr>
+<td>符号表（调试）</td>
+<td>❌</td>
+<td>✅ <code class="c">__Z10square_tplIdET_S0_</code></td>
+<td>✅ <code class="c">__Z9square_cxi</code></td>
+</tr>
+<tr>
+<td>C 语言可用</td>
+<td>✅</td>
+<td>❌ C++ 专属</td>
+<td>❌ C23 前没有</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实测里两个关键证据</strong>：</p>
+<ol>
+<li><strong>模板函数的返回值不是常量表达式</strong>：<code class="c">int arr[square_tpl(4)];</code> 在 clang 默认下能编过——但那是 <strong>VLA 扩展</strong>在掩护（<code class="c">-pedantic-errors</code> 实测报 <code class="c">variable length arrays in C++ are a Clang extension</code>）；换 <code class="c">constexpr</code> 版同开关下干净通过。想要"泛型 + 编译期常量"，两者要合体：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">template&lt;typename T&gt;
+constexpr T square(T x) { return x * x; }   // constexpr 函数模板
+constexpr int    a = square(4);             // 实测 16，可当数组长度
+constexpr double d = square(2.5);           // 实测 6.25
+static_assert(square(4) == 16);
+</code></pre>
+<ol start="2">
+<li><strong>宏的坑在 constexpr 里全消失</strong>：<code class="c">square_cx(a+1)</code> 实测 = <strong>16</strong>（宏版无括号时 = 7）；<code class="c">square_cx(a++)</code> 也只加一次——它真的是函数调用，参数先求值。</li>
+</ol>
+<p>选型口诀：<strong>常量 → <code class="c">constexpr</code> 变量；形似函数的宏 → <code class="c">constexpr</code> 函数（需要泛型就加模板）；类型泛化的类/函数 → 模板；<code class="c">#include</code>/条件编译 → 宏（仅此领域）</strong>。</p>
+<p>constexpr 的完整体系（C++11 函数体限制 → C++14 放宽 → 字面类 → <code class="c">if constexpr</code>）见 <a href="../../../M0-entry-syntax/01-C++Primer/html/chapter-02.html#s-2-4-3">C++Primer 2.4.3 constexpr 详解</a>。</p>
 <p>C++11 起也可用 <strong><code class="c">constexpr</code> 函数</strong> 处理编译期可算的「宏函数」场景。</p>
 <hr />
 <h2>仍可能需要预处理器的情况</h2>
@@ -659,6 +735,18 @@ class GamePlayer {
 <details>
 <summary>参考答案</summary>
 <p>x=5 时加<strong>两次</strong>（实测 m=6、事后 x=7）：条件 <code class="c">(x++)&gt;(y)</code> 为真，又命中 <code class="c">(x++)</code> 分支，两处都执行。x=1 时只加<strong>一次</strong>（实测 m=2、x=2）：条件为假，只走 <code class="c">(y)</code> 分支。同一个宏，坑是否触发<strong>取决于运行期数据</strong>——这就是函数式宏的测试盲区：用例没选到"参数赢"的分支，双求值 bug 就潜伏着。模板函数里实参永远先求值一次，与数据无关。</p>
+</details>
+<p><strong>题目 4：</strong> 下面代码在 clang 默认开关下编译通过，为什么说它仍然是错的？</p>
+<pre class="code" data-label="cpp"><code class="c">template&lt;typename T&gt;
+T square_tpl(T x) { return x * x; }
+int main() {
+    int arr[square_tpl(4)];   // 想让数组长度 = 16
+    return arr[0];
+}
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p>模板函数调用是<strong>运行期值</strong>，不是常量表达式——<code class="c">int arr[运行期值]</code> 在标准 C++ 里非法。clang 默认放行是因为把它当成了 <strong>VLA 扩展</strong>（<code class="c">-pedantic-errors</code> 实测报 <code class="c">variable length arrays in C++ are a Clang extension</code>），GCC 同理。修正：给函数加 <code class="c">constexpr</code>——<code class="c">template&lt;typename T&gt; constexpr T square(T x)</code>，<code class="c">square_tpl(4)</code> 就成了编译期常量，<code class="c">arr</code> 是正经的定长数组（也才能用于 <code class="c">static_assert</code>、模板实参）。MSVC 不支持 VLA 扩展，这段代码在 MSVC 直接编译失败——换编译器立刻暴露。</p>
 </details>
       </section>
       <section class="section" id="s-item03">
