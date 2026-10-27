@@ -210,6 +210,59 @@ C++11 起也可用 **`constexpr` 函数** 处理编译期可算的「宏函数�
 
 ---
 
+## C++20 之后，`#define` 还剩下哪些活路
+
+条款 2 写于 C++98 时代。25 年后，原来「不得不用宏」的地盘大半已被语言特性接管：
+
+| 原本用宏做的事 | 现在的正解 | 从哪一代开始 |
+|---|---|---|
+| 常量 `#define N 100` | `constexpr auto N = 100;` | C++11 |
+| 形似函数的宏 | `constexpr` / `inline` 函数模板 | C++98 / C++11 |
+| `#define MAX(a,b) …` 的类型不安全 | `std::max` / `std::clamp`（`constexpr`） | C++17 |
+| 捕获 `__FILE__` / `__LINE__` | **`std::source_location::current()`** | **C++20** |
+| 头文件 include guard | 模块 `import`（顺带把宏关在模块里） | C++20 |
+| 编译期字符串 / 反射 | `consteval` + `std::format` 等 | C++20/23 |
+| 嵌入二进制资源 | `#embed`（C23 / C++26） | C++26 |
+
+### 实测：`std::source_location` 是唯一能「干掉 `__FILE__`/`__LINE__` 宏」的东西
+
+```cpp
+/* 传统写法：只能是宏，因为 __FILE__/__LINE__ 必须在调用点展开 */
+#define LOG_MACRO(msg) \
+    std::fprintf(stdout, "%s:%d: %s\n", __FILE__, __LINE__, msg)
+
+/* C++20：普通 inline 函数 + 默认实参，调用点自动填 file/line */
+inline void log_cpp(const char *msg,
+                    std::source_location loc = std::source_location::current()) {
+    std::fprintf(stdout, "%s:%d: %s\n", loc.file_name(), loc.line(), msg);
+}
+```
+
+CE 实测输出（**gcc 13.3 `-std=c++20` 与 clang 18.1.0 `-std=c++20` 逐字一致**）：
+
+```text
+/app/example.cpp:19: macro way
+/app/example.cpp:20: source_location way
+```
+
+关键在于 `log_cpp` **不是宏**，却拿到了第 20 行这个**调用点**的位置——
+默认实参在调用处求值，`current()` 被 `consteval` 化后由编译器就地填充。
+这就把「位置捕获」从预处理期搬到了编译期，副作用（宏污染、`__LINE__` 在宏里被"吃掉"）全部消失。
+
+### 但宏有四项是**结构上不可替代**的
+
+| 能力 | 为什么替代不了 |
+|---|---|
+| `#if` / `#ifdef` 条件编译 | 只有预处理期能决定**哪些代码根本不存在**；`if constexpr` 要求两个分支都合法 |
+| `##` 生成标识符 | 语言里没有任何机制凭空造出一个**新名字** |
+| `#` 字符串化（`assert` 靠它打印表达式原文） | 反射之前，运行期拿不到「表达式的源码文本」 |
+| X-Macro 表驱动 | 同一份数据在多处（枚举/字符串表/分发表）同步展开 |
+
+⚠️ **C++20 modules 不导出宏**——这是刻意的：宏属于预处理期，模块边界在预处理之后。
+所以「用模块消灭宏」只对 `#include` guard 有效，对上面四项无效。
+
+---
+
 ## 核心总结
 
 1. **常量** → `const` / `constexpr`（头文件指针：`const char* const` 或 `std::string`）。
