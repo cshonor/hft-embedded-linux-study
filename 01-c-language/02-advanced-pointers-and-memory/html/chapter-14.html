@@ -633,6 +633,197 @@ ERR_LOG(&quot;order rejected: id=%lu\n&quot;, order_id);
 </tbody>
 </table></div>
 <p><strong>内存模型差异是 HFT 跨平台的核心痛点</strong>：x86-64 是强内存模型（TSO），写-写天然有序，可省部分屏障；ARM64/POWER 是弱内存模型，多核同步必须显式 <code class="c">smp_wmb()</code>/<code class="c">smp_rmb()</code>。DPDK 的 <code class="c">rte_smp_wmb()</code> 在 x86 上展开为空，在 ARM64 上展开为 <code class="c">dmb ishst</code>——条件编译隐藏这种差异。</p>
+<h3>CE 实测：五个目标的预定义宏长什么样</h3>
+<p>同一份源码把二十来个平台宏逐个字符串化打印（技巧：未定义时 <code class="c">#m</code> 得到名字本身，已定义时得到其值），
+在 Compiler Explorer 上换目标 / 编译器重跑，<code class="c">-std=gnu17</code>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>目标 · 编译器</th>
+<th>OS 宏</th>
+<th>架构宏</th>
+<th>编译器宏</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86-64 Linux · gcc 13.3</td>
+<td><code class="c">__linux__=1</code> <code class="c">__unix__=1</code> <code class="c">__unix=1</code></td>
+<td><code class="c">__x86_64__=1</code> <code class="c">__SIZEOF_POINTER__=8</code></td>
+<td><code class="c">__GNUC__=13</code> <code class="c">__GNUC_MINOR__=3</code></td>
+</tr>
+<tr>
+<td>x86-64 Linux · clang 18.1.0</td>
+<td>同上</td>
+<td>同上</td>
+<td><code class="c">__GNUC__=4</code> <code class="c">__GNUC_MINOR__=2</code> <code class="c">__clang__=1</code> <code class="c">__clang_major__=18</code></td>
+</tr>
+<tr>
+<td>ARM64 Linux · gcc 13.3</td>
+<td>同上</td>
+<td><code class="c">__aarch64__=1</code> <code class="c">__ARM_ARCH=8</code> 指针 8 字节</td>
+<td><code class="c">__GNUC__=13</code></td>
+</tr>
+<tr>
+<td>ARM32 Linux · gcc 13.3</td>
+<td>同上</td>
+<td><code class="c">__arm__=1</code> <code class="c">__ARM_ARCH=7</code></td>
+<td><code class="c">__GNUC__=13</code></td>
+</tr>
+<tr>
+<td>x86-64 Windows · MinGW-w64 gcc 13.1</td>
+<td><code class="c">_WIN32=1</code> <code class="c">_WIN64=1</code> <code class="c">__MINGW64__=1</code>；<code class="c">__linux__</code> / <code class="c">__unix__</code> <strong>均未定义</strong></td>
+<td><code class="c">__x86_64__=1</code></td>
+<td><code class="c">__GNUC__=13</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>三条从表里直接读出来的结论：</p>
+<ol>
+<li><strong><code class="c">_WIN32</code> 在 64 位目标下照样定义</strong>（实测 MinGW x86-64：<code class="c">_WIN32=1</code> 且 <code class="c">_WIN64=1</code>）。判断"是否 Windows"只看 <code class="c">_WIN32</code>，判断"是否 64 位 Windows"才追加 <code class="c">_WIN64</code>。</li>
+<li><strong>gcc 系同时定义 <code class="c">__unix</code> 与 <code class="c">__unix__</code></strong>，可移植代码用带尾下划线的 <code class="c">__unix__</code>。</li>
+<li><strong><code class="c">__STDC_VERSION__</code> 在 <code class="c">-std=gnu17</code> 下同样是 <code class="c">201710L</code></strong>——gnu 方言改的是 <code class="c">__STRICT_ANSI__</code>，不是标准版本号。</li>
+</ol>
+<h4>Clang 的 <code class="c">__GNUC__</code> 是 4，不是 18</h4>
+<p>实测 clang 18.1.0：<code class="c">__GNUC__=4</code>、<code class="c">__GNUC_MINOR__=2</code>。这是 clang 上游硬编码的伪装版本（对应 GCC 4.2.1），
+<strong>与 clang 自身版本无关</strong>——clang 18 和 clang 3.4 报的是同一个数。</p>
+<p>后果比"Clang 也定义 <code class="c">__GNUC__</code>"严重得多：任何按 GCC 版本号开特性的写法都会把 clang 整体排除。</p>
+<pre class="code" data-label="C"><code class="c">#if defined(__GNUC__) &amp;&amp; __GNUC__ &gt;= 5     /* clang 在这里恒为假 */
+#  define HAVE_BUILTIN_EXPECT 1
+#endif
+</code></pre>
+<p>正解是<strong>能力探测优先于版本探测</strong>：</p>
+<pre class="code" data-label="C"><code class="c">#if defined(__clang__)
+#  if __has_builtin(__builtin_expect)
+#    define HAVE_EXPECT 1
+#  endif
+#elif defined(__GNUC__)
+#  if __GNUC__ &gt;= 3
+#    define HAVE_EXPECT 1
+#  endif
+#endif
+</code></pre>
+<p><code class="c">__has_builtin</code> / <code class="c">__has_attribute</code> / <code class="c">__has_feature</code> / <code class="c">__has_include</code> 才是跨平台判断编译器能力的正路，版本号只当兜底。</p>
+<h4>Apple clang：<code class="c">__aarch64__</code> 照样有定义</h4>
+<p>流传较广的说法是"Apple clang 只给 <code class="c">__arm64__</code> 不给 <code class="c">__aarch64__</code>，移植要换宏"——这与实测输出不符。
+llvm/llvm-project#73313 贴出的 <code class="c">-dM</code> 原文（Apple clang 14.0.3，<code class="c">arm64-apple-darwin22.6.0</code>，M2 / macOS 13.4）：</p>
+<pre class="code" data-label="text"><code class="c">#define __aarch64__ 1
+#define __arm64 1
+#define __arm64__ 1
+#define __APPLE__ 1
+#define __MACH__ 1
+#define __ARM_ARCH 8
+</code></pre>
+<p><code class="c">__aarch64__</code> 与 <code class="c">__arm64__</code> <strong>同时存在</strong>，所以 <code class="c">#if defined(__aarch64__)</code> 在 Apple Silicon 上照样成立，不需要为 macOS 单独换宏。
+真正需要额外信息的是"同为 Apple、系统不同"的细分（iOS / 模拟器 / macOS），那归 <code class="c">&lt;TargetConditionals.h&gt;</code> 的 <code class="c">TARGET_OS_*</code> 管，与架构宏是两回事。</p>
+<h4>身份宏 vs 特性测试宏：两个方向相反的东西</h4>
+<p>TLPI 里最容易和平台宏混在一起的另一类宏是 <code class="c">_GNU_SOURCE</code>、<code class="c">_POSIX_C_SOURCE</code>、<code class="c">_DEFAULT_SOURCE</code>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>平台身份宏 <code class="c">__linux__</code> / <code class="c">__aarch64__</code> / <code class="c">__GNUC__</code></th>
+<th>特性测试宏 <code class="c">_GNU_SOURCE</code> / <code class="c">_POSIX_C_SOURCE</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>谁定义</td>
+<td>编译器，在预处理开始前自动注入</td>
+<td>你：源码第一行 <code class="c">#define</code>，或编译选项 <code class="c">-D</code></td>
+</tr>
+<tr>
+<td>方向</td>
+<td>编译器 → 你（只读的"我是谁"）</td>
+<td>你 → C 库（主动"请暴露哪些 API"）</td>
+</tr>
+<tr>
+<td>怎么用</td>
+<td><code class="c">#if defined(...)</code> 查询</td>
+<td>不查询，只影响头文件展开后的内容</td>
+</tr>
+<tr>
+<td>用错的后果</td>
+<td>拼错 → 静默走 <code class="c">#else</code></td>
+<td>漏写 → Linux 专有 API <strong>没有原型</strong> → 隐式声明</td>
+</tr>
+</tbody>
+</table></div>
+<p>CE 实测（调用 <code class="c">accept4</code> / <code class="c">ppoll</code>，查询 <code class="c">O_DIRECT</code> / <code class="c">strdup</code>，Linux + glibc）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译命令</th>
+<th><code class="c">accept4</code>、<code class="c">ppoll</code></th>
+<th><code class="c">O_DIRECT</code></th>
+<th><code class="c">strdup</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">gcc 13.3 -std=gnu17</code></td>
+<td>隐式声明（warning）</td>
+<td><strong>未定义</strong></td>
+<td>OK</td>
+</tr>
+<tr>
+<td><code class="c">gcc 13.3 -std=gnu17 -D_GNU_SOURCE</code></td>
+<td>OK</td>
+<td><code class="c">040000</code></td>
+<td>OK</td>
+</tr>
+<tr>
+<td><code class="c">gcc 13.3 -std=c17</code></td>
+<td>隐式声明（warning）</td>
+<td>未定义</td>
+<td>隐式声明（warning）</td>
+</tr>
+<tr>
+<td><code class="c">gcc 13.3 -std=c17 -D_GNU_SOURCE</code></td>
+<td>OK</td>
+<td><code class="c">040000</code></td>
+<td>OK</td>
+</tr>
+<tr>
+<td><code class="c">gcc 14.3 -std=gnu17</code>（不带）</td>
+<td><strong>error</strong>：implicit declaration of function 'accept4'</td>
+<td>未定义</td>
+<td>OK</td>
+</tr>
+<tr>
+<td><code class="c">clang 18.1.0 -std=gnu17</code>（不带）</td>
+<td><strong>error</strong>：call to undeclared function 'accept4'</td>
+<td>未定义</td>
+<td>OK</td>
+</tr>
+</tbody>
+</table></div>
+<p>关键区分：<strong><code class="c">-std=gnu17</code> 只解锁 glibc 的 <code class="c">_DEFAULT_SOURCE</code>（POSIX / BSD / misc，如 <code class="c">strdup</code>），不解锁 <code class="c">_GNU_SOURCE</code></strong>
+（<code class="c">accept4</code>、<code class="c">ppoll</code>、<code class="c">O_DIRECT</code> 这批 Linux 专有接口）。想要后者必须显式 <code class="c">-D_GNU_SOURCE</code>。</p>
+<p>顺带一条：<code class="c">#if __linix__</code>（故意拼错）在 <code class="c">-Wall -Wextra</code> 下 <strong>0 诊断、静默走 <code class="c">#else</code></strong>；加上 <code class="c">-Wundef</code> 才出声——
+gcc 报 <code class="c">"__linix__" is not defined, evaluates to 0</code>，clang 报 <code class="c">'__linix__' is not defined, evaluates to 0</code>。
+这就是"判断平台一律写 <code class="c">defined(...)</code>"的理由（<code class="c">14.3 条件编译</code> 有完整的边界表）。</p>
+<h4>看不到 <code class="c">-dM</code> 输出时怎么办</h4>
+<pre class="code" data-label="shell"><code class="c">gcc -dM -E - &lt; /dev/null                                         # 本机全部预定义宏
+aarch64-linux-gnu-gcc -dM -E - &lt; /dev/null | grep -E 'aarch64|ARM_ARCH|linux'
+</code></pre>
+<p>交叉编译一般仍能跑 <code class="c">-dM</code>（只需要驱动能启动预处理器）。真正跑不了的是"能编译、不能执行"的目标
+（CE 上的 ARM32、MinGW 都属此类），此时改用 <code class="c">#pragma message</code> 把宏值在<strong>编译期</strong>打出来：</p>
+<pre class="code" data-label="C"><code class="c">#define TOSTR(m)     TOSTR_I(m)
+#define TOSTR_I(m)   #m
+#define DO_PRAGMA(x) _Pragma(#x)
+#define SHOW(m)      DO_PRAGMA(message(&quot;MACRO &quot; #m &quot; =&gt; &quot; TOSTR(m)))
+
+SHOW(_WIN32)
+SHOW(__aarch64__)
+SHOW(__ARM_ARCH)
+</code></pre>
+<p>MinGW-w64 gcc 13.1 实测输出（<code class="c">note:</code> 行）：</p>
+<pre class="code" data-label="text"><code class="c">#pragma message: MACRO _WIN32 =&gt; 1
+#pragma message: MACRO __aarch64__ =&gt; __aarch64__
+#pragma message: MACRO __ARM_ARCH =&gt; __ARM_ARCH
+</code></pre>
+<p>未定义的宏得到的就是它自己的名字，一眼可辨。<code class="c">DO_PRAGMA</code> 那层间接不能省——<code class="c">_Pragma</code> 的操作数必须是<strong>字符串字面量</strong>。</p>
 <h3>编译器与版本</h3>
 <div class="tbl-wrap"><table>
 <thead>
@@ -820,6 +1011,21 @@ ERR_LOG(&quot;order rejected: id=%lu\n&quot;, order_id);
 <td>某些编译器不定义</td>
 <td><code class="c">#if defined(__STDC_VERSION__) &amp;&amp; ...</code></td>
 </tr>
+<tr>
+<td>用 <code class="c">#if __GNUC__ &gt;= 5</code> 判断编译器能力</td>
+<td>clang 实测 <code class="c">__GNUC__=4</code>，恒为假</td>
+<td>改用 <code class="c">__has_builtin</code> / <code class="c">__has_attribute</code> 能力探测</td>
+</tr>
+<tr>
+<td>以为 <code class="c">-std=gnuXX</code> 已解锁 GNU 专有 API</td>
+<td><code class="c">accept4</code> / <code class="c">O_DIRECT</code> 仍无原型，gcc 14+ 直接 error</td>
+<td>显式 <code class="c">-D_GNU_SOURCE</code></td>
+</tr>
+<tr>
+<td>平台宏拼写错误</td>
+<td>静默走 <code class="c">#else</code>，选错分支</td>
+<td><code class="c">-Wundef</code>（不在 <code class="c">-Wall -Wextra</code> 里，需单独开）</td>
+</tr>
 </tbody>
 </table></div>
 <h2>与后续衔接</h2>
@@ -836,6 +1042,8 @@ ERR_LOG(&quot;order rejected: id=%lu\n&quot;, order_id);
 <li><code class="c">__DATE__</code> 和 <code class="c">__TIME__</code> 让构建不可复现。<strong>HFT 监管审计为什么要求可复现构建</strong>？工程上怎么解决这个矛盾？</li>
 <li>x86-64 是强内存模型，<code class="c">rte_smp_wmb()</code> 展开为空操作；ARM64 展开为 <code class="c">dmb ishst</code>。<strong>为什么屏障必须用宏而不是函数</strong>？函数调用会破坏什么？</li>
 <li><code class="c">__has_include(&lt;stdatomic.h&gt;)</code> 检测头文件是否存在。<strong>这种检测相比硬编码 <code class="c">#if defined(__linux__)</code> 有什么优势</strong>？什么场景下应该用哪种？</li>
+<li>实测 clang 18.1.0 的 <code class="c">__GNUC__=4</code>、<code class="c">__GNUC_MINOR__=2</code>。<strong>这个值为什么不随 clang 版本变化</strong>？"按 GCC 版本号开特性"的写法会出什么问题？正确写法是什么？</li>
+<li>实测 <code class="c">-std=gnu17</code> 下 <code class="c">strdup</code> 有原型、但 <code class="c">accept4</code> 和 <code class="c">O_DIRECT</code> 没有。<strong>这说明 <code class="c">_DEFAULT_SOURCE</code> 与 <code class="c">_GNU_SOURCE</code> 解锁的分界在哪</strong>？为什么 gcc 14 起后果从 warning 升级为 error？</li>
 </ol>
       </section>
       <section class="section" id="s-14-2">
