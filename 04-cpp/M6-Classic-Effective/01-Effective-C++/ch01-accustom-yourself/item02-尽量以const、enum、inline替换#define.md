@@ -259,6 +259,45 @@ LOG(++n);              // Debug: 打印 1，n = 1；Release: n = 0（++n 从未�
 
 **坑 5：两个宏同时定义时 Debug 赢**。`#if/#elif` 只取第一个成立的分支，构建脚本必须保证二者互斥，否则"以为在 Release"实际却在打日志。
 
+### 宏体本身的两个坑（与条件编译无关，但同款日志宏必踩）
+
+**坑 A：`std::endl` 是「换行 + 强制 flush」，不是「更优雅的 `\n`」**
+
+```cpp
+std::cout << x << std::endl;   // 每次都 flush 一次缓冲区
+std::cout << x << '\n';        // 只换行，交给缓冲区攒着批量写
+```
+
+实测（clang -O2，20 万行重定向到 `/dev/null`）：
+
+| 写法 | 耗时 | 折合每行 |
+|------|------|---------|
+| `'\n'` | 47.0 ms | ≈ 0.24 µs |
+| `std::endl` | **232.8 ms** | ≈ 1.16 µs（**慢约 5 倍**） |
+
+日志宏一旦在热路径开着，`endl` 的 flush 就是延迟尖峰来源。**日志宏体一律用 `'\n'`，只在真正需要立刻落盘时（崩溃前、跨进程可见）才显式 flush。**
+
+**坑 B：宏参数不能含「裸逗号」**
+
+```cpp
+#define LOG(x) std::cout << x << std::endl
+LOG("a", "b");   // 实测 error: too many arguments provided to function-like macro invocation
+```
+
+宏的参数分隔只看逗号，**不认括号层级**（`LOG(std::pair<int,int>(1,2))` 同样会被切成两个参数）。要多参数就上变参宏：
+
+```cpp
+#define LOG(...) std::cout << __VA_ARGS__ << '\n'          // C++11 起
+#define LOGF(fmt, ...) printf(fmt, __VA_ARGS__)            // 逗号在 __VA_ARGS__ 之后才安全
+```
+
+C23 / C++20 起可用 `__VA_OPT__` 处理「变参部分为空」的逗号（版本边界实测见 [Pointers on C §14.2.3 带参数的宏](../../../../01-c-language/02-advanced-pointers-and-memory/ch14-preprocessor/14.2-define/14.2.3-带参数的宏.md)）。
+
+### 两处措辞校准（讲给别人的时候容易讲歪）
+
+1. **宏不是「给代码起别名」**。"别名"暗示有实体、有作用域、有类型；宏只是**带参数的文本替换模板**，`LOG` 这个名字在编译后的符号表里根本不存在（前文 `nm` 证据）。讲的时候说"模板化的文本替换"比"别名"安全。
+2. **空宏替换后不是「一行空白」，是留下一个空语句 `;`**。实测 `-DPR_RELEASE -E` 的输出是 `int main() { ; }`。这个 `;` 无害，但它确实是**一条语句**——所以 `if (c) LOG(x); else foo();` 展开成 `if (c) ; else foo();` 依然合法；反过来如果宏体写成两条语句又没包 `do{}while(0)`，`else` 就会悬空。
+
 ### 构建侧怎么定义
 
 ```bash
@@ -287,6 +326,7 @@ VS：项目属性 → C/C++ → 预处理器 → 预处理器定义里加 `PR_DE
 - 协议里的 **magic number**（消息类型、字段长度、tick size）用 **`constexpr` / `const`** 命名，崩溃栈和日志里能看到符号名，比裸数字好查。
 - **热路径「像宏一样快」的小函数**（如 `max`、`clamp`）用 **`inline` / `constexpr` 模板**，避免函数式宏的多次求值坑（例如对计数器或指针自增传参）。
 - 类内 **缓冲区大小、队列深度** 用 `static constexpr` 或 enum hack，便于封装且编译期定长数组。
+- **日志**：Debug 侧用条件编译宏做到 Release 零开销（本节实测 `int main(){ ; }`），但宏体必须写 `'\n'` 而非 `std::endl`（实测慢约 5 倍，flush 是热路径尖峰源）；Release 空宏会吞掉实参，所以**日志实参一律无副作用**。生产级做法：日志级别编译期过滤 + 异步落盘（spdlog 等），热路径只做无锁 enqueue。
 
 ---
 
