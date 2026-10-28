@@ -287,9 +287,32 @@ LOG("a", "b");   // 实测 error: too many arguments provided to function-like m
 宏的参数分隔只看逗号，**不认括号层级**（`LOG(std::pair<int,int>(1,2))` 同样会被切成两个参数）。要多参数就上变参宏：
 
 ```cpp
-#define LOG(...) std::cout << __VA_ARGS__ << '\n'          // C++11 起
+#define LOG(...) std::cout << __VA_ARGS__ << '\n'          // C++11 起，但下面这个坑照样踩
 #define LOGF(fmt, ...) printf(fmt, __VA_ARGS__)            // 逗号在 __VA_ARGS__ 之后才安全
 ```
+
+**坑 B 续：变参宏配 `<<` 链，逗号会变成逗号运算符**（`examples/log-macro-demo.cpp` 实测踩到过）：
+
+```cpp
+#define LOGF(...) std::cout << "[D] " << __VA_ARGS__ << '\n'
+LOGF("a=", 1, " b=", 2);
+// 展开：std::cout << "[D] " << "a=", 1, " b=", 2 << '\n'
+//       ↑ << 优先级高于逗号 → 变成 (...), 1, (" b="), (2 << '\n')
+// 实测输出乱成一团，还带 -Wunused-value 警告
+```
+
+**正解：宏只负责"要不要调用"，拼接交给类型安全的 fold 函数**（这也是 spdlog/fmt 的分工）：
+
+```cpp
+template <class... Args>
+void log_line(const char* tag, Args&&... args) {
+    ((std::cout << tag) << ... << args) << '\n';   // C++17 二元左折叠，init 必须加括号
+}
+#define LOGF(...) log_line("[D] ", __VA_ARGS__)     // Debug
+#define LOGF(...)                                   // Release：连调用都没有
+```
+
+> 二元折叠的 init 写成 `(std::cout << tag) << ... << args` 才能过编译——`(std::cout << tag << ... << args)` 会报 `expression not permitted as operand of fold expression`，因为折叠左操作数要求是 cast-expression。
 
 C23 / C++20 起可用 `__VA_OPT__` 处理「变参部分为空」的逗号（版本边界实测见 [Pointers on C §14.2.3 带参数的宏](../../../../01-c-language/02-advanced-pointers-and-memory/ch14-preprocessor/14.2-define/14.2.3-带参数的宏.md)）。
 
@@ -314,6 +337,25 @@ target_compile_definitions(app PRIVATE
 ```
 
 VS：项目属性 → C/C++ → 预处理器 → 预处理器定义里加 `PR_DEBUG=1`。
+
+**完整可跑版**（四种编译配置都能过，含 `#else` 兜底、副作用、`assert` 三个现场演示，注释里写了三种构建侧写法）：[`examples/log-macro-demo.cpp`](./examples/log-macro-demo.cpp)
+
+```
+$ clang++ -std=c++17 -DPR_DEBUG=1   -o demo examples/log-macro-demo.cpp && ./demo
+build mode : DEBUG
+[D] Hello
+[D] a=1 b=2
+[D] 1
+n           = 1          ← LOG(++n) 的副作用发生了
+m           = 1
+
+$ clang++ -std=c++17 -DPR_RELEASE=1 -o demo examples/log-macro-demo.cpp && ./demo
+build mode : RELEASE
+n           = 0          ← 空宏吞掉 ++n，Release 行为已变
+m           = 1
+```
+
+零开销的另一个证据（`-O2` 后查二进制字符串）：Debug 版 `strings demo | grep Hello` 能搜到 `"Hello"`，Release 版**搜不到**——字符串字面量根本没进二进制，不只是"不执行"。
 
 ### 同类机制：`assert` / `NDEBUG`
 
