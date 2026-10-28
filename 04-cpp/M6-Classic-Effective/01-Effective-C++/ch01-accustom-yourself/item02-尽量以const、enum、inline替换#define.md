@@ -200,6 +200,84 @@ C++11 起也可用 **`constexpr` 函数** 处理编译期可算的「宏函数�
 - **`#include`**、**`#ifdef`** 条件编译（头文件守卫、平台分支）——这些不是「用 const 替代常量宏」要消灭的对象。
 - 与 [条款 1](./item01-视C++为一个语言联邦.md) 一致：预处理器属于 **C 子集工具**，该用时用，但**业务常量和小函数**别再用 `#define` 凑合。
 
+### 典型正当用途：条件编译日志开关（TheCherno #55 同款）
+
+```cpp
+#include <iostream>
+
+#if PR_DEBUG == 1
+#define LOG(x) std::cout << x << std::endl
+#elif defined(PR_RELEASE)
+#define LOG(x)                          // 空宏
+#endif
+
+int main() {
+    LOG("Hello");
+}
+```
+
+原理：`#if/#elif/#endif` 在**预处理阶段**判定，Release 下 `LOG(x)` 展开为空，连字符串字面量都不进二进制——这是宏**至今无法被 `inline`/`constexpr` 替代**的少数场景之一：
+
+```
+// clang -DPR_RELEASE -E 实测：main 里只剩一个分号
+int main()
+{
+                ;
+}
+```
+
+对比 `inline` 函数版日志：参数必须**先求值**再进入函数体，`if (level >= DEBUG)` 的运行期判断省不掉字符串格式化开销；宏是**源码级消失**，零开销。所以选型口诀里那句「`#include`/条件编译 → 宏（仅此领域）」是有实测依据的。
+
+> 现代替代：spdlog / fmt 这类库用**编译期日志级别 + 宏包装**做同样的事（宏只负责"要不要调用"，真正的格式化交给类型安全函数），比裸 `std::cout` 更可控。C++20 起可用 `std::source_location` 自动补 `文件:行号`。
+
+### 这个写法的五个坑（实测 clang）
+
+**坑 1：两个分支都不成立 → `LOG` 未定义，直接编译失败**
+
+```cpp
+// 没传任何 -D：#if PR_DEBUG == 1 → 0 == 1 假（未定义标识符在 #if 里按 0 处理）
+// #elif defined(PR_RELEASE) → 也假 → LOG 从未定义
+LOG("Hello");   // 实测 error: use of undeclared identifier 'LOG'
+```
+
+**坑 2：`-DPR_DEBUG=0` 同样编译失败**。`#elif` 只查 `PR_RELEASE`，`PR_DEBUG=0` 落在"两个都不成立"的空隙里。**修正**：补一个 `#else` 兜底（默认关日志），或改写为 `#if defined(PR_DEBUG) && PR_DEBUG`。
+
+**坑 3：不要依赖 `-DPR_DEBUG`（不带 `=1`）**
+
+clang/gcc 下 `-D name` 等价于 `-D name=1`，实测能过；但这不是所有工具链的保证（部分嵌入式编译器/自定义构建里 `-D` 可能定义为空），此时 `#if PR_DEBUG == 1` 变成 `#if == 1` → 预处理期语法错误。**统一显式写 `-DPR_DEBUG=1`**，CMake 里同理。
+
+**坑 4：空宏会把实参整个吞掉——Debug/Release 行为不一致**
+
+```cpp
+int n = 0;
+LOG(++n);              // Debug: 打印 1，n = 1；Release: n = 0（++n 从未执行）
+```
+
+实测：Debug 输出 `1 / n = 1`，Release 输出 `n = 0`。**铁律：日志宏的实参里绝不能有副作用**（`++i`、带状态的函数调用），否则 Release 版静默改变程序行为——这类 bug 只在发布后出现，最难查。
+
+**坑 5：两个宏同时定义时 Debug 赢**。`#if/#elif` 只取第一个成立的分支，构建脚本必须保证二者互斥，否则"以为在 Release"实际却在打日志。
+
+### 构建侧怎么定义
+
+```bash
+clang++ -std=c++17 -DPR_DEBUG=1   -o app main.cpp   # Debug
+clang++ -std=c++17 -DPR_RELEASE=1 -o app main.cpp   # Release，零开销
+```
+
+```cmake
+# 按构建类型自动切换，避免手改代码
+target_compile_definitions(app PRIVATE
+    $<$<CONFIG:Debug>:PR_DEBUG=1>
+    $<$<CONFIG:Release>:PR_RELEASE=1>
+)
+```
+
+VS：项目属性 → C/C++ → 预处理器 → 预处理器定义里加 `PR_DEBUG=1`。
+
+### 同类机制：`assert` / `NDEBUG`
+
+`assert(expr)` 是同一套思路的标准版：定义 `NDEBUG` 后 `assert` 展开成 `((void)0)`，**表达式完全不求值**——所以 `assert(++i)` 或 `assert(do_something())` 会和上面坑 4 一样，在 Release 下静默改变行为。判定表达式必须无副作用。
+
 ---
 
 ## HFT 视角
@@ -328,5 +406,34 @@ int main() {
 <summary>参考答案</summary>
 
 模板函数调用是**运行期值**，不是常量表达式——`int arr[运行期值]` 在标准 C++ 里非法。clang 默认放行是因为把它当成了 **VLA 扩展**（`-pedantic-errors` 实测报 `variable length arrays in C++ are a Clang extension`），GCC 同理。修正：给函数加 `constexpr`——`template<typename T> constexpr T square(T x)`，`square_tpl(4)` 就成了编译期常量，`arr` 是正经的定长数组（也才能用于 `static_assert`、模板实参）。MSVC 不支持 VLA 扩展，这段代码在 MSVC 直接编译失败——换编译器立刻暴露。
+
+</details>
+
+**题目 5：** 条件编译日志宏（本题全部有实测结果）
+
+```cpp
+#if PR_DEBUG == 1
+#define LOG(x) std::cout << x << std::endl
+#elif defined(PR_RELEASE)
+#define LOG(x)
+#endif
+
+int n = 0;
+LOG(++n);
+std::cout << "n = " << n << std::endl;
+```
+
+> 问：① 不传任何 `-D` 直接编译会怎样？② `-DPR_DEBUG=0` 呢？③ `-DPR_DEBUG=1` 和 `-DPR_RELEASE` 两种构建下 `n` 分别打印多少？
+
+<details>
+<summary>参考答案</summary>
+
+① **编译失败**：`#if PR_DEBUG == 1` 未定义时按 `0 == 1` 判定为假（`#if` 里未定义标识符一律当 0），`#elif defined(PR_RELEASE)` 也为假，`LOG` 从未定义 → 实测 `error: use of undeclared identifier 'LOG'`。
+
+② 同样**编译失败**：`PR_DEBUG=0` 不满足 `== 1`，而 `#elif` 只查 `PR_RELEASE`，落在两个分支的空隙里。**修正**：加 `#else` 兜底（默认关日志）。
+
+③ Debug 打印 `1` 然后 `n = 1`；Release 只打印 `n = 0`——空宏把实参 `++n` **整个丢弃**，自增从未发生。这是条件编译日志宏最阴的坑：**Release 下程序行为静默改变**。铁律：日志宏实参必须无副作用（不能 `++i`、不能放带状态的函数调用）。
+
+补充：`assert(++i)` 同理——`NDEBUG` 下 `assert` 展开为 `((void)0)`，表达式不求值。
 
 </details>
