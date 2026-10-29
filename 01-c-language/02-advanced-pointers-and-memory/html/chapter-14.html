@@ -469,7 +469,12 @@ gcc -E -C main.c -o main.i
 
 # 命令行定义宏
 gcc -E -DDEBUG=1 main.c -o main.i
+
+# 去掉 # 行号标记，只留纯代码（机器处理 / 精确比对时用）
+gcc -E -P main.c -o main.i
 </code></pre>
+<p><code class="c">-P</code> 会连 linemarker 一起删掉，输出行号与源码不再对应，<strong>人肉排查时别加</strong>，
+但要做文本比对或喂给脚本时很好用（见下方 CE 实测）。</p>
 <hr />
 <h2>GCC 四阶段对照</h2>
 <pre class="code" data-label="shell"><code class="c"># 1. 预处理  c → i
@@ -491,6 +496,85 @@ gcc main.o -o main
 </ul>
 <p>排查 <code class="c">#include</code> 时，常与 <a href="#s-14-4">14.4</a> 一起用：<code class="c">gcc -E a.c -o a.i</code>。</p>
 <hr />
+<h2>CE 实测：<code class="c">gcc -E</code> 的真实输出长什么样</h2>
+<p>源文件 <code class="c">m2_hashpaste.c</code>（一个 <code class="c">#</code>/<code class="c">##</code> 演示文件），Compiler Explorer / gcc 13.3 跑 <code class="c">gcc -E</code>：</p>
+<pre class="code" data-label="text"><code class="c"># 0 &quot;/app/example.c&quot;
+# 1 &quot;/app//&quot;
+# 0 &quot;&lt;built-in&gt;&quot;
+# 0 &quot;&lt;command-line&gt;&quot;
+# 1 &quot;/usr/include/stdc-predef.h&quot; 1 3 4
+# 0 &quot;&lt;command-line&gt;&quot; 2
+# 1 &quot;/app/example.c&quot;
+# 15 &quot;/app/example.c&quot;
+const char *s_raw = &quot;VERSION&quot;;
+const char *s_expand = &quot;1.2&quot;;
+
+int v_N = 1;
+int w_7 = 2;
+
+int line_12 = 0;
+
+int main(void) { return 0; }
+</code></pre>
+<p>三个可验证的点：</p>
+<ol>
+<li><strong><code class="c"># 数字 "文件"</code> 就是 linemarker</strong>（文中「预处理做哪些事」第 5 条）。它把 <code class="c">.i</code> 的每一行
+   对回原始源码位置，报错和 gdb 靠它定位。加 <code class="c">-P</code> 可以全部去掉，只留纯代码。</li>
+<li><strong>注释确实被删了</strong>——源码里 <code class="c">/* ① 直接字符串化 */</code> 等注释一行都没留下（第 4 条）。</li>
+<li><strong>源码没写 <code class="c">#include</code>，<code class="c">.i</code> 里却出现了 <code class="c">stdc-predef.h</code></strong>——gcc 会隐式包含它。</li>
+</ol>
+<p>⭐ <strong>第 3 点的连锁结论</strong>：<code class="c">stdc-predef.h</code> 的头注释原文（<code class="c">-E -C</code> 保留注释后可见）：</p>
+<pre class="code" data-label="text"><code class="c">/* This header is separate from features.h so that the compiler can
+   include it implicitly at the start of every compilation.  It must
+   not itself include &lt;features.h&gt; or any other header that includes
+   &lt;features.h&gt; because the implicit include comes before any feature
+   test macros that may be defined in a source file before it first
+   explicitly includes a system header.  */
+</code></pre>
+<p>⇒ <strong>这就是为什么 <code class="c">_GNU_SOURCE</code> / <code class="c">_POSIX_C_SOURCE</code> 必须写在任何 <code class="c">#include</code> 之前</strong>
+（或改用 <code class="c">-D_GNU_SOURCE</code> 命令行传）——隐式包含发生在你的第一行代码之前，
+等到 <code class="c">#include &lt;features.h&gt;</code> 被拉进来时，再 <code class="c">#define</code> 已经晚了。详见
+<a href="chapter-01.html#s-1-1">1.1 C 语言标准和编译器</a>。</p>
+<h3>用 <code class="c">-E</code> 现场验证「<code class="c">#</code>/<code class="c">##</code> 旁的参数不展开」</h3>
+<p><code class="c">-E -P</code>（去掉 linemarker）是排查宏的第一手工具，输出干净到可以直接当结论用：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>源码</th>
+<th><code class="c">-E -P</code> 输出</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">STR(VERSION)</code></td>
+<td><code class="c">"VERSION"</code></td>
+<td><code class="c">#</code> 取实参<strong>原文</strong>，不展开</td>
+</tr>
+<tr>
+<td><code class="c">XSTR(VERSION)</code></td>
+<td><code class="c">"1.2"</code></td>
+<td>套一层间接后，参数先展开</td>
+</tr>
+<tr>
+<td><code class="c">NAKED(v_, N)</code></td>
+<td><code class="c">int v_N = 1;</code></td>
+<td><code class="c">##</code> 操作数<strong>不展开</strong>，得到假标识符 <code class="c">v_N</code></td>
+</tr>
+<tr>
+<td><code class="c">CAT(w_, N)</code></td>
+<td><code class="c">int w_7 = 2;</code></td>
+<td>间接层让 <code class="c">N</code> 先展开成 7，再粘贴</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">N</code> 被 <code class="c">#define N 7</code> 定义过，但 <code class="c">NAKED(v_, N)</code> 粘出来的是 <code class="c">v_N</code> 而不是 <code class="c">v_7</code>——
+<strong>一条命令就把「<code class="c">##</code> 不展开操作数」从记忆变成了可见事实</strong>。脑内推演展开顺序时，
+一律用 <code class="c">gcc -E -P</code> 代替。</p>
+<blockquote>
+<p><code class="c">-E -C</code>（大写 C）保留注释，代价是 <code class="c">.i</code> 会塞进系统头的整段版权声明——
+上面那段 <code class="c">stdc-predef.h</code> 注释就是这么来的。人读用 <code class="c">-C</code>，脚本处理用 <code class="c">-P</code>。</p>
+</blockquote>
 <h2>代码自测</h2>
 <p><strong>题目 1：</strong> 以下代码经过 gcc -E 预处理后，宏展开结果是什么？</p>
 <pre class="code" data-label="C"><code class="c">#define SQUARE(x) ((x) * (x))
@@ -1342,6 +1426,69 @@ int bad = FLAG_A + FLAG_B;
 #define FLAG_C  (1U &lt;&lt; 2)
 </code></pre>
 <p>DPDK、内核的标志位定义全部遵守此规则。</p>
+<h3>CE 实测：四类括号陷阱的实际输出</h3>
+<p>源文件 <code class="c">q2_paren.c</code>，gcc 13.3 与 clang 18.1.0、<code class="c">-O0 -Wall</code>，<strong>两个编译器输出逐字一致</strong>：</p>
+<pre class="code" data-label="text"><code class="c">SQR_BAD(1+2)      = 5   (期望 9)
+SQR(1+2)          = 9
+BIT_BAD(3 &amp; 1)    = 0   (期望 2)
+BIT_OK(3 &amp; 1)     = 2
+LO_BAD(0x1234)==0x34 -&gt; 0   (期望 1)
+LO_OK(0x1234) ==0x34 -&gt; 1
+MASK_BAD(4)       = 8   (若意图是 4 位掩码则期望 15)
+MASK_OK(4)        = 15
+SUM_BAD(1,2)*3    = 7   (期望 9)
+SUM_OK(1,2)*3     = 9
+</code></pre>
+<p>逐条拆：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>反例</th>
+<th>定义</th>
+<th>为什么错</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SQR_BAD(x) x * x</code></td>
+<td>参数没括号</td>
+<td><code class="c">1+2 * 1+2</code> → <code class="c">1+(2*1)+2</code></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="c">BIT_BAD(n) (1 &lt;&lt; n)</code></td>
+<td>参数没括号</td>
+<td><code class="c">&lt;&lt;</code> 优先级<strong>低于</strong> <code class="c">&amp;</code>，<code class="c">1 &lt;&lt; 3 &amp; 1</code> 变成 <code class="c">(1&lt;&lt;3) &amp; 1</code></td>
+<td>0</td>
+</tr>
+<tr>
+<td><code class="c">LO_BAD(x) (x) &amp; 0xFF</code></td>
+<td>整体没括号</td>
+<td><code class="c">&amp;</code> 优先级<strong>低于</strong> <code class="c">==</code>，<code class="c">v &amp; 0xFF == 0x34</code> 变成 <code class="c">v &amp; (0xFF==0x34)</code> = <code class="c">v &amp; 0</code></td>
+<td>0</td>
+</tr>
+<tr>
+<td><code class="c">MASK_BAD(n) 1 &lt;&lt; n - 1</code></td>
+<td>两处都没括号</td>
+<td><code class="c">1 &lt;&lt; (n-1)</code>，与「n 位掩码」的意图差一个量级</td>
+<td>8 vs 15</td>
+</tr>
+<tr>
+<td><code class="c">SUM_BAD(a,b) a + b</code></td>
+<td>整体没括号</td>
+<td><code class="c">1 + 2 * 3</code></td>
+<td>7</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong><code class="c">LO_BAD</code> 是最阴的一类</strong>：<code class="c">if (LO_BAD(v) == 0x34)</code> 不是「算错了」，而是<strong>恒为假</strong>——
+<code class="c">&amp;</code> 优先级低于 <code class="c">==</code>，比较先算成 0，整个条件永远不成立。而代码看起来毫无问题，
+且 <code class="c">-Wall</code> 只给一句 <code class="c">suggest parentheses around comparison in operand of '&amp;'</code>（gcc）／
+<code class="c">&amp; has lower precedence than ==</code>（clang），<strong>是 warning 不是 error</strong>。</p>
+<p>⚠️ <strong>「参数加了括号就安全」是错的</strong>。<code class="c">BIT_OK(n) (1 &lt;&lt; (n))</code> 参数有括号，但如果<strong>整体</strong>
+不加括号照样翻车——<code class="c">BIT_OK(3) + 1</code> 还好，换成 <code class="c">MASK_OK</code> 那种 <code class="c">(1 &lt;&lt; (n)) - 1</code> 少了最外层括号，
+用在 <code class="c">x &amp; MASK_OK(4) == 0</code> 里就会重演 <code class="c">LO_BAD</code>。<strong>规则是两条都要</strong>：每个参数一套、整体一套。</p>
 <h3>字符串字面量宏</h3>
 <pre class="code" data-label="C"><code class="c">#define APP_NAME &quot;hft-engine&quot;
 #define LOG_PREFIX &quot;[hft] &quot;
@@ -1616,6 +1763,53 @@ double d2 = abs_int(-3.14);        /* 隐式转换，警告 */
 int i = abs_int(-5);               /* 正确 */
 </code></pre>
 <p>宏无类型检查，错误信息往往晦涩（展开后的代码报错，看不出原始宏）。函数有类型检查，错误信息清晰。<strong>C11 的 <code class="c">_Generic</code> 可以让宏模拟泛型</strong>，但仍不如函数类型安全。</p>
+<h3>CE 实测：「无类型检查」的代价有多大</h3>
+<p>源文件 <code class="c">q3_vs_func.c</code>，<code class="c">-O0 -Wall -Wextra</code>，<strong>两个编译器给出的运行结果不一样</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>表达式</th>
+<th>gcc 13.3</th>
+<th>clang 18.1.0</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">MAX_MACRO(3, 4.5)</code></td>
+<td><code class="c">4.500000</code></td>
+<td><code class="c">4.500000</code></td>
+</tr>
+<tr>
+<td><code class="c">max_int(3, 4.5)</code></td>
+<td><code class="c">4</code></td>
+<td><code class="c">4</code></td>
+</tr>
+<tr>
+<td><code class="c">MAX_MACRO("abc","def")</code></td>
+<td><code class="c">abc</code></td>
+<td><strong><code class="c">def</code></strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong><code class="c">MAX_MACRO("abc", "def")</code> 在 gcc 上返回 <code class="c">"abc"</code>、在 clang 上返回 <code class="c">"def"</code>。</strong>
+宏把「比较两个字符串字面量的地址」这种毫无意义的操作放行了——
+两个字面量的地址先后由实现决定，属于<strong>未指定行为（unspecified）</strong>，
+所以同一份源码换个编译器结果就反了，而且两边都能正常编译运行。</p>
+<p>告警力度同样不对等：</p>
+<pre class="code" data-label="text"><code class="c">clang 18.1.0:
+  warning: result of comparison against a string literal is unspecified
+           (use an explicit string comparison function instead) [-Wstring-compare]
+  warning: implicit conversion from 'double' to 'int' changes value from 4.5 to 4
+           [-Wliteral-conversion]
+
+gcc 13.3 (-Wall -Wextra):   0 条诊断
+</code></pre>
+<p>⇒ gcc 在 <code class="c">-Wall -Wextra</code> 下<strong>两条都不报</strong>（<code class="c">4.5 → 4</code> 的截断属于 <code class="c">-Wconversion</code> 系列，
+不在 <code class="c">-Wall -Wextra</code> 里）。<strong>跨编译器跑一遍才能暴露宏放行的那些 nonsense。</strong></p>
+<p>对照 <code class="c">static inline</code>：同样的 <code class="c">max_int(3, 4.5)</code> 在两边都收敛成 <code class="c">4</code>，
+因为函数签名把 <code class="c">double</code> 实参强制转成 <code class="c">int</code>——<strong>函数把「类型不合」变成一次显式转换，
+而宏把它变成一次静默的地址比较</strong>。这就是「宏没有类型检查」在实战里的真实代价：
+不是「能跑就行」，而是<strong>不同编译器跑出不同结果，且都不报错</strong>。</p>
 <h3>类型泛型的处理</h3>
 <pre class="code" data-label="C"><code class="c">/* 宏 + _Generic：C11 泛型 */
 #define ABS(x) _Generic((x), \
@@ -2210,6 +2404,78 @@ int m = MIN(a++, b);
 </ol>
 <p><strong>预期</strong>：<code class="c">m = 1</code>（用自增前的 <code class="c">a</code> 比较），<code class="c">a = 2</code>（自增一次）。
 <strong>实际</strong>：<code class="c">m = 2</code>，<code class="c">a = 3</code>（自增两次）。</p>
+<h3>CE 实测：两类副作用，后果完全不同</h3>
+<p>「副作用参数」不是一个问题，而是<strong>两种性质不同的问题</strong>。源文件 <code class="c">q1_sideeffect.c</code>
+（<code class="c">SQR(i++)</code> 与 <code class="c">MAX(x++, y)</code>），Compiler Explorer 上四组编译并运行：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器 / 优化档</th>
+<th><code class="c">SQR(i++)</code></th>
+<th><code class="c">MAX(5,2)</code></th>
+<th><code class="c">MAX(1,2)</code></th>
+<th>诊断</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcc 13.3 <code class="c">-O0</code></td>
+<td><code class="c">j=30 i=7</code></td>
+<td><code class="c">m=6 x=7</code></td>
+<td><code class="c">m2=2 x2=2</code></td>
+<td>需 <code class="c">-Wall</code> 才告警</td>
+</tr>
+<tr>
+<td>gcc 13.3 <code class="c">-O2</code></td>
+<td><code class="c">j=30 i=7</code></td>
+<td><code class="c">m=6 x=7</code></td>
+<td><code class="c">m2=2 x2=2</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td>clang 18.1.0 <code class="c">-O0</code></td>
+<td><code class="c">j=30 i=7</code></td>
+<td><code class="c">m=6 x=7</code></td>
+<td><code class="c">m2=2 x2=2</code></td>
+<td><strong>默认</strong>报 <code class="c">-Wunsequenced</code></td>
+</tr>
+<tr>
+<td>clang 18.1.0 <code class="c">-O2</code></td>
+<td><code class="c">j=30 i=7</code></td>
+<td><code class="c">m=6 x=7</code></td>
+<td><code class="c">m2=2 x2=2</code></td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>第一类 —— <code class="c">SQR(i++)</code>：真 UB。</strong></p>
+<pre class="code" data-label="text"><code class="c">#define SQR(x) ((x) * (x))
+int i = 5; int j = SQR(i++);        /* ((i++) * (i++)) */
+</code></pre>
+<p><code class="c">*</code> 的两个操作数之间<strong>没有序列点</strong>，同一对象在一次表达式里被修改两次 → 未定义行为。
+四组实测都给出 <code class="c">j=30 i=7</code>，但这只是「这次碰巧」，标准不保证，换编译器或换优化档就是别的数。</p>
+<p>⭐ <strong>告警门槛不一样</strong>：gcc 13.3 不加 <code class="c">-Wall</code> 时<strong>一声不响</strong>（诊断数 0）；clang 18.1.0 默认就报：</p>
+<pre class="code" data-label="text"><code class="c">&lt;source&gt;:10:18: warning: multiple unsequenced modifications to 'i' [-Wunsequenced]
+   10 |     int j = SQR(i++);
+      |                  ^~
+&lt;source&gt;:4:23: note: expanded from macro 'SQR'
+    4 | #define SQR(x)      ((x) * (x))
+</code></pre>
+<p>gcc 加上 <code class="c">-Wall</code> 后才有 <code class="c">warning: operation on 'i' may be undefined [-Wsequence-point]</code>。
+⇒ <strong>只用默认告警级别编 HFT 代码，gcc 会把这类 UB 放过去。</strong></p>
+<p><strong>第二类 —— <code class="c">MAX(x++, y)</code>：定义良好，只是值不对（更阴）。</strong></p>
+<pre class="code" data-label="text"><code class="c">#define MAX(a,b) ((a) &gt; (b) ? (a) : (b))
+int x = 5, y = 2; int m = MAX(x++, y);   /* ?: 第一操作数与所选分支之间有序列点 */
+</code></pre>
+<p><code class="c">?:</code> 的第一操作数和被选中的分支之间<strong>存在序列点</strong>，所以这是完全定义良好的代码——
+<code class="c">x</code> 就是被加了两次，<code class="c">m=6 x=7</code> 是标准保证的结果，不是 UB。</p>
+<p>真正危险的是实测第三行：<code class="c">MAX(1,2)</code> → <code class="c">m2=2 x2=2</code>，<strong><code class="c">x2</code> 只加了一次</strong>。同一个宏：</p>
+<ul>
+<li><code class="c">x=5 &gt; y=2</code> 时走真分支，<code class="c">x++</code> 求值两次 → 加了两次；</li>
+<li><code class="c">x=1 &lt; y=2</code> 时走假分支，<code class="c">x++</code> 只求值一次 → 只加一次。</li>
+</ul>
+<p>⇒ <strong>是否踩坑取决于运行期数据</strong>，单元测试若只覆盖了一条分支就永远发现不了。
+这比 UB 更难查：UB 至少还能靠 <code class="c">-Wsequence-point</code> 揪出来，这类「良定义但错」编译器一声不响。</p>
 <h3>副作用的分类</h3>
 <div class="tbl-wrap"><table>
 <thead>
@@ -2654,6 +2920,68 @@ static const char *const evt_str[] = {
 <li><code class="c">ptr - 偏移</code> 得到外层结构起始地址。</li>
 <li>强转回 <code class="c">type *</code>。</li>
 </ol>
+<h4>CE 实测：v6.6 内核的真实定义与上面两版都不一样</h4>
+<p>上面第一版是<strong>老内核</strong>的写法。Linux v6.6 的 <code class="c">include/linux/container_of.h</code> 逐字原文：</p>
+<pre class="code" data-label="C"><code class="c">#define typeof_member(T, m)     typeof(((T*)0)-&gt;m)
+
+#define container_of(ptr, type, member) ({                              \
+        void *__mptr = (void *)(ptr);                                    \
+        static_assert(__same_type(*(ptr), ((type *)0)-&gt;member) ||        \
+                      __same_type(*(ptr), void),                        \
+                      &quot;pointer type mismatch in container_of()&quot;);       \
+        ((type *)(__mptr - offsetof(type, member))); })
+</code></pre>
+<p>三处关键差异：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>部件</th>
+<th>v6.6 写法</th>
+<th>老版写法</th>
+<th>为什么改</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类型检查</td>
+<td><code class="c">static_assert(__same_type(*(ptr), ((type*)0)-&gt;member))</code></td>
+<td><code class="c">__builtin_types_compatible_p(typeof(ptr), typeof(&amp;((type*)0)-&gt;member))</code></td>
+<td><code class="c">static_assert</code> 是标准 C11，还能带自定义消息</td>
+</tr>
+<tr>
+<td>比较对象</td>
+<td>比较<strong>解引用后</strong>的 <code class="c">*(ptr)</code> 与成员本身</td>
+<td>比较<strong>指针类型</strong> <code class="c">ptr</code> 与 <code class="c">&amp;member</code></td>
+<td>前者能挡住「成员类型相同但传错成员」的情况</td>
+</tr>
+<tr>
+<td>返回值</td>
+<td><code class="c">((type *)(__mptr - offsetof(...)))</code></td>
+<td>同</td>
+<td>保留</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong>那个 <code class="c">|| __same_type(*(ptr), void)</code> 不是笔误</strong>——它是给 <code class="c">void *</code> 参数留的后门：
+内核里大量 <code class="c">container_of(some_voidp, ...)</code> 的调用点，不放行就全编不过。
+代价是 <code class="c">void *</code> 传进来时<strong>类型检查完全失效</strong>。</p>
+<p><strong>为什么中间要转 <code class="c">void *__mptr</code></strong>：<code class="c">__mptr - offsetof(...)</code> 必须在<strong>字节</strong>尺度上做减法。
+若直接用 <code class="c">ptr</code>（带类型），指针减法会按 <code class="c">sizeof(*ptr)</code> 缩放——
+成员是 <code class="c">int</code> 时减 4 字节偏移会变成减 16 字节，地址直接算飞。</p>
+<p>实测（<code class="c">struct outer { int a; struct inner in; double z; }</code>，gcc 13.3）：</p>
+<pre class="code" data-label="text"><code class="c">naive   : &amp;o=0x7ffc411a0510 back=0x7ffc411a0510 match=1 a=1
+checked : &amp;o=0x7ffc411a0510 back=0x7ffc411a0510 match=1 a=1
+offsetof(struct outer, in) = 4
+</code></pre>
+<p>把 <code class="c">int *wrong = &amp;o.a</code> 传给 <code class="c">container_of_checked(wrong, struct outer, in)</code>：</p>
+<pre class="code" data-label="text"><code class="c">error: static assertion failed: &quot;container_of: pointer type mismatch&quot;
+</code></pre>
+<p>⇒ <strong>这就是裸强转版给不了的保障</strong>：传错成员在<strong>编译期</strong>就死，
+而不是等运行期读到错内存、崩在离现场很远的地方。</p>
+<blockquote>
+<p>v6.6 还多了一个 <code class="c">container_of_const()</code>，用 <code class="c">_Generic(ptr, ...)</code> 保住 <code class="c">const</code> 限定符——
+因为老版注释里明写着 <code class="c">WARNING: any const qualifier of @ptr is lost.</code>。</p>
+</blockquote>
 <p>详见 ch12.3.2 与 ch13。</p>
 <h2>HFT 关联</h2>
 <h3>DPDK 宏规范</h3>
@@ -2906,6 +3234,37 @@ whenever it encounters an identifier which is not a macro in an <code class="c">
    In the case of <code class="c">sizeof</code>, this is likely to cause the expression to be invalid.）。</li>
 </ol>
 <p>而「静默为假」比报错更危险，所以建议项目里默认开 <strong><code class="c">-Wundef</code></strong>。</p>
+<h4>CE 实测：<code class="c">#if</code> 表达式的三条求值规则</h4>
+<p>源文件 <code class="c">q4_if_expr.c</code>，<strong>x86-64 gcc 13.3 / arm64 gcc 13.3 / arm32 gcc 13.3 / clang 18.1.0</strong>
+四个目标全部编译通过，运行结果逐字一致：</p>
+<pre class="code" data-label="text"><code class="c">sizeof(int) = 4
+#if -1 &gt; 0u          -&gt; 真 (无符号提升)
+#if 0x7FFFFFFF+1 &gt; 0 -&gt; 真 (按 64 位算，未回绕)
+#if 7/2 == 3         -&gt; 真 (整数除法)
+#if defined(NOT_DEFINED_XYZ) -&gt; 假，且不报错
+</code></pre>
+<p><strong>规则一：<code class="c">#if</code> 里的算术按 <code class="c">intmax_t</code>/<code class="c">uintmax_t</code> 算，与目标字长无关。</strong></p>
+<p><code class="c">0x7FFFFFFF + 1 &gt; 0</code> 在 <strong>32 位 ARM 目标上同样为真</strong>——如果是 32 位算术，<code class="c">0x7FFFFFFF+1</code>
+会回绕成 <code class="c">INT32_MIN</code> 变成负数。这说明预处理期的算术宽度由<strong>编译器</strong>决定（64 位 <code class="c">intmax_t</code>），
+跟 <code class="c">-m32</code>／目标架构无关。⇒ <strong>不要指望用 <code class="c">#if</code> 里的溢出行为来探测目标字长。</strong></p>
+<p><strong>规则二：有符号与无符号混算会静默翻转，编译器只给 warning。</strong></p>
+<pre class="code" data-label="text"><code class="c">gcc 13.3:  warning: the left operand of &quot;&gt;&quot; changes sign when promoted
+clang 18.1.0: warning: left side of operator converted from negative value
+              to unsigned: -1 to 18446744073709551615
+</code></pre>
+<p><code class="c">#if -1 &gt; 0u</code> 的结果是<strong>真</strong>——<code class="c">-1</code> 被提升成 <code class="c">uintmax_t</code> 后变成 <code class="c">18446744073709551615</code>。
+这条在跨平台代码里最容易咬人：<code class="c">#if SOME_ERRNO &gt; 0</code> 这种写法，只要右边出现一个 <code class="c">u</code> 后缀
+或任何无符号量，负数分支就永远进不去，而<strong>编译器只 warning 不 error</strong>。</p>
+<p><strong>规则三：<code class="c">sizeof</code> 的报错原文，两个编译器说法完全不同。</strong></p>
+<pre class="code" data-label="text"><code class="c">gcc 13.3     : error: missing binary operator before token &quot;(&quot;
+clang 18.1.0 : error: function-like macro 'sizeof' is not defined
+</code></pre>
+<p>clang 那句直接道破了机制：预处理期 <code class="c">sizeof</code> 只是个<strong>普通标识符</strong>，后面跟 <code class="c">(</code> 就被当成
+函数式宏调用，未定义 ⇒ 替换成 0 ⇒ <code class="c">0 (int) == 4</code> 语法非法。
+gcc 只描述结果（<code class="c">(</code> 前面缺二元运算符），不解释原因。</p>
+<p>⇒ <strong>判断字长不要用 <code class="c">#if sizeof(int) == 4</code></strong>（必然编译失败）。正解是用编译器预定义的
+<code class="c">__SIZEOF_POINTER__</code> / <code class="c">__SIZEOF_LONG__</code>，或者干脆把 <code class="c">sizeof</code> 留在 C 代码里用 <code class="c">if</code>
+（<code class="c">if</code> 会被优化器折叠成常量，性能上没有区别）。</p>
 <h3>调试开关：HFT 线上关日志</h3>
 <pre class="code" data-label="C"><code class="c">/* debug.h */
 #if HFT_DEBUG_LEVEL &gt;= 2
@@ -3341,6 +3700,91 @@ struct foo { int x; };
 </tbody>
 </table></div>
 <p><strong>DPDK/内核用 include guard</strong>（可移植性优先），<strong>现代项目用 <code class="c">#pragma once</code></strong>（简洁高效）。混用也可，但通常选其一。</p>
+<h3>CE 实测：guard 缺失时，到底哪些东西会炸</h3>
+<p>「没有 include guard 就重复定义」这句话只说对了一半。实测的办法是把「头文件内容」
+写成一个宏、展开两次，等价于该头文件被无 guard 地包含了两遍（<code class="c">q6_include.c</code>）。</p>
+<p><strong>第一组：内容里有 <code class="c">static int g_counter;</code>（无初始化）</strong></p>
+<pre class="code" data-label="text"><code class="c">gcc 13.3    : error: redefinition of 'struct cfg'
+              error: conflicting types for 'cfg_mode'; have 'int(struct cfg *)'
+clang 18.1.0: error: redefinition of 'cfg'
+              error: redefinition of 'cfg_mode'
+</code></pre>
+<p>⭐ <strong>两个编译器都没有报 <code class="c">g_counter</code> 重复定义。</strong> 因为文件作用域的
+<code class="c">static int g_counter;</code> 是 <strong>tentative definition（暂定定义，C17 6.9.2）</strong>——
+没有初始化器、没有 <code class="c">extern</code>，可以出现多次，编译器最后合并成一个。
+所以「头文件里放 static 变量」在<strong>无初始化</strong>时居然能编过，只是每个 TU 各有一份副本，
+改动互不可见——这正是 14.4.2 里那个「头文件 static 变量」陷阱的底层原因。</p>
+<p><strong>第二组：改成 <code class="c">static int g_counter = 0;</code>（带初始化，即真定义）</strong></p>
+<pre class="code" data-label="text"><code class="c">gcc 13.3    : error: redefinition of 'g_counter'
+              note: previous definition of 'g_counter' with type 'int'
+clang 18.1.0: error: redefinition of 'g_counter'
+              note: previous definition is here
+</code></pre>
+<p>⇒ <strong>有没有初始化器，是「静默通过」和「编译失败」的分界线。</strong></p>
+<p><strong>结论</strong>：guard 缺失的后果不是整齐划一的「全部重定义」，而是分三档：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>头文件内容</th>
+<th>重复出现时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct</code> / <code class="c">union</code> / <code class="c">enum</code> 定义</td>
+<td>❌ 立刻 <code class="c">redefinition</code></td>
+</tr>
+<tr>
+<td><code class="c">static inline</code> 函数定义</td>
+<td>❌ 立刻 <code class="c">redefinition</code>（gcc 报 <code class="c">conflicting types</code>）</td>
+</tr>
+<tr>
+<td><code class="c">static</code> 变量（无初始化）</td>
+<td>⚠️ <strong>静默通过</strong>，每个 TU 一份副本</td>
+</tr>
+<tr>
+<td><code class="c">static</code> 变量（带初始化）</td>
+<td>❌ 立刻 <code class="c">redefinition</code></td>
+</tr>
+<tr>
+<td><code class="c">typedef</code>（重复且同类型）</td>
+<td>✅ 合法，但 <strong>C99 下 clang 会警告</strong>（见下）</td>
+</tr>
+</tbody>
+</table></div>
+<p>⇒ <strong>不要靠「它编过了」来判断头文件有没有 guard 问题</strong>——最危险的那一类（无初始化 static）
+恰恰是不报错的。</p>
+<h4>顺带实测：重复 <code class="c">typedef</code> 的编译器分界</h4>
+<p>源文件 <code class="c">q7_typedef.c</code>（同一 <code class="c">typedef</code> 写两遍），三档 <code class="c">-std=</code> × 两个编译器：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">-std=</code></th>
+<th>gcc 13.3</th>
+<th>clang 18.1.0</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">c99</code></td>
+<td>✅ 0 诊断</td>
+<td>⚠️ <code class="c">warning: redefinition of typedef 'myint_t' is a C11 feature [-Wtypedef-redefinition]</code></td>
+</tr>
+<tr>
+<td><code class="c">c11</code></td>
+<td>✅ 0 诊断</td>
+<td>✅ 0 诊断</td>
+</tr>
+<tr>
+<td><code class="c">c17</code></td>
+<td>✅ 0 诊断</td>
+<td>✅ 0 诊断</td>
+</tr>
+</tbody>
+</table></div>
+<p>「重复 <code class="c">typedef</code> 指向同一类型是合法的」是 <strong>C11 才放宽</strong>的规则（C17 6.7 p3），
+但 gcc 13.3 在 <code class="c">-std=c99</code> 下<strong>照样接受且不警告</strong>——又一次印证：
+<strong>gcc 的 <code class="c">-std=</code> 不严格卡住新特性</strong>，-std=c99 编过 ≠ 在真正的 C99 编译器上能过。</p>
 <h3>嵌套深度控制</h3>
 <pre class="code" data-label="C"><code class="c">/* a.h -&gt; b.h -&gt; c.h -&gt; d.h ... 深度递增 */
 </code></pre>
@@ -3821,6 +4265,61 @@ static inline void parse_packet(struct rte_mbuf *m)
 /* 使用 5.4+ 才有的特性 */
 </code></pre>
 <p>跨内核版本部署时，编译期检查版本号，避免运行时崩溃。</p>
+<h3>CE 实测：<code class="c">__has_include</code> 比版本号更可靠</h3>
+<p>版本号检查的前提是<strong>头文件已经存在</strong>。想先问「这个头在不在」，用 <code class="c">__has_include</code>
+（源文件 <code class="c">q8_has_include.c</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#if defined(__has_include)
+#  if __has_include(&lt;stdatomic.h&gt;)
+#    define HAVE_STDATOMIC 1
+#  else
+#    define HAVE_STDATOMIC 0
+#  endif
+#else
+#  error &quot;编译器不支持 __has_include&quot;
+#endif
+</code></pre>
+<p>四个目标 × 三档标准的实测结果：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器 / <code class="c">-std=</code></th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcc 13.3 <code class="c">-std=c17</code></td>
+<td><code class="c">HAVE_STDATOMIC=1 HAVE_EPOLL=1 HAVE_FAKE=0</code></td>
+</tr>
+<tr>
+<td>gcc 13.3 <code class="c">-std=gnu99</code></td>
+<td>同上，<strong>0 诊断</strong></td>
+</tr>
+<tr>
+<td>clang 18.1.0 <code class="c">-std=c17</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td>MinGW-w64 gcc 13.1 <code class="c">-std=gnu17</code></td>
+<td>编译阶段通过（<code class="c">#error</code> 分支未触发）</td>
+</tr>
+</tbody>
+</table></div>
+<p>三点结论：</p>
+<ol>
+<li><strong>探测不存在的头文件返回 0，不报错</strong>——<code class="c">__has_include(&lt;nonexistent_header_xyz.h&gt;)</code>
+   是合法的，这是它相对「硬编码 <code class="c">#ifdef __linux__</code> 然后 <code class="c">#include</code>」的核心优势：
+   后者在头文件不存在时直接编译失败，前者可以优雅降级。</li>
+<li>⭐ <strong><code class="c">__has_include</code> 在 <code class="c">-std=gnu99</code> 下照样可用</strong>（gcc 13.3，0 诊断）。
+   它是 C++17 才标准化的特性，<strong>C 标准至今没有纳入</strong>，全靠编译器扩展支持——
+   又一次印证 <strong>gcc 的 <code class="c">-std=</code> 不严格约束新特性可用性</strong>。</li>
+<li><strong>必须先用 <code class="c">defined(__has_include)</code> 包一层</strong>。直接写 <code class="c">#if __has_include(...)</code> 在
+   不支持的编译器上是 UB（未定义宏按 0 → <code class="c">0 (...)</code> 语法非法），
+   套上 <code class="c">defined()</code> 才能安全降级到 <code class="c">#else</code> 分支。</li>
+</ol>
+<p>⇒ <strong>选型</strong>：判断「我在哪个平台」用平台宏；判断「某个头文件/API 在不在」用 <code class="c">__has_include</code>
+配合 <code class="c">__has_builtin</code> / <code class="c">__has_attribute</code>。<strong>能力探测（feature detection）永远优于版本探测</strong>，
+因为发行版会向后移植补丁，<code class="c">LINUX_VERSION_CODE</code> 相同不代表 API 相同。</p>
 <h3>DPDK 版本检查</h3>
 <pre class="code" data-label="C"><code class="c">#include &lt;rte_version.h&gt;
 
@@ -4275,6 +4774,40 @@ extern int counter;   /* 声明 */
 int counter = 0;      /* 定义 */
 </code></pre>
 <p><code class="c">extern</code> 声明在头文件，定义在 <code class="c">.c</code> 文件，所有 <code class="c">.c</code> 共享同一份。</p>
+<h4>为什么这个陷阱能静默通过编译</h4>
+<p>上面 <code class="c">bad.h</code> 里写的是 <code class="c">static int counter = 0;</code>（带初始化）。如果<strong>去掉 <code class="c">= 0</code></strong>，
+在同一个 TU 里重复出现居然是合法的——见
+<a href="#s-14-4">14.4 文件包含</a> 的 CE 实测：文件作用域的 <code class="c">static int counter;</code>
+属于 <strong>tentative definition（暂定定义，C17 6.9.2）</strong>，没有初始化器、没有 <code class="c">extern</code>，
+允许多次出现，编译器最后合并成一个。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>头文件里的写法</th>
+<th>重复包含时</th>
+<th>跨 TU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">static int counter;</code></td>
+<td>静默通过</td>
+<td>每个 TU 一份副本</td>
+</tr>
+<tr>
+<td><code class="c">static int counter = 0;</code></td>
+<td><code class="c">error: redefinition of 'counter'</code></td>
+<td>每个 TU 一份副本</td>
+</tr>
+<tr>
+<td><code class="c">extern int counter;</code> + 一个 <code class="c">.c</code> 里定义</td>
+<td>通过</td>
+<td><strong>全局唯一</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>⇒ 想「共享计数器」必须走 <code class="c">extern</code> + 单点定义；误用 <code class="c">static</code> 时，
+<strong>带初始化会在编译期就炸（运气好），不带初始化会一路绿灯跑到运行期才发现计数对不上（运气差）</strong>。</p>
 <h3><code class="c">static inline</code> 函数可以放头文件</h3>
 <pre class="code" data-label="C"><code class="c">/* util.h */
 static inline int min_int(int a, int b) {
@@ -4475,6 +5008,55 @@ int generated_func(void) { return 0; }
 /* 报错时显示 template.dt:50，而非 generated.c:200 */
 </code></pre>
 <p>HFT 工程极少用 <code class="c">#line</code>，除非有代码生成器（如协议解析器生成器）。日常代码不要用——会干扰调试。</p>
+<h3>CE 实测：<code class="c">#pragma pack</code> / <code class="c">#line</code> / <code class="c">#warning</code> / <code class="c">_Pragma</code> 的真实输出</h3>
+<p>源文件 <code class="c">q5_pragma.c</code>，gcc 13.3 与 clang 18.1.0、<code class="c">-O0 -Wall</code>，运行结果逐字一致：</p>
+<pre class="code" data-label="text"><code class="c">sizeof(natural_s) = 12
+sizeof(packed_s)  = 7
+offsetof packed i = 1
+after #line: virtual_file.c:1000
+</code></pre>
+<p><strong><code class="c">#pragma pack(push,1)</code> 确实生效</strong>：同样的 <code class="c">{char; int; short;}</code>，自然对齐 12 字节，
+<code class="c">pack(1)</code> 后压到 7 字节，<code class="c">i</code> 的偏移从 4 变成 1。协议头解析必须靠它，
+但代价是 <code class="c">i</code> 变成<strong>未对齐访问</strong>——x86 能扛，部分 ARM 平台直接 SIGBUS。</p>
+<p><strong>⭐ <code class="c">#line</code> 连诊断信息一起改写</strong>——这是最容易忽略的一点：</p>
+<pre class="code" data-label="text"><code class="c">#line 1000 &quot;virtual_file.c&quot;
+    printf(...);          /* 这行是 1000 */
+#warning &quot;...&quot;            /* 这行是 1002 */
+
+gcc:  virtual_file.c:1002:2: warning: #warning &quot;这是一个编译期警告，不会中断编译&quot; [-Wcpp]
+clang: virtual_file.c:1002:2: warning: &quot;这是一个编译期警告，不会中断编译&quot; [-W#warnings]
+</code></pre>
+<p><code class="c">#warning</code> 明明写在源文件的第 40 行，报出来的却是 <code class="c">virtual_file.c:1002</code>——
+<strong>文件名和行号都被 <code class="c">#line</code> 换掉了</strong>。所以代码生成器必须精确维护 <code class="c">#line</code>，
+否则报错指向的位置会骗人。</p>
+<p><strong><code class="c">#error</code> 与 <code class="c">#warning</code> 的分界</strong>（源文件 <code class="c">q5b_error.c</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>未提供 <code class="c">-DREQUIRED_VERSION</code></td>
+<td><code class="c">error: #error "REQUIRED_VERSION 必须在命令行用 -D 提供"</code>，<strong>build 失败</strong></td>
+</tr>
+<tr>
+<td>提供 <code class="c">-DREQUIRED_VERSION=1</code></td>
+<td>编译通过、正常运行</td>
+</tr>
+</tbody>
+</table></div>
+<p>⇒ <code class="c">#warning</code> 只出声不阻断，<code class="c">#error</code> 一定阻断。想让「忘了定义」变成硬失败，只能用 <code class="c">#error</code>。</p>
+<p><strong><code class="c">_Pragma</code> 是唯一能把 <code class="c">#pragma</code> 塞进宏的写法</strong>（<code class="c">q5_pragma.c</code> 里的 <code class="c">WARN(msg)</code>）：</p>
+<pre class="code" data-label="text"><code class="c">gcc:   &lt;source&gt;:18:22: note: '#pragma message: warn: 来自 _Pragma 的构建信息'
+clang: virtual_file.c:1003:5: warning: warn: 来自 _Pragma 的构建信息 [-W#pragma-messages]
+</code></pre>
+<p>写法是两层：<code class="c">DO_PRAGMA(x) _Pragma(#x)</code> 先把参数变成字符串字面量，再交给 <code class="c">_Pragma</code>。
+直接写 <code class="c">#pragma</code> 在宏体里是非法的（<code class="c">#</code> 在宏体里是字符串化操作符，不是指令）。
+注意 gcc 把它降级为 <strong>note</strong>，clang 是 <strong>warning</strong>——
+⇒ <strong>依赖 <code class="c">#pragma message</code> 做构建断言时，两边都得看，且都不能靠退出码判断。</strong></p>
 <h3><code class="c">#undef</code> — 取消宏定义</h3>
 <pre class="code" data-label="C"><code class="c">#define TEMP_DEBUG 1
 
