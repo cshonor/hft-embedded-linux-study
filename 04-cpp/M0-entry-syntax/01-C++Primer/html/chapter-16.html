@@ -897,6 +897,144 @@ Array&lt;int, n&gt; a;                   // ❌ 实测报 non-type template argu
 constexpr int N = 10;
 Array&lt;int, N&gt; b;                   // ✅
 </code></pre>
+<h3>CE 实测：<code class="c">std::array&lt;T,N&gt;</code> 的 N 为什么必须写进 <code class="c">template&lt;&gt;</code></h3>
+<blockquote>
+<p>gcc 13.2 / clang 18.1.0，<code class="c">-std=c++20 -O0</code>，两份源码输出逐字一致。</p>
+</blockquote>
+<p><code class="c">std::array</code> 的第二个模板参数声明是 <code class="c">template&lt;typename _Tp, std::size_t _Nm&gt;</code>——<strong>长度是非类型参数，属于类型的一部分</strong>，不是随对象走的值。所以「长度」只能出现在模板参数位置，三种写法实测：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>实测结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">template&lt;class T, size_t N&gt; void f(const std::array&lt;T,N&gt;&amp;)</code></td>
+<td>✅ N 自动推导：<code class="c">N=3 / 5 / 4 / 8</code>；<code class="c">std::array&lt;float,4&gt;</code> 也接得住（T 一起推导）</td>
+</tr>
+<tr>
+<td><code class="c">void f(const std::array&lt;int,6&gt;&amp;)</code></td>
+<td>✅ 但只收 N=6，传别的长度直接失败</td>
+</tr>
+<tr>
+<td><code class="c">void f(const std::array&lt;int, size_t N&gt;&amp;)</code></td>
+<td>❌ 编译失败</td>
+</tr>
+</tbody>
+</table></div>
+<p>第三种的错误原文（把机制直接说破了）：</p>
+<pre class="code" data-label="text"><code class="c">gcc 13.2    : error: template argument 2 is invalid
+              error: invalid template-id
+clang 18.1.0: error: type-id cannot have a name
+              error: template argument for non-type template parameter must be an expression
+              note: template parameter is declared here
+                    array:93 | template&lt;typename _Tp, std::size_t _Nm&gt;
+</code></pre>
+<p>参数列表里的 <code class="c">size_t N</code> 是<strong>声明符</strong>（在声明一个变量），而模板实参位置只接受<strong>表达式</strong>——两者不是同一种语法槽位，所以根本没法写进去。</p>
+<p><strong>「不同 N 是不同类型」实测</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">std::is_same_v&lt;std::array&lt;int,3&gt;, std::array&lt;int,5&gt;&gt;   // 0
+std::is_same_v&lt;std::array&lt;int,3&gt;, std::array&lt;long,3&gt;&gt;  // 0
+</code></pre>
+<pre class="code" data-label="text"><code class="c">want4(a3);   // want4 收 const std::array&lt;int,4&gt;&amp;，传的是 std::array&lt;int,3&gt;
+error: invalid initialization of reference of type 'const std::array&lt;int, 4&gt;&amp;'
+       from expression of type 'std::array&lt;int, 3&gt;'
+</code></pre>
+<h4>⚠️ 两个讲义里通常不提的坑</h4>
+<p><strong>坑 1：<code class="c">array&lt;T,N&gt;</code> → <code class="c">array&lt;const T,N&gt;</code> 没有隐式转换。</strong>
+<code class="c">int*</code> 能转 <code class="c">const int*</code>，但 <code class="c">std::array&lt;int,3&gt;</code> 转不了 <code class="c">std::array&lt;const int,3&gt;</code>——类模板不会自动给元素加 const：</p>
+<pre class="code" data-label="text"><code class="c">want_const_elem(a3);   // 形参写作 const std::array&lt;const int,3&gt;&amp;
+error: invalid initialization of reference of type 'const std::array&lt;const int, 3&gt;&amp;'
+       from expression of type 'std::array&lt;int, 3&gt;'
+</code></pre>
+<p>⇒ 固定长度形参就写 <code class="c">const std::array&lt;T,N&gt;&amp;</code>，让 <code class="c">T</code> 自己推导；不要手写 <code class="c">array&lt;const T,N&gt;</code> 去「加 const」，那反而把调用方全挡在外面。</p>
+<p><strong>坑 2：形参引用上 <code class="c">.size()</code> 不是常量表达式。</strong>
+<code class="c">size()</code> 确实是 <code class="c">constexpr</code> 成员函数，但 <code class="c">arr</code> 是<strong>形参引用</strong>，编译期看不到它的值：</p>
+<pre class="code" data-label="cpp"><code class="c">static_assert(N == arr.size(), &quot;...&quot;);   // ❌
+</code></pre>
+<pre class="code" data-label="text"><code class="c">gcc 13.2    : error: non-constant condition for static assertion
+              error: 'arr' is not a constant expression
+clang 18.1.0: error: static assertion expression is not an integral constant expression
+              note: function parameter 'arr' with unknown value cannot be used in a constant expression
+</code></pre>
+<p>⇒ 「N 和 <code class="c">arr.size()</code> 等价」<strong>只在运行期成立</strong>。编译期要长度只能用 <code class="c">N</code> 或 <code class="c">std::tuple_size_v&lt;std::array&lt;T,N&gt;&gt;</code>。反过来，容器本身是 <code class="c">constexpr</code> 对象时就没问题：<code class="c">constexpr std::array&lt;int,3&gt; g{1,2,3}; static_assert(g.size() == 3);</code> ✅</p>
+<h4>⭐ <code class="c">N = 0</code> 是合法长度</h4>
+<pre class="code" data-label="cpp"><code class="c">std::array&lt;int, 0&gt; a0{};
+// 实测：a0.size() == 0，sizeof(a0) == 1，a0.data() == nullptr，a0.begin() == a0.end()
+</code></pre>
+<p>模板函数能正常接住 <code class="c">N=0</code>（循环体一次不执行），但注意 <code class="c">sizeof</code> 是 1 不是 0——任何完整对象类型至少占 1 字节。</p>
+<h3>CE 实测：每个 N 一份代码，代价与收益</h3>
+<p>模板版 <code class="c">sum_tmpl&lt;N&gt;</code> 用 N=3/5/8 各调一次，<code class="c">-O0</code> 下目标文件里有三个独立符号：</p>
+<pre class="code" data-label="text"><code class="c">long sum_tmpl&lt;3ul&gt;(std::array&lt;int, 3ul&gt; const&amp;)
+long sum_tmpl&lt;5ul&gt;(std::array&lt;int, 5ul&gt; const&amp;)
+long sum_tmpl&lt;8ul&gt;(std::array&lt;int, 8ul&gt; const&amp;)
+sum_span(std::span&lt;int const, 18446744073709551615ul&gt;)     ← span 版只有这一个
+</code></pre>
+<p>但代码膨胀换来的不只是「多几份」，<code class="c">-O2</code> 下优化质量差距明显：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>模板版（N 是编译期常量）</th>
+<th><code class="c">std::span</code> 版（长度是运行期值）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>N=3</td>
+<td>完全展开，4 条 <code class="c">movsx</code>+<code class="c">add</code>，无循环</td>
+<td>内联后 gcc 恢复出常量，同样展开</td>
+</tr>
+<tr>
+<td>N=5</td>
+<td><strong>完全展开</strong>（12 条，无循环）</td>
+<td><strong>仍是循环</strong>：<code class="c">lea rcx,[rdi+20]</code> + <code class="c">cmp/jne</code> 回边</td>
+</tr>
+<tr>
+<td>N=8</td>
+<td>SIMD：<code class="c">movdqu</code> + <code class="c">pcmpgtd</code>/<code class="c">paddq</code></td>
+<td>SIMD（同样向量化，但要先取长度）</td>
+</tr>
+</tbody>
+</table></div>
+<p>⇒ <code class="c">N</code> 是编译期常量时，编译器知道确切迭代次数，能按 N 展开或向量化；把长度降级成 <code class="c">std::span</code> 的运行期值后，<strong>N=5 这一档就退化成循环了</strong>。所以「模板版代码膨胀」不是纯缺点——热路径上它换来的是无分支、无回边的直线代码。</p>
+<p>选型（HFT 视角）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>选择</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>长度固定且已知，热路径</td>
+<td><code class="c">template&lt;class T, size_t N&gt; f(const std::array&lt;T,N&gt;&amp;)</code></td>
+<td>N 编译期常量 → 展开/向量化，零分支</td>
+</tr>
+<tr>
+<td>长度固定，但函数体很大</td>
+<td><code class="c">f(std::span&lt;const T, N&gt;)</code>（静态 extent）</td>
+<td>只实例化一份，长度写错仍编译失败</td>
+</tr>
+<tr>
+<td>长度运行期才定</td>
+<td><code class="c">f(std::span&lt;const T&gt;)</code></td>
+<td>一份代码，代价是丢掉按 N 展开</td>
+</tr>
+<tr>
+<td>长度要变</td>
+<td><code class="c">std::vector</code></td>
+<td><code class="c">std::array</code> 的 N 编译期定死，改不了</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><code class="c">std::span</code> 是 <strong>C++20</strong> 起的：<code class="c">-std=c++17</code> 下报 <code class="c">'span' is not a member of 'std'</code> / <code class="c">note: 'std::span' is only available from C++20 onwards</code>。</p>
+</blockquote>
+<p><strong>补充</strong>：<code class="c">std::array</code> 支持 C++17 CTAD，<code class="c">std::array a{1,2,3};</code> 推导为 <code class="c">std::array&lt;int,3&gt;</code>（实测 <code class="c">is_same_v&lt;decltype(a), std::array&lt;int,3&gt;&gt;</code> = 1），调用方连 <code class="c">&lt;int,3&gt;</code> 都不用写——但 N 依旧是类型的一部分，只是由编译器补全。</p>
 <h3>3. 模板的默认实参</h3>
 <p>模板参数可以有默认值（类似函数默认实参）：</p>
 <pre class="code" data-label="cpp"><code class="c">template &lt;typename T, typename Container = std::vector&lt;T&gt;&gt;
@@ -1045,10 +1183,16 @@ Array&lt;double, 100&gt; b;    // 不同类型，不能混用
 <p><strong>HFT 视角</strong>：<code class="c">std::array&lt;T, N&gt;</code> 是非类型参数的典范——栈上固定大小数组，零堆分配，cache 友好。HFT 热路径上常用 <code class="c">std::array&lt;double, 64&gt;</code> 替代 <code class="c">std::vector&lt;double&gt;</code>，避免堆分配和扩容开销。</p>
 </blockquote>
 <h2>常见错误</h2>
-<h3>错误 1：非类型参数用浮点数</h3>
-<pre class="code" data-label="cpp"><code class="c">template &lt;double D&gt; class X { };   // ❌ 浮点不能作非类型参数
+<h3>错误 1：非类型参数用浮点数（C++17 及以前 ❌，C++20 起 ✅）</h3>
+<pre class="code" data-label="cpp"><code class="c">template &lt;double D&gt; class X { };   // C++17 ❌ / C++20 ✅
 </code></pre>
-<p>C++ 标准不允许浮点非类型参数（历史原因）。<strong>替代</strong>：用整数 + 缩放（如用毫秒整数表示时间），或 <code class="c">constexpr</code> 函数转换。</p>
+<p>⚠️ 本条下文与 §2 曾自相矛盾，这里以实测为准（gcc 13.2 与 clang 18.1.0 结论一致）：</p>
+<pre class="code" data-label="text"><code class="c">-std=c++17  gcc  : error: 'double' is not a valid type for a template non-type parameter
+-std=c++17  clang: error: a non-type template parameter cannot have type 'double' before C++20
+-std=c++20  gcc  : 编译通过，X&lt;1.5&gt;::value == 1.5
+-std=c++20  clang: 编译通过，X&lt;1.5&gt;::value == 1.5
+</code></pre>
+<p>C++20 把非类型参数的要求从「整型/指针/引用」放宽成了「结构化类型」（成员公开、可 <code class="c">==</code> 比较），浮点与某些字面类类型因此被放行。<strong>替代</strong>（在 C++17 及以前）：用整数 + 缩放（如用毫秒整数表示时间），或 <code class="c">constexpr</code> 函数转换。</p>
 <h3>错误 2：忘记 <code class="c">typename</code> 指明依赖类型</h3>
 <pre class="code" data-label="cpp"><code class="c">template &lt;typename T&gt;
 void f(T &amp;c) {
@@ -1070,6 +1214,7 @@ Array&lt;int, 20&gt; b;
 a = b;    // ❌ 不同类型，不能赋值
 </code></pre>
 <p>非类型参数是类型的一部分——<code class="c">Array&lt;int,10&gt;</code> 和 <code class="c">Array&lt;int,20&gt;</code> 是完全不同的类型。若需要"任意大小"，用 <code class="c">std::vector</code>（运行期大小）。</p>
+<p>标准库里最常撞上这条的就是 <code class="c">std::array&lt;T,N&gt;</code>：<code class="c">std::array&lt;int,3&gt;</code> 与 <code class="c">std::array&lt;int,5&gt;</code> 是两个无关类型，所以「接收任意长度的 <code class="c">std::array</code>」只能把 <code class="c">N</code> 也写成模板参数（详见上文 CE 实测段）。</p>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：以下哪个<strong>不能</strong>作为模板的非类型参数？</p>
 <p>A. <code class="c">int</code> 整型常量
@@ -1078,7 +1223,7 @@ C. <code class="c">double</code> 浮点常量
 D. 指向外部对象的指针</p>
 <details>
 <summary>答案</summary>
-<p><strong>C</strong>。C++ 标准不允许浮点数作为非类型参数。整型（含 <code class="c">size_t</code>）、枚举、指针、引用、<code class="c">auto</code>（C++17）都可以。这是历史遗留限制，C++20 仍未放开。</p>
+<p><strong>C</strong>（仅对 C++17 及以前成立）。整型（含 <code class="c">size_t</code>）、枚举、指针、引用、<code class="c">auto</code>（C++17）在 C++11 起就可以；浮点是 <strong>C++20 才放开</strong>的（见「错误 1」的实测）。若题目默认 C++17 标准，答案是 C；C++20 下四个选项全都能作非类型参数。</p>
 </details>
 <p><strong>2. 判断题</strong>：在模板代码中，<code class="c">Container::iterator</code> 这种形式（<code class="c">Container</code> 是模板参数）必须写成 <code class="c">typename Container::iterator</code> 才能作为类型使用。</p>
 <details>
@@ -1133,6 +1278,39 @@ static_assert(FixedBuffer&lt;int,16&gt;::capacity() == 16, &quot;&quot;);  // �
 </code></pre>
 <p>要点：非类型参数 <code class="c">N</code>、<code class="c">static constexpr capacity()</code> 可编译期求值、栈上数组零堆分配、<code class="c">static_assert</code> 验证。这是 HFT 热路径的典型模式。</p>
 </details>
+<p><strong>5. 踩坑题</strong>：想写一个「接收任意长度 <code class="c">std::array</code>」的函数，下面三种写法各是什么结果？</p>
+<pre class="code" data-label="cpp"><code class="c">// (a)
+template &lt;class T, std::size_t N&gt; void f(const std::array&lt;T, N&gt;&amp; a);
+// (b)
+void f(const std::array&lt;int, 6&gt;&amp; a);
+// (c)
+void f(const std::array&lt;int, std::size_t N&gt;&amp; a);
+</code></pre>
+<details>
+<summary>答案</summary>
+<ul>
+<li><strong>(a) ✅ 正确</strong>，也是唯一能接任意长度的写法。<code class="c">N</code> 与 <code class="c">T</code> 一起由编译器推导，<code class="c">std::array&lt;int,3&gt;</code>、<code class="c">std::array&lt;float,4&gt;</code> 都能传。</li>
+<li><strong>(b) ✅ 能编译</strong>，但只收 <code class="c">N=6</code>；传 <code class="c">std::array&lt;int,3&gt;</code> 报 <code class="c">invalid initialization of reference of type 'const std::array&lt;int, 4&gt;&amp;' from expression of type 'std::array&lt;int, 3&gt;'</code>。</li>
+<li><strong>(c) ❌ 编译失败</strong>。参数列表里的 <code class="c">std::size_t N</code> 是<strong>声明符</strong>（在声明一个变量），而模板实参位置只接受<strong>表达式</strong>，两者不是同一种语法槽位：</li>
+</ul>
+<pre class="code" data-label="text"><code class="c">gcc 13.2     : error: template argument 2 is invalid
+               error: invalid template-id
+clang 18.1.0 : error: type-id cannot have a name
+               error: template argument for non-type template parameter must be an expression
+</code></pre>
+<p>一句话：<strong>长度属于类型，就只能出现在 <code class="c">template&lt;...&gt;</code> 里。</strong></p>
+</details>
+<p><strong>6. 判断题</strong>：<code class="c">std::array::size()</code> 是 <code class="c">constexpr</code> 成员函数，所以在模板函数里写 <code class="c">static_assert(N == arr.size(), "")</code> 一定成立。</p>
+<details>
+<summary>答案</summary>
+<p><strong>错</strong>。<code class="c">size()</code> 确实是 <code class="c">constexpr</code>，但 <code class="c">arr</code> 是<strong>形参引用</strong>——编译期看不到它的值，整个表达式不是常量表达式：</p>
+<pre class="code" data-label="text"><code class="c">gcc 13.2     : error: non-constant condition for static assertion
+               error: 'arr' is not a constant expression
+clang 18.1.0 : error: static assertion expression is not an integral constant expression
+               note: function parameter 'arr' with unknown value cannot be used in a constant expression
+</code></pre>
+<p>⇒ 「<code class="c">N</code> 和 <code class="c">arr.size()</code> 等价」<strong>只在运行期成立</strong>。编译期要长度用 <code class="c">N</code> 或 <code class="c">std::tuple_size_v&lt;std::array&lt;T,N&gt;&gt;</code>。反过来，容器本身是 <code class="c">constexpr</code> 对象时就没问题：<code class="c">constexpr std::array&lt;int,3&gt; g{1,2,3}; static_assert(g.size() == 3);</code> ✅</p>
+</details>
 <h2>可跑的例子</h2>
 <p><strong><code class="c">examples/16.2-template-params.cpp</code></strong> —— 编译期定尺寸的环形缓冲。</p>
 <pre class="code" data-label="shell"><code class="c">clang++ -std=c++20 examples/16.2-template-params.cpp -o /tmp/demo &amp;&amp; /tmp/demo
@@ -1148,6 +1326,24 @@ sizeof(RingBuffer&lt;long,1024&gt;) = 8208
 <blockquote>
 <p>行情窗口、滑点统计、固定槽位对象池全是这个形状。编译期尺寸换来的：零堆分配、无间接寻址、优化器可利用的边界信息。</p>
 </blockquote>
+<p><strong><code class="c">examples/16.2-array-nttp.cpp</code></strong> —— 非类型参数作形参的三种写法（<code class="c">std::array&lt;T,N&gt;</code> 的 N）。</p>
+<pre class="code" data-label="shell"><code class="c">g++ -std=c++20 -Wall -Wextra examples/16.2-array-nttp.cpp -o /tmp/demo &amp;&amp; /tmp/demo
+</code></pre>
+<p>真实输出（gcc 13.2 与 clang 18.1.0 逐字一致，<code class="c">-Wall -Wextra</code> 下 0 诊断）：</p>
+<pre class="code" data-label="text"><code class="c">N=3 size=3  1 2 3
+N=5 size=5  10 20 30 40 50
+N=4 size=4  1 2 3 4
+N=8 size=8  1 2 3 4 5 6 7 8
+fixed size=6
+same type (3 vs 5)?      0
+same type (int,3 vs long,3)? 0
+N=0: size=0 sizeof=1 data=(nil) begin==end? 1
+N=0 size=0
+CTAD: is array&lt;int,3&gt;? 1  N=3
+sum_tmpl(a1)=6 sum_tmpl(a4)=36 sum_span(a2)=150
+sizeof(array&lt;int,256&gt;)=1024
+</code></pre>
+<p><strong>看出什么了？</strong> 同一个 <code class="c">show_array</code> 接住了 <code class="c">int/3</code>、<code class="c">int/5</code>、<code class="c">float/4</code>、<code class="c">int/8</code>、<code class="c">int/0</code> 五种长度——N 由编译器推导，调用方一个字都不用传。文件末尾注释里另附三个<strong>反例</strong>的错误原文（把 <code class="c">N</code> 写进参数列表、形参引用上用 <code class="c">.size()</code> 做 <code class="c">static_assert</code>、<code class="c">array&lt;T,N&gt;</code>→<code class="c">array&lt;const T,N&gt;</code>），取消注释即可复现。</p>
 <h2>延伸</h2>
 <ul>
 <li><a href="#s-16-1">16.1 定义模板</a>——函数/类模板基础</li>
