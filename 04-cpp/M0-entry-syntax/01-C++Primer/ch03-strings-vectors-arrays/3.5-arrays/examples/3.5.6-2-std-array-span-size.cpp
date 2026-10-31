@@ -17,6 +17,7 @@
 //   take16(...):     ret                             <- 静态 extent 零运行时开销
 
 #include <array>
+#include <type_traits>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
