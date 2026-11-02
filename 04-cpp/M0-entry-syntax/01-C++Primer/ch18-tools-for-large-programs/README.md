@@ -77,6 +77,10 @@ int main() {
 
 **`using` 声明：** `using math::abs;` 引入特定名称；`using namespace math;` 引入整个命名空间（慎用，可能引入意外冲突）。
 
+> 为什么人人都说别写 `using namespace std;`？见 [18.2 ⑥ 为什么全世界的 C++ 开发者都说别用 using namespace](./18.2-命名空间namespace.md)：
+> 撞车率实测 63–75%、标准升级让源码变脆（C++14 能编 / C++17 二义）、头文件传染、ADL 被破坏，
+> 以及一条反方澄清（它不是性能问题——编译与二进制实测无差异）。
+
 **复习：** → [18.2 命名空间 namespace](./18.2-命名空间namespace.md)
 </details>
 
