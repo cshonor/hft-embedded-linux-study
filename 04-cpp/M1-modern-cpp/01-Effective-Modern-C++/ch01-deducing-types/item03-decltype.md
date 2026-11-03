@@ -49,6 +49,26 @@ int main() {
 
 `decltype` 是**完全不加工**的那一个：`auto` 永远走"按值"那套（除非你自己写 `&`），`decltype` 则 `const int&` 进去就 `const int&` 出来。
 
+### "不求值"的运行时证据
+
+`decltype(foo())` 拿到的是 `foo` 的返回类型，`foo` 不会被调用——用带副作用的函数 + 计数器可实测证明（clang 23.1.0，`-std=c++17 -Wall`）：
+
+```cpp
+int g_calls = 0;
+int foo() { ++g_calls; return 42; }
+
+int main() {
+    static_assert(is_same_v<decltype(foo()), int>);  // 纯类型查询
+    std::printf("calls before: %d\n", g_calls);      // 0
+    decltype(foo()) r = 0;                           // foo 不执行
+    std::printf("calls after : %d\n", g_calls);      // 仍 0
+    int real = foo();                                // 真调用才 +1
+    std::printf("calls real  : %d\n", g_calls);      // 1
+}
+```
+
+实测输出 `calls before: 0` / `calls after: 0` / `calls real: 1`——和 `sizeof` 一样，`decltype` 的操作数是**不求值上下文**，纯编译期查询，零运行时开销。另外混合算术提升照常生效：`decltype(a + d)`（`int` + `double`）推成 `double`（`static_assert` 实测通过）。
+
 ### 加括号陷阱的机制
 
 `decltype(x) a = 1;` 是 `int`，而 `decltype((x)) b = x;` 是 `int&`——`x` 是"未加括号的变量名"走分支一，`(x)` 是**表达式**走分支二，左值给 `int&`。`decltype(auto)` 用在变量声明上同样踩坑（实测：`decltype(auto) a = x;` 是 `int`，`decltype(auto) b = (x);` 是 `int&`）。注意 `decltype(cx)` 与 `decltype((cx))` 都是 `const int&`，但机制不同（声明类型 vs 左值表达式）——巧合掩盖机制，别记特例，记两条分支。
@@ -239,7 +259,7 @@ vb[0] is bool? 0 sizeof=16
 ## 常见错误（新手踩坑）
 
 1. **`decltype((x))` 当 `decltype(x)` 用**。定义变量时 `decltype((x)) y = ...;` 会推成引用，绑错对象甚至改到不想改的东西。
-2. **以为 `decltype` 会求值**。`decltype` 的操作数是不求值上下文，`decltype(getRef())` 不会真的调用——和 `sizeof` 一样，纯编译期查询。
+2. **以为 `decltype` 会求值**。`decltype` 的操作数是不求值上下文，`decltype(getRef())` 不会真的调用——和 `sizeof` 一样，纯编译期查询。运行时可实测：给 `foo()` 加全局计数器，`decltype(foo()) r = 0;` 前后计数器都是 0（见上文运行时证据）。
 3. **用 `auto` 写转发包装器**。`auto f(T&& x) { return g(std::forward<T>(x)); }` 把 `g` 返回的引用剥成值，调用方拿到拷贝。转发必须用 `decltype(auto)`。
 4. **`return (x);`**。在 `decltype(auto)` 函数里 = 返回局部引用 = 悬垂。有 `-Wreturn-stack-address` 兜底，但别把安全网当设计。
 5. **在求值上下文调用 `std::declval`**。它只有声明没有定义，libc++ 直接 `static_assert` 拦下（`can only be used in an unevaluated context`）。
