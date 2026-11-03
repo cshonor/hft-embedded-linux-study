@@ -41,6 +41,31 @@ f(3.14);           // T = double
 
 ---
 
+## 术语分层：模板参数、模板实参、函数形参别混
+
+三个词在讨论推导时极易混用，先钉准：
+
+| 术语 | 英文 | 是什么 | 例子（`f(42)`） |
+|---|---|---|---|
+| **模板参数** | template parameter | `template<...>` 尖括号里的占位符 | `T` |
+| **模板实参** | template argument | 调用时实际替换 `T` 的具体类型 | `int` |
+| **函数形参** | function parameter | 函数括号里声明的变量 | `param` |
+
+三者关系一句话：`ParamType` 是**由模板参数构造出来的类型模式**——`T&` = `T` 加引用修饰、`const T&` = `T` 加 const 加引用、`T&&` = `T` 加右值引用修饰。推导的本质是：**让 `ParamType` 去匹配实参表达式 `expr` 的类型，反解出 `T`**（模板实参），然后把 `T` 代回 `ParamType` 得到 `param` 的最终类型。
+
+```cpp
+template<class T>        // T = 模板参数（占位符）
+void f(T& param);        // param = 函数形参，其类型 T& 就是 ParamType
+
+const int x = 42;
+f(x);                    // ParamType(T&) 匹配 expr 类型(const int) → 反解 T = const int（模板实参）
+                         // 代回 ParamType：param 的类型 = const int&
+```
+
+为什么 `ParamType` 的形状重要：反解规则由它决定——`T&` 保 const 剥引用、`T` 剥顶层 const、`T&&` 触发万能引用规则。同一个实参换个 `ParamType` 写法，反解出的 `T` 就不同，这正是下面三种形态全部分歧的根源。
+
+---
+
 ## 形态一：ParamType 是引用（`T&`）
 
 **一句话直觉：** 形参是引用时，实参的"引用性"被剥掉，const 被保留进 T。
