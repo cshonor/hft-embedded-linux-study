@@ -171,6 +171,43 @@ std::jthread t([](std::stop_token st) {
 
 **修复**：在循环条件检查 `stop_requested()`，或用 `stop_callback` 注册回调来打断阻塞。
 
+## 守卫能安全工作的两个前提
+
+### 前提 1：空线程不能 join —— 永远先 `joinable()`
+
+`std::thread` 默认构造出来是**空线程**，只占了位置、没有线程在跑：
+
+```cpp
+std::thread t1;            // 空壳：joinable() == false
+t1.join();                 // 抛 std::system_error（"Invalid argument"）
+
+std::thread t2([] { work(); });  // 构造即启动：joinable() == true
+```
+
+`std::thread` **没有两阶段**——构造函数本身就是"创建并运行"（同 `pthread_create`），不存在"实例化好了再 start"这一步。所以 guard 的析构才永远写成 `if (t.joinable()) t.join();`：守卫可能被移动走（`joinable()` 变 false）、可能空构造后再赋值，裸 join 任何空线程都会抛异常。
+
+### 前提 2：成员声明顺序 —— 数据在前，thread 在后
+
+类持有 thread 成员时，构造和析构两头靠**声明顺序**咬合：
+
+```cpp
+class Worker {
+    int result_ = 0;        // ① 先声明 → 先构造
+    std::thread t_;         // ② 后声明 → 后构造（构造时线程起跑）
+
+public:
+    Worker() : t_([this] { result_ = 42; }) {}   // 线程马上访问 result_
+    ~Worker() { if (t_.joinable()) t_.join(); }  // join 在成员销毁之前
+};
+```
+
+- **构造**：成员按**声明顺序**初始化（不看初始化列表的书写顺序）。`t_` 构造的那一刻线程就跑了，它立刻可能访问 `result_`——所以数据必须先声明。顺序写反，线程访问的是未构造对象，UB。
+- **析构**：析构函数体在成员销毁**之前**执行，成员再按声明**逆序**销毁（`t_` 先、`result_` 后）。join 写在函数体里 = 保证线程死了 `result_` 才销毁，没人再碰它。
+
+一正一反：`join()` 是唯一能把"线程活着"严格包进"数据活着"之内的操作——`detach` 撒手后这层咬合就断了（见 [2.1 线程生命周期](01-thread-lifecycle.md) 的错误 2 与实验 2 双平台实测）。这也是 `jthread` 析构同样选择 request_stop + join 的原因：**用确定性换等待**。
+
+**多线程扩展**：数量运行时决定就装容器——`std::vector<std::thread>`（thread 只能 move，用 `emplace_back` 造进去），析构里循环 join 全部。原则不变：谁拥有线程谁负责了结，跟数量无关。完整形态（任务队列 + 停止标志）见 [9.1 线程池](../ch09-advanced-thread-management/01-thread-pool.md)。
+
 ## 和 C 的区别
 
 | 特性 | C (pthread) | C++ (RAII 守卫) | C++20 (jthread) |
