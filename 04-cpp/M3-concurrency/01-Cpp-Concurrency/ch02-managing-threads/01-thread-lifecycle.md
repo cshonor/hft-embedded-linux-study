@@ -56,6 +56,33 @@ struct Functor {
 std::thread t4(Functor{});
 ```
 
+> **为什么第 4 种用 `Functor{}` 而不是 `Functor()`——most vexing parse（恼人解析）**
+>
+> C++ 铁律：一段代码**既能解析成对象定义、又能解析成函数声明时，一律按函数声明**。
+> `std::thread t(Functor());` 就中招了：参数位置的 `Functor()` 是合法的类型写法——
+> 「无参、返回 Functor 的函数」，参数名省略后就是函数指针 `Functor(*)()`。
+> 编译器实际读成的是：
+>
+> ```cpp
+> std::thread t(Functor (*fp)());  // t 是【函数】：参数 = 返回 Functor 的函数指针，返回 std::thread
+> ```
+>
+> 全程没有任何对象被构造。clang 23.1.0 实测报错原文（`t.join()` 处才炸）：
+>
+> ```
+> warning: parentheses were disambiguated as a function declaration [-Wvexing-parse]
+>     std::thread t(Functor());
+> error: member reference base type 'std::thread (Functor (*)())' is not a structure or union
+>     t.join();
+> ```
+>
+> 报错里的 `'std::thread (Functor (*)())'` 就是铁证：`t` 的类型是函数。
+>
+> 修法两种：多套一层括号 `t((Functor()))`（参数位置不再是合法声明形式），
+> 或直接用 `{}`——**`{}` 语法上不能声明函数，必然是构造对象**，本节例程统一用 `{}` 的原因。
+> lambda 以 `[` 开头没有歧义，小括号也安全，但统一 `{}` 养成习惯可免疫。
+> `()` vs `{}` 的完整取舍见 [Effective Modern C++ Item 7](../../../M1-modern-cpp/01-Effective-Modern-C++/ch03-moving-to-modern-cpp/item07-parens-vs-braces.md)。
+
 ### join vs detach
 
 ```cpp
@@ -134,7 +161,7 @@ void buggy() {
 ```cpp
 std::thread t(func);
 t.join();
-t.join();  // 错误！join 后不再 joinable，再次 join 是 UB
+t.join();  // 错误！join 后不再 joinable，再次 join 抛 std::system_error
 // join() 前应检查 joinable()
 ```
 
@@ -203,6 +230,12 @@ t2:Hello Concurrent World
 
 标准里 `joinable()` 等价于 `get_id() != std::thread::id()`；线程函数返回**不会**自动把 id 清空。
 所以只要没 join/detach，析构照样 `terminate`——哪怕线程早就退出了。
+
+### joinable 三钉
+
+1. **joinable 是 `std::thread` 对象的属性，不是执行流的状态。** 执行流本身（跑着/阻塞/已退出）没有任何接口可查；`joinable()` 只回答一个问题——"这个句柄对象还关联着一个**从未 join/detach 过**的执行流吗"。是句柄的账本，不是线程的生死。
+2. **对非 joinable 对象调 `join()` 是抛异常，不是崩溃。** 结果是 `std::system_error`；`if (t.joinable()) t.join();` 防的是异常。非 joinable 三种来源：默认构造的空壳、被 `std::move` 走的空壳、已 join/detach 过的。
+3. **`if (joinable()) join()` 的场景是生命周期管理，不是线程间同步。** 它最典型的位置是析构函数 / RAII 守卫（见 [2.4](04-raii-guard.md)）：确保"线程死了，数据才销毁"。`join()` 调用本身确实是同步点（阻塞等待），但写这个组合的动机是所有权与销毁顺序，别归错类。
 
 ### 实验 2：detach —— 两边结果完全相反
 
@@ -295,7 +328,7 @@ t1.join();  // 安全吗？
 <details>
 <summary>答案与复习指引</summary>
 
-**不安全**。`std::move(t1)` 后，`t1` 不再 joinable，调用 `t1.join()` 在非 joinable 线程上是 UB（可能抛 `system_error`）。
+**不安全**。`std::move(t1)` 后，`t1` 不再 joinable，对非 joinable 对象调 `join()` 是明确定义的行为——抛 `std::system_error`（不是 UB）。
 
 修复：移动后只对 `t2` 操作。或加检查：`if (t1.joinable()) t1.join();`
 
