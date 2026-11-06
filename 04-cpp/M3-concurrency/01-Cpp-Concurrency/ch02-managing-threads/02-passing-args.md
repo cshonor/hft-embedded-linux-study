@@ -98,6 +98,22 @@ static_assert failed due to requirement
 
 加上 `std::ref(s)` 后两台机器都编译通过，实测 `s` 从 `"t1"` 变成 `"t1!"`，证明引用真的传进去了（不是副本）。
 
+#### ⚠ 修正一个流行说法：「裸传引用会编译报错」只对**非 const** 引用成立
+
+上面的实测用的是 `std::string&`（非 const），编译器确实报错挡下了。但形参是 `const T&` 时**能编译、能跑，传的是拷贝**——没有任何报错：
+
+```cpp
+void log(const std::string& msg);
+
+std::string s = "tick";
+std::thread t(log, s);   // 编译通过！但传的是副本，不是 s 的引用
+// 你以为在共享，实际各改各的——静默坑，编译器不会提醒你
+```
+
+原因：decay-copy 出的副本是右值，`const T&` 本来就能绑右值，所以 `is_invocable` 检查通过。
+
+**经验法则**：想让线程函数看到原对象（不管 const 不 const），就写 `std::ref` / `std::cref`；不写就一定是拷贝，别指望编译器报错提醒。
+
 ### 方式 3：传指针
 
 ```cpp
@@ -175,6 +191,50 @@ std::thread t(func, std::string("hello"));  // 实际安全——线程会拷贝
 std::string s = "hello";
 std::thread t2(func, std::cref(s));  // 明确传引用
 ```
+
+### 错误 4：const char* 局部缓冲区——隐式转换发生在新线程（CCiA 经典坑）
+
+```cpp
+void f(int i, const std::string& s);
+
+void oops() {
+    char buf[64];
+    snprintf(buf, sizeof buf, "%d", 42);
+    std::thread t(f, 3, buf);   // 拷贝进内部存储的只是 char* 指针！
+    t.detach();
+}   // buf 在这里销毁 —— 新线程「此刻」才执行 const char* → std::string 转换 → 悬垂，UB
+```
+
+机制拆解：`"hello"` 这类实参的类型是 `const char*`，**被 decay-copy 的是指针本身**；
+直到新线程里真正 `invoke` 时，才由这个指针构造临时 `std::string` 绑定到 `const std::string&`。
+传字符串字面量之所以安全，纯粹因为字面量是静态生存期；换局部 buffer 就炸。
+
+**修复：在构造函数处就完成转换**——转换发生在主线程，拷贝过去的是完整 string：
+
+```cpp
+std::thread t(f, 3, std::string(buf));  // 安全
+```
+
+#### 实测：ASan 确定性抓到悬垂（2026-11-06，macOS arm64 / clang 23.1 / libc++）
+
+把转换时机放大（`f` 内 sleep 100ms 后再用指针，等价放大「新线程才转换」的窗口），
+`-fsanitize=address -g -O1` + `ASAN_OPTIONS=detect_stack_use_after_return=1`：
+
+```
+ERROR: AddressSanitizer: stack-use-after-scope
+READ of size 3 at 0x... thread T1
+    #2 f(int, char const*)                    demo.cpp:12
+    #3 std::__1::__invoke<...int&&, char*&&>  invoke.h:90
+    #4 std::__1::__thread_execute<...>        thread.h:170
+    #5 std::__1::__thread_proxy<...>          thread.h:178
+Address is located in stack of thread T0 ... in frame main
+    [64, 128) 'buf' (line 16) <== Memory access is inside this variable
+```
+
+两个看点：①回溯里的 `__thread_proxy → __thread_execute → __invoke` 正是
+「参数先进内部存储、新线程再从存储 invoke」的 libc++ 实现路径，存储里那个 `char*` 就是罪魁；
+②ASan 直接标出访问落在 T0 main 栈帧的 `buf` 上——跨线程栈悬垂，肉眼 review 很难稳抓，
+ASan 一开就是确定性证据（对应「先让它对（ASan/TSan），再让它快（perf）」的调试顺序）。
 
 ## 和 C 的区别
 
@@ -284,6 +344,65 @@ std::cout << s;
 HFT 典型模式：行情线程把数据 `std::move` 到无锁队列，策略线程取出处理。
 
 复习：移动 > 引用 > 拷贝。移动既高效又安全（所有权明确）。
+</details>
+
+### Q5: 下面两段代码，哪段有悬垂风险？
+
+```cpp
+void log(const std::string& msg);
+
+void a() {
+    std::string msg = "tick";
+    std::thread t(log, msg);            // A：裸传
+    t.detach();
+}
+
+void b() {
+    std::string msg = "tick";
+    std::thread t(log, std::cref(msg)); // B：cref
+    t.detach();
+}
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**A 安全，B 悬垂**——和直觉相反。
+
+A：拷贝发生在构造函数里、`msg` 销毁前，新线程用的是副本，detach 后与原变量无关。
+「默认拷贝」在这里反而是保护伞。
+
+B：`std::cref` 存的是真引用，函数返回后 `msg` 销毁，detach 的线程随时可能读到死对象——
+和错误 4 的 `char*` 是同一类 bug。
+
+**教训：detach + ref/cref 是危险组合**，除非能证明原变量活得比线程久（全局变量、
+或外层有 join 保证）。两个判据打架时（要共享但活得不够久）是设计问题，
+得改生命周期，不是靠 `std::ref` 能糊过去的。
+
+复习：判据①要不要共享原对象？要 → ref/cref；判据②原对象能不能活过线程？不能 → 拷贝或 join。
+</details>
+
+### Q6: 怎么把 `std::unique_ptr<Packet>` 传给线程？能用 `std::ref` 吗？
+
+```cpp
+void consume(std::unique_ptr<Packet> p);
+auto pkt = std::make_unique<Packet>();
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+```cpp
+std::thread t(consume, std::move(pkt));  // 正确
+// 此后 pkt 为空，所有权彻底移交新线程
+```
+
+move-only 类型不能拷贝，thread 构造内部用 move 语义接管。
+
+**不要用 `std::ref` 传 unique_ptr**：所有权语义会乱——两个线程都能解引用同一个
+`unique_ptr`，析构时双重释放。
+
+复习：独占所有权对象一律 `std::move`；`std::ref` 是给「共享但不转移所有权」的场景用的。
 </details>
 
 ---

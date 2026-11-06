@@ -398,6 +398,30 @@ struct Functor {
 };
 std::thread t4(Functor{});
 </code></pre>
+<blockquote>
+<p><strong>为什么第 4 种用 <code class="c">Functor{}</code> 而不是 <code class="c">Functor()</code>——most vexing parse（恼人解析）</strong></p>
+<p>C++ 铁律：一段代码<strong>既能解析成对象定义、又能解析成函数声明时，一律按函数声明</strong>。
+<code class="c">std::thread t(Functor());</code> 就中招了：参数位置的 <code class="c">Functor()</code> 是合法的类型写法——
+「无参、返回 Functor 的函数」，参数名省略后就是函数指针 <code class="c">Functor(*)()</code>。
+编译器实际读成的是：</p>
+<p><code class="c">cpp
+std::thread t(Functor (*fp)());  // t 是【函数】：参数 = 返回 Functor 的函数指针，返回 std::thread</code></p>
+<p>全程没有任何对象被构造。clang 23.1.0 实测报错原文（<code class="c">t.join()</code> 处才炸）：</p>
+<p><code class="c">warning: parentheses were disambiguated as a function declaration [-Wvexing-parse]
+    std::thread t(Functor());
+error: member reference base type 'std::thread (Functor (*)())' is not a structure or union
+    t.join();</code></p>
+<p>报错里的 <code class="c">'std::thread (Functor (*)())'</code> 就是铁证：<code class="c">t</code> 的类型是函数。</p>
+<p>换个角度看你本来的意图：<code class="c">std::thread t(...)</code> 你想写的是<strong>定义一个对象 <code class="c">t</code>、调它的构造函数</strong>
+（构造即启动——构造函数执行 = 线程起跑，没有"建好再 start"两步）；
+编译器却读成了「声明一个名叫 <code class="c">t</code> 的函数」——<code class="c">t</code> 连对象都不是。
+注意歧义<strong>只在实参写成 <code class="c">类型名()</code> 时存在</strong>：lambda 写法 <code class="c">t([]{...})</code> 以 <code class="c">[</code> 开头，
+语法上不可能是声明，小括号也安全；统一用 <code class="c">{}</code> 是养成习惯后免疫一切形式。</p>
+<p>修法两种：多套一层括号 <code class="c">t((Functor()))</code>（参数位置不再是合法声明形式），
+或直接用 <code class="c">{}</code>——<strong><code class="c">{}</code> 语法上不能声明函数，必然是构造对象</strong>，本节例程统一用 <code class="c">{}</code> 的原因。
+lambda 以 <code class="c">[</code> 开头没有歧义，小括号也安全，但统一 <code class="c">{}</code> 养成习惯可免疫。
+<code class="c">()</code> vs <code class="c">{}</code> 的完整取舍见 <a href="chapter-03.html#ch-3">Effective Modern C++ Item 7</a>。</p>
+</blockquote>
 <h3>join vs detach</h3>
 <pre class="code" data-label="cpp"><code class="c">std::thread t(func);
 
@@ -487,7 +511,7 @@ void buggy() {
 <h3>错误 3：重复 join</h3>
 <pre class="code" data-label="cpp"><code class="c">std::thread t(func);
 t.join();
-t.join();  // 错误！join 后不再 joinable，再次 join 是 UB
+t.join();  // 错误！join 后不再 joinable，再次 join 抛 std::system_error
 // join() 前应检查 joinable()
 </code></pre>
 <p><strong>修复</strong>：<code class="c">if (t.joinable()) t.join();</code></p>
@@ -571,6 +595,12 @@ t2:Hello Concurrent World
 </table></div>
 <p>标准里 <code class="c">joinable()</code> 等价于 <code class="c">get_id() != std::thread::id()</code>；线程函数返回<strong>不会</strong>自动把 id 清空。
 所以只要没 join/detach，析构照样 <code class="c">terminate</code>——哪怕线程早就退出了。</p>
+<h3>joinable 三钉</h3>
+<ol>
+<li><strong>joinable 是 <code class="c">std::thread</code> 对象的属性，不是执行流的状态。</strong> 执行流本身（跑着/阻塞/已退出）没有任何接口可查；<code class="c">joinable()</code> 只回答一个问题——"这个句柄对象还关联着一个<strong>从未 join/detach 过</strong>的执行流吗"。是句柄的账本，不是线程的生死。</li>
+<li><strong>对非 joinable 对象调 <code class="c">join()</code> 是抛异常，不是崩溃。</strong> 结果是 <code class="c">std::system_error</code>；<code class="c">if (t.joinable()) t.join();</code> 防的是异常。非 joinable 三种来源：默认构造的空壳、被 <code class="c">std::move</code> 走的空壳、已 join/detach 过的。</li>
+<li><strong><code class="c">if (joinable()) join()</code> 的场景是生命周期管理，不是线程间同步。</strong> 它最典型的位置是析构函数 / RAII 守卫（见 <a href="chapter-11.html#s-04">2.4</a>）：确保"线程死了，数据才销毁"。<code class="c">join()</code> 调用本身确实是同步点（阻塞等待），但写这个组合的动机是所有权与销毁顺序，别归错类。</li>
+</ol>
 <h3>实验 2：detach —— 两边结果完全相反</h3>
 <div class="tbl-wrap"><table>
 <thead>
@@ -686,7 +716,7 @@ t1.join();  // 安全吗？
 </code></pre>
 <details>
 <summary>答案与复习指引</summary>
-<p><strong>不安全</strong>。<code class="c">std::move(t1)</code> 后，<code class="c">t1</code> 不再 joinable，调用 <code class="c">t1.join()</code> 在非 joinable 线程上是 UB（可能抛 <code class="c">system_error</code>）。</p>
+<p><strong>不安全</strong>。<code class="c">std::move(t1)</code> 后，<code class="c">t1</code> 不再 joinable，对非 joinable 对象调 <code class="c">join()</code> 是明确定义的行为——抛 <code class="c">std::system_error</code>（不是 UB）。</p>
 <p>修复：移动后只对 <code class="c">t2</code> 操作。或加检查：<code class="c">if (t1.joinable()) t1.join();</code></p>
 <p>复习：移动语义转移所有权——原 thread 变成空状态（not joinable）。</p>
 </details>
@@ -803,6 +833,16 @@ std::thread t1(hello, s);   // 少了 std::ref
 <code class="c">std::string</code> 的右值绑不到 <code class="c">std::string&amp;</code> 上，所以不可调用。
 这正是 decay-copy 的含义——去掉引用和 cv 限定，按值拷一份进线程内部存储。</p>
 <p>加上 <code class="c">std::ref(s)</code> 后两台机器都编译通过，实测 <code class="c">s</code> 从 <code class="c">"t1"</code> 变成 <code class="c">"t1!"</code>，证明引用真的传进去了（不是副本）。</p>
+<h4>⚠ 修正一个流行说法：「裸传引用会编译报错」只对<strong>非 const</strong> 引用成立</h4>
+<p>上面的实测用的是 <code class="c">std::string&amp;</code>（非 const），编译器确实报错挡下了。但形参是 <code class="c">const T&amp;</code> 时<strong>能编译、能跑，传的是拷贝</strong>——没有任何报错：</p>
+<pre class="code" data-label="cpp"><code class="c">void log(const std::string&amp; msg);
+
+std::string s = &quot;tick&quot;;
+std::thread t(log, s);   // 编译通过！但传的是副本，不是 s 的引用
+// 你以为在共享，实际各改各的——静默坑，编译器不会提醒你
+</code></pre>
+<p>原因：decay-copy 出的副本是右值，<code class="c">const T&amp;</code> 本来就能绑右值，所以 <code class="c">is_invocable</code> 检查通过。</p>
+<p><strong>经验法则</strong>：想让线程函数看到原对象（不管 const 不 const），就写 <code class="c">std::ref</code> / <code class="c">std::cref</code>；不写就一定是拷贝，别指望编译器报错提醒。</p>
 <h3>方式 3：传指针</h3>
 <pre class="code" data-label="cpp"><code class="c">void worker(int* data, size_t n) {
     for (size_t i = 0; i &lt; n; i++)
@@ -898,6 +938,38 @@ std::thread t(func, std::string(&quot;hello&quot;));  // 实际安全——线�
 std::string s = &quot;hello&quot;;
 std::thread t2(func, std::cref(s));  // 明确传引用
 </code></pre>
+<h3>错误 4：const char* 局部缓冲区——隐式转换发生在新线程（CCiA 经典坑）</h3>
+<pre class="code" data-label="cpp"><code class="c">void f(int i, const std::string&amp; s);
+
+void oops() {
+    char buf[64];
+    snprintf(buf, sizeof buf, &quot;%d&quot;, 42);
+    std::thread t(f, 3, buf);   // 拷贝进内部存储的只是 char* 指针！
+    t.detach();
+}   // buf 在这里销毁 —— 新线程「此刻」才执行 const char* → std::string 转换 → 悬垂，UB
+</code></pre>
+<p>机制拆解：<code class="c">"hello"</code> 这类实参的类型是 <code class="c">const char*</code>，<strong>被 decay-copy 的是指针本身</strong>；
+直到新线程里真正 <code class="c">invoke</code> 时，才由这个指针构造临时 <code class="c">std::string</code> 绑定到 <code class="c">const std::string&amp;</code>。
+传字符串字面量之所以安全，纯粹因为字面量是静态生存期；换局部 buffer 就炸。</p>
+<p><strong>修复：在构造函数处就完成转换</strong>——转换发生在主线程，拷贝过去的是完整 string：</p>
+<pre class="code" data-label="cpp"><code class="c">std::thread t(f, 3, std::string(buf));  // 安全
+</code></pre>
+<h4>实测：ASan 确定性抓到悬垂（2026-11-06，macOS arm64 / clang 23.1 / libc++）</h4>
+<p>把转换时机放大（<code class="c">f</code> 内 sleep 100ms 后再用指针，等价放大「新线程才转换」的窗口），
+<code class="c">-fsanitize=address -g -O1</code> + <code class="c">ASAN_OPTIONS=detect_stack_use_after_return=1</code>：</p>
+<pre class="code" data-label="code"><code class="c">ERROR: AddressSanitizer: stack-use-after-scope
+READ of size 3 at 0x... thread T1
+    #2 f(int, char const*)                    demo.cpp:12
+    #3 std::__1::__invoke&lt;...int&amp;&amp;, char*&amp;&amp;&gt;  invoke.h:90
+    #4 std::__1::__thread_execute&lt;...&gt;        thread.h:170
+    #5 std::__1::__thread_proxy&lt;...&gt;          thread.h:178
+Address is located in stack of thread T0 ... in frame main
+    [64, 128) 'buf' (line 16) &lt;== Memory access is inside this variable
+</code></pre>
+<p>两个看点：①回溯里的 <code class="c">__thread_proxy → __thread_execute → __invoke</code> 正是
+「参数先进内部存储、新线程再从存储 invoke」的 libc++ 实现路径，存储里那个 <code class="c">char*</code> 就是罪魁；
+②ASan 直接标出访问落在 T0 main 栈帧的 <code class="c">buf</code> 上——跨线程栈悬垂，肉眼 review 很难稳抓，
+ASan 一开就是确定性证据（对应「先让它对（ASan/TSan），再让它快（perf）」的调试顺序）。</p>
 <h2>和 C 的区别</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1012,6 +1084,47 @@ std::cout &lt;&lt; s;
 </ol>
 <p>HFT 典型模式：行情线程把数据 <code class="c">std::move</code> 到无锁队列，策略线程取出处理。</p>
 <p>复习：移动 &gt; 引用 &gt; 拷贝。移动既高效又安全（所有权明确）。</p>
+</details>
+<h3>Q5: 下面两段代码，哪段有悬垂风险？</h3>
+<pre class="code" data-label="cpp"><code class="c">void log(const std::string&amp; msg);
+
+void a() {
+    std::string msg = &quot;tick&quot;;
+    std::thread t(log, msg);            // A：裸传
+    t.detach();
+}
+
+void b() {
+    std::string msg = &quot;tick&quot;;
+    std::thread t(log, std::cref(msg)); // B：cref
+    t.detach();
+}
+</code></pre>
+<details>
+<summary>答案与复习指引</summary>
+<p><strong>A 安全，B 悬垂</strong>——和直觉相反。</p>
+<p>A：拷贝发生在构造函数里、<code class="c">msg</code> 销毁前，新线程用的是副本，detach 后与原变量无关。
+「默认拷贝」在这里反而是保护伞。</p>
+<p>B：<code class="c">std::cref</code> 存的是真引用，函数返回后 <code class="c">msg</code> 销毁，detach 的线程随时可能读到死对象——
+和错误 4 的 <code class="c">char*</code> 是同一类 bug。</p>
+<p><strong>教训：detach + ref/cref 是危险组合</strong>，除非能证明原变量活得比线程久（全局变量、
+或外层有 join 保证）。两个判据打架时（要共享但活得不够久）是设计问题，
+得改生命周期，不是靠 <code class="c">std::ref</code> 能糊过去的。</p>
+<p>复习：判据①要不要共享原对象？要 → ref/cref；判据②原对象能不能活过线程？不能 → 拷贝或 join。</p>
+</details>
+<h3>Q6: 怎么把 <code class="c">std::unique_ptr&lt;Packet&gt;</code> 传给线程？能用 <code class="c">std::ref</code> 吗？</h3>
+<pre class="code" data-label="cpp"><code class="c">void consume(std::unique_ptr&lt;Packet&gt; p);
+auto pkt = std::make_unique&lt;Packet&gt;();
+</code></pre>
+<details>
+<summary>答案与复习指引</summary>
+<pre class="code" data-label="cpp"><code class="c">std::thread t(consume, std::move(pkt));  // 正确
+// 此后 pkt 为空，所有权彻底移交新线程
+</code></pre>
+<p>move-only 类型不能拷贝，thread 构造内部用 move 语义接管。</p>
+<p><strong>不要用 <code class="c">std::ref</code> 传 unique_ptr</strong>：所有权语义会乱——两个线程都能解引用同一个
+<code class="c">unique_ptr</code>，析构时双重释放。</p>
+<p>复习：独占所有权对象一律 <code class="c">std::move</code>；<code class="c">std::ref</code> 是给「共享但不转移所有权」的场景用的。</p>
 </details>
 <hr />
 <h2>参考与延伸</h2>
@@ -1399,6 +1512,32 @@ std::jthread t([](std::stop_token st) {
 });
 </code></pre>
 <p><strong>修复</strong>：在循环条件检查 <code class="c">stop_requested()</code>，或用 <code class="c">stop_callback</code> 注册回调来打断阻塞。</p>
+<h2>守卫能安全工作的两个前提</h2>
+<h3>前提 1：空线程不能 join —— 永远先 <code class="c">joinable()</code></h3>
+<p><code class="c">std::thread</code> 默认构造出来是<strong>空线程</strong>，只占了位置、没有线程在跑：</p>
+<pre class="code" data-label="cpp"><code class="c">std::thread t1;            // 空壳：joinable() == false
+t1.join();                 // 抛 std::system_error（&quot;Invalid argument&quot;）
+
+std::thread t2([] { work(); });  // 构造即启动：joinable() == true
+</code></pre>
+<p><code class="c">std::thread</code> <strong>没有两阶段</strong>——构造函数本身就是"创建并运行"（同 <code class="c">pthread_create</code>），不存在"实例化好了再 start"这一步。所以 guard 的析构才永远写成 <code class="c">if (t.joinable()) t.join();</code>：守卫可能被移动走（<code class="c">joinable()</code> 变 false）、可能空构造后再赋值，裸 join 任何空线程都会抛异常。</p>
+<h3>前提 2：成员声明顺序 —— 数据在前，thread 在后</h3>
+<p>类持有 thread 成员时，构造和析构两头靠<strong>声明顺序</strong>咬合：</p>
+<pre class="code" data-label="cpp"><code class="c">class Worker {
+    int result_ = 0;        // ① 先声明 → 先构造
+    std::thread t_;         // ② 后声明 → 后构造（构造时线程起跑）
+
+public:
+    Worker() : t_([this] { result_ = 42; }) {}   // 线程马上访问 result_
+    ~Worker() { if (t_.joinable()) t_.join(); }  // join 在成员销毁之前
+};
+</code></pre>
+<ul>
+<li><strong>构造</strong>：成员按<strong>声明顺序</strong>初始化（不看初始化列表的书写顺序）。<code class="c">t_</code> 构造的那一刻线程就跑了，它立刻可能访问 <code class="c">result_</code>——所以数据必须先声明。顺序写反，线程访问的是未构造对象，UB。</li>
+<li><strong>析构</strong>：析构函数体在成员销毁<strong>之前</strong>执行，成员再按声明<strong>逆序</strong>销毁（<code class="c">t_</code> 先、<code class="c">result_</code> 后）。join 写在函数体里 = 保证线程死了 <code class="c">result_</code> 才销毁，没人再碰它。</li>
+</ul>
+<p>一正一反：<code class="c">join()</code> 是唯一能把"线程活着"严格包进"数据活着"之内的操作——<code class="c">detach</code> 撒手后这层咬合就断了（见 <a href="chapter-11.html#s-01">2.1 线程生命周期</a> 的错误 2 与实验 2 双平台实测）。这也是 <code class="c">jthread</code> 析构同样选择 request_stop + join 的原因：<strong>用确定性换等待</strong>。</p>
+<p><strong>多线程扩展</strong>：数量运行时决定就装容器——<code class="c">std::vector&lt;std::thread&gt;</code>（thread 只能 move，用 <code class="c">emplace_back</code> 造进去），析构里循环 join 全部。原则不变：谁拥有线程谁负责了结，跟数量无关。完整形态（任务队列 + 停止标志）见 <a href="chapter-11.html#s-01">9.1 线程池</a>。</p>
 <h2>和 C 的区别</h2>
 <div class="tbl-wrap"><table>
 <thead>
