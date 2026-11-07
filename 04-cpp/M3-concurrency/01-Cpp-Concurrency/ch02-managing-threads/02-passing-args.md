@@ -236,6 +236,11 @@ Address is located in stack of thread T0 ... in frame main
 ②ASan 直接标出访问落在 T0 main 栈帧的 `buf` 上——跨线程栈悬垂，肉眼 review 很难稳抓，
 ASan 一开就是确定性证据（对应「先让它对（ASan/TSan），再让它快（perf）」的调试顺序）。
 
+**配套例子**（`examples/`，均可直接编译运行）：
+- `2.2-thread-param-dangling.cpp` —— 本节的悬垂复现（ASan 下必报 `stack-use-after-scope`）
+- `2.2-thread-param-fixed.cpp` —— 修复版：构造时 `std::string(buf)` 转换
+- `2.2-thread-ref-vs-copy.cpp` —— 默认拷贝不改原值 vs `std::ref` 真共享的对照
+
 ## 和 C 的区别
 
 | 特性 | C (pthread) | C++ (std::thread) |

@@ -477,11 +477,230 @@ int a = 10; inc(a);
 // C++ 独有：const 引用避免拷贝大对象
 void print(const std::string&amp; s) { std::cout &lt;&lt; s; }  // 不拷贝
 </code></pre>
+<h2>底层实现与实测</h2>
+<blockquote>
+<p>以下均为本机 clang 实测（<code class="c">-std=c++17</code>，Apple Silicon）。传值和传引用的差别<strong>不是语法糖层面的</strong>，在汇编和拷贝计数上都能直接看出来。</p>
+</blockquote>
+<h3>实测 1：传引用在 ABI 层就是传指针</h3>
+<p>同一个 <code class="c">return x + 1</code> 写三遍，分别用值、<code class="c">const int&amp;</code>、<code class="c">const int*</code> 作形参，<code class="c">-O0 -S</code> 看汇编：</p>
+<pre class="code" data-label="asm"><code class="c">__Z2fvi:                    ; int fv(int x)          —— 传值
+    ldr  w8, [sp, #12]      ; 直接从栈槽取&quot;值&quot;
+    add  w0, w8, #1
+    ret
+
+__Z2frRKi:                  ; int fr(const int&amp; x)   —— 传引用
+    ldr  x8, [sp, #8]       ; 先取&quot;地址&quot;
+    ldr  w8, [x8]           ; 再解引用
+    add  w0, w8, #1
+    ret
+
+__Z2fpPKi:                  ; int fp(const int* x)   —— 传指针
+    ldr  x8, [sp, #8]       ; 完全一样的两条
+    ldr  w8, [x8]
+    add  w0, w8, #1
+    ret
+</code></pre>
+<p><strong>结论</strong>：<code class="c">fr</code>（引用）和 <code class="c">fp</code>（指针）生成的指令<strong>逐条相同</strong>——引用在机器层面就是"自动解引用的指针"。差别只在语言规则（引用不能为空、不能重绑定、不能绑右值），不在运行时开销。这也解释了为什么引用"零开销"的说法只对大对象成立：它省的是<strong>拷贝</strong>，不是<strong>间接寻址</strong>。</p>
+<h3>实测 2：传值到底拷几次</h3>
+<p>给类型加一个拷贝构造计数器，同一个对象调用 1000 次：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>形参写法</th>
+<th>1000 次调用的拷贝构造次数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">void f(Counted x)</code> 传值</td>
+<td><strong>1000</strong></td>
+</tr>
+<tr>
+<td><code class="c">void f(const Counted&amp; x)</code></td>
+<td><strong>0</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>传值每次进来都要构造一个形参副本；<code class="c">const T&amp;</code> 只是绑定，一次都不拷。这个计数器和 <a href="chapter-03.html#s-3-3-5">3.3 vector push_back 的拷贝计数</a> 是同一套方法。</p>
+<h3>实测 3：大对象传参的真实代价</h3>
+<p>4 KB 的对象（<code class="c">char buf[4096]</code>），拷贝构造带副作用（防止编译器把拷贝优化掉），<code class="c">noinline</code> 调用 20 万次：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>形参写法</th>
+<th>20 万次耗时</th>
+<th>折合单次</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">by_value(BigC)</code> 传值</td>
+<td>2.1 ~ 2.6 ms</td>
+<td><strong>≈ 10.5 ~ 13.0 ns</strong></td>
+</tr>
+<tr>
+<td><code class="c">by_cref(const BigC&amp;)</code></td>
+<td>1.1 ~ 1.3 ms</td>
+<td><strong>≈ 5.4 ~ 6.6 ns</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>注意一个容易测错的地方</strong>：第一版我用的是"只读一个字节"的普通结构体，实测两者都是 0.57 ms——因为编译器发现副本没人改，直接把拷贝优化没了。<strong>要测出真实差距，拷贝构造必须带副作用</strong>（或类型非 trivially copyable），否则你会得到"传值和传引用一样快"的错误结论。</p>
+<h3>实测 4：<code class="c">initializer_list</code> 是"栈上临时数组的视图"</h3>
+<pre class="code" data-label="cpp"><code class="c">std::initializer_list&lt;int&gt; il = {1,2,3,4,5};
+sizeof(il) == 16            // 两个指针：首地址 + 长度
+il.begin() == 0x16f962d50   // 打印出来是栈地址
+</code></pre>
+<p><strong>它不是容器</strong>：不拥有元素。<code class="c">{1,2,3,4,5}</code> 由编译器在<strong>调用方的栈帧</strong>上开一个临时数组，<code class="c">initializer_list</code> 只是指向它的一对指针。所以：</p>
+<pre class="code" data-label="cpp"><code class="c">std::initializer_list&lt;int&gt; bad() { return {1,2,3}; }   // ❌ 返回即悬垂
+</code></pre>
+<p>这与 <code class="c">std::span</code> 的视图语义同类（见 <a href="chapter-03.html#s-3-5-6">3.5.6</a>）。</p>
+<h3>实测 5：哪些实参能绑给哪种形参</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>形参</th>
+<th>实参 <code class="c">int a</code></th>
+<th>实参 <code class="c">42</code>（右值）</th>
+<th>实参 <code class="c">std::move(a)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">T x</code>（值）</td>
+<td>✅ 拷贝</td>
+<td>✅ 拷贝</td>
+<td>✅ 移动（若有移动构造）</td>
+</tr>
+<tr>
+<td><code class="c">T&amp; x</code></td>
+<td>✅ 绑定</td>
+<td>❌ <code class="c">error: no matching function for call to 'f'</code></td>
+<td>❌ 同上</td>
+</tr>
+<tr>
+<td><code class="c">const T&amp; x</code></td>
+<td>✅ 绑定</td>
+<td>✅ 绑定（临时对象）</td>
+<td>✅ 绑定</td>
+</tr>
+</tbody>
+</table></div>
+<p>非 const 左值引用<strong>拒绝右值</strong>，这是编译期硬错误，不是警告。</p>
+<h3>实测 6：传值 vs 传引用——差距只在"大对象"上真正拉开</h3>
+<p>200 万次调用，<code class="c">noinline</code> 挡住内联，<code class="c">-O2</code>（<code class="c">examples/6.1-2-abi-params.cpp</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构体大小</th>
+<th>传值</th>
+<th>传 <code class="c">const&amp;</code></th>
+<th>差</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4 B</td>
+<td>2.84 ns</td>
+<td>2.68 ns</td>
+<td>噪声级</td>
+</tr>
+<tr>
+<td>8 B</td>
+<td>2.34 ns</td>
+<td>2.35 ns</td>
+<td>噪声级</td>
+</tr>
+<tr>
+<td>16 B</td>
+<td>2.00 ns</td>
+<td>2.00 ns</td>
+<td>持平</td>
+</tr>
+<tr>
+<td>32 B</td>
+<td>1.93 ns</td>
+<td>1.74 ns</td>
+<td>−10%</td>
+</tr>
+<tr>
+<td>64 B</td>
+<td>1.95 ns</td>
+<td>1.57 ns</td>
+<td>−19%</td>
+</tr>
+<tr>
+<td><strong>256 B</strong></td>
+<td><strong>5.84 ns</strong></td>
+<td><strong>1.38 ns</strong></td>
+<td><strong>−76%（快约 4 倍）</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>诚实读法</strong>：≤64 字节时两者差距在 ±8% 内，属于噪声——<strong>别拿这个数字去改代码风格</strong>。真正拉开差距的是 256 字节这种"放不进寄存器"的对象：传值要多做一次 <code class="c">memcpy</code>，传引用只传 8 字节地址。</p>
+<blockquote>
+<p>⚠ 这组数据是 <code class="c">noinline</code> 下测的"传参 + 调用"裸开销。真实代码里小对象传值<strong>通常能被内联</strong>（不用取地址、可做常量传播），那时传值反而更好。所以真正的排序是：<strong>能不能内联 &gt; 传值/传引用</strong>。</p>
+</blockquote>
+<h3>实测 7：<code class="c">initializer_list</code> 是栈上的一块临时数组</h3>
+<pre class="code" data-label="code"><code class="c">[dangling 内] 元素地址: 0x16cfeed28 0x16cfeed2c 0x16cfeed30（间距 4，连续 = 数组）
+[dangling 外] 再读：1 2 3   ← 值还在纯属巧合，栈还没被覆盖（UB）
+auto il = {1,2,3};  sizeof(il) = 16   ← 就是 {指针, 长度}
+</code></pre>
+<p><code class="c">std::initializer_list</code> <strong>不拥有元素</strong>：它只是一个指向编译器在栈上造的临时数组的视图。返回 <code class="c">il.begin()</code> 等于返回悬空指针；只有把它绑定到变量（<code class="c">auto il = {...}</code>）时，底层数组的生命周期才跟随该变量。</p>
+<h3>实测 8：三种可变形参的类型安全差多少</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>类型检查</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C varargs <code class="c">sum(int n, ...)</code></td>
+<td>❌ 无</td>
+<td><code class="c">sum_varargs(1, 3.14)</code> 用 <code class="c">int</code> 读 <code class="c">double</code> → <strong>1374389535</strong></td>
+</tr>
+<tr>
+<td><code class="c">initializer_list&lt;int&gt;</code></td>
+<td>✅ 限同类型</td>
+<td>编译期拒绝异类</td>
+</tr>
+<tr>
+<td>模板变参 <code class="c">template&lt;class...Ts&gt;</code> + fold</td>
+<td>✅ 任意类型</td>
+<td><code class="c">sum_tmpl(1, 2.5)</code> → 3（明确截断）</td>
+</tr>
+</tbody>
+</table></div>
+<p>那个 <code class="c">1374389535</code> 不是乱码，是 <code class="c">3.14</code> 的 IEEE754 位模式 <code class="c">0x40091EB851EB851F</code> 的<strong>低 32 位</strong> <code class="c">0x51EB851F</code>——把 <code class="c">double</code> 当 <code class="c">int</code> 读的典型结果。varargs 的错误<strong>静默无声</strong>，这也是 C++ 里应当优先用 <code class="c">initializer_list</code> 或模板变参的原因。</p>
+<h2>HFT/嵌入式关联</h2>
+<ul>
+<li><strong>热路径形参的默认值</strong>：大对象（&gt; 寄存器宽度）一律 <code class="c">const T&amp;</code> 或 <code class="c">std::span</code>，实测 4 KB 对象单次节省约 6 ns；高频调用（order book 更新、行情回调）乘上每秒几十万次就是毫秒级差异。</li>
+<li><strong>但别走极端</strong>：引用在机器层是指针（实测 1），函数内每次访问都要多一次 load。对 <code class="c">int</code>/<code class="c">double</code>/小 POD，传值反而更直接——<strong>传值省的是间接寻址，传引用省的是拷贝</strong>，两者针对不同对象大小。</li>
+<li><strong><code class="c">const T&amp;</code> 不是万能的</strong>：绑定临时对象时生命周期只延长到<strong>当前完整表达式</strong>（见 <a href="chapter-02.html#s-2-3-1">2.3.1 临时量生命周期延长</a>），把它存进成员或容器就悬垂。跨调用保存请用值或 <code class="c">shared_ptr</code>。</li>
+<li><strong>不要返回/保存 <code class="c">initializer_list</code></strong>（实测 4）：它是栈上临时数组的视图，函数返回即失效。需要长期持有就改用 <code class="c">std::vector</code>/<code class="c">std::array</code>。</li>
+<li><strong>可变形参选型</strong>：<code class="c">initializer_list&lt;T&gt;</code> 类型安全、只能同类型，适合配置项；<code class="c">va_list</code> 无类型检查，窄化/类型不匹配一律 UB，<strong>工程代码不要用</strong>。</li>
+</ul>
 <h2>常见错误</h2>
 <ol>
 <li><strong>传引用导致调用处看不出副作用</strong>：<code class="c">inc(a)</code> 表面看像传值，实际改了 <code class="c">a</code>。大型工程里这降低可读性。<strong>建议</strong>：要修改实参用指针或非 const 引用，且命名体现（<code class="c">out_param</code>）；只读用 <code class="c">const T&amp;</code>。</li>
 <li><strong><code class="c">const T&amp;</code> 绑定临时对象后长期使用</strong>：<code class="c">const std::string&amp; s = compute();</code> 合法且延长临时对象生命周期，但若 <code class="c">compute()</code> 返回引用指向已销毁对象则悬垂。区分"返回引用"和"返回值"。</li>
 <li><strong>数组形参sizeof误判</strong>：<code class="c">void f(int a[10]) { int n = sizeof(a); }</code> —— <code class="c">a</code> 退化为指针，<code class="c">sizeof(a)</code> 是指针大小不是数组大小。C/C++ 共同坑。</li>
+<li><strong>把 <code class="c">const T&amp;</code> 形参存起来当长期引用</strong>：形参绑定到调用方的对象，函数返回后引用即悬垂——
+   <code class="c">cpp
+   struct Holder { const std::string&amp; name; };
+   Holder make(const std::string&amp; s) { return {s}; }   // ❌ s 可能是临时对象
+   Holder h = make("abc");                             // h.name 已悬垂</code>
+   <strong>判据</strong>：引用成员的生命周期必须长于持有者；不确定就改存值 <code class="c">std::string name</code>。</li>
+<li>
+<p><strong>返回或保存 <code class="c">initializer_list</code></strong>（实测 4）：它只是栈上临时数组的 <code class="c">{首地址, 长度}</code>，函数返回即失效。要持有就拷进 <code class="c">std::vector</code>。</p>
+</li>
+<li>
+<p><strong>返回 <code class="c">initializer_list</code> 的指针/迭代器</strong>：它只是栈上临时数组的视图，函数返回即悬空。要返回"一串值"，返回 <code class="c">std::vector</code>/<code class="c">std::array</code> 这种真正拥有元素的容器。</p>
+</li>
+<li><strong>用 C varargs 传非 <code class="c">int</code>/<code class="c">double</code> 兼容类型</strong>：<code class="c">printf</code> 族之外的 varargs 不做任何类型检查，传 <code class="c">double</code> 用 <code class="c">%d</code> 读、传 <code class="c">char</code>/<code class="c">float</code>（会被提升）都可能静默出错。改用 <code class="c">initializer_list</code>（同类型）或模板变参（异类型）。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：下面函数想避免拷贝又只读访问 <code class="c">vector</code>，哪种形参最合适？
@@ -521,11 +740,45 @@ int x=1, y=2; swap_cpp(x, y);
 </code></pre>
 <p>引用版本函数体内 <code class="c">a</code>、<code class="c">b</code> 直接当变量用，无需解引用 <code class="c">*a</code>，可读性好得多。标准库的 <code class="c">std::swap</code> 就是引用风格。</p>
 </details>
+<p><strong>5. 选择题</strong>：<code class="c">f(const std::vector&lt;int&gt;&amp;)</code> 与 <code class="c">f(std::vector&lt;int&gt;)</code>，哪个更快？</p>
+<details>
+<summary>答案</summary>
+<p><strong>没有固定答案，取决于能不能内联。</strong></p>
+<ul>
+<li>可内联的小函数：传值通常更好（无需取地址、可做常量传播、可放进寄存器）。</li>
+<li>不可内联（<code class="c">noinline</code>/跨 TU/递归）：实测 256 字节对象传值 5.84 ns、传引用 1.38 ns，<strong>传引用快约 4 倍</strong>；但 ≤64 字节时两者差距在噪声级。</li>
+</ul>
+<p><strong>工程结论</strong>：内置类型和小 POD（≤2 个寄存器）传值；大对象、容器、字符串传 <code class="c">const&amp;</code>；需要拷贝所有权（要存下来）就传值 + <code class="c">std::move</code>。</p>
+</details>
+<p><strong>6. 踩坑题</strong>：下面代码有什么问题？</p>
+<pre class="code" data-label="cpp"><code class="c">std::initializer_list&lt;int&gt; make() { return {1, 2, 3}; }
+auto xs = make();
+int first = *xs.begin();
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong>悬空</strong>。<code class="c">initializer_list</code> 不拥有元素，底层数组是 <code class="c">make()</code> 栈上的临时对象，函数返回即销毁。<code class="c">*xs.begin()</code> 读的是已释放的栈内存——实测"碰巧还能读到 1 2 3"，但换个调用栈就会被覆盖。</p>
+<p><strong>修正</strong>：返回真正拥有元素的容器：</p>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; make() { return {1, 2, 3}; }        // ✅ 值语义 + NRVO，零拷贝
+std::array&lt;int, 3&gt; make2() { return {1, 2, 3}; }     // ✅ 固定长度，栈上，无堆分配
+</code></pre>
+</details>
+<h2>可跑的例子</h2>
+<ul>
+<li><a href="chapter-06.html#s-6-1">examples/6.1-2-abi-params.cpp</a> —— 传值 vs 传引用按对象大小的代价曲线、<code class="c">initializer_list</code> 悬空演示、varargs/<code class="c">initializer_list</code>/模板变参的类型安全对比。</li>
+<li><a href="chapter-06.html#s-6-1">examples/6.1-1-param-passing.cpp</a> —— 拷贝计数（传值 vs <code class="c">const T&amp;</code>）、<code class="c">initializer_list</code> 布局、ABI 汇编对照命令。</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -O2 examples/6.1-1-param-passing.cpp -o p &amp;&amp; ./p
+clang++ -std=c++17 -O0 -S examples/abi-value-vs-ref.cpp -o - | grep -A4 &quot;^__Z&quot;   # 看汇编
+clang++ -std=c++17 -Wall -O2 examples/6.1-2-abi-params.cpp -o p2 &amp;&amp; ./p2
+clang++ -std=c++17 -O0 -S examples/abi-value-vs-ref.cpp -o - | grep -A4 &quot;^__Z&quot;   # 看汇编
+</code></pre>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §6.1：函数基础</li>
 <li>下一节：§6.2 返回类型</li>
 <li>C 程序员对照：《C 和指针》ch07 函数章</li>
+<li>引用在 ABI 层的证据见 <a href="chapter-02.html#s-2-3-1">2.3.1 引用</a>；拷贝计数方法同 <a href="chapter-03.html#s-3-3-5">3.3.5</a></li>
 </ul>
       </section>
       <section class="section" id="s-6-2">
@@ -632,11 +885,163 @@ set(arr, 1, 42);
 int&amp; at(int* a, int i) { return a[i]; }
 at(arr, 1) = 42;
 </code></pre>
+<h2>底层实现与实测</h2>
+<blockquote>
+<p>本机 clang 实测（<code class="c">-std=c++17</code>）。返回类型这块最容易讲错的一点是"返回大对象很贵"——实测下来 <strong>C++17 之后它常常是零开销的</strong>，但要分清哪一种是语言保证、哪一种只是优化。</p>
+</blockquote>
+<h3>实测 1：RVO / NRVO —— 一个是语言保证，一个只是优化</h3>
+<p>给类型加上 ctor / COPY / MOVE / dtor 打印，两种返回方式对比，<code class="c">noinline</code> 防止整个函数被内联掉：</p>
+<pre class="code" data-label="cpp"><code class="c">T make(int n)          { return T(n); }              // ① 返回 prvalue（临时量）
+T make_named(int n)    { T t(n); return t; }         // ② 返回具名局部对象（NRVO 候选）
+T make_moved(int n)    { T t(n); return std::move(t); }  // ③ 手动 move
+</code></pre>
+<p><strong>默认编译（<code class="c">-O0</code>）：</strong></p>
+<pre class="code" data-label="code"><code class="c">① return T(n);           ctor(1) → a=1 → dtor(1)
+② return t;              ctor(2) → b=2 → dtor(2)
+③ return std::move(t);   ctor(3) → MOVE(3) → dtor(3) → c=3 → dtor(3)   ← 多一次移动！
+</code></pre>
+<p><strong>加 <code class="c">-fno-elide-constructors</code> 关掉省略后：</strong></p>
+<pre class="code" data-label="code"><code class="c">① return T(n);           ctor(1) → a=1 → dtor(1)          ← 依然零拷贝！
+② return t;              ctor(2) → MOVE(2) → dtor(2)      ← 退化成移动
+③ return std::move(t);   ctor(3) → MOVE(3) → dtor(3)      ← 与默认时一样
+</code></pre>
+<p><strong>这张表是本节最该记住的：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>返回形式</th>
+<th>C++17 起的性质</th>
+<th><code class="c">-fno-elide-constructors</code> 下</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">return T(args);</code>（prvalue）</td>
+<td><strong>强制省略</strong>，不是优化，是语言规则</td>
+<td>依然零拷贝</td>
+</tr>
+<tr>
+<td><code class="c">return local_var;</code>（NRVO）</td>
+<td><strong>允许但非保证</strong>的优化</td>
+<td>退化成 <strong>MOVE</strong>（无移动构造则 COPY）</td>
+</tr>
+<tr>
+<td><code class="c">return std::move(local);</code></td>
+<td>❌ 反而<strong>阻止</strong> NRVO</td>
+<td>强制 MOVE</td>
+</tr>
+</tbody>
+</table></div>
+<p>最后一行是常见反向优化：想"手动帮它移动"，结果把 NRVO 挡掉了，白多一次 MOVE。<strong>返回局部对象就直接 <code class="c">return t;</code>，不要加 <code class="c">std::move</code>。</strong></p>
+<h3>实测 2：返回局部对象的引用 —— 编译期就警告，运行期数值会变</h3>
+<pre class="code" data-label="cpp"><code class="c">int&amp; bad() { int x = 42; return x; }
+int main() { int&amp; r = bad(); printf(&quot;%d\n&quot;, r); printf(&quot;%d\n&quot;, r); }
+</code></pre>
+<pre class="code" data-label="code"><code class="c">warning: reference to stack memory associated with local variable 'x' returned [-Wreturn-stack-address]
+  r = 42        ← 第一次读&quot;碰巧&quot;还是 42
+  r = 1         ← 第二次读就被覆盖成垃圾了
+</code></pre>
+<p><code class="c">printf</code> 调用复用了那块栈帧，值立刻被改写。所以"我试了一下能打印出 42"<strong>完全不能证明它安全</strong>——这正是悬垂引用最阴的地方：它经常"看起来能用"，然后在别处随机崩。</p>
+<h3>实测 3：返回引用作左值</h3>
+<pre class="code" data-label="cpp"><code class="c">char&amp; front(std::string&amp; s) { return s[0]; }
+front(g) = 'X';      // 实测输出 g = Xbc
+</code></pre>
+<p>这正是 <code class="c">v[i] = x</code>、<code class="c">m[key] = v</code>、<code class="c">os &lt;&lt; a &lt;&lt; b</code> 能工作的原理——它们返回的都是引用。（<code class="c">&lt;&lt;</code> 返回 <code class="c">ostream&amp;</code> 才能链式。）</p>
+<h3>实测 4：RVO 到底生效没——数拷贝次数，别看时间</h3>
+<p>用一个带计数器的类型（<code class="c">examples/6.2-3-return-cpp-core.cpp</code>），直接数构造函数被调用了几次：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>构造</th>
+<th>拷贝</th>
+<th>移动</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">return t;</code>（具名局部变量）</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>✅ NRVO 生效</td>
+</tr>
+<tr>
+<td><code class="c">return std::move(t);</code></td>
+<td>1</td>
+<td>0</td>
+<td><strong>1</strong></td>
+<td>⚠ 多出一次移动</td>
+</tr>
+<tr>
+<td><code class="c">return Tracker(x);</code>（纯右值）</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>✅ C++17 起保证零拷贝</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>具名局部变量返回时加 <code class="c">std::move</code> 是负优化</strong>，clang 会直接警告：</p>
+<pre class="code" data-label="code"><code class="c">warning: moving a local object in a return statement prevents copy elision [-Wpessimizing-move]
+</code></pre>
+<blockquote>
+<p>📌 <strong>测错了一次，记录在此</strong>：第一版我用"计时"来判断 NRVO，得出"加 <code class="c">std::move</code> 反而快 14%"的结论——错的。原因是 <code class="c">Big</code> 是 POD，move 与 copy 等价，而计时结果被内联和调度噪声主导。<strong>验证 RVO 必须看拷贝计数（或汇编里有没有 <code class="c">memcpy</code>），计时不可靠。</strong></p>
+</blockquote>
+<h3>实测 5：错误码 / <code class="c">optional</code> / 异常，成本分布完全不同</h3>
+<p>各 100 万次调用（<code class="c">noinline</code>，避免被折叠成闭式）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>成功路径</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">bool</code> + 出参</td>
+<td>6.16 ns/次</td>
+<td>最直观，但调用方可忽略返回值</td>
+</tr>
+<tr>
+<td><code class="c">std::optional&lt;int&gt;</code></td>
+<td>6.71 ns/次</td>
+<td>值语义，不检查就 UB</td>
+</tr>
+<tr>
+<td><code class="c">throw</code>（全成功，不抛）</td>
+<td>5.78 ns/次</td>
+<td><strong>成功路径反而最快</strong>（zero-cost：代价全在 unwind 表）</td>
+</tr>
+<tr>
+<td><code class="c">throw</code>（1% 真抛）</td>
+<td>73.44 ns/次（摊薄）</td>
+<td><strong>单次抛出 ≈ 6.8 µs</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>关键结论：<strong>异常的成本全部集中在抛出路径</strong>——单次抛出约 6.8 µs，比成功路径高 <strong>2~3 个数量级</strong>。所以"异常拖慢热路径"这句话只对<strong>真的会抛</strong>的场景成立；反过来，用异常表示"不该发生的事"时，成功路径甚至比 <code class="c">optional</code> 还快一点。</p>
+<h2>HFT/嵌入式关联</h2>
+<ul>
+<li><strong>工厂函数返回值，不返回引用</strong>：实测 1 表明 <code class="c">return T(args)</code> 在 C++17 下零拷贝是<strong>语言保证</strong>，所以"为了避免拷贝而改成返回引用/出参"是<strong>过时做法</strong>——出参（<code class="c">void f(T&amp; out)</code>）反而破坏了组合性。要真转移所有权就返回 <code class="c">unique_ptr</code>。</li>
+<li><strong>热路径别返回 <code class="c">std::string</code>/<code class="c">std::vector</code> 的引用</strong>：引用把生命周期暴露给调用方，一旦底层容器 rehash / 扩容（见 <a href="chapter-03.html#s-3-3-5">3.3.5</a>），引用立刻失效。要稳定地址就用 <code class="c">std::deque</code> 或索引。</li>
+<li><strong><code class="c">auto</code> 返回推导在模板里要小心</strong>：<code class="c">auto</code> 会丢顶层 const 和引用，<code class="c">template&lt;class T&gt; auto get(T&amp; c) { return c[0]; }</code> 返回的是<strong>值拷贝</strong>，想保留引用必须写 <code class="c">decltype(auto)</code>。这在泛型行情访问器里是典型的"改了返回值语义却不报错"的坑。</li>
+<li><strong>别返回 <code class="c">initializer_list</code></strong>（见 <a href="#s-6-1">6.1 实测 4</a>）：它是栈上临时数组的视图。</li>
+</ul>
 <h2>常见错误</h2>
 <ol>
 <li><strong>返回局部对象的引用/指针</strong>（悬垂引用）：<code class="c">int&amp; f() { int x=10; return x; }</code> —— x 销毁后引用悬垂，UB。C/C++ 共同坑，但 C++ 引用更容易让人忽视（指针至少看着吓人）。</li>
 <li><strong>返回局部对象的引用并依赖"延长生命周期"误解</strong>：<code class="c">const T&amp;</code> 绑定临时对象会延长其生命周期，但<strong>仅限于直接绑定</strong>——经函数返回的引用不会延长。<code class="c">const T&amp; r = f();</code> 中如果 <code class="c">f</code> 返回的是值（临时），合法；但若 <code class="c">f</code> 返回的是指向局部变量的引用，仍悬垂。</li>
-<li><strong>返回 <code class="c">auto</code> 但多个 return 类型不一致</strong>：<code class="c">auto f(bool b) { if(b) return 1; return 3.14; }</code> —— C++14 auto 推导要求所有 return 类型一致，这里报错。要么统一类型，要么显式指定 <code class="c">double</code>。</li>
+<li>
+<p><strong>返回 <code class="c">auto</code> 但多个 return 类型不一致</strong>：<code class="c">auto f(bool b) { if(b) return 1; return 3.14; }</code> —— C++14 auto 推导要求所有 return 类型一致，这里报错。要么统一类型，要么显式指定 <code class="c">double</code>。</p>
+</li>
+<li>
+<p><strong>具名局部变量返回时加 <code class="c">std::move</code></strong>：<code class="c">return std::move(t);</code> 阻止 NRVO，实测多出一次移动构造（<code class="c">-Wpessimizing-move</code>）。<code class="c">std::move</code> 只在<strong>返回类型不是该对象类型</strong>（如返回成员、返回右值引用参数）时才有用。</p>
+</li>
+<li><strong>把异常用在正常控制流上</strong>：单次抛出实测 ≈ 6.8 µs（成功路径 5.78 ns），差 1000 倍。行情/订单路径上用异常表达"没找到"会直接变成延迟尖峰。</li>
+<li><strong>返回 <code class="c">std::string::c_str()</code> / 局部容器的数据指针</strong>：对象析构后指针即悬空，<code class="c">-Wall</code> 会警告 <code class="c">-Wreturn-stack-address</code>。要返回字符串就返回 <code class="c">std::string</code>（值语义 + NRVO）。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：下面哪个函数返回的引用可以安全用作左值？
@@ -661,7 +1066,8 @@ std::cout &lt;&lt; get_name();
 </code></pre>
 <details>
 <summary>答案</summary>
-<p>悬垂引用。<code class="c">std::string("tmp")</code> 是临时对象，函数返回时销毁，返回的 <code class="c">const&amp;</code> 指向已释放内存。"const 引用延长生命周期"规则<strong>只对直接绑定局部 const 引用生效</strong>，不适用于"函数返回 const 引用"。<strong>修正</strong>：返回值 <code class="c">std::string get_name()</code>（移动返回，零拷贝）。</p>
+<p>悬垂引用。<code class="c">std::string("tmp")</code> 是临时对象，函数返回时销毁，返回的 <code class="c">const&amp;</code> 指向已释放内存。"const 引用延长生命周期"规则<strong>只对直接绑定局部 const 引用生效</strong>，不适用于"函数返回 const 引用"。<strong>修正</strong>：改成按值返回 <code class="c">std::string get_name()</code>。</p>
+<p>⚠️ 措辞校准：不少资料把按值返回说成"移动返回，零拷贝"，这个说法<strong>不准确</strong>。按 <a href="#实测-1rvo--nrvo--一个是语言保证一个只是优化">实测 1</a>，<code class="c">return std::string("tmp")</code> 返回的是 prvalue，C++17 起拷贝省略是<strong>强制的语言规则</strong>——对象直接构造在调用方的存储里，<strong>连移动构造都不会调用</strong>（实测加 <code class="c">-fno-elide-constructors</code> 也关不掉）。"移动"只在 NRVO 被禁、或返回具名局部对象且省略未发生时才会出现。</p>
 </details>
 <p><strong>4. 应用题</strong>：用尾置返回类型写一个函数 <code class="c">make_arr_ptr(int i)</code>，返回"指向 10 元素 int 数组的指针"，说明为什么尾置写法比传统写法好读。</p>
 <details>
@@ -674,11 +1080,55 @@ auto make_arr_ptr(int i) -&gt; int(*)[10] {
 </code></pre>
 <p>传统写法 <code class="c">int (*f(int))[10]</code> 要从内往外读：f 是函数(int)→返回指针→指向 int[10]。尾置写法把返回类型放后面，函数签名 <code class="c">f(int) -&gt; 返回类型</code> 更直观，类似现代语言（Go/Rust）的写法。</p>
 </details>
+<p><strong>5. 选择题</strong>：验证 NRVO 有没有生效，最可靠的方法是？
+- A) 用 <code class="c">chrono</code> 计时，快的一方 NRVO 生效
+- B) 统计构造/拷贝/移动次数
+- C) 看 <code class="c">-O2</code> 下有没有变快
+- D) 打印返回对象的地址</p>
+<details>
+<summary>答案</summary>
+<p><strong>B（其次 D）</strong>。</p>
+<ul>
+<li>A ❌：我第一版就是这么测的，得出"加 <code class="c">std::move</code> 更快 14%"的<strong>错误结论</strong>——POD 类型的 move 与 copy 等价，且计时被内联/调度噪声主导。</li>
+<li>B ✅：拷贝计数是确定性的。<code class="c">return t;</code> 得到 1 构造 0 拷贝 0 移动；<code class="c">return std::move(t);</code> 得到 1 移动，一眼看出差别。</li>
+<li>C ❌：<code class="c">-O2</code> 下 NRVO 几乎总是生效，反而分不出来（要用 <code class="c">-fno-elide-constructors</code> 做对照）。</li>
+<li>D 部分可用：比较局部变量地址和返回值地址是否相同能判断 NRVO，但不如计数直观。</li>
+</ul>
+</details>
+<p><strong>6. 应用题</strong>：一个行情查询函数"按 symbol 找合约"，找不到时怎么办？给出三种写法的取舍。</p>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="cpp"><code class="c">// (a) 错误码 —— 热路径首选，但可忽略返回值
+bool find_ec(const char* sym, Contract&amp; out);
+// (b) optional —— 值语义，语义清晰，忘记检查会 UB
+std::optional&lt;Contract&gt; find_opt(const char* sym);
+// (c) 异常 —— 只用于&quot;不该发生&quot;（如合约表未初始化）
+Contract find_throw(const char* sym);   // throw ContractTableNotReady{}
+</code></pre>
+<p>实测（100 万次）：错误码 6.16 ns / <code class="c">optional</code> 6.71 ns / 异常成功路径 5.78 ns；<strong>单次抛出 ≈ 6.8 µs</strong>。</p>
+<p><strong>取舍规则</strong>：
+1. <strong>热路径</strong>（每条 tick 都走）→ 错误码或 <code class="c">optional</code>。"找不到"是<strong>正常业务结果</strong>，不是异常。
+2. <strong>异常</strong>只留给<strong>程序无法继续</strong>的情况（配置缺失、连接未建立、表未加载）——这些路径一年跑不了几次，多花 6.8 µs 无所谓，换来的是调用点不用层层判空。
+3. 别用异常做"控制流跳转"：实测差 3 个数量级，在撮合/下单路径上就是尾延迟。</p>
+</details>
+<h2>可跑的例子</h2>
+<ul>
+<li><a href="chapter-06.html#s-6-2">examples/6.2-3-return-cpp-core.cpp</a> —— 拷贝/移动<strong>计数</strong>验证 RVO、sret 隐藏指针、悬空引用，以及错误码/<code class="c">optional</code>/异常的成本对比（含 3 处故意保留的 warning）。</li>
+<li><a href="chapter-06.html#s-6-2">examples/6.2-1-return-and-rvo.cpp</a> —— RVO/NRVO 对照、<code class="c">std::move</code> 挡掉 NRVO、返回引用作左值。</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -O0 examples/6.2-1-return-and-rvo.cpp -o r &amp;&amp; ./r
+clang++ -std=c++17 -O0 -fno-elide-constructors examples/6.2-1-return-and-rvo.cpp -o r2 &amp;&amp; ./r2
+# 悬垂引用（看编译警告 + 第二次读变垃圾）：
+clang++ -std=c++17 -O0 -Wall examples/6.2-2-dangling-ref.cpp -o d &amp;&amp; ./d
+clang++ -std=c++17 -Wall -O2 examples/6.2-3-return-cpp-core.cpp -o r3 &amp;&amp; ./r3
+clang++ -std=c++17 -O0 -Wall examples/6.2-2-dangling-ref.cpp -o d &amp;&amp; ./d
+</code></pre>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §6.2：返回类型</li>
 <li>下一节：§6.3 函数重载</li>
 <li>C 程序员注意：C++ 返回引用是容器 <code class="c">operator[]</code>、流 <code class="c">&lt;&lt;</code> 链式调用等的基石</li>
+<li>拷贝省略的完整规则见 <a href="chapter-13.html#s-13-1">13.1 拷贝控制成员</a>；移动语义见 <a href="chapter-13.html#s-13-2">13.2 资源管理与三五法则</a></li>
 </ul>
       </section>
       <section class="section" id="s-6-3">
@@ -686,6 +1136,16 @@ auto make_arr_ptr(int i) -&gt; int(*)[10] {
 <h2>本节讲什么</h2>
 <p>C++ 的<strong>函数重载</strong>：同一作用域内，函数名相同但形参列表不同。编译器通过<strong>重载匹配</strong>（overload resolution）决定调用哪个版本。这是 <strong>C 没有的特性</strong>，C 程序员必须理解匹配规则。</p>
 <h2>核心用法</h2>
+<h3>典型用途（为什么需要它）</h3>
+<p>重载解决的是「同一件事、不同类型」的<strong>命名爆炸</strong>问题。四个真实场景：</p>
+<p><strong>① 打印 / 格式化</strong>：<code class="c">log(int)</code>、<code class="c">log(double)</code>、<code class="c">log(const char*)</code>、<code class="c">log(const std::string&amp;)</code> 对外就是一个 <code class="c">log</code>，调用方不必记住 <code class="c">log_int</code> / <code class="c">log_double</code> 这些后缀。</p>
+<p><strong>② 构造函数</strong>：<code class="c">std::string</code> 有 <code class="c">string()</code>、<code class="c">string(const char*)</code>、<code class="c">string(size_t, char)</code>、<code class="c">string(const string&amp;)</code>……全是同名构造函数，靠实参分派。</p>
+<p><strong>③ 容器的 const / 非 const 双版本</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">T&amp;       operator[](size_t i);        // 非 const 对象：返回可改的引用
+const T&amp; operator[](size_t i) const;  // const 对象：返回只读引用
+</code></pre>
+<p>这是 C++ 里最常见的重载模式，<code class="c">v[0]</code> 能否被赋值由 <code class="c">v</code> 是否 const 决定。</p>
+<p><strong>④ HFT / 嵌入式里的统一入口</strong>：行情字段的格式化函数对 <code class="c">Price</code>（定点整数）、<code class="c">Qty</code>、<code class="c">Timestamp</code> 各有一个版本，上层代码只写 <code class="c">fmt(x)</code>；设备寄存器写入对 8/16/32 位宽度各一个版本 <code class="c">write_reg(addr, v)</code>。</p>
 <h3>重载的条件</h3>
 <p>函数名相同，但下列任一不同即可重载：
 - 形参<strong>个数</strong>不同
@@ -742,7 +1202,7 @@ f(42);       // 精确匹配 f(int)
 f(3.14f);    // 实测选 f(double)：float→double 是提升，float→int 是转换
 </code></pre>
 <blockquote>
-<p>实测（gcc 13.2）：<code class="c">f(3.14f)</code> 走 <code class="c">f(double)</code>，不是二义性。把"提升"和"转换"当成同一档，会得出相反结论——这是本笔记早期版本的一处误判，已按实测修正。</p>
+<p>实测（Apple clang 23.1.0，见下方「底层实现与实测 2」）：<code class="c">f(3.14f)</code> 走 <code class="c">f(double)</code>，不是二义性。把"提升"和"转换"当成同一档，会得出相反结论——这是本笔记早期版本的一处误判，已按实测修正。</p>
 </blockquote>
 <h2>和 C 的区别</h2>
 <div class="tbl-wrap"><table>
@@ -790,11 +1250,227 @@ void print(const char* s);
 <p><strong>与 C 互操作</strong>：C++ 为了能调用 C 库，提供 <code class="c">extern "C"</code> 关闭 name mangling：</p>
 <pre class="code" data-label="cpp"><code class="c">extern &quot;C&quot; void c_func(int);   // 用 C 链接规则，不 mangling
 </code></pre>
+<h2>底层实现与实测</h2>
+<blockquote>
+<p>以下均为本机实测（Apple clang 23.1.0，arm64，<code class="c">-std=c++17 -O2</code>）。重载的全部判断<strong>发生在编译期</strong>，运行期零开销——这是它和虚函数/函数指针最根本的区别。</p>
+</blockquote>
+<h3>实测 1：重载在二进制里就是「不同符号」（name mangling）</h3>
+<pre class="code" data-label="cpp"><code class="c">int f(int x);  double f(double x);  int f(int a, int b);
+extern &quot;C&quot; int c_add(int, int);
+</code></pre>
+<pre class="code" data-label="shell"><code class="c">$ clang++ -std=c++17 -c mangle.cpp -o mangle.o &amp;&amp; llvm-nm -g mangle.o | c++filt
+0000000000000018 T f(double)
+0000000000000000 T f(int)
+0000000000000034 T f(int, int)
+0000000000000054 T _c_add          ← extern &quot;C&quot;：不 mangling，C 符号
+</code></pre>
+<p>未 demangle 的原始符号是 <code class="c">__Z1fi</code> / <code class="c">__Z1fd</code> / <code class="c">__Z1fii</code>（Itanium C++ ABI）：
+<code class="c">_Z</code> + 名字长度 <code class="c">1</code> + 名字 <code class="c">f</code> + 参数类型编码 <code class="c">i</code>=int / <code class="c">d</code>=double / <code class="c">ii</code>=int,int。
+<strong>返回类型不在里面</strong>——这正是「返回类型不参与重载」的物理原因：链接器根本看不到返回值信息。</p>
+<p>推论：加了 <code class="c">extern "C"</code> 就退回 C 规则，重载立刻失效：</p>
+<pre class="code" data-label="shell"><code class="c">error: conflicting types for 'cf'     ← extern &quot;C&quot; void cf(int) 与 cf(double) 冲突
+</code></pre>
+<h3>实测 2：决议结果一览（<code class="c">examples/6.3-1-overload-resolution.cpp</code>）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>实参类型</th>
+<th>选中</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">f(42)</code></td>
+<td><code class="c">int</code></td>
+<td><code class="c">f(int)</code></td>
+<td>精确匹配</td>
+</tr>
+<tr>
+<td><code class="c">f(3.14)</code></td>
+<td><code class="c">double</code></td>
+<td><code class="c">f(double)</code></td>
+<td>精确匹配</td>
+</tr>
+<tr>
+<td><code class="c">f(3.14f)</code></td>
+<td><code class="c">float</code></td>
+<td><strong><code class="c">f(double)</code></strong></td>
+<td>float→double 是<strong>提升</strong>，float→int 是<strong>转换</strong>，提升优先</td>
+</tr>
+<tr>
+<td><code class="c">f('a')</code></td>
+<td><code class="c">char</code></td>
+<td><code class="c">f(int)</code></td>
+<td>整型提升</td>
+</tr>
+<tr>
+<td><code class="c">f(true)</code></td>
+<td><code class="c">bool</code></td>
+<td><code class="c">f(int)</code></td>
+<td>整型提升</td>
+</tr>
+<tr>
+<td><code class="c">f(s)</code>（<code class="c">short</code>）</td>
+<td><code class="c">short</code></td>
+<td><code class="c">f(int)</code></td>
+<td>整型提升</td>
+</tr>
+<tr>
+<td><code class="c">g(0)</code></td>
+<td><code class="c">int</code></td>
+<td><code class="c">g(int)</code></td>
+<td>精确匹配（0 是 int，不是空指针）</td>
+</tr>
+<tr>
+<td><code class="c">g(nullptr)</code></td>
+<td><code class="c">nullptr_t</code></td>
+<td><code class="c">g(const char*)</code></td>
+<td>nullptr→指针是<strong>转换</strong>且精确；nullptr→int 不允许</td>
+</tr>
+<tr>
+<td><code class="c">pick(x)</code>（左值）</td>
+<td><code class="c">int</code> 左值</td>
+<td><code class="c">pick(int&amp;)</code></td>
+<td>非 const 引用优先于 const 引用</td>
+</tr>
+<tr>
+<td><code class="c">pick(42)</code>（右值）</td>
+<td><code class="c">int</code> 右值</td>
+<td><code class="c">pick(const int&amp;)</code></td>
+<td>非 const 引用绑不了右值</td>
+</tr>
+<tr>
+<td><code class="c">pick(y)</code>（const 左值）</td>
+<td><code class="c">const int</code></td>
+<td><code class="c">pick(const int&amp;)</code></td>
+<td><code class="c">int&amp;</code> 丢 const，不可行</td>
+</tr>
+</tbody>
+</table></div>
+<h3>实测 3：<code class="c">NULL</code> 是重载的经典地雷</h3>
+<pre class="code" data-label="cpp"><code class="c">printf(&quot;typeid(NULL).name() = %s\n&quot;, typeid(NULL).name());   // 输出 l  → long
+printf(&quot;sizeof(NULL) = %zu\n&quot;, sizeof(NULL));                // 输出 8
+</code></pre>
+<p>macOS/LLVM 里 <code class="c">NULL</code> 是 <code class="c">__null</code>（本质是 <code class="c">long</code>），<strong>不是指针</strong>。于是：</p>
+<pre class="code" data-label="shell"><code class="c">void g(int); void g(const char*);
+g(NULL);
+error: call to 'g' is ambiguous          ← long→int 与 long→指针 同为&quot;转换&quot;级
+</code></pre>
+<p>而 <code class="c">g(nullptr)</code> 干净地选中 <code class="c">g(const char*)</code>；<code class="c">g(0)</code> 干净地选中 <code class="c">g(int)</code>。
+<strong>结论</strong>：C++11 起一律用 <code class="c">nullptr</code>，<code class="c">NULL</code> 在重载集里是定时炸弹（在没有指针重载、<code class="c">long</code>/<code class="c">int</code> 并存时它还会悄悄选中 <code class="c">long</code>）。</p>
+<h3>实测 4：顶层 const 忽略——「重复声明」合法，「重复定义」才报错</h3>
+<pre class="code" data-label="cpp"><code class="c">void h(int x);
+void h(const int x);   // ✅ 合法：与上一行是同一个函数的再次声明
+void h(int x) { }      // ✅ 定义一次，OK
+</code></pre>
+<pre class="code" data-label="shell"><code class="c">void f(int x) {}
+void f(const int x) {}
+error: redefinition of 'f'     ← 定义两次才报
+</code></pre>
+<blockquote>
+<p>修正：本笔记早期版本写「<code class="c">f(int)</code> 与 <code class="c">f(const int)</code> 报重复定义」，措辞不准——<strong>重复声明完全合法</strong>，只有重复定义才报 redefinition。形参的顶层 const 只影响函数<strong>内部</strong>能否改这份副本，不构成新函数类型。</p>
+</blockquote>
+<h3>实测 5：三种二义性，编译器原话</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>代码</th>
+<th>报错</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">void f(int); void f(double); f(3u);</code></td>
+<td><code class="c">call to 'f' is ambiguous</code>（unsigned→int 与 unsigned→double 都是转换级）</td>
+</tr>
+<tr>
+<td><code class="c">void f(long); void f(double); f(42);</code></td>
+<td><code class="c">call to 'f' is ambiguous</code>（int→long 与 int→double 都是转换级）</td>
+</tr>
+<tr>
+<td><code class="c">extern "C" void cf(int); extern "C" void cf(double);</code></td>
+<td><code class="c">conflicting types for 'cf'</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>实测 6：重载是编译期分派，比运行期分派快 5 倍</h3>
+<p>2 000 万次调用，<code class="c">-O2</code>（<code class="c">examples/</code> 同款基准，被调函数可内联）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>分派方式</th>
+<th>实测</th>
+<th>汇编形态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>重载</strong>（静态分派，可内联）</td>
+<td><strong>0.13–0.18 ns/次</strong></td>
+<td>调用点被展开，甚至只剩一条 <code class="c">add</code></td>
+</tr>
+<tr>
+<td>函数指针（<code class="c">volatile</code> 防提升）</td>
+<td>0.94 ns/次</td>
+<td><code class="c">ldr</code> + <code class="c">blr</code></td>
+</tr>
+<tr>
+<td>虚函数（vtable）</td>
+<td>0.99 ns/次</td>
+<td>两次 <code class="c">ldr</code> 取 vptr/槽位 + <code class="c">blr</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>重载本身不花一分钱</strong>：编译器在编译期就把「调哪个」定死了，剩下的成本只取决于能不能内联。这也是为什么 C++ 里能用重载/模板（静态多态）就不要上虚函数（动态多态）——差的那 ~0.8 ns 在纳秒级撮合里就是真金白银。</p>
+<h3>实测 7：三个"边角"规则，教科书常常不讲</h3>
+<p>（<code class="c">examples/6.3-2-overload-details.cpp</code>）</p>
+<p><strong>① <code class="c">extern "C"</code> 里没有重载</strong>：C 链接不做 name mangling，同一个名字只能对应一个符号，写两份签名直接 <code class="c">redefinition</code>。所以<strong>给 C 用的头文件里不能有重载</strong>——这也是 C API 常见 <code class="c">foo_i</code> / <code class="c">foo_d</code> 命名后缀的来源。</p>
+<p><strong>② 默认实参会制造二义性</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">void amb(int);
+void amb(int, int = 0);
+amb(1);        // ❌ call to 'amb' is ambiguous（两个候选都匹配得上，没有理由偏好谁）
+amb(1, 2);     // ✅ 只有 amb(int,int) 可行
+</code></pre>
+<p>声明本身合法，撞车发生在调用点。<strong>给重载函数加默认实参前，先把所有可能的调用点列一遍。</strong></p>
+<p><strong>③ 重载集不能直接传给算法</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">int sq(int); double sq(double);
+std::transform(v.begin(), v.end(), out.begin(), sq);              // ❌ 推不出 sq 是哪个
+std::transform(v.begin(), v.end(), out.begin(),
+               static_cast&lt;int(*)(int)&gt;(sq));                     // ✅ 显式定型
+std::transform(v.begin(), v.end(), out.begin(),
+               [](int x){ return sq(x); });                       // ✅ 推荐：还能内联
+</code></pre>
+<p>重载集是一个<strong>名字</strong>，不是一个值；要当值传递必须先定型（<code class="c">static_cast</code> 或包一层 lambda）。</p>
+<p><strong>④ const 重载</strong>：<code class="c">S::get()</code> 与 <code class="c">S::get() const</code> 是两个函数，按对象的常量性在<strong>编译期</strong>分派——这正是容器 <code class="c">operator[]</code> 要有"可读版 / 可写版"两份的原因（实测非 const 对象 → 1，const 对象 → 2）。</p>
+<h2>HFT / 嵌入式视角</h2>
+<ul>
+<li><strong>用重载替代运行期类型判断</strong>：行情消息解码 <code class="c">decode(const OrderMsg&amp;)</code> / <code class="c">decode(const TradeMsg&amp;)</code> 在编译期定死分支，热路径上没有 if-else 链、没有虚表查询。</li>
+<li><strong>但别用重载做「配置开关」</strong>：<code class="c">send(msg, /*retry=*/true)</code> 这种布尔默认实参极易误读，用强类型枚举或独立函数名（<code class="c">send_with_retry</code>）更稳。</li>
+<li><strong>C 里的等价物是 <code class="c">_Generic</code>（C11）</strong>：没有真重载，只能靠宏挑函数，实测可用但只是语法糖——没有 mangling，也没有类型安全的重载决议：</li>
+</ul>
+<pre class="code" data-label="C"><code class="c">#define print(x) _Generic((x), int: print_int, double: print_double, \
+                          char*: print_str, const char*: print_str)(x)
+print(42);  print(3.14);  print(&quot;hi&quot;);   /* 实测：分别落到三个函数 */
+</code></pre>
+<ul>
+<li><strong>嵌入式</strong>：<code class="c">write_reg(uint16_t addr, uint8_t/16_t/32_t)</code> 重载在 -O2 下全部内联成单条 <code class="c">str</code> 指令；若改用函数指针表，每次寄存器访问多一次 <code class="c">blr</code> 且无法内联。</li>
+</ul>
 <h2>常见错误</h2>
 <ol>
 <li><strong>二义性调用</strong>：<code class="c">void f(long); void f(double); f(3);</code> —— int→long 和 int→double 都是标准转换，谁也不比谁好，二义性报错。<strong>修正</strong>：显式转换 <code class="c">f(static_cast&lt;long&gt;(3))</code> 或加 <code class="c">f(int)</code> 重载。</li>
 <li><strong>重载与默认实参冲突</strong>：<code class="c">void f(int); void f(int, int=0); f(1);</code> —— 调用 <code class="c">f(1)</code> 二义性。<strong>修正</strong>：避免这种设计。</li>
-<li><strong>以为返回类型参与重载</strong>：<code class="c">int f(int); void f(int);</code> —— 编译错误"重复定义"。返回类型不区分重载。</li>
+<li><strong>以为返回类型参与重载</strong>：<code class="c">int f(int); void f(int);</code> —— 编译错误"重复定义"。返回类型不区分重载。底层原因：mangled 名字里只有参数类型，没有返回类型（实测 1 的 <code class="c">__Z1fi</code>）。</li>
+<li><strong>在重载集里传 <code class="c">NULL</code></strong>：<code class="c">void g(int); void g(const char*); g(NULL);</code> —— 实测报错 <code class="c">call to 'g' is ambiguous</code>（<code class="c">NULL</code> 是 <code class="c">long</code>，两个方向都是"转换"级）。<strong>修正</strong>：一律写 <code class="c">nullptr</code>；传整数就写 <code class="c">0</code>。</li>
+<li>
+<p><strong>改默认实参后只重编库、不重编调用方</strong>：默认实参是在<strong>调用点</strong>填充的（实测见 <a href="#s-6-4">6.4</a>：汇编 <code class="c">mov w1, #10</code> 出现在调用方里）。库里把默认值从 10 改成 20，老调用方二进制里仍是 10——这类"改了没生效"的 bug 极难查。<strong>修正</strong>：默认值写 <code class="c">constexpr</code> 常量，且改动后全量重编。</p>
+</li>
+<li>
+<p><strong>在 <code class="c">extern "C"</code> 块里写重载</strong>：C 链接没有 mangling，同一名字只能有一个符号，两份签名是 <code class="c">redefinition</code>。需要给 C 用时，用 <code class="c">foo_int</code> / <code class="c">foo_double</code> 这样的名字区分。</p>
+</li>
+<li><strong>给重载函数加默认实参</strong>：<code class="c">void f(int)</code> + <code class="c">void f(int,int=0)</code> 在 <code class="c">f(1)</code> 处直接二义。加默认实参前把所有调用点过一遍。</li>
+<li><strong>把重载函数名直接传给 <code class="c">std::transform</code> / <code class="c">std::sort</code> 等</strong>：重载集无法推导模板实参。用 <code class="c">static_cast&lt;int(*)(int)&gt;(f)</code> 或包一层 lambda。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：下面哪些能构成合法重载（同作用域内）？
@@ -830,12 +1506,73 @@ void log(const std::string&amp; s);
 </code></pre>
 <p><code class="c">log("hello")</code> 中 <code class="c">"hello"</code> 是 <code class="c">const char[6]</code>，<strong>精确匹配</strong> <code class="c">log(const char*)</code>（数组退化到指针），优先于 <code class="c">log(const std::string&amp;)</code>（后者要类类型转换，优先级低）。所以调 <code class="c">log(const char*)</code>。如果想强制走 string 版，写 <code class="c">log(std::string("hello"))</code>。</p>
 </details>
+<p><strong>5. 踩坑题</strong>：下面三次调用分别选中哪个重载？能否编译？</p>
+<pre class="code" data-label="cpp"><code class="c">void g(int);
+void g(const char*);
+g(NULL);
+g(nullptr);
+g(0);
+</code></pre>
+<details>
+<summary>答案</summary>
+<ul>
+<li><code class="c">g(NULL)</code> —— <strong>编译失败</strong>：<code class="c">error: call to 'g' is ambiguous</code>。本机 <code class="c">NULL</code> 是 <code class="c">long</code>（<code class="c">typeid(NULL).name()</code> 输出 <code class="c">l</code>，<code class="c">sizeof</code> 8），long→int 和 long→<code class="c">const char*</code> 都是"转换"级，同级无法决胜。</li>
+<li><code class="c">g(nullptr)</code> —— <code class="c">g(const char*)</code>，<code class="c">nullptr_t</code> 只能转指针，唯一可行。</li>
+<li><code class="c">g(0)</code> —— <code class="c">g(int)</code>，精确匹配。</li>
+</ul>
+<p><strong>修正</strong>：指针就写 <code class="c">nullptr</code>，整数就写 <code class="c">0</code>，永远不要在重载集里写 <code class="c">NULL</code>。</p>
+</details>
+<p><strong>6. 底层题</strong>：为什么 C++ 不允许「返回类型不同」构成重载？从链接符号的角度解释。</p>
+<details>
+<summary>答案</summary>
+<p>因为 <strong>mangled 符号里没有返回类型</strong>。<code class="c">int f(int)</code> 和 <code class="c">double f(int)</code> 会 mangled 成同一个名字 <code class="c">__Z1fi</code>（Itanium ABI：<code class="c">_Z</code> + 名字长 <code class="c">1</code> + <code class="c">f</code> + 参数码 <code class="c">i</code>）。两者若共存，目标文件里出现两个同名符号，链接器无法区分——所以语言层直接禁止。</p>
+<p>反过来也说明为什么<strong>参数类型</strong>能构成重载：它们进了符号（<code class="c">__Z1fi</code> / <code class="c">__Z1fd</code> / <code class="c">__Z1fii</code>）。可实测：<code class="c">clang++ -c x.cpp -o x.o &amp;&amp; llvm-nm -g x.o | c++filt</code>。</p>
+<p>顺带一个推论：调用 <code class="c">f(1);</code> 丢弃返回值时调用方根本没写期望类型，即使标准想按返回类型分派也无上下文可用。</p>
+</details>
+<p><strong>6. 选择题</strong>：以下哪个<strong>能</strong>编译通过？
+- A) <code class="c">extern "C" { void f(int); void f(double); }</code>
+- B) <code class="c">void g(int); void g(int, int = 0);</code> 然后调用 <code class="c">g(1);</code>
+- C) <code class="c">std::transform(v.begin(), v.end(), out.begin(), sq);</code>（<code class="c">sq</code> 有两个重载）
+- D) <code class="c">int h(int); double h(int);</code></p>
+<details>
+<summary>答案</summary>
+<p><strong>都不行，四个全是编译错误</strong>（只是错法不同）：</p>
+<ul>
+<li>A ❌：C 链接没有 name mangling → <code class="c">redefinition of 'f'</code>。</li>
+<li>B ❌：声明合法，但 <code class="c">g(1)</code> 调用点 <code class="c">call to 'g' is ambiguous</code>。</li>
+<li>C ❌：重载集无法推导模板实参 → <code class="c">couldn't infer template argument '_UnaryOperation'</code>。</li>
+<li>D ❌：<code class="c">functions that differ only in their return type cannot be overloaded</code>。</li>
+</ul>
+<p>修正：A 改名；B 去掉默认实参或去掉一个重载；C 用 <code class="c">static_cast</code> 或 lambda 定型；D 返回值不同不构成重载，必须改形参。</p>
+</details>
+<p><strong>7. 踩坑题</strong>：<code class="c">std::string</code> 的 <code class="c">operator[]</code> 为什么要有两个版本？用一个 <code class="c">int&amp; operator[](size_t)</code> 不行吗？</p>
+<details>
+<summary>答案</summary>
+<p>因为<strong>只读场景要能作用于 const 对象</strong>。成员函数按隐式对象参数（<code class="c">this</code> 的 const 性）分派：</p>
+<pre class="code" data-label="cpp"><code class="c">char&amp; operator[](size_t);              // 非 const 对象 → 可写
+const char&amp; operator[](size_t) const;  // const 对象 → 只读
+</code></pre>
+<p>只写一个非 const 版本，<code class="c">const std::string s; s[0];</code> 就编译不过（实测：<code class="c">S::get()</code> 非 const 对象 → 1，const 对象 → 2）。</p>
+<p>注意：<strong>返回类型不同本身不构成重载</strong>，能重载是因为第二个版本多带了 <code class="c">const</code> 限定（隐式对象参数类型不同）。</p>
+</details>
+<h2>可跑的例子</h2>
+<ul>
+<li><a href="chapter-06.html#s-6-3">examples/6.3-2-overload-details.cpp</a> —— <code class="c">extern "C"</code> 不能重载、默认实参制造二义性、重载集传给算法要先定型、const 重载按对象常量性分派。</li>
+<li><a href="chapter-06.html#s-6-3">examples/6.3-1-overload-resolution.cpp</a> —— 提升 vs 转换的决议结果、<code class="c">0</code>/<code class="c">nullptr</code>/<code class="c">NULL</code> 三兄弟、引用重载的左值右值偏好、顶层 const 重复声明合法。</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -O2 examples/6.3-1-overload-resolution.cpp -o ovl &amp;&amp; ./ovl
+clang++ -std=c++17 -Wall -O2 examples/6.3-2-overload-details.cpp -o ovl2 &amp;&amp; ./ovl2
+clang++ -std=c++17 -O2 examples/6.3-1-overload-resolution.cpp -o ovl &amp;&amp; ./ovl
+clang++ -std=c++17 -O2 -DTRY_NULL examples/6.3-1-overload-resolution.cpp -o /dev/null   # 复现 g(NULL) 二义性
+clang++ -std=c++17 -c mangle.cpp -o mangle.o &amp;&amp; llvm-nm -g mangle.o | c++filt            # 看 mangled 符号
+</code></pre>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §6.3：函数重载</li>
 <li>下一节：§6.4 默认实参 / inline / constexpr</li>
 <li>匹配规则完整展开：<a href="#s-6-6">6.6 函数匹配（重载决议）</a></li>
-<li>C 程序员对照：C 靠 <code class="c">_int</code>/<code class="c">_double</code> 后缀区分，C++ 用重载 + name mangling</li>
+<li>分派代价对照：<a href="#s-6-5">6.5 函数指针</a>（间接调用 <code class="c">blr</code>，无法内联）</li>
+<li>C 程序员对照：C 靠 <code class="c">_int</code>/<code class="c">_double</code> 后缀区分，C++ 用重载 + name mangling；C11 可用 <code class="c">_Generic</code> 做语法糖级模拟</li>
 </ul>
       </section>
       <section class="section" id="s-6-4">
@@ -918,11 +1655,224 @@ constexpr int BUFSIZE = 1024;
 constexpr int max(int a, int b) { return a &gt; b ? a : b; }  // 只求值一次
 int arr[BUFSIZE];                       // OK，编译期常量
 </code></pre>
+<h3>四件事分别解决什么问题（动机）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>没有它时可怎么办</th>
+<th>它真正解决的事</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认实参</td>
+<td>手写一堆 wrapper：<code class="c">log(msg)</code> 内部调 <code class="c">log(msg, 0)</code></td>
+<td>消除「只差一个参数」的重复函数</td>
+</tr>
+<tr>
+<td><code class="c">inline</code></td>
+<td>头文件里放函数定义 → 两个 TU 包含就 duplicate symbol</td>
+<td><strong>ODR 豁免</strong>：函数定义可以进头文件（现代主要语义）</td>
+</tr>
+<tr>
+<td><code class="c">constexpr</code></td>
+<td><code class="c">#define</code> 宏常量、手写常量表、模板元编程</td>
+<td>把运行期计算搬到编译期，零运行成本</td>
+</tr>
+<tr>
+<td><code class="c">assert</code> / <code class="c">NDEBUG</code></td>
+<td><code class="c">#ifdef DEBUG</code> 手写开关</td>
+<td>调试期检查、发布版零成本消失（但副作用也会消失，见实测 4）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>底层实现与实测</h2>
+<blockquote>
+<p>以下均为本机实测（Apple clang 23.1.0，arm64，<code class="c">-std=c++17 -O2</code>）。</p>
+</blockquote>
+<h3>实测 1：默认实参是在<strong>调用点</strong>填进去的</h3>
+<pre class="code" data-label="cpp"><code class="c">__attribute__((noinline)) int add(int a, int b = 10) { return a + b; }
+int use_default3(int x) { return add(x); }
+</code></pre>
+<pre class="code" data-label="asm"><code class="c">use_default3(int):
+    mov  w1, #10          ; =0xa      ← 默认值在&quot;调用方&quot;里被补上
+    b    add(int, int)                ← 函数本身只有 add(int,int) 一个签名
+</code></pre>
+<p>三个直接推论：</p>
+<ol>
+<li>符号表里<strong>只有</strong> <code class="c">add(int, int)</code>，没有「带默认值的重载」——默认实参不产生重载，也不算函数类型的一部分。</li>
+<li><strong>改默认值必须重新编译所有调用方</strong>（默认值被烧进每个调用点的指令里）。库里改成 20，老调用方二进制里还是 10。这是比「改了没生效」更难查的 ABI 级坑。</li>
+<li>虚函数的默认实参是<strong>静态绑定</strong>的：</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">struct B { virtual void f(int x = 1) { printf(&quot;B::f x=%d\n&quot;, x); } };
+struct D : B { void f(int x = 2) override { printf(&quot;D::f x=%d\n&quot;, x); } };
+D* d = new D;  B* b = d;
+b-&gt;f();   // 实测输出：D::f x=1   ← 函数体是 D 的，默认值却是 B 的
+d-&gt;f();   // 实测输出：D::f x=2
+</code></pre>
+<p>函数走虚表（动态），默认值按指针的<strong>静态类型</strong>在编译期填（静态）。<strong>Effective C++ Item 37 就讲这条</strong>：绝不重新定义继承来的默认实参值。</p>
+<h3>实测 2：<code class="c">inline</code> 关键字不决定内联，决定的是 ODR</h3>
+<pre class="code" data-label="cpp"><code class="c">inline int square(int x) { return x * x; }
+int use(int x) { return square(x); }
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译选项</th>
+<th><code class="c">use</code> 的汇编</th>
+<th>是否被内联</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-O0</code>（<strong>写了</strong> <code class="c">inline</code>）</td>
+<td><code class="c">bl square(int)</code></td>
+<td>❌ 没内联</td>
+</tr>
+<tr>
+<td><code class="c">-O2</code>（<strong>写了</strong> <code class="c">inline</code>）</td>
+<td><code class="c">mul w0, w0, w0</code></td>
+<td>✅ 内联</td>
+</tr>
+<tr>
+<td><code class="c">-O2</code>（<strong>不写</strong> <code class="c">inline</code>，小函数）</td>
+<td><code class="c">mul w0, w0, w0</code></td>
+<td>✅ 照样内联</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论</strong>：内联与否由优化器和函数体大小决定，<code class="c">inline</code> 只是"建议"。那 <code class="c">inline</code> 还剩什么用？——<strong>ODR 豁免</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">$ clang++ a.cpp b.cpp            # 两个 TU 都定义 int dup() { ... }
+ld: 1 duplicate symbol for architecture arm64
+
+$ clang++ a.cpp b2.cpp           # b2.cpp 里是 inline int dup() { ... }
+（链接通过）
+</code></pre>
+<p>所以现代 C++ 里 <code class="c">inline</code> 的实际语义是「<strong>这个函数可以出现在多个翻译单元，只要定义完全一致</strong>」——这正是头文件里能直接写函数体（类内成员函数默认就是 inline）的原因。</p>
+<h3>实测 3：<code class="c">constexpr</code> 到底有没有编译期求值，看汇编就知道</h3>
+<pre class="code" data-label="cpp"><code class="c">constexpr int fact(int n) { return n &lt;= 1 ? 1 : n * fact(n - 1); }
+int use_constexpr() { return fact(5); }     // 实参是常量
+int use_runtime(int n) { return fact(n); }  // 实参运行期才知
+</code></pre>
+<pre class="code" data-label="asm"><code class="c">use_constexpr():
+    mov  w0, #120        ; =0x78     ← 编译期算完，一条立即数，零调用
+
+use_runtime(int):
+    ...
+    bl   fact(int)                    ← 退化成普通函数调用（递归被展开成向量化循环）
+</code></pre>
+<p><code class="c">constexpr</code> 是「<strong>能</strong>在编译期求值」，不是「<strong>一定</strong>在编译期求值」。想强制，C++20 有 <code class="c">consteval</code>：</p>
+<pre class="code" data-label="shell"><code class="c">consteval int sq(int x) { return x * x; }
+int n = argc;  return sq(n);
+error: call to consteval function 'sq' is not a constant expression
+</code></pre>
+<p>编译期递归有上限（clang 默认 512）：</p>
+<pre class="code" data-label="shell"><code class="c">static_assert(fact(1000) == 0);
+error: constexpr evaluation exceeded maximum depth of 512 calls
+</code></pre>
+<p>需要更深时加 <code class="c">-fconstexpr-depth=N</code>（实测加到 2000 后深度不再是瓶颈，但会撞下一步数限制）。<strong>别在编译期算 Fibonacci(40) 这类指数级展开</strong>——编译时间会爆炸。</p>
+<h3>实测 4：<code class="c">NDEBUG</code> 会把 assert <strong>整句</strong>删掉，连带副作用</h3>
+<pre class="code" data-label="cpp"><code class="c">int g_bump = 0;
+int bump() { ++g_bump; return g_bump; }
+int main() { assert(bump() &gt; 0); printf(&quot;g_bump = %d\n&quot;, g_bump); }
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译方式</th>
+<th>输出</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">clang++ -O2 x.cpp</code></td>
+<td><code class="c">g_bump = 1</code></td>
+<td>assert 生效，<code class="c">bump()</code> 真被调用</td>
+</tr>
+<tr>
+<td><code class="c">clang++ -O2 -DNDEBUG x.cpp</code></td>
+<td><code class="c">g_bump = 0</code></td>
+<td><strong>整句被移除，副作用也没了</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>断言失败时进程 <code class="c">abort</code>：</p>
+<pre class="code" data-label="shell"><code class="c">Assertion failed: (p != nullptr), function main, file special.cpp, line 41.
+exit=134          ← 128 + SIGABRT(6)
+</code></pre>
+<p><strong>工程铁律</strong>：<code class="c">assert</code> 里只能放"检查"，不能放"必须执行的动作"。<code class="c">assert(fclose(f) == 0)</code> 在 Release 构建下文件根本没关——这是真实项目里出现过的数据丢失 bug。</p>
+<h3>实测 5：虚函数的默认实参是<strong>静态绑定</strong>的</h3>
+<p>这是本节最贵的一个坑（<code class="c">examples/6.4-2-special-details.cpp</code>）：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Base    { virtual void f(int x = 1) { /* ... */ } };
+struct Derived : Base { void f(int x = 2) override { /* ... */ } };
+
+Derived d; Base* pb = &amp;d;
+d.f();      // 静态类型 Derived → 默认值 2
+pb-&gt;f();    // 静态类型 Base    → 默认值 1
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">Derived::f  x=2
+Derived::f  x=1      ← 两次都进了 Derived::f，参数却不一样
+</code></pre>
+<p><strong>函数体是虚派发的，默认实参不是</strong>——默认值在<strong>调用点</strong>按静态类型填入，编译期就焊死了。所以「改虚函数的默认实参」是纯 bug 制造机。<strong>修正</strong>：不要在派生类改默认实参；要变就上<strong>非虚接口（NVI）</strong>——基类提供非虚的 <code class="c">f(int x = 1)</code>，内部调私有虚函数 <code class="c">do_f(x)</code>。</p>
+<h3>实测 6：<code class="c">constexpr</code> / <code class="c">consteval</code> / <code class="c">constinit</code> 三兄弟</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>关键字</th>
+<th>含义</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">constexpr</code></td>
+<td><strong>可以</strong>在编译期求值，运行期也能当普通函数用</td>
+<td><code class="c">fib(10)</code> 编译期折叠成 55（<code class="c">static_assert</code> 通过）；<code class="c">fib(runtime_n)</code> 走真递归</td>
+</tr>
+<tr>
+<td><code class="c">consteval</code>（C++20）</td>
+<td><strong>必须</strong>编译期求值</td>
+<td>传运行期变量 → 编译错误</td>
+</tr>
+<tr>
+<td><code class="c">constinit</code>（C++20）</td>
+<td><strong>必须</strong>静态初始化</td>
+<td>消除静态初始化顺序问题（SIOF）</td>
+</tr>
+</tbody>
+</table></div>
+<p>同一个 <code class="c">constexpr</code> 函数，两个命运：<code class="c">fib(10)</code> 在 <code class="c">-O2</code> 下被折叠成一行 <code class="c">mov</code>，<code class="c">fib(20)</code>（实参运行时才知道）是真的递归调用。</p>
+<h3>实测 7：<code class="c">assert</code> 与 <code class="c">static_assert</code> 的寿命完全不同</h3>
+<pre class="code" data-label="code"><code class="c">默认构建：        assert 前 g_counter = 0 → assert 后 g_counter = 1
+-DNDEBUG 重编：   assert 前 g_counter = 0 → assert 后 g_counter = 0   ← ++ 根本没执行
+</code></pre>
+<p><code class="c">assert(++g_counter &gt; 0);</code> 里的 <strong><code class="c">++</code> 在 release 构建中消失</strong>——这就是"debug 正常、release 行为不同"的经典来源。<code class="c">static_assert</code> 相反：编译期检查，任何构建都不会被删，<strong>编译期能验证的不变量一律用它</strong>。</p>
+<h2>HFT / 嵌入式视角</h2>
+<ul>
+<li><strong><code class="c">constexpr</code> 查表替代运行期计算</strong>：撮合里的手续费档位、tick size 表、CRC/哈希多项式表，<code class="c">constexpr</code> 生成后落进 <code class="c">.rodata</code>，热路径零计算。比运行期 <code class="c">if-else</code> 档位判断省掉一次不可预测分支。</li>
+<li><strong><code class="c">inline</code> 与头文件实现</strong>：低延迟库普遍 header-only（<code class="c">inline</code> 或模板），配合 <code class="c">-flto</code> 才能跨 TU 内联；否则跨编译单元的小函数会保留真实调用（<code class="c">bl</code>），一次约 1 ns。</li>
+<li><strong>默认实参用作版本开关要小心</strong>：<code class="c">send(msg, /*retry=*/true)</code> 这类布尔默认值，一旦改默认行为必须全量重编（实测 1）；更好的做法是显式传或独立函数名。</li>
+<li><strong><code class="c">assert</code> 在实盘的取舍</strong>：生产构建通常 <code class="c">-DNDEBUG</code>，但<strong>前置条件检查不能只靠 assert</strong>（会被删）。校验外部输入（行情包、订单字段）要用返回错误码的显式检查，assert 只用于「内部不可能为假」的不变量。</li>
+<li><strong>嵌入式</strong>：<code class="c">constexpr</code> 把配置算进固件（不占 RAM），<code class="c">assert</code> 失败在裸机环境通常没有 stderr，需自行实现 <code class="c">__assert_func</code> 或直接避免依赖。</li>
+</ul>
 <h2>常见错误</h2>
 <ol>
 <li><strong>默认实参中间留空</strong>：<code class="c">void f(int a=1, int b, int c=3)</code> —— 默认实参必须连续在最右，<code class="c">b</code> 没默认值却出现在 <code class="c">a</code>（有默认）之后，错误。</li>
 <li><strong><code class="c">constexpr</code> 函数含运行期操作</strong>：C++11 的 <code class="c">constexpr</code> 函数只能有 <code class="c">return</code> 一条语句；C++14 放宽（可有局部变量、循环）。但若实参不是常量表达式，函数退化为运行期调用——别误以为"加了 constexpr 就一定编译期求值"。</li>
 <li><strong><code class="c">inline</code> 放声明而非定义</strong>：<code class="c">inline</code> 应放在函数<strong>定义</strong>上。放声明上无效，且如果定义在另一文件会造成链接错误（<code class="c">inline</code> 函数必须在每个使用它的 TU 中可见，通常放头文件）。</li>
+<li><strong>把必须执行的动作写进 <code class="c">assert</code></strong>：<code class="c">assert(fclose(f) == 0);</code> / <code class="c">assert(send(sock, buf, n) == n);</code> —— <code class="c">-DNDEBUG</code> 后整句消失（实测 4），文件没关、包没发。<strong>修正</strong>：<code class="c">int r = fclose(f); assert(r == 0);</code> 把动作和检查分开。</li>
+<li><strong>改默认实参值后只重编库</strong>：默认值被编译进每个调用点（实测 1：<code class="c">mov w1, #10</code>），老调用方二进制里仍是旧值。<strong>修正</strong>：默认值用 <code class="c">constexpr</code> 常量表达，改动后全量重编；或干脆不用默认实参表达"策略"。</li>
+<li>
+<p><strong>重新定义继承来的默认实参</strong>：<code class="c">Base::f(int=1)</code> 被 <code class="c">Derived::f(int=2)</code> 覆盖时，通过 <code class="c">Base*</code> 调用拿到的是 1（实测 1 推论 3，输出 <code class="c">D::f x=1</code>）。<strong>修正</strong>：不重写默认实参，或用非虚接口（NVI）模式让虚函数不带默认实参。</p>
+</li>
+<li>
+<p><strong>在派生类里改虚函数的默认实参</strong>：默认实参按静态类型绑定，不随虚派发。实测 <code class="c">d.f()</code> 得到 x=2、<code class="c">pb-&gt;f()</code> 得到 x=1，两次都执行 <code class="c">Derived::f</code>。<strong>修正</strong>：派生类不要改默认值，改用 NVI 模式。</p>
+</li>
+<li><strong>把有副作用的表达式写进 <code class="c">assert</code></strong>：<code class="c">assert(++n)</code> / <code class="c">assert(init() == 0)</code> 在 <code class="c">-DNDEBUG</code> 下整句被删，release 构建里初始化根本没发生。<strong>修正</strong>：<code class="c">assert</code> 里只放纯查询，副作用写到外面。</li>
+<li><strong>以为 <code class="c">constexpr</code> 一定在编译期求值</strong>：只有实参是编译期常量时才会折叠，传运行期变量就是普通函数调用。要强制编译期求值用 <code class="c">consteval</code>（C++20）。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：下面哪个 <code class="c">constexpr</code> 函数在 C++11 中合法？
@@ -963,11 +1913,88 @@ int main() {
 </code></pre>
 <p>相比 <code class="c">#define FACT5 (5*4*3*2*1)</code> 手写：1) 类型安全（int 而非无类型）；2) 有作用域（函数作用域）；3) 递归通用，不用每个数手写；4) 调试器能看到 <code class="c">fact</code> 的值；5) 不会像宏那样因参数求值两次产生副作用。</p>
 </details>
+<p><strong>5. 判断题</strong>：下面两句话对不对？</p>
+<blockquote>
+<p>(a) 写了 <code class="c">inline</code> 的函数一定会被内联展开，没写的就不会。
+(b) 加了 <code class="c">constexpr</code> 的函数一定在编译期求值。</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>两句都错。</strong></p>
+<p>(a) 实测：<code class="c">-O0</code> 下写了 <code class="c">inline</code> 的 <code class="c">square</code> 仍是 <code class="c">bl square(int)</code>（没内联）；<code class="c">-O2</code> 下<strong>不写</strong> <code class="c">inline</code> 的小函数照样被内联成 <code class="c">mul</code>。内联由优化器决定，<code class="c">inline</code> 的现代主要语义是 <strong>ODR 豁免</strong>（两个 TU 各定义一次非 inline 同名函数 → <code class="c">duplicate symbol</code>；改成 <code class="c">inline</code> → 链接通过）。</p>
+<p>(b) 实测：<code class="c">fact(5)</code> 编译成 <code class="c">mov w0, #120</code>（编译期）；<code class="c">fact(n)</code>（<code class="c">n</code> 运行期才知）退化成真正的 <code class="c">bl fact(int)</code>。<code class="c">constexpr</code> 是"能"不是"必"。要强制编译期，C++20 用 <code class="c">consteval</code>（实测：传运行期实参报 <code class="c">call to consteval function 'sq' is not a constant expression</code>）。</p>
+</details>
+<p><strong>6. 输出题</strong>：下面程序两次运行的输出是什么？</p>
+<pre class="code" data-label="cpp"><code class="c">struct B { virtual void f(int x = 1) { printf(&quot;B::f x=%d\n&quot;, x); } };
+struct D : B { void f(int x = 2) override { printf(&quot;D::f x=%d\n&quot;, x); } };
+int main() {
+    D* d = new D;  B* b = d;
+    b-&gt;f();   // ①
+    d-&gt;f();   // ②
+}
+
+int g = 0;  int bump() { ++g; return g; }
+assert(bump() &gt; 0);  printf(&quot;g=%d\n&quot;, g);   // ③ 不带 NDEBUG / 带 -DNDEBUG
+</code></pre>
+<details>
+<summary>答案</summary>
+<p>① <code class="c">D::f x=1</code> —— <strong>函数体是 D 的（虚表动态分派），默认实参却是 B 的 1</strong>（静态类型决定，编译期填）。
+② <code class="c">D::f x=2</code> —— 静态类型是 <code class="c">D*</code>，填 2。
+③ 不带 <code class="c">NDEBUG</code>：<code class="c">g=1</code>；带 <code class="c">-DNDEBUG</code>：<code class="c">g=0</code>（整句 assert 被移除，<code class="c">bump()</code> 根本没跑）。</p>
+<p><strong>两条教训</strong>：(1) 绝不重新定义继承来的默认参数值（Effective C++ Item 37），避免"函数走子类、默认值走父类"这种精神分裂；(2) assert 里只放检查，不放必须发生的副作用。</p>
+</details>
+<p><strong>6. 踩坑题</strong>：下面代码输出什么？为什么？</p>
+<pre class="code" data-label="cpp"><code class="c">struct B { virtual void f(int x = 1) { printf(&quot;B%d&quot;, x); } };
+struct D : B { void f(int x = 2) override { printf(&quot;D%d&quot;, x); } };
+D d; B* p = &amp;d;
+d.f(); p-&gt;f();
+</code></pre>
+<details>
+<summary>答案</summary>
+<p>输出 <strong><code class="c">D2D1</code></strong>。</p>
+<p>两次调用都执行 <code class="c">D::f</code>（虚派发正确），但默认实参是在<strong>调用点按静态类型</strong>填的：<code class="c">d.f()</code> 静态类型是 <code class="c">D</code> → 填 2；<code class="c">p-&gt;f()</code> 静态类型是 <code class="c">B</code> → 填 1。</p>
+<p><strong>教训</strong>：派生类绝不要改虚函数的默认实参。正确做法：</p>
+<pre class="code" data-label="cpp"><code class="c">struct B {
+    void f(int x = 1) { do_f(x); }        // 非虚接口（NVI），默认值只有一个
+private:
+    virtual void do_f(int) { /* ... */ }
+};
+</code></pre>
+</details>
+<p><strong>7. 选择题</strong>：关于 <code class="c">assert</code> 和 <code class="c">static_assert</code>，正确的是？
+- A) <code class="c">assert</code> 在 release 构建中仍然存在，只是不打印
+- B) <code class="c">assert(++n)</code> 中的 <code class="c">++n</code> 在任何构建下都会执行
+- C) <code class="c">static_assert</code> 是编译期检查，不会被任何编译选项删掉
+- D) <code class="c">constexpr</code> 函数一定在编译期求值</p>
+<details>
+<summary>答案</summary>
+<p><strong>只有 C 正确。</strong></p>
+<ul>
+<li>A ❌：<code class="c">-DNDEBUG</code> 会把 <code class="c">assert</code> <strong>整句删除</strong>（预处理阶段就没了）。</li>
+<li>B ❌：实测 <code class="c">-DNDEBUG</code> 下 <code class="c">g_counter</code> 保持 0，<code class="c">++</code> 根本没执行。</li>
+<li>C ✅：<code class="c">static_assert</code> 在编译期求值，与构建类型无关。</li>
+<li>D ❌：<code class="c">constexpr</code> 只是"可以"编译期求值；实参是运行期值时就是普通函数调用（实测 <code class="c">fib(20)</code> 走真递归）。要强制编译期请用 <code class="c">consteval</code>（C++20）。</li>
+</ul>
+</details>
+<h2>可跑的例子</h2>
+<ul>
+<li><a href="chapter-06.html#s-6-4">examples/6.4-2-special-details.cpp</a> —— 虚函数默认实参<strong>静态绑定</strong>、<code class="c">constexpr</code>/<code class="c">consteval</code>/<code class="c">constinit</code> 对照、<code class="c">assert</code> 副作用在 <code class="c">NDEBUG</code> 下消失（需 <code class="c">-std=c++20</code>）。</li>
+<li><a href="chapter-06.html#s-6-4">examples/6.4-1-special-features.cpp</a> —— 默认实参调用点填充、<code class="c">inline</code> 的 <code class="c">-O0</code>/<code class="c">-O2</code> 差异、<code class="c">constexpr</code> 编译期 vs 运行期、<code class="c">assert</code> 副作用在 <code class="c">NDEBUG</code> 下消失。</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -O2 examples/6.4-1-special-features.cpp -o sp   &amp;&amp; ./sp     # g_bump = 1
+clang++ -std=c++17 -O2 -DNDEBUG examples/6.4-1-special-features.cpp -o spn &amp;&amp; ./spn   # g_bump = 0
+clang++ -std=c++17 -O2 -S examples/6.4-1-special-features.cpp -o - | grep -E &quot;mov|bl|mul&quot;   # 看 constexpr 是否被折叠
+clang++ -std=c++20 -Wall -O2 examples/6.4-2-special-details.cpp -o sp2 &amp;&amp; ./sp2
+clang++ -std=c++20 -O2 -DNDEBUG examples/6.4-2-special-details.cpp -o sp2n &amp;&amp; ./sp2n   # assert 副作用消失
+clang++ -std=c++17 -O2 -S examples/6.4-1-special-features.cpp -o - | grep -E &quot;mov|bl|mul&quot;   # 看 constexpr 是否被折叠
+</code></pre>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §6.4：默认实参 / inline / constexpr</li>
 <li>下一节：§6.5 函数指针</li>
+<li>重载与默认值配合：<a href="#s-6-3">6.3 函数重载</a>、<a href="#s-6-6">6.6 函数匹配（重载决议）</a></li>
 <li>C 程序员迁移：<code class="c">#define</code> 常量 → <code class="c">constexpr</code>，<code class="c">#define</code> 宏函数 → <code class="c">inline</code>/<code class="c">constexpr</code> 函数</li>
+<li>Effective C++ 对照：Item 02（以 const/enum/inline 替换 #define）、Item 37（绝不重新定义继承来的默认参数值）</li>
 </ul>
       </section>
       <section class="section" id="s-6-5">
@@ -992,11 +2019,160 @@ void sort(int* a, int n, bool (*cmp)(int, int));
 bool less(int a, int b) { return a &lt; b; }
 sort(arr, n, less);          // 传入函数名，自动转指针
 </code></pre>
+<h3>典型用途（为什么需要它）</h3>
+<p>函数指针把「<strong>行为</strong>」当成数据来传递和保存——这是 C 里唯一的多态手段，也是 C++ 回调机制的底座。四个典型场景：</p>
+<p><strong>① 回调</strong>：把函数交给别人，让它在合适时机回头调你。<code class="c">qsort</code> 就是靠这个——它只管排序算法，比较规则由调用方的 <code class="c">compar</code> 决定。</p>
+<pre class="code" data-label="cpp"><code class="c">void qsort(void* base, size_t n, size_t size, int (*compar)(const void*, const void*));
+</code></pre>
+<p><strong>② 运行时动态选择</strong>：代码写完后，运行时才决定调哪个函数。</p>
+<pre class="code" data-label="cpp"><code class="c">void (*op)(int, int) = (c == '+') ? Add : Sub;
+op(3, 5);
+</code></pre>
+<p><strong>③ 设备表 / C 风格多态</strong>：结构体里放函数指针，不同实例填不同实现（Linux 内核 <code class="c">struct file_operations</code> 就是这个套路）。</p>
+<pre class="code" data-label="cpp"><code class="c">struct Device {
+    const char* name;
+    int (*open)(void);
+    int (*read)(char*, int);
+    int (*write)(const char*, int);
+};
+static const Device kUart = {&quot;uart&quot;, uart_open, uart_read, uart_write};
+dev-&gt;read(buf, n);        // 上层代码不关心具体是哪种设备
+</code></pre>
+<p><strong>④ 中断 / 信号注册</strong>：告诉内核"发生中断时跑这个函数"，本身就是传函数指针（嵌入式、驱动最常见）。Cortex-M 的中断向量表本质就是函数指针数组。</p>
 <h3>用 <code class="c">typedef</code>/<code class="c">using</code> 简化</h3>
 <pre class="code" data-label="cpp"><code class="c">using BinOp = int(*)(int, int);   // C++11 别名，清晰
 BinOp op = add;
 op(1, 2);
 </code></pre>
+<h2>函数签名的完整匹配规则（什么算"同一个函数类型"）</h2>
+<blockquote>
+<p>函数指针赋值失败，绝大多数不是"签名没对上"，而是<strong>你以为对上了、标准说不算</strong>。这一节把「函数类型等价」的判据列全。数据来自 <code class="c">examples/6.5-3-signature-match.cpp</code>（clang 23.1.0 / <code class="c">-std=c++17</code>）。</p>
+</blockquote>
+<h3>规则表（<code class="c">static_assert(std::is_same&lt;...&gt;)</code> 实测）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>两个类型</th>
+<th>同一类型?</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">int(int,double)</code> vs <code class="c">int(int a,double b)</code></td>
+<td>✅ 是</td>
+<td>参数名不是类型的一部分</td>
+</tr>
+<tr>
+<td><code class="c">void(int)</code> vs <code class="c">void(const int)</code></td>
+<td>✅ 是</td>
+<td>形参的<strong>顶层 const</strong> 在"参数类型调整"时丢弃</td>
+</tr>
+<tr>
+<td><code class="c">void(int[10])</code> vs <code class="c">void(int*)</code></td>
+<td>✅ 是</td>
+<td>数组参数退化为指针</td>
+</tr>
+<tr>
+<td><code class="c">void(int[3])</code> vs <code class="c">void(int[10])</code></td>
+<td>✅ 是</td>
+<td>维度也被丢弃</td>
+</tr>
+<tr>
+<td><code class="c">void(void())</code> vs <code class="c">void(void(*)())</code></td>
+<td>✅ 是</td>
+<td>函数参数退化为函数指针</td>
+</tr>
+<tr>
+<td><code class="c">void(char* const)</code> vs <code class="c">void(char*)</code></td>
+<td>✅ 是</td>
+<td>指针自身的 const 是顶层 const</td>
+</tr>
+<tr>
+<td><code class="c">void(int)</code> vs <code class="c">void(int&amp;)</code></td>
+<td>❌ 否</td>
+<td>引用不退化</td>
+</tr>
+<tr>
+<td><code class="c">void(const char*)</code> vs <code class="c">void(char*)</code></td>
+<td>❌ 否</td>
+<td><strong>底层 const</strong>（指向的 cv）是类型的一部分</td>
+</tr>
+<tr>
+<td><code class="c">void()</code> vs <code class="c">void() noexcept</code></td>
+<td>❌ 否（单向兼容）</td>
+<td>C++17 起 <code class="c">noexcept</code> 进入函数类型</td>
+</tr>
+<tr>
+<td><code class="c">int(W::*)()</code> vs <code class="c">int(W::*)() const</code></td>
+<td>❌ 否</td>
+<td>成员函数的 const 限定属于签名</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>一句话记忆</strong>：不算的是「名字、顶层 const、数组/函数的壳、默认实参」；算的是「引用、底层 const、noexcept、返回类型、成员 const 限定、<code class="c">...</code>」。</p>
+<h3>三个"看着一样其实不一样"的坑</h3>
+<p><strong>① 顶层 const 不计：两个声明是同一个函数</strong></p>
+<pre class="code" data-label="cpp"><code class="c">void k(int);
+void k(const int);     // ✅ 合法——同一函数的重复声明，顶层 const 被丢弃
+void k(int) {}         // 再写一份定义 → error: redefinition of 'k'
+</code></pre>
+<p>所以<strong>不要用顶层 const 做重载</strong>（<code class="c">void f(int)</code> 和 <code class="c">void f(const int)</code> 不是重载，是重复声明）；真要区分，用引用或指针：<code class="c">void f(int&amp;)</code> / <code class="c">void f(const int&amp;)</code> 才是两个函数。</p>
+<p><strong>② 返回类型在函数指针上不做协变</strong></p>
+<pre class="code" data-label="cpp"><code class="c">struct Base {}; struct Derived : Base {};
+Derived* mk();
+Base* (*p)() = &amp;mk;                 // ❌ different return type ('Base *' vs 'Derived *')
+std::function&lt;Base*()&gt; f = &amp;mk;     // ✅ std::function 允许协变返回
+</code></pre>
+<p>协变返回是<strong>虚函数重写</strong>和 <code class="c">std::function</code> 的特权，裸函数指针没有——它就是 8 字节地址，返回类型必须字节级一致。</p>
+<p><strong>③ 重载 / 模板取地址必须给出"目标类型"</strong></p>
+<pre class="code" data-label="cpp"><code class="c">void h(int); void h(double);
+auto q = &amp;h;                                     // ❌ 不知道取哪个重载
+void (*pv)(int) = &amp;h;                            // ✅ 目标类型挑出 void h(int)
+auto pd = static_cast&lt;void(*)(double)&gt;(&amp;h);      // ✅ 等价写法
+
+template &lt;class T&gt; T twice(T x) { return x + x; }
+int (*pt)(int) = &amp;twice&lt;int&gt;;                    // ✅ 显式实例化
+void take(int (*f)(int)); take(&amp;twice);          // ✅ 从目标类型推出 T=int
+</code></pre>
+<h3>lambda → 函数指针：只看有没有捕获列表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>lambda</th>
+<th>转裸函数指针</th>
+<th>转 <code class="c">std::function</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无捕获 <code class="c">[]</code></td>
+<td>✅ 有转换运算符</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>捕获局部变量 <code class="c">[loc]</code></td>
+<td>❌ <code class="c">no viable conversion</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>捕获全局变量 <code class="c">[g]</code></td>
+<td>❌ 但报错不同（见下）</td>
+<td>❌ 同样这条更早的错</td>
+</tr>
+</tbody>
+</table></div>
+<p>两条报错千万别混：</p>
+<pre class="code" data-label="cpp"><code class="c">int g = 7;                                        // 静态存储期
+void (*a)(int) = [g](int x){...};                 // ❌ 'g' cannot be captured because it
+                                                  //     does not have automatic storage duration
+int main() { int loc = 7;
+    void (*b)(int) = [loc](int x){...};           // ❌ no viable conversion from '(lambda)' to
+                                                  //    'void (*)(int)'  ← 这条才是&quot;有捕获转不了&quot;
+    std::function&lt;void(int)&gt; c = [loc](int x){...}; // ✅
+}
+</code></pre>
+<p>第一条跟函数指针<strong>无关</strong>：静态/全局变量压根不许进捕获列表——它们不需要捕获，lambda 里直接读就行（写 <code class="c">[]</code> 即可）。第二条才是"闭包有状态、8 字节装不下"。</p>
 <h2>和 C 的区别</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1049,7 +2225,7 @@ int r = (obj.*pmf)(42);       // 通过对象调用成员函数指针
 C* p = &amp;obj;
 int r2 = (p-&gt;*pmf)(42);       // 通过指针调用
 </code></pre>
-<p><strong>C 程序员更该学的现代替代</strong>：C++ 里回调优先用<strong>函数对象（lambda）</strong>或 <code class="c">std::function</code>，而不是裸函数指针——函数指针无法内联，性能差，且类型不灵活。</p>
+<p><strong>C 程序员更该学的现代替代</strong>：C++ 里回调优先用<strong>函数对象（lambda）</strong>或 <code class="c">std::function</code>，而不是裸函数指针——函数指针无法内联（实测比可内联的模板慢约 6 倍，见下方「实测 3」），且类型不灵活、不能携带状态。</p>
 <pre class="code" data-label="C"><code class="c">/* C：回调用函数指针，无法内联 */
 void apply(int* a, int n, int (*fn)(int)) {
     for (int i = 0; i &lt; n; ++i) a[i] = fn(a[i]);   // 间接调用
@@ -1062,11 +2238,186 @@ void apply(int* a, int n, F fn) {
 }
 apply(arr, n, [](int x){ return x * 2; });
 </code></pre>
+<h2>底层实现与实测</h2>
+<blockquote>
+<p>以下均为本机实测（Apple clang 23.1.0，arm64，<code class="c">-std=c++17 -O2</code>）。函数指针的代价<strong>不在语法，在"能不能内联"</strong>。</p>
+</blockquote>
+<h3>实测 1：它就只是一个地址</h3>
+<pre class="code" data-label="cpp"><code class="c">void Hello(int x) {}
+void (*p)(int) = Hello;
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>量</th>
+<th>实测值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">sizeof(p)</code></td>
+<td><strong>8</strong>（和 <code class="c">void*</code> 一样，就是一个地址）</td>
+</tr>
+<tr>
+<td><code class="c">p == Hello</code></td>
+<td><strong>true</strong>（函数名自动退化）</td>
+</tr>
+<tr>
+<td><code class="c">p(100)</code> vs <code class="c">(*p)(100)</code></td>
+<td>完全等价，两种写法都合法</td>
+</tr>
+</tbody>
+</table></div>
+<p>段地址实测（<code class="c">&amp;fn</code> 是代码段，<code class="c">&amp;g_data</code> 是数据段）：</p>
+<pre class="code" data-label="code"><code class="c">函数 fn         = 0x1023dfe78     ← 代码段（__TEXT）
+字符串常量      = 0x1023dffaa     ← 只读段
+全局 int g_data = 0x1023e4010     ← 数据段（__DATA）
+</code></pre>
+<p>桌面/服务器是<strong>冯诺依曼架构</strong>：代码和数据在同一地址空间，所以函数指针和 <code class="c">void*</code> 大小相同、也能互转（<code class="c">dlsym</code> 返回 <code class="c">void*</code> 再转函数指针就是这个前提）。<strong>但 C++ 标准只说这是 conditionally-supported</strong>——哈佛架构的 MCU（如 AVR）代码和数据在不同地址空间，<code class="c">sizeof</code> 都可能不同，<strong>这正是标准不肯保证互转的原因</strong>。POSIX 额外要求必须支持，<code class="c">dlsym</code> 才可用。</p>
+<h3>实测 2：直接调用 vs 通过指针调用，汇编差一条指令</h3>
+<pre class="code" data-label="asm"><code class="c">__Z6directi:                 ; void direct(int x) { target(x); }
+    bl  __Z6targeti          ; bl  = 直接跳转，目标地址编码在指令里
+
+__Z8indirectPFviEi:          ; void indirect(void (*f)(int), int x) { f(x); }
+    ldr x8, [sp, #8]         ; ① 先把指针值从栈里读出来
+    ldr w0, [sp, #4]
+    blr x8                   ; ② blr = 跳到寄存器里的地址
+</code></pre>
+<p>差别就在 <code class="c">bl</code> → <code class="c">blr</code>：目标地址<strong>运行时才知道</strong>，所以编译器没法把被调函数内联进来、也没法做跨函数的常量传播。这是函数指针一切性能代价的源头。</p>
+<h3>实测 3：回调的三种写法，一次调用多少钱</h3>
+<p>1000 万次调用 × 3 轮（被调函数带副作用、<code class="c">volatile</code> 函数指针挡住「间接调用提升」）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>实测</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>模板 + lambda</strong>（<code class="c">template &lt;class F&gt;</code>）</td>
+<td><strong>0.32 ns/次</strong></td>
+<td>编译期已知具体函数 → 整个循环被内联</td>
+</tr>
+<tr>
+<td><strong>裸函数指针</strong> <code class="c">long(*)(long)</code></td>
+<td><strong>2.03 ns/次</strong></td>
+<td>一次 <code class="c">blr</code> 间接跳转</td>
+</tr>
+<tr>
+<td><strong><code class="c">std::function</code></strong></td>
+<td><strong>2.04 ns/次</strong></td>
+<td>类型擦除，也是一次间接跳转</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>两个关键结论</strong>，都跟直觉相反：</p>
+<ol>
+<li><strong>真正的分水岭是"能不能内联"（约 6 倍），不是"裸指针 vs std::function"</strong>——后两者实测几乎相同（2.03 vs 2.04 ns）。所以「为了性能不用 <code class="c">std::function</code> 改用裸函数指针」基本是白优化，真正的提速是把回调改成模板参数。</li>
+<li>但 <code class="c">sizeof(std::function&lt;long(long)&gt;) = 32</code>，裸指针 8。<code class="c">std::function</code> 的额外成本主要在<strong>构造和拷贝</strong>（捕获内容超过小对象缓冲会堆分配），以及无法内联，而不在单次调用。</li>
+</ol>
+<blockquote>
+<p>⚠ 测量陷阱：第一版测出裸函数指针和模板都是 <code class="c">0.00 ms</code>——clang 做了「间接调用提升」（推测指针值恒为 <code class="c">add1</code> 后内联）。<strong>测间接调用必须让指针值不可推测</strong>（<code class="c">volatile</code> 函数指针）或被调函数带副作用，否则会得出"函数指针和内联一样快"的错误结论。</p>
+</blockquote>
+<h3>实测 4：函数指针跳转表 vs if-else——基本持平</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">table[k&amp;3](i)</code> 跳转表</td>
+<td>0.74 ns/次</td>
+</tr>
+<tr>
+<td><code class="c">if (k==0) ... else if ...</code></td>
+<td>0.74 ns/次</td>
+</tr>
+</tbody>
+</table></div>
+<p>分支目标固定时，CPU 的分支预测器对两者都能预测成功。<strong>函数指针省的是代码行数和可扩展性（加一个分支 = 数组加一项），不是 CPU 时间。</strong> 别为了"性能"把 if-else 改成跳转表。</p>
+<h3>实测 5：qsort vs std::sort（回调代价最直观的例子）</h3>
+<p>10 万个 <code class="c">int</code> × 20 轮：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>比较器形式</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">qsort</code></td>
+<td><code class="c">int(*)(const void*, const void*)</code> 函数指针</td>
+<td><strong>7.38 ms/轮</strong></td>
+</tr>
+<tr>
+<td><code class="c">std::sort</code></td>
+<td>模板参数，编译期已知</td>
+<td><strong>1.73 ms/轮</strong></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td><strong>快 4.25 倍</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>同样的快速排序算法，只因为比较器能不能内联就差 4 倍——这是"回调 vs 内联"最有说服力的一组数据。</p>
+<h3>实测 6：成员函数指针是 16 字节，不是 8</h3>
+<pre class="code" data-label="code"><code class="c">sizeof(void(*)())       = 8      ← 普通函数指针
+sizeof(void(A::*)())    = 16     ← 成员函数指针，两倍
+</code></pre>
+<p>多出来的 8 字节用来处理<strong>虚函数的虚表偏移</strong>和<strong>多重继承的 this 调整</strong>。所以它不能当普通指针用，也不能转 <code class="c">void*</code>。</p>
+<h3>实测 7：类型必须完全匹配，连 <code class="c">noexcept</code> 都算</h3>
+<pre class="code" data-label="cpp"><code class="c">void f1() noexcept {}
+void f2() {}
+void (*a)()          = f1;   // ✅ noexcept → 非 noexcept，允许（缩小承诺）
+void (*b)() noexcept = f2;   // ❌ 编译错误：different exception specifications
+</code></pre>
+<p>C++17 起 <strong><code class="c">noexcept</code> 是函数类型的一部分</strong>，所以也是函数指针类型的一部分。同理参数类型、返回类型、调用约定都必须一致；<code class="c">int</code> 和 <code class="c">double</code> 参数、返回 <code class="c">void</code> 和 <code class="c">int</code>，实测都是硬编译错误。</p>
+<h3>实测 8：调用空函数指针直接段错误</h3>
+<pre class="code" data-label="cpp"><code class="c">void (*f)(int) = nullptr;
+f(1);                       // 实测 SIGSEGV，退出码 139
+</code></pre>
+<p>裸函数指针<strong>没有空检查</strong>（不像 <code class="c">std::function</code> 会抛 <code class="c">std::bad_function_call</code>）。回调指针来自外部（注册表、配置、插件）时，调用前必须 <code class="c">if (f)</code>。</p>
+<h3>实测 9：lambda 转函数指针的分水岭就是捕获列表</h3>
+<pre class="code" data-label="code"><code class="c">无捕获 lambda 转函数指针   -&gt; 0x1026d7060    sizeof(指针) = 8
+有捕获 lambda              -&gt; 必须用 std::function（sizeof = 32）
+无捕获 lambda 读全局变量   -&gt; 7（[] 里什么都不写也能读，捕获它反而报错）
+</code></pre>
+<p>编译器为无捕获 lambda 额外生成一个 <strong>static 函数</strong>，转换运算符返回它的地址，所以能塞进 8 字节；有捕获的 lambda 是"带成员的对象"，状态无处安放。</p>
+<blockquote>
+<p>注意 <code class="c">sizeof(std::function&lt;void(int)&gt;) = 32</code>：即使捕获内容只有 4 字节，<code class="c">std::function</code> 自身也有固定开销（小对象缓冲 + 管理指针）。这也是热路径上更愿意传模板参数的原因。</p>
+</blockquote>
+<h2>HFT/嵌入式关联</h2>
+<ul>
+<li><strong>订单/行情回调</strong>用 <code class="c">std::function</code> 还是模板？注册一次、调用频繁的回调（on_tick / on_order）走<strong>模板或 CRTP 静态多态</strong>，避免每次调用都 <code class="c">blr</code>；只在<strong>调用频率低、需要运行时替换</strong>（策略热切换、插件）的地方用 <code class="c">std::function</code>/函数指针。</li>
+<li><strong>比较器、哈希器</strong>一律传模板参数（像 <code class="c">std::sort</code> 那样），不要用函数指针——实测 4 倍差距在撮合排序、订单簿遍历上就是延迟尖峰。</li>
+<li><strong>状态机/消息分发</strong>：用函数指针数组做跳转表（比 switch 易扩展），但别指望它更快——实测与 if-else 持平。</li>
+<li><strong>嵌入式驱动</strong>：<code class="c">struct file_operations</code>、设备表（<code class="c">open/read/write</code> 函数指针）是 C 里做多态的标准手段，和实测 ⑤ 的 <code class="c">Device</code> 结构同构；新增设备只加一个结构体实例，上层代码不动。</li>
+<li><strong>中断向量表</strong>：Cortex-M 的向量表本质就是函数指针数组，由硬件在异常入口按编号索引跳转。注意 Thumb 指令集下向量表里的地址<strong>最低位必须为 1</strong>（标识 Thumb 状态），写 ISR 地址时被工具链处理，手工填表时是最常见的坑。</li>
+<li><strong>回调不能阻塞</strong>：中断/行情回调里做 I/O、加锁会放大抖动，工程上通常只做「入队 + 唤醒」，实际处理挪到工作线程。</li>
+</ul>
 <h2>常见错误</h2>
 <ol>
 <li><strong>成员函数指针与普通函数指针混用</strong>：<code class="c">int (*pf)(int) = &amp;C::f;</code> —— 成员函数指针类型是 <code class="c">int (C::*)(int)</code>，与普通函数指针类型不同，不能互转。新手常踩。</li>
 <li><strong>取重载函数地址不指定版本</strong>：<code class="c">void f(int); void f(double); auto pf = &amp;f;</code> —— 编译器不知道取哪个重载。<strong>修正</strong>：<code class="c">int (*pf)(int) = &amp;f;</code> 或 <code class="c">auto pf = static_cast&lt;void(*)(int)&gt;(&amp;f);</code>。</li>
 <li><strong>函数指针类型不匹配</strong>：<code class="c">int (*pf)(int) = &amp;func;</code> 但 <code class="c">func</code> 签名是 <code class="c">int(int,int)</code>，类型不匹配编译错误。函数指针类型严格，必须返回类型和形参列表都一致。</li>
+<li><strong>调用未判空的函数指针</strong>：<code class="c">void (*cb)(int) = lookup(name); cb(1);</code> —— <code class="c">lookup</code> 没找到返回 <code class="c">nullptr</code> 时，实测 <strong>SIGSEGV（退出码 139）</strong>，裸指针不会帮你检查。<strong>修正</strong>：<code class="c">if (cb) cb(1);</code>，或改用 <code class="c">std::function</code>（空时抛 <code class="c">std::bad_function_call</code>，至少可控）。</li>
+<li><strong>以为有捕获的 lambda 也能转函数指针</strong>：<code class="c">void (*f)(int) = [y](int x){...};</code> 编译错误（no viable conversion）。只有<strong>无捕获</strong> lambda 才有到函数指针的转换——捕获需要状态，8 字节的指针装不下。<strong>修正</strong>：要么去掉捕获，要么用 <code class="c">std::function</code>。</li>
+<li>
+<p><strong>忽略 <code class="c">noexcept</code> 也是类型的一部分</strong>：C++17 起 <code class="c">void(*)() noexcept</code> 和 <code class="c">void(*)()</code> 是不同类型，把非 <code class="c">noexcept</code> 函数赋给 <code class="c">noexcept</code> 指针是编译错误（实测 <code class="c">different exception specifications</code>）。反过来（<code class="c">noexcept</code> 函数 → 普通指针）允许。</p>
+</li>
+<li>
+<p><strong>用顶层 const 做重载，结果变成重复定义</strong>：<code class="c">void f(int)</code> 和 <code class="c">void f(const int)</code> 是同一个函数，写两份定义报 <code class="c">redefinition</code>。要区分就得改成 <code class="c">void f(int)</code> / <code class="c">void f(const int&amp;)</code>。</p>
+</li>
+<li><strong>把全局变量写进捕获列表</strong>：<code class="c">[g]</code> 报 <code class="c">'g' cannot be captured because it does not have automatic storage duration</code>。静态存储期变量不需要捕获，直接读即可——这条报错常被误读成"lambda 转换失败"，其实和函数指针毫无关系。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：下面哪个能正确声明"指向 <code class="c">int(int, int)</code> 函数的指针"？
@@ -1114,13 +2465,76 @@ std::unordered_map&lt;std::string, std::function&lt;void()&gt;&gt; cmds = {
 // cmds[&quot;help&quot;]();   // 调用
 </code></pre>
 <p><code class="c">std::function</code> 优势：1) 能存任意可调用对象（函数指针、lambda、函数对象、bind 表达式）；2) 类型统一 <code class="c">std::function&lt;R(Args...)&gt;</code>，不用记复杂函数指针语法；3) 可携带状态（lambda 捕获）。代价：有运行时开销（类型擦除 + 间接调用），热路径仍优先用模板/函数指针。</p>
+<blockquote>
+<p><strong>实测校准（见「底层实现与实测 3」）</strong>：<code class="c">std::function</code> 的<strong>单次调用开销和裸函数指针基本相同</strong>（2.04 vs 2.03 ns/次），两者都是一次间接跳转。真正的差距是<strong>模板 + lambda 可内联</strong>（0.32 ns/次，快约 6 倍）。所以"为性能把 <code class="c">std::function</code> 换成裸函数指针"收效甚微，要提速得上模板。<code class="c">std::function</code> 的额外成本主要在构造/拷贝（<code class="c">sizeof</code> 32 字节，捕获内容超出小对象缓冲时堆分配）。</p>
+</blockquote>
 </details>
+<p><strong>5. 判断题</strong>：下面两句话对不对？</p>
+<blockquote>
+<p>(a) 用函数指针数组做跳转表，比一长串 <code class="c">if-else</code> 快得多，因为省掉了分支判断。
+(b) 函数指针比 <code class="c">std::function</code> 快得多，因为 <code class="c">std::function</code> 有类型擦除开销。</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>两句都错</strong>，实测都打脸：</p>
+<p>(a) <strong>跳转表 0.74 ns/次 vs if-else 0.74 ns/次——基本持平。</strong> 分支目标固定时 CPU 分支预测器对两者都能预测成功。函数指针跳转表的价值是<strong>可扩展性</strong>（新增分支 = 数组加一项，上层代码不动）和可读性，不是性能。</p>
+<p>(b) <strong>裸函数指针 2.03 ns vs <code class="c">std::function</code> 2.04 ns——几乎相同。</strong> 两者都是一次间接跳转，<code class="c">std::function</code> 的多出来的是"取 invoke 指针"这一步，被流水线吃掉了。真正快的是<strong>模板参数 + lambda（0.32 ns）</strong>，因为能被内联。</p>
+<p><strong>一句话记住</strong>：分水岭是<strong>编译期能不能确定被调用者</strong>（能不能内联），不是用什么语法写回调。</p>
+</details>
+<p><strong>6. 选择题</strong>：以下哪些赋值能编译通过？（<code class="c">struct Base{}; struct Derived : Base{};</code>）</p>
+<pre class="code" data-label="cpp"><code class="c">void f1() noexcept;  void f2();
+Derived* mk();
+int loc = 0;
+</code></pre>
+<ul>
+<li>A) <code class="c">void (*a)() = f1;</code></li>
+<li>B) <code class="c">void (*b)() noexcept = f2;</code></li>
+<li>C) <code class="c">Base* (*c)() = &amp;mk;</code></li>
+<li>D) <code class="c">std::function&lt;Base*()&gt; d = &amp;mk;</code></li>
+</ul>
+<details>
+<summary>答案</summary>
+<p><strong>A、D 通过；B、C 报错。</strong></p>
+<ul>
+<li>A ✅：<code class="c">noexcept</code> → 非 <code class="c">noexcept</code> 是"缩小承诺"，允许。</li>
+<li>B ❌：反向不允许，<code class="c">different exception specifications</code>。</li>
+<li>C ❌：裸函数指针的<strong>返回类型不做协变</strong>，<code class="c">different return type ('Base *' vs 'Derived *')</code>。</li>
+<li>D ✅：<code class="c">std::function</code> 的 <code class="c">operator()</code> 允许协变返回。</li>
+</ul>
+</details>
+<p><strong>7. 踩坑题</strong>：下面代码有两处错误，分别是什么？</p>
+<pre class="code" data-label="cpp"><code class="c">int g = 7;
+void (*p1)(int) = [g](int x){ /*...*/ };
+int main(){ int loc = 7;
+    void (*p2)(int) = [loc](int x){ /*...*/ };
+}
+</code></pre>
+<details>
+<summary>答案</summary>
+<ul>
+<li><code class="c">p1</code>：<code class="c">'g' cannot be captured because it does not have automatic storage duration</code> —— <strong>全局变量不能进捕获列表</strong>（也不需要，<code class="c">[]</code> 里什么都不写照样能读 <code class="c">g</code>）。</li>
+<li><code class="c">p2</code>：<code class="c">no viable conversion from '(lambda)' to 'void (*)(int)'</code> —— 这才是"<strong>有捕获的 lambda 不能转函数指针</strong>"，改 <code class="c">std::function&lt;void(int)&gt;</code> 即可。</li>
+</ul>
+<p>两条报错长得很像"同一类问题"，其实是完全独立的两条规则。</p>
+</details>
+<h2>可跑的例子</h2>
+<ul>
+<li><a href="chapter-06.html#s-6-5">examples/6.5-1-callback-basics.cpp</a> —— 基础写法（<code class="c">p(100)</code> 与 <code class="c">(*p)(100)</code>）、回调 <code class="c">apply</code>、<code class="c">qsort</code> 换比较器、运行时选择、<strong>设备表</strong>（C 风格多态）、函数指针数组跳转表、<code class="c">static</code> 成员函数 vs 非静态。</li>
+<li><a href="chapter-06.html#s-6-5">examples/6.5-2-dispatch-cost.cpp</a> —— 三种回调写法的调用开销、跳转表 vs if-else、<code class="c">qsort</code> vs <code class="c">std::sort</code> 性能对比。</li>
+<li><a href="chapter-06.html#s-6-5">examples/6.5-3-signature-match.cpp</a> —— 签名匹配规则全表（<code class="c">static_assert</code> 逐条验证）、顶层/底层 const、数组与函数参数退化、<code class="c">noexcept</code>、返回类型协变、重载与模板取地址、lambda→函数指针的捕获分水岭。</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -Wall examples/6.5-1-callback-basics.cpp -o a &amp;&amp; ./a
+clang++ -std=c++17 -O2  examples/6.5-2-dispatch-cost.cpp   -o b &amp;&amp; ./b
+clang++ -std=c++17 -O0 -S examples/6.5-2-dispatch-cost.cpp -o - | grep -E &quot;\bbl|blr&quot;   # bl=直接调用, blr=间接调用
+clang++ -std=c++17 -Wall examples/6.5-3-signature-match.cpp -o c &amp;&amp; ./c
+</code></pre>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §6.5：函数指针</li>
 <li>下一章：§7 类——C++ 的核心</li>
 <li>C 程序员迁移：函数指针回调 → 模板 + lambda/<code class="c">std::function</code></li>
 <li>成员函数指针语法详见《Effective C++》相关条款</li>
+<li>C 侧对照（回调与转移表是 C 的主场）：<a href="../../../../01-c-language/02-advanced-pointers-and-memory/html/chapter-13.html#s-13-3">13.3-函数指针</a>（含 <a href="../../../../01-c-language/02-advanced-pointers-and-memory/html/chapter-13.html#s-13-3-1">13.3.1 回调函数</a>、<a href="../../../../01-c-language/02-advanced-pointers-and-memory/html/chapter-13.html#s-13-3-2">13.3.2 转移表</a>），以及内核侧 <a href="../../../../01-c-language/05-embedded-kernel-practice/html/chapter-05.html#s-5-18">Linux 内核中的 OOP 思想-多态</a></li>
 </ul>
       </section>
       <section class="section" id="s-6-6">
@@ -1416,6 +2830,80 @@ void h(const int&amp;);   // h(42) 二义
 </code></pre>
 <p><strong>5. 默认实参不改善匹配</strong></p>
 <p>默认实参只影响"能不能调用"（可行集），不参与"谁更优"。<code class="c">void f(int); void f(int, int = 0); f(1);</code> 之所以二义，是因为两个候选在唯一实参上的 ICS 完全相同。</p>
+<h2>七、决议落点实测：五组"到底选了谁"</h2>
+<blockquote>
+<p>规则背不下来没关系，把 <code class="c">examples/6.6-1-resolution-traps.cpp</code> 跑一遍，编译器选了谁会直接打印出来。以下均为本机实测（clang 23.1.0 / <code class="c">-std=c++17</code>）。</p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>实际落点</th>
+<th>起作用的规则</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">pick(1)</code>（<code class="c">pick(int)</code> 与 <code class="c">template&lt;T&gt; pick(T&amp;&amp;)</code> 并存）</td>
+<td><strong><code class="c">pick(int)</code></strong></td>
+<td>同等级时<strong>非模板优先于模板</strong></td>
+</tr>
+<tr>
+<td><code class="c">pick(1.5)</code></td>
+<td><code class="c">pick(T&amp;&amp;)</code></td>
+<td>只有模板能匹配 <code class="c">double</code></td>
+</tr>
+<tr>
+<td><code class="c">take2(1, 2)</code>（<code class="c">take2(int,int)</code> 与 <code class="c">take2(initializer_list&lt;int&gt;)</code>）</td>
+<td><strong><code class="c">take2(int,int)</code></strong></td>
+<td>圆括号 = 普通实参列表</td>
+</tr>
+<tr>
+<td><code class="c">take2({1, 2})</code></td>
+<td><strong><code class="c">take2(initializer_list&lt;int&gt;)</code></strong></td>
+<td><strong>列表初始化优先选 <code class="c">initializer_list</code></strong></td>
+</tr>
+<tr>
+<td><code class="c">which(nullptr)</code>（<code class="c">char*</code> vs <code class="c">int</code>）</td>
+<td><strong><code class="c">which(char*)</code></strong></td>
+<td><code class="c">nullptr_t</code> 不能转整型</td>
+</tr>
+<tr>
+<td><code class="c">which(0)</code></td>
+<td><code class="c">which(int)</code></td>
+<td>精确匹配</td>
+</tr>
+<tr>
+<td><code class="c">conv('a')</code>（<code class="c">int</code> vs <code class="c">double</code>）</td>
+<td><strong><code class="c">conv(int)</code></strong></td>
+<td>整型<strong>提升</strong> &gt; 整型转换</td>
+</tr>
+<tr>
+<td><code class="c">conv(1.5f)</code></td>
+<td><strong><code class="c">conv(double)</code></strong></td>
+<td>浮点<strong>提升</strong> &gt; 转换</td>
+</tr>
+<tr>
+<td><code class="c">bind(x)</code>（<code class="c">const int&amp;</code> vs <code class="c">int&amp;&amp;</code>）</td>
+<td><code class="c">bind(const int&amp;)</code></td>
+<td>左值绑左值引用</td>
+</tr>
+<tr>
+<td><code class="c">bind(1)</code> / <code class="c">bind(x + 1)</code></td>
+<td><code class="c">bind(int&amp;&amp;)</code></td>
+<td>右值绑右值引用</td>
+</tr>
+<tr>
+<td><code class="c">str("literal")</code>（<code class="c">const std::string&amp;</code> vs <code class="c">const char*</code>）</td>
+<td><strong><code class="c">str(const char*)</code></strong></td>
+<td>精确匹配，无需用户定义转换</td>
+</tr>
+</tbody>
+</table></div>
+<h3>三个高频误判</h3>
+<p><strong>① <code class="c">{}</code> 和 <code class="c">()</code> 不是一回事。</strong> <code class="c">f({1,2})</code> 与 <code class="c">f(1,2)</code> 可能落进两个完全不同的重载——前者优先 <code class="c">initializer_list</code>。容器接口设计时必须两个版本都提供，否则调用者用花括号写就是另一个语义。</p>
+<p><strong>② 完美转发模板 <code class="c">template&lt;class T&gt; void f(T&amp;&amp;)</code> 会"通吃"。</strong> 它对几乎所有实参都是精确匹配，很容易抢走本该走非模板重载的调用。实测 <code class="c">pick(1)</code> 仍选非模板（规则偏向非模板），但 <code class="c">pick(1.5)</code>、<code class="c">pick(std::string)</code> 全被模板吃掉——<strong>这是 <code class="c">std::string</code> 传进 <code class="c">f(T&amp;&amp;)</code> 后又被转走的常见原因</strong>。要收窄就用 <code class="c">enable_if</code> / C++20 <code class="c">requires</code> 约束模板。</p>
+<p><strong>③ 用户定义转换属于最低档。</strong> <code class="c">const char*</code> → <code class="c">std::string</code> 只能算"转换级"；当两个候选都需要一次用户定义转换时，谁也不比谁好 → 二义。实测 <code class="c">str(0)</code> 就是二义（<code class="c">0</code> 既能当 <code class="c">const char*</code> 又能转 <code class="c">string</code>）。</p>
 <h2>HFT / 嵌入式关联</h2>
 <ol>
 <li>
@@ -1435,7 +2923,9 @@ void h(const int&amp;);   // h(42) 二义
 <p><strong>1（等级）</strong> <code class="c">void f(int); void f(double);</code> 调用 <code class="c">f(3.14f)</code> 选谁？如果把 <code class="c">f(int)</code> 换成 <code class="c">f(long)</code>，结果变不变？</p>
 <p><strong>2（二义）</strong> <code class="c">void a(long); void a(unsigned long);</code> 调用 <code class="c">a(0)</code> 为什么二义？换成 <code class="c">a(0L)</code> 呢？</p>
 <p><strong>3（引用）</strong> <code class="c">void d(int); void d(int&amp;);</code> 调用 <code class="c">d(x)</code>（<code class="c">x</code> 是 <code class="c">int</code> 左值）为什么二义？给出两种修法。</p>
-<p><strong>4（指针）</strong> <code class="c">void f(int); void f(void*);</code> 调用 <code class="c">f(0)</code> 与 <code class="c">f(nullptr)</code> 分别选谁？</p>
+<p><strong>4（指针）</strong> <code class="c">void f(int); void f(void*);</code> 调用 <code class="c">f(0)</code> 与 <code class="c">f(nullptr)</code> 分别选谁？
+<strong>5（模板 vs 非模板）</strong> <code class="c">void g(int);</code> 与 <code class="c">template&lt;class T&gt; void g(T&amp;&amp;);</code> 同时存在时，<code class="c">g(1)</code>、<code class="c">g(1.5)</code> 分别选谁？如果要让模板只接受算术类型，怎么改？</p>
+<p><strong>6（列表 vs 圆括号）</strong> <code class="c">void t(int,int);</code> 与 <code class="c">void t(std::initializer_list&lt;int&gt;);</code> 并存时，<code class="c">t(1,2)</code> 和 <code class="c">t({1,2})</code> 各选谁？这对容器接口设计有什么启示？</p>
 <details>
 <summary>参考答案</summary>
 <ol>
@@ -1451,8 +2941,25 @@ void h(const int&amp;);   // h(42) 二义
 <li>
 <p><code class="c">f(0)</code> 选 <code class="c">f(int)</code>：字面量 <code class="c">0</code> 是 <code class="c">int</code> 精确匹配，转 <code class="c">void*</code> 需要转换。<code class="c">f(nullptr)</code> 选 <code class="c">f(void*)</code>：<code class="c">nullptr_t</code> 可转指针，不能转 <code class="c">int</code>。</p>
 </li>
+<li>
+<p><code class="c">g(1)</code> 选<strong>非模板 <code class="c">g(int)</code></strong>（同转换等级时非模板优先）；<code class="c">g(1.5)</code> 选<strong>模板 <code class="c">g(T&amp;&amp;)</code></strong>（只有它能精确匹配 <code class="c">double</code>）。收窄办法：</p>
+</li>
+</ol>
+<pre class="code" data-label="cpp"><code class="c">template &lt;class T, class = std::enable_if_t&lt;std::is_arithmetic_v&lt;std::decay_t&lt;T&gt;&gt;&gt;&gt;
+void g(T&amp;&amp;);                       // C++11/14/17
+// 或 C++20：template &lt;class T&gt; requires std::integral&lt;T&gt; || std::floating_point&lt;T&gt;
+void g(T&amp;&amp;);
+</code></pre>
+<ol start="6">
+<li><code class="c">t(1,2)</code> → <code class="c">t(int,int)</code>；<code class="c">t({1,2})</code> → <code class="c">t(std::initializer_list&lt;int&gt;)</code>。<strong>启示</strong>：容器/工厂接口只要提供了 <code class="c">initializer_list</code> 版本，就得同时保留普通参数版本，否则 <code class="c">f(1,2)</code> 这种写法会落不进 <code class="c">initializer_list</code>（或反过来），调用点语义随写法变化——这正是 <code class="c">std::vector&lt;int&gt; v(3)</code>（3 个 0）与 <code class="c">std::vector&lt;int&gt; v{3}</code>（1 个 3）天差地别的根源。</li>
 </ol>
 </details>
+<h2>可跑的例子</h2>
+<ul>
+<li><a href="chapter-06.html#s-6-6">examples/6.6-1-resolution-traps.cpp</a> —— 逐条打印"到底选了谁"：模板 vs 非模板、<code class="c">{}</code> vs <code class="c">()</code>、<code class="c">nullptr</code>/<code class="c">0</code>/<code class="c">NULL</code>、提升 vs 转换、左值/右值引用绑定、用户定义转换二义。</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -Wall -O2 examples/6.6-1-resolution-traps.cpp -o res &amp;&amp; ./res
+</code></pre>
 <hr />
 <p><a href="#s-6-5">← 6.5 函数指针</a> | <a href="#intro">第 6 章 函数</a> | <a href="chapter-02.html#s-2-4-4">2.4.4 const 在类里的传播</a></p>
       </section>

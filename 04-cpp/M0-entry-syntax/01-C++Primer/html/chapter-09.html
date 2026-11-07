@@ -587,6 +587,156 @@ v.push_back(101);        // 超过 capacity，触发扩容
 </code></pre>
 <h3>扩容代价</h3>
 <p>扩容要：1) 分配新内存；2) 拷贝/移动所有旧元素到新内存；3) 析构旧元素；4) 释放旧内存。是 O(n) 操作。如果不 reserve，n 次 push_back 总扩容代价是 O(n) 摊还 O(1)，但单次扩容可能造成<strong>延迟尖峰</strong>。</p>
+<h3>push_back 到底拷贝几次：形参写法 × 实参形态</h3>
+<p>这是最容易吵起来、也最容易被讲错的点。<strong>拷贝次数由两个独立变量决定</strong>：<code class="c">push_back</code> 的<strong>形参怎么写</strong> + 调用处传的<strong>实参是什么形态</strong>。两者不分开谈，就一定答错。</p>
+<p><strong>先记住一个前提</strong>：<code class="c">std::vector::push_back</code> 的签名只有两个重载，<strong>从来不是值传递</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">void push_back(const T&amp; value);   // C++98 就有的左值版本
+void push_back(T&amp;&amp; value);        // C++11 起的右值版本
+</code></pre>
+<blockquote>
+<p>⚠️ 网上/视频里讲的"传值进来拷贝一次"往往是<strong>手写版</strong> <code class="c">void push_back(T value)</code>（值传递），那套代码下"2 次拷贝"是对的。但它不是标准库的 <code class="c">push_back</code>，两者不能混着说。</p>
+</blockquote>
+<p><strong>实测一：形参写法 × 实参形态（不含扩容，<code class="c">T</code> 为带拷贝/移动构造的类类型）</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>形参写法</th>
+<th>传左值 <code class="c">x</code></th>
+<th>传临时对象 <code class="c">T(7)</code></th>
+<th>传 <code class="c">std::move(x)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">T value</code>（值传递，手写版常见）</td>
+<td><strong>拷贝 2 次</strong></td>
+<td>拷贝 1 次（C++17 保证省略入参那次）</td>
+<td>拷贝 1 + 移动 1</td>
+</tr>
+<tr>
+<td><code class="c">const T&amp;</code></td>
+<td><strong>拷贝 1 次</strong></td>
+<td>拷贝 1 次</td>
+<td>拷贝 1 次（⚠️ move 被吃掉）</td>
+</tr>
+<tr>
+<td><code class="c">T&amp;&amp;</code></td>
+<td>编译错误（右值引用不绑左值）</td>
+<td>移动 1 次</td>
+<td>移动 1 次</td>
+</tr>
+<tr>
+<td><code class="c">T* p</code>（指针）</td>
+<td>拷贝 1 次（对象）+ 指针地址拷贝（8 字节）</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>关键读法：</p>
+<ul>
+<li><strong>值传递 <code class="c">T value</code></strong>：入参构造一次（<code class="c">x</code> → <code class="c">value</code>），再存入数组一次 → 左值下 <strong>2 次拷贝</strong>。C++17 传临时对象时入参那次被强制省略，只剩 1 次。</li>
+<li><strong>引用/指针传递</strong>：<strong>绑定引用本身零开销</strong>，不是拷贝。只有"存进内部数组"那 1 次。所以 <code class="c">const T&amp;</code> 传左值 = <strong>1 次拷贝</strong>。</li>
+<li><strong>指针传递</strong>：拷的是地址（8 字节），不是对象；但只要容器存的是对象（<code class="c">vector&lt;T&gt;</code>），把 <code class="c">*p</code> 放进去仍要 <strong>1 次对象拷贝</strong>。只有改成 <code class="c">vector&lt;T*&gt;</code> 才做到 0 次对象拷贝——代价换成生命周期和悬垂指针问题。</li>
+<li>⚠️ <strong><code class="c">const T&amp;</code> + <code class="c">std::move(x)</code> = 白 move</strong>：<code class="c">std::move</code> 只把 <code class="c">x</code> 转成右值，<code class="c">const T&amp;</code> 照样能绑定，函数体内只能拷贝。实测仍是拷贝 1 次、移动 0 次。要移动必须走 <code class="c">T&amp;&amp;</code> 重载。</li>
+</ul>
+<p><strong>实测二：<code class="c">std::vector</code> 真实开销（<code class="c">reserve</code> 过，容量有富余、无扩容）</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>拷贝</th>
+<th>移动</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">v.push_back(x)</code>（左值变量）</td>
+<td><strong>1</strong></td>
+<td>0</td>
+</tr>
+<tr>
+<td><code class="c">v.push_back(T(7))</code>（临时对象）</td>
+<td>0</td>
+<td><strong>1</strong></td>
+</tr>
+<tr>
+<td><code class="c">v.push_back(std::move(x))</code></td>
+<td>0</td>
+<td><strong>1</strong></td>
+</tr>
+<tr>
+<td><code class="c">v.emplace_back(7)</code>（原地构造）</td>
+<td><strong>0</strong></td>
+<td><strong>0</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实测三：扩容是独立事件，跟上面叠加计算</strong></p>
+<p>触发扩容时总代价 = 本次新元素 1 次 + 旧元素 N 次搬迁。旧元素搬运用<strong>移动还是拷贝</strong>，取决于元素类型的移动构造是否 <code class="c">noexcept</code>（强异常安全保证）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>元素类型</th>
+<th>拷贝</th>
+<th>移动</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>移动构造 <code class="c">noexcept</code></td>
+<td>1（新元素 x）</td>
+<td>4（旧元素）</td>
+<td>旧元素逐个移动</td>
+</tr>
+<tr>
+<td>移动构造<strong>非</strong> <code class="c">noexcept</code></td>
+<td><strong>5</strong></td>
+<td>0</td>
+<td>退化成全部拷贝</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>这正是 Effective C++ Item 14 / Item 29 强调"移动操作要标 <code class="c">noexcept</code>"的直接原因：少标一个 <code class="c">noexcept</code>，vector 每次扩容从移动退化成拷贝。
+扩容倍数实测（libc++）：1 → 2 → 4 → 8（libstdc++ 同为 ×2，MSVC 为 ×1.5）。</p>
+</blockquote>
+<p><strong>完整答案（把它背下来）</strong></p>
+<ul>
+<li><code class="c">std::vector</code> 的 <code class="c">push_back(x)</code>（x 是普通变量，容量够）：<strong>1 次拷贝</strong>，不是 2 次——形参是 <code class="c">const T&amp;</code>，绑定引用不产生拷贝。</li>
+<li>手写版 <code class="c">push_back(T value)</code> 传左值：<strong>2 次拷贝</strong>（入参 1 次 + 存入数组 1 次）。标准库不用值传递，正是为了省掉入参这次。</li>
+<li>传指针/引用：<strong>入参传地址零开销</strong>，但对象要进容器仍要 1 次（除非容器存指针）。</li>
+<li>扩容：额外搬 N 个旧元素，<code class="c">noexcept</code> 移动时为移动，否则为拷贝。<strong>只在 <code class="c">size == capacity</code> 时发生</strong>，不是每次 push 都有。</li>
+</ul>
+<details>
+<summary>实测代码（计数器版，clang -std=c++17）</summary>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;cstdio&gt;
+#include &lt;vector&gt;
+#include &lt;utility&gt;
+
+static int g_copy = 0, g_move = 0;
+struct T {
+    int v;
+    explicit T(int x) : v(x) {}
+    T(const T&amp; o) : v(o.v) { ++g_copy; }
+    T(T&amp;&amp; o) noexcept : v(o.v) { ++g_move; }          // 对照组去掉 noexcept
+};
+alignas(T) unsigned char buf[sizeof(T)];
+
+static void pb_value(T value)        { new(buf) T(value); }            // 值传递
+static void pb_cref (const T&amp; value) { new(buf) T(value); }            // const 引用
+static void pb_rref (T&amp;&amp; value)      { new(buf) T(std::move(value)); } // 右值引用
+static void pb_ptr  (T* p)           { new(buf) T(*p); }               // 指针
+
+int main() {
+    T x(7);
+    std::vector&lt;T&gt; v; v.reserve(8);          // 保证无扩容
+    // 逐个调用上面四个 + std::vector 四个写法，打印 g_copy / g_move 即可复现上表
+}
+</code></pre>
+<p>去掉移动构造的 <code class="c">noexcept</code> 重跑扩容场景，就能复现"拷贝 5 / 移动 0"的退化现象。</p>
+</details>
 <h3>管理工具</h3>
 <div class="tbl-wrap"><table>
 <thead>
@@ -677,8 +827,59 @@ for (int i = 0; i &lt; 1000; ++i) v.push_back(i);  // 零扩容
 <li><strong>缓存了迭代器/引用，扩容后继续用</strong>：<code class="c">auto&amp; ref = v[0]; v.push_back(x); ref = ...;</code> —— 若 push_back 触发扩容，ref 悬垂。<strong>修正</strong>：扩容后重新获取；或 reserve 保证不扩容。</li>
 <li><strong>在循环里 push_back 不 reserve</strong>：n 次 push_back 触发约 log(n) 次扩容，每次拷贝所有元素，O(n log n) 浪费。<strong>修正</strong>：能预估大小就 reserve。</li>
 <li><strong>混淆 <code class="c">reserve</code> 和 <code class="c">resize</code></strong>：<code class="c">reserve(10)</code> 不创建元素（size 不变，不可下标访问）；<code class="c">resize(10)</code> 创建 10 个元素（size=10，可 <code class="c">v[0]</code>）。用错会导致 <code class="c">v[0]</code> 越界或意外默认构造。</li>
+<li><strong>把"绑定引用"当成"拷贝"</strong>：<code class="c">push_back(const T&amp;)</code> 绑定引用零开销，传左值只有 1 次拷贝（存进数组那次）。常见误解是"先拷贝给形参再拷贝进容器 = 2 次"——那只对手写版 <code class="c">push_back(T value)</code> 成立。<strong>判别方法：看形参是 <code class="c">T value</code> 还是 <code class="c">const T&amp;</code>/<code class="c">T&amp;&amp;</code></strong>。</li>
+<li><strong>对 <code class="c">const T&amp;</code> 用 <code class="c">std::move</code></strong>：<code class="c">v.push_back(std::move(x))</code> 只在走 <code class="c">T&amp;&amp;</code> 重载时才变成移动；一旦形参是 <code class="c">const T&amp;</code>（或函数只接受 <code class="c">const T&amp;</code>），<code class="c">std::move</code> 完全失效，仍是 1 次拷贝。</li>
 </ol>
 <h2>自测题</h2>
+<p><strong>0. 拷贝计数题</strong>：<code class="c">v</code> 是 <code class="c">std::vector&lt;T&gt;</code>（<code class="c">T</code> 有 <code class="c">noexcept</code> 移动构造），已 <code class="c">reserve(8)</code> 且当前 <code class="c">size=3</code>。问以下每句各自产生几次拷贝、几次移动？</p>
+<pre class="code" data-label="cpp"><code class="c">T x(7);
+v.push_back(x);              // ①
+v.push_back(T(7));           // ②
+v.push_back(std::move(x));   // ③
+v.emplace_back(7);           // ④
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong>都没有扩容</strong>（capacity 8 &gt; size 3），所以只算"存进容器"那一步：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>拷贝</th>
+<th>移动</th>
+<th>走的重载</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① <code class="c">push_back(x)</code> 左值</td>
+<td><strong>1</strong></td>
+<td>0</td>
+<td><code class="c">const T&amp;</code></td>
+</tr>
+<tr>
+<td>② <code class="c">push_back(T(7))</code> 临时对象</td>
+<td>0</td>
+<td><strong>1</strong></td>
+<td><code class="c">T&amp;&amp;</code></td>
+</tr>
+<tr>
+<td>③ <code class="c">push_back(std::move(x))</code></td>
+<td>0</td>
+<td><strong>1</strong></td>
+<td><code class="c">T&amp;&amp;</code></td>
+</tr>
+<tr>
+<td>④ <code class="c">emplace_back(7)</code> 原地构造</td>
+<td><strong>0</strong></td>
+<td><strong>0</strong></td>
+<td>就地构造</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>最容易答错的是 ①</strong>：很多人答 2 次（"先拷贝给形参"），但形参是 <code class="c">const T&amp;</code>，<strong>绑定引用不产生拷贝</strong>，只有 1 次。</p>
+<p><strong>如果容量正好用完</strong>（比如 <code class="c">size==capacity==3</code>），还要叠加扩容代价：新元素 1 次 + 旧元素 3 次移动（移动构造 <code class="c">noexcept</code> 时），去掉 <code class="c">noexcept</code> 就变成 3 次拷贝。</p>
+</details>
 <p><strong>1. 选择题</strong>：下面代码后 <code class="c">v.size()</code> 和 <code class="c">v.capacity()</code> 至少是多少？</p>
 <pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v;
 v.reserve(50);

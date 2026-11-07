@@ -460,6 +460,137 @@ int main() { }    // ✅
 <pre class="code" data-label="cpp"><code class="c">main() { std::cout &lt;&lt; &quot;hi&quot;; }  // ❌ 没包含 &lt;iostream&gt;
 </code></pre>
 <p>这节还没讲输入输出（1.2 才讲），先记住：<strong>用任何标准库设施都要先 <code class="c">#include</code> 对应头文件</strong>。</p>
+<h2>动机：为什么 <code class="c">main</code> 的返回值值得较真</h2>
+<p>C 程序员第一反应是"<code class="c">main</code> 谁不会写"。但 <code class="c">main</code> 是<strong>程序与操作系统唯一的契约接口</strong>——它决定了 CI 能不能判断成败、<code class="c">make</code> 会不会继续、<code class="c">&amp;&amp;</code> 链会不会断。三个真实的动机：</p>
+<ol>
+<li><strong>退出码是唯一的跨进程信号</strong>。日志可能没刷出来、stdout 可能被重定向到 /dev/null，但退出码一定会被父进程看到。HFT 的盘前检查脚本、嵌入式设备的看门狗脚本都靠它。</li>
+<li><strong><code class="c">main</code> 是标准里唯一被"特殊对待"的函数</strong>（不写 return 默认 0、不能被取地址、不能被递归调用）。理解这些特例，才知道语言在哪些地方为"程序入口"开了后门。</li>
+<li><strong><code class="c">main</code> 的返回类型直接决定 ABI</strong>。弄清"返回值怎么传出去"，后面学函数返回、结构体返回、寄存器约定都有参照。</li>
+</ol>
+<h2>底层实测：<code class="c">main</code> 的返回值到底怎么传出去的</h2>
+<blockquote>
+<p>全部在本机 clang 23.1.0 / arm64-apple-darwin 实测。</p>
+</blockquote>
+<h3>① 退出码只保留低 8 位</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>源码里的 return</th>
+<th><code class="c">-O2</code> 汇编</th>
+<th>shell 里 <code class="c">echo $?</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">return 0;</code></td>
+<td><code class="c">mov w0, #0</code></td>
+<td><code class="c">0</code></td>
+</tr>
+<tr>
+<td><code class="c">return 3;</code></td>
+<td><code class="c">mov w0, #3</code></td>
+<td><code class="c">3</code></td>
+</tr>
+<tr>
+<td><code class="c">return 125;</code></td>
+<td><code class="c">mov w0, #125</code></td>
+<td><code class="c">125</code></td>
+</tr>
+<tr>
+<td><code class="c">return 256;</code></td>
+<td><code class="c">mov w0, #256</code></td>
+<td><strong><code class="c">0</code></strong> ← 截断</td>
+</tr>
+<tr>
+<td><code class="c">return -1;</code></td>
+<td><code class="c">mov w0, #-1</code></td>
+<td><strong><code class="c">255</code></strong></td>
+</tr>
+<tr>
+<td><code class="c">std::exit(256);</code></td>
+<td>同 <code class="c">return</code> 路径</td>
+<td><strong><code class="c">0</code></strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键：</strong> 汇编里写的是 <code class="c">mov w0, #256</code>——<strong>编译器没有截断</strong>。截断发生在 OS 层（POSIX 的 <code class="c">waitpid</code> 只把状态的低 8 位交给父进程）。所以自定义错误码<strong>只能用 0–125</strong>：128–255 会被信号占用，<code class="c">256</code> 看起来等于 <code class="c">0</code>。</p>
+<h3>② 不写 return 的 <code class="c">main</code>：编译器真的补了 <code class="c">return 0</code></h3>
+<pre class="code" data-label="cpp"><code class="c">int main() { }              // -O2: mov w0, #0 ; ret
+int main() { return 0; }    // -O2: mov w0, #0 ; ret
+</code></pre>
+<p>两份汇编 <code class="c">diff</code> <strong>完全相同</strong>。C++ 标准规定：控制流走到 <code class="c">main</code> 的函数体结尾等价于 <code class="c">return 0;</code>——而且这是 <code class="c">main</code> <strong>独有</strong>的豁免，其它函数漏 <code class="c">return</code> 仍是 UB。仍然建议显式写 <code class="c">return 0;</code>：可移植、意图清晰、和 C 互移植时不会被 C89 咬到。</p>
+<h3>③ <code class="c">main</code> 不能"被使用"——标准禁止，clang 当扩展放行</h3>
+<pre class="code" data-label="cpp"><code class="c">int main() { if (0) main(); return 0; }        // 递归调用 main
+int main() { auto p = &amp;main; (void)p; return 0; }  // 取 main 地址
+</code></pre>
+<p>默认编译<strong>不报错</strong>（clang 扩展）。加上 <code class="c">-pedantic-errors</code>：</p>
+<pre class="code" data-label="code"><code class="c">error: referring to 'main' within an expression is a Clang extension [-Wmain]
+</code></pre>
+<p>标准 [basic.start.main] 的原话是 <code class="c">The function main shall not be used within a program</code>。<strong>别这么写</strong>——换编译器就是硬错误。</p>
+<h3>④ 非法的 <code class="c">main</code> 写法：实测报错原文</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">void main() { }</code></td>
+<td><code class="c">error: 'main' must return 'int'</code></td>
+</tr>
+<tr>
+<td><code class="c">long main() { return 0; }</code></td>
+<td><code class="c">error: 'main' must return 'int'</code></td>
+</tr>
+<tr>
+<td><code class="c">int Main() { return 0; }</code></td>
+<td>编译通过，<strong>链接</strong>报错：<code class="c">Undefined symbols for architecture arm64: "_main", referenced from: implicit entry/start for main executable</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">Main</code> 那个尤其阴险：错误发生在<strong>链接期</strong>，源码里看不出问题。clang 还会贴心地提示 <code class="c">^~~~ int</code>，意思是"你是不是想写 int"。</p>
+<h3>⑤ 头文件不是免费的</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>程序</th>
+<th>二进制大小</th>
+<th>编译耗时（3 次取最小）</th>
+<th><code class="c">#include</code> 展开行数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>空 <code class="c">int main(){return 0;}</code></td>
+<td>16 824 B</td>
+<td>0.12 s</td>
+<td>8 行（空）</td>
+</tr>
+<tr>
+<td>用 <code class="c">&lt;cstdio&gt;</code> + <code class="c">printf</code></td>
+<td>49 960 B</td>
+<td>0.12 s</td>
+<td>699 行</td>
+</tr>
+<tr>
+<td>用 <code class="c">&lt;iostream&gt;</code> + <code class="c">cout</code></td>
+<td>52 536 B</td>
+<td><strong>0.32 s</strong></td>
+<td><strong>31 441 行</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">&lt;iostream&gt;</code> 展开后 <strong>31 441 行</strong>，是 <code class="c">&lt;cstdio&gt;</code> 的 <strong>45 倍</strong>；编译耗时约 <strong>2.7 倍</strong>。这在嵌入式交叉编译、大型项目增量编译上是实打实的成本——也是后面学"头文件分离""前置声明"的动机。</p>
+<h2>HFT / 嵌入式视角</h2>
+<ol>
+<li><strong>退出码是运维契约</strong>。盘前检查程序（校验行情源连通性、检查磁盘水位、核对合约表版本）<strong>必须</strong>用不同的非 0 码区分失败原因，让上游脚本能分流处理；只用 0/1 会让排障退化成"看日志猜"。</li>
+<li><strong>退出码取值只用 0–125</strong>。<code class="c">return 256</code> 静默变成 0，是最难查的一类 bug——脚本以为成功了。</li>
+<li><strong>不要用 <code class="c">exit()</code> 乱杀进程</strong>。<code class="c">std::exit</code> 不析构局部对象（只析构静态对象），HFT 程序里未落盘的成交回报会丢。要走正常 <code class="c">return</code> 路径，或至少在 <code class="c">exit</code> 前手动 flush + 落盘。</li>
+<li><strong>嵌入式上二进制体积直接是钱</strong>。空程序 16 KB、加个 <code class="c">iostream</code> 就 50 KB——在片上 Flash 只有几百 KB 的 MCU 上，<code class="c">iostream</code> 基本不可用，得走 <code class="c">printf</code> 精简实现或直接写 UART。这也是为什么嵌入式 C++ 常用 <code class="c">-fno-exceptions -fno-rtti</code> 且不碰 <code class="c">&lt;iostream&gt;</code>。</li>
+<li><strong><code class="c">main</code> 之前还有启动代码</strong>。用 <code class="c">otool -l</code> 看可执行文件能看到 <code class="c">LC_MAIN</code>（entryoff + stacksize），真正被操作系统调用的是 CRT 的入口，<code class="c">main</code> 是被它调起来的——这解释了为什么全局对象的构造发生在 <code class="c">main</code> 之前。</li>
+</ol>
 <h2>自测题</h2>
 <ol>
 <li>C++ 程序的入口函数必须叫什么？返回类型必须是什么？</li>
@@ -493,6 +624,44 @@ int main() { }    // ✅
 </li>
 </ol>
 </details>
+<p><strong>5（踩坑·高价值）</strong> 下面程序的退出码是多少？</p>
+<pre class="code" data-label="cpp"><code class="c">int main() { return 256; }
+</code></pre>
+<ul>
+<li>A. 256</li>
+<li>B. 0</li>
+<li>C. 未定义</li>
+</ul>
+<p><strong>6（判断）</strong> <code class="c">int main() { }</code> 和 <code class="c">int main() { return 0; }</code> 生成的汇编完全相同。</p>
+<p><strong>7（应用）</strong> 你在写一个盘前检查程序，要区分"行情源连不上""磁盘水位过高""合约表版本不匹配"三种失败。退出码怎么定？为什么不能用 256、257、258？</p>
+<details>
+<summary>参考答案</summary>
+<ol start="5">
+<li>
+<p><strong>B</strong>。编译出的汇编确实是 <code class="c">mov w0, #256</code>，但 POSIX 只把进程退出状态的<strong>低 8 位</strong>交给父进程，<code class="c">256 &amp; 0xFF == 0</code>。所以 shell 里 <code class="c">echo $?</code> 得到 <strong>0</strong>——看起来"成功了"。这就是为什么自定义错误码只能用 <strong>0–125</strong>。</p>
+</li>
+<li>
+<p><strong>对</strong>。<code class="c">-O2</code> 下两者汇编都是 <code class="c">mov w0, #0 ; ret</code>，<code class="c">diff</code> 完全相同。C++ 标准规定控制流走到 <code class="c">main</code> 函数体结尾等价于 <code class="c">return 0;</code>，且这是 <code class="c">main</code> <strong>独有</strong>的豁免（其它函数漏 return 是 UB）。仍然建议显式写：可移植、意图清晰。</p>
+</li>
+<li>
+<p>用 <strong>1 / 2 / 3</strong>（或 1/2/3 之外的任意 0–125 内的不同值），并在文档里写明映射；成功返回 <strong>0</strong>。不能用 256/257/258 是因为退出码只有低 8 位有效——<code class="c">256→0</code>、<code class="c">257→1</code>、<code class="c">258→2</code>，会和别的错误码撞车，而且 <code class="c">256</code> 会被当成"成功"。另外要避开 <strong>128–255</strong>：这一段通常被 shell 用来表示"被信号杀死"（128+信号号），比如 137 = 被 SIGKILL。同理，也不要用 <code class="c">std::exit</code> 直接退——它不析构局部对象，未落盘的回报会丢。</p>
+</li>
+</ol>
+</details>
+<h2>可跑例子</h2>
+<pre class="code" data-label="shell"><code class="c"># 1.1-1  main 返回值、退出码截断、main 的三条禁令
+clang++ -std=c++17 -O2 -Wall 1.1-1-main-return.cpp -o m
+
+./m          ; echo &quot;exit=$?&quot;   # → 0   （源码里写的是 return 256）
+./m x        ; echo &quot;exit=$?&quot;   # → 125
+
+# 看不写 return 与写 return 0 的汇编是否相同
+clang++ -std=c++17 -O2 -S 1.1-1-main-return.cpp -o m.s
+
+# 验证 main 不能被&quot;使用&quot;（调用 / 取地址）
+clang++ -std=c++17 -pedantic-errors 1.1-1-main-return.cpp -o /dev/null
+</code></pre>
+<p>例子文件里以注释形式保留了 <code class="c">void main()</code> / <code class="c">Main()</code> / 递归 <code class="c">main</code> / 取 <code class="c">&amp;main</code> 四种非法写法的<strong>实测报错原文</strong>，取消注释即可逐个复现。</p>
 <h2>参考与延伸</h2>
 <ul>
 <li><strong>本书关联：</strong> <a href="#s-1-2">1.2 初识输入输出</a>（第一个真正会用库的程序）、<a href="#s-1-5">1.5.2 链接编译产物</a>（编译链接详解）</li>
@@ -846,6 +1015,121 @@ void old_code() { ... }
 <pre class="code" data-label="cpp"><code class="c">std::cout &lt;&lt; &quot;价格 // 不是注释&quot;;  // 这里的 // 才是注释
 </code></pre>
 <p>字符串字面量里的 <code class="c">//</code>、<code class="c">/*</code> 都是普通字符，注释规则不生效。</p>
+<h2>动机：注释规则看着最无聊，却有三个真会坑人的地方</h2>
+<p>注释是全书最简单的一节，但<strong>它藏着 C/C++ 翻译阶段的顺序问题</strong>。值得较真的三个动机：</p>
+<ol>
+<li><strong>注释不是"被删除"，而是"被替换成一个空格"</strong>。这一条决定了 <code class="c">a/**/b</code> 到底是一个 token 还是两个——写宏、写代码生成器时会踩。</li>
+<li><strong>行拼接（翻译阶段 2）发生在注释处理（阶段 3）之前</strong>。所以 <code class="c">//</code> 末尾一个不起眼的反斜杠，会把下一行代码整个吃掉，而且<strong>编译器不报"注释错误"</strong>，只报"某个变量未声明"——错误信息离真凶很远。</li>
+<li><strong><code class="c">/* */</code> 不能嵌套</strong>导致"临时注释掉一大段代码"这个最常用的操作不可靠，必须用 <code class="c">#if 0</code>。</li>
+</ol>
+<h2>底层实测：三个陷阱的复现与报错原文</h2>
+<blockquote>
+<p>全部在本机 clang 23.1.0 实测。</p>
+</blockquote>
+<h3>陷阱 ①：<code class="c">/* */</code> 不能嵌套——第一个 <code class="c">*/</code> 就关掉整个注释</h3>
+<pre class="code" data-label="cpp"><code class="c">#include &lt;iostream&gt;
+/* 外层注释开始
+ * /* 内层注释开始 */
+ * 外层注释还没结束
+ */
+int main() { std::cout &lt;&lt; &quot;ok\n&quot;; return 0; }
+</code></pre>
+<p>实测报错：</p>
+<pre class="code" data-label="code"><code class="c">nest.cpp:4:4: warning: '/*' within block comment [-Wcomment]
+    4 |  * /* 内层注释开始 */
+      |    ^
+nest.cpp:5:4: error: a type specifier is required for all declarations
+    5 |  * 外层注释还没结束
+      |    ^
+nest.cpp:5:28: error: expected ';' after top level declarator
+</code></pre>
+<p><strong>注意报错位置</strong>：warning 在第 4 行（内层 <code class="c">/*</code>），error 在第 5 行——因为第 4 行的 <code class="c">*/</code> 已经把注释关掉了，第 5 行的 <code class="c">外层注释还没结束</code> 变成了<strong>代码</strong>。而最后那个 <code class="c">*/</code> 成了悬空符号。</p>
+<p><strong>安全做法</strong>：想整段禁用代码，用预处理指令，它不受注释规则限制：</p>
+<pre class="code" data-label="cpp"><code class="c">#if 0
+/* 这里的注释不会被误关闭 */
+void old_code() { ... }
+#endif
+</code></pre>
+<h3>陷阱 ②：<code class="c">//</code> 末尾的反斜杠会吃掉下一行</h3>
+<pre class="code" data-label="cpp"><code class="c">int main() {
+    // 这行注释末尾有个反斜杠 \
+    int x = 42;
+    std::cout &lt;&lt; &quot;x=&quot; &lt;&lt; x &lt;&lt; &quot;\n&quot;;
+    return 0;
+}
+</code></pre>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">c2.cpp:5:26: error: use of undeclared identifier 'x'
+    5 |     std::cout &lt;&lt; &quot;x=&quot; &lt;&lt; x &lt;&lt; &quot;\n&quot;;
+</code></pre>
+<p><strong><code class="c">int x = 42;</code> 整行被吃掉了</strong>。原因是 C/C++ 的翻译阶段顺序：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>字符映射（trigraph 也在这一步，C++17 已移除）</td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td><strong>行拼接：反斜杠 + 换行 → 删除</strong></td>
+</tr>
+<tr>
+<td><strong>3</strong></td>
+<td>分解成 token，<strong>注释替换为一个空格</strong></td>
+</tr>
+<tr>
+<td>4</td>
+<td>预处理（<code class="c">#include</code> / <code class="c">#define</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>拼接发生在注释处理之前</strong>，所以 <code class="c">//</code> 后面的 <code class="c">\</code> 先把下一行拼了上来，然后整块被当注释扔掉。用 <code class="c">-E</code> 看预处理结果最直观——那两行会变成空行。</p>
+<h3>陷阱 ③：注释是"一个空格"，不是"被删除"</h3>
+<pre class="code" data-label="cpp"><code class="c">int a = 1, b = 2;
+int ab = a/**/b;        // 展开后是 `int ab = a b ;`
+</code></pre>
+<p>实测：<code class="c">error: expected ';' at end of declaration</code>（<code class="c">^</code> 指向 <code class="c">a</code> 后面）。<strong><code class="c">a</code> 和 <code class="c">b</code> 没有粘成 <code class="c">ab</code></strong>——注释替换成的那个空格把它们分成了两个 token。</p>
+<p>正面利用：字符串字面量的相邻拼接<strong>不受影响</strong>：</p>
+<pre class="code" data-label="cpp"><code class="c">const char* s = &quot;he&quot;/*这句注释不影响*/&quot;llo&quot;;   // → &quot;hello&quot;，sizeof == 6
+int sum = a /*加号左*/ + /*加号右*/ b;        // → 3
+</code></pre>
+<h3>陷阱 ④：<code class="c">??/</code> 三字符词（trigraph）——C++17 之前同样会吃掉下一行</h3>
+<pre class="code" data-label="cpp"><code class="c">// 注释末尾的 ??/ 在 C++11 下等于反斜杠 ??/
+std::cout &lt;&lt; &quot;这行被吃了吗\n&quot;;
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译标准</th>
+<th>运行结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-std=c++11</code></td>
+<td><strong>什么都不输出</strong>（下一行被拼接进注释）</td>
+</tr>
+<tr>
+<td><code class="c">-std=c++17</code></td>
+<td>输出 <code class="c">这行被吃了吗</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">??/</code> 是 trigraph，等价于 <code class="c">\</code>。C++11/14 里它是语言的一部分；<strong>C++17 起 trigraph 已从标准移除</strong>，所以同一份代码在两个标准下行为不同。这种"换个 -std 就变语义"的东西，是跨项目移植时的暗雷。</p>
+<h2>HFT / 嵌入式视角</h2>
+<ol>
+<li><strong><code class="c">#if 0</code> 是唯一可靠的整段禁用手段</strong>。调试策略时临时注释掉一段下单逻辑，如果那段里有 <code class="c">/* 订单状态说明 */</code>，用 <code class="c">/* */</code> 包会导致代码被"部分禁用"——编译能过、行为全错，比直接报错危险得多。团队规范里应写明：<strong>禁用代码一律 <code class="c">#if 0 ... #endif</code></strong>。</li>
+<li><strong>注释里的反斜杠要警惕</strong>。宏定义、多行日志字符串旁边写注释时，行尾不小心留个 <code class="c">\</code>（比如从 Windows 拷过来的路径 <code class="c">C:\data\</code>），会静默吃掉下一行。CI 里加 <code class="c">-Wall</code> 之外的 <code class="c">-Wcomment</code>（clang 默认开）能抓到嵌套 <code class="c">/*</code>，但<strong>抓不到反斜杠续行</strong>——只能靠 review。</li>
+<li><strong>代码生成器 / 宏里别用注释分隔 token</strong>。写 <code class="c">#define CONCAT(a,b) a##b</code> 这类宏或在模板代码里插注释时，记住注释是"空格"：<code class="c">a/**/b</code> 不会变成 <code class="c">ab</code>，但 <code class="c">"a"/*x*/"b"</code> 会拼成 <code class="c">"ab"</code>——字符串和标识符的规则不一样。</li>
+<li><strong>不要在代码里用 trigraph</strong>。C++17 已移除，但存量代码可能还有；新代码一律禁用，遇到 <code class="c">??</code> 开头的怪序列先怀疑它。</li>
+<li><strong>注释不影响编译产物，但影响编译时间吗？</strong> 不影响——注释在阶段 3 就被换成空格，预处理后的行数会保留（因为换行还在），但不产生 token。真正的编译时间大头是 <code class="c">#include</code>（见 1.1 的 31 441 行实测）。</li>
+</ol>
 <h2>自测题</h2>
 <p><strong>1（选择）</strong> 下面代码能否正确编译？</p>
 <pre class="code" data-label="cpp"><code class="c">/* 外层
@@ -879,6 +1163,50 @@ int y = 2;
    #endif</code></li>
 </ol>
 </details>
+<p><strong>4（踩坑·高价值）</strong> 下面这段代码为什么编译时报「<code class="c">x</code> 未声明」？</p>
+<pre class="code" data-label="cpp"><code class="c">int main() {
+    // 这是注释 \
+    int x = 42;
+    std::cout &lt;&lt; x;
+}
+</code></pre>
+<p><strong>5（判断）</strong> <code class="c">a/**/b</code> 会被解析成标识符 <code class="c">ab</code>。</p>
+<p><strong>6（应用）</strong> 你要临时禁用下面这段含注释的代码，写出安全做法：</p>
+<pre class="code" data-label="cpp"><code class="c">/* 配置 A：限价单 */
+void place_limit() { ... }
+/* 配置 B：市价单 */
+void place_market() { ... }
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<ol start="4">
+<li>
+<p>因为 <code class="c">//</code> 注释<strong>末尾的反斜杠</strong>触发了<strong>行拼接</strong>，把下一行 <code class="c">int x = 42;</code> 拼进了注释里。C/C++ 的翻译阶段顺序是：<strong>阶段 2 行拼接 → 阶段 3 注释处理</strong>，拼接在前，所以这一行整行消失。实测报错 <code class="c">use of undeclared identifier 'x'</code>，错误位置在第 3 行，而真凶在第 2 行的行尾——这类错误排查成本很高。</p>
+</li>
+<li>
+<p><strong>错</strong>。注释在翻译阶段 3 被替换成<strong>一个空格</strong>，不是被删除。所以 <code class="c">a/**/b</code> 展开成 <code class="c">a b</code>，是<strong>两个 token</strong>，实测 <code class="c">int ab = a/**/b;</code> 报 <code class="c">error: expected ';' at end of declaration</code>。但字符串字面量的相邻拼接不受影响：<code class="c">"he"/*x*/"llo"</code> 仍是 <code class="c">"hello"</code>（<code class="c">sizeof == 6</code>）。</p>
+</li>
+<li>
+<p>用预处理指令，不要用 <code class="c">/* */</code> 包：
+   <code class="c">cpp
+   #if 0
+   /* 配置 A：限价单 */
+   void place_limit() { ... }
+   /* 配置 B：市价单 */
+   void place_market() { ... }
+   #endif</code>
+   <code class="c">/* */</code> 不能嵌套——外层注释会被里面第一个 <code class="c">*/</code> 关掉，导致代码被"部分禁用"，编译能过但行为全错，比直接报错危险得多。</p>
+</li>
+</ol>
+</details>
+<h2>可跑例子</h2>
+<pre class="code" data-label="shell"><code class="c"># 1.3-1  注释三个陷阱的正面演示（可运行）
+clang++ -std=c++17 -O2 -Wall 1.3-1-comment-traps.cpp -o cmt &amp;&amp; ./cmt
+
+# 看「注释 = 一个空格」在预处理阶段的真实结果
+clang++ -std=c++17 -E 1.3-1-comment-traps.cpp | tail -20
+</code></pre>
+<p>例子文件末尾以注释形式给出了陷阱 ①②④ 的<strong>最小复现代码</strong>和<strong>实测报错原文</strong>，复制出来单独编译即可逐个验证。</p>
 <h2>延伸</h2>
 <p>← <a href="#s-1-2">1.2 初识输入输出</a> | <a href="#s-1-4">1.4 控制流 →</a></p>
       </section>
@@ -920,9 +1248,9 @@ int y = 2;
 </tr>
 <tr>
 <td><code class="c">for (int i=0; ...)</code> 在循环外用 <code class="c">i</code></td>
-<td>✅（C99 起）</td>
+<td>❌ 同样报错（C99 起）</td>
 <td>❌ <code class="c">i</code> 作用域只在 for 内</td>
-<td>C++ 更严格，循环变量不泄漏</td>
+<td><strong>C99 起 C 和 C++ 行为一致</strong>；只有 C90 编译器当扩展放行（并告警）</td>
 </tr>
 <tr>
 <td>条件必须是 <code class="c">bool</code></td>
@@ -932,17 +1260,47 @@ int y = 2;
 </tr>
 </tbody>
 </table></div>
-<p><strong>关键差异：for 变量的作用域。</strong> 这是 C→C++ 最容易踩的点：</p>
-<pre class="code" data-label="C"><code class="c">/* C 代码 */
+<p><strong>for 变量的作用域（常见误解澄清）。</strong> 很多资料说"C 的 for 变量会泄漏到循环外，C++ 不会"——<strong>这句话只在 C90 成立</strong>。实测（clang 23.1.0）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译标准</th>
+<th><code class="c">for (int i=0;...){}</code> 后在循环外用 <code class="c">i</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C90（<code class="c">-std=c90</code>）</td>
+<td>⚠️ 仅 warning <code class="c">GCC does not allow variable declarations in for loop initializers before C99 [-Wgcc-compat]</code>，<strong>放行</strong>，<code class="c">i</code> 泄漏（实测 <code class="c">i=3</code>）</td>
+</tr>
+<tr>
+<td>C99（<code class="c">-std=c99</code>）</td>
+<td>❌ <code class="c">error: use of undeclared identifier 'i'</code></td>
+</tr>
+<tr>
+<td>C11 / C17</td>
+<td>❌ 同上</td>
+</tr>
+<tr>
+<td>C++（任意标准）</td>
+<td>❌ 同上</td>
+</tr>
+</tbody>
+</table></div>
+<p>也就是说：<strong>C99 起，C 和 C++ 在这一点上行为完全一致</strong>——<code class="c">for</code> 初始化语句里声明的变量，作用域就是整个 <code class="c">for</code> 语句（含循环体），出循环即销毁。</p>
+<pre class="code" data-label="C"><code class="c">/* C99 代码 */
 for (int i = 0; i &lt; 3; i++) {}
-printf(&quot;%d&quot;, i);   /* C99: 合法，i 在循环外仍可见 */
+printf(&quot;%d&quot;, i);   /* ❌ C99 也报错：use of undeclared identifier 'i' */
 </code></pre>
 <pre class="code" data-label="cpp"><code class="c">// C++ 代码
 for (int i = 0; i &lt; 3; i++) {}
 std::cout &lt;&lt; i;    // 编译错误：i 不在作用域内
 </code></pre>
-<p>C++ 把 <code class="c">for</code> 里声明的变量<strong>锁在循环体内</strong>，更安全（不会污染外层）。要从 C 转 C++，习惯把"循环后还要用 i"的变量提到循环外声明。</p>
-<p><strong>记忆：</strong> C 和 C++ 的控制流几乎一样，但 C++ 的 <code class="c">for</code> 变量更"干净"——用完即丢，不泄漏到外面。</p>
+<p><strong>记忆：</strong> 别再把"for 变量泄漏"当成 C/C++ 的差异——<strong>C99 之后两者一致</strong>。真正要注意的是：循环后还要用这个变量，就得<strong>提前声明</strong>。</p>
+<pre class="code" data-label="cpp"><code class="c">int i = 0;
+for (i = 0; i &lt; 3; ++i) { /* ... */ }
+std::cout &lt;&lt; i;    // OK（C 和 C++ 都行）
+</code></pre>
 <h2>通俗理解</h2>
 <ul>
 <li><strong><code class="c">while (1)</code></strong> = 死循环：<code class="c">1</code> 永远是非 0，一直被当成「真」</li>
@@ -997,7 +1355,7 @@ while (std::cin &gt;&gt; value)  // 什么时候停？
 <pre class="code" data-label="cpp"><code class="c">for (int i = 0; i &lt; 10; ++i) { /* ... */ }
 std::cout &lt;&lt; i;  // 编译错误！C++ 里 i 已经销毁
 </code></pre>
-<p>C 里 <code class="c">i</code> 循环外可见，C++ 不可见。要循环后用，提前声明：</p>
+<p>C90（编译器扩展下）<code class="c">i</code> 循环外可见，<strong>C99 起和 C++ 一样不可见</strong>。要循环后用，提前声明：</p>
 <pre class="code" data-label="cpp"><code class="c">int i;
 for (i = 0; i &lt; 10; ++i) { /* ... */ }
 std::cout &lt;&lt; i;  // OK
@@ -1016,6 +1374,145 @@ else
     std::cout &lt;&lt; &quot;B&quot;;  // 现在配外层
 }
 </code></pre>
+<h2>动机：控制流看着和 C 一模一样，真正的差别在"输入失败"上</h2>
+<p><code class="c">while</code> / <code class="c">for</code> / <code class="c">if</code> 的语法 C 程序员闭着眼都能写。这一节值得较真的是 <strong><code class="c">while (std::cin &gt;&gt; value)</code> 这个惯用法</strong>——它是 C 的 <code class="c">scanf(...) != EOF</code> 的替代品，但<strong>语义比 scanf 丰富得多</strong>，也更容易被误用：</p>
+<ol>
+<li><strong>循环的终止条件不止 EOF</strong>。类型不匹配也会终止，而且终止后<strong>流会卡住</strong>，后续所有读取都失败——这是 C 程序员最容易懵的地方（<code class="c">scanf</code> 失败后至少会跳过那个 token）。</li>
+<li><strong>失败后变量的值是有规则的</strong>，但规则分两种情况（实测见下），靠猜会猜错。</li>
+<li><strong>条件表达式的隐式转换</strong>决定了 <code class="c">while (1)</code> 合法，也决定了 <code class="c">if (ptr)</code>、<code class="c">if (flags &amp; MASK)</code> 这些写法在 C++ 里仍然成立——而 Rust/Java 会报错。</li>
+</ol>
+<h2>底层实测</h2>
+<blockquote>
+<p>全部在本机 clang 23.1.0 实测。</p>
+</blockquote>
+<h3>① <code class="c">for</code> 变量作用域：C99 起 C 和 C++ 一致（见上方"和 C 的区别"已修正）</h3>
+<h3>② <code class="c">cin &gt;&gt; v</code> 失败后，<code class="c">v</code> 到底是几？分两种情况</h3>
+<pre class="code" data-label="cpp"><code class="c">int sum = 0, v = -999;
+while (std::cin &gt;&gt; v) sum += v;
+// 循环结束后打印 v 和流的四个状态位
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>输入</th>
+<th><code class="c">sum</code></th>
+<th>循环结束时 <code class="c">v</code></th>
+<th>good</th>
+<th>eof</th>
+<th>fail</th>
+<th>bad</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">1 2 3 x</code></td>
+<td>6</td>
+<td><strong>0</strong></td>
+<td>0</td>
+<td>0</td>
+<td><strong>1</strong></td>
+<td>0</td>
+</tr>
+<tr>
+<td><code class="c">1 2 3</code>（直接 EOF）</td>
+<td>6</td>
+<td><strong>3</strong>（保持原值）</td>
+<td>0</td>
+<td><strong>1</strong></td>
+<td>1</td>
+<td>0</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么会不一样？</strong> 关键在于失败发生在哪个阶段：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>失败类型</th>
+<th>sentry 阶段</th>
+<th>num_get 阶段</th>
+<th><code class="c">v</code> 的值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类型不匹配（读到 <code class="c">x</code>）</td>
+<td>✅ 成功</td>
+<td>❌ 失败</td>
+<td><strong>置 0</strong>（C++11 起标准规定）</td>
+</tr>
+<tr>
+<td>纯 EOF</td>
+<td>❌ 失败（eofbit 已置）</td>
+<td>根本没执行</td>
+<td><strong>保持上一次的值</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>也就是说：<strong>只有 sentry 成功后提取才失败，<code class="c">v</code> 才会被清零</strong>。纯 EOF 时 <code class="c">v</code> 是"上一次读到的值"——如果你的代码在循环后还用 <code class="c">v</code>，就会拿到一个看起来合法其实是过期数据的数字。</p>
+<h3>③ 流失败后不 <code class="c">clear()</code>，后续读取全部失效</h3>
+<p>输入 <code class="c">x hello</code>：</p>
+<pre class="code" data-label="code"><code class="c">第一次读 int：fail=1
+未 clear 直接读 string → 读取失败     ← 数据还在缓冲区，但流已经&quot;锁死&quot;
+clear() 后再读 string   → 读到 &quot;x&quot;    ← 卡住的那个 token 被吐出来
+</code></pre>
+<p>这是 <code class="c">cin</code> 与 <code class="c">scanf</code> 最大的行为差异：<code class="c">scanf</code> 失败后只是返回，下次调用还能继续读；<code class="c">cin</code> 的 <code class="c">failbit</code> 是<strong>粘滞</strong>的，不 <code class="c">clear()</code> 就永远读不了。恢复流程是 <code class="c">clear()</code> 清状态 + <code class="c">ignore()</code> 丢掉坏数据。</p>
+<h3>④ 四种死循环写法：<code class="c">-O2</code> 下汇编逐条相同</h3>
+<pre class="code" data-label="cpp"><code class="c">int sink;
+void fn() { int i = 0; while (1)    { if (++i &gt; 10) break; sink = i; } }
+void fn() { int i = 0; while (true) { if (++i &gt; 10) break; sink = i; } }
+void fn() { int i = 0; for (;;)     { if (++i &gt; 10) break; sink = i; } }
+void fn() { int i = 0; for (;1;)    { if (++i &gt; 10) break; sink = i; } }
+</code></pre>
+<p>四种写法在 <code class="c">-O2</code> 下<strong>生成完全相同的 4 条指令</strong>：</p>
+<pre class="code" data-label="asm"><code class="c">mov  w8, #10
+adrp x9, _sink@PAGE
+str  w8, [x9, _sink@PAGEOFF]
+ret
+</code></pre>
+<p>（循环被整个优化成 <code class="c">sink = 10</code>。）所以 <strong><code class="c">while(1)</code> / <code class="c">while(true)</code> / <code class="c">for(;;)</code> 没有任何性能差别</strong>，选哪个纯粹是可读性问题。现代 C++ 推荐 <code class="c">while (true)</code>（意图最清楚）或 <code class="c">for (;;)</code>（最简短，<code class="c">for(;;)</code> 里的空条件在 C 里也是惯用法）。</p>
+<h3>⑤ 悬空 else：<code class="c">-Wall</code> 能抓到</h3>
+<pre class="code" data-label="cpp"><code class="c">if (a &gt; 0)
+    if (b &gt; 0) r = 1;
+else
+    r = 2;          // ← 这个 else 属于【内层】if
+</code></pre>
+<p>clang <code class="c">-Wall</code> 报：<code class="c">warning: add explicit braces to avoid dangling else [-Wdangling-else]</code>。</p>
+<p>实测行为（<code class="c">else</code> 配内层 <code class="c">if</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>结果</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">f(1, 0)</code></td>
+<td><strong>2</strong></td>
+<td>外层真、内层假 → 走 else（很多人以为会是 0）</td>
+</tr>
+<tr>
+<td><code class="c">f(1, 1)</code></td>
+<td>1</td>
+<td>两层都真</td>
+</tr>
+<tr>
+<td><code class="c">f(-5, 0)</code></td>
+<td>0</td>
+<td>外层假，整个 if 跳过了</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT / 嵌入式视角</h2>
+<ol>
+<li><strong><code class="c">while (cin &gt;&gt; x)</code> 只适合原型，不适合生产</strong>。它的失败处理是"悄悄停"，而且会把流锁死。生产代码要显式检查：<code class="c">if (!(in &gt;&gt; x)) { /* 记日志 + 决定是跳过还是中止 */ }</code>。行情回放程序里，一条坏数据导致整个循环静默结束 = 少回放大半天行情。</li>
+<li><strong>循环后别用循环变量的值</strong>。实测 EOF 情形下 <code class="c">v</code> 是"上一次的值"——<code class="c">while (cin &gt;&gt; price) {...}</code> 之后用 <code class="c">price</code> 做最后一笔的结算，会拿到过期价格。<strong>要么在循环体内处理完整，要么显式初始化一个 <code class="c">last_valid</code>。</strong></li>
+<li><strong><code class="c">failbit</code> 粘滞是嵌入式串口/日志解析的常见坑</strong>。按行解析配置/报文时，一次解析失败会让后续全部失败；正确姿势是 <code class="c">clear()</code> + <code class="c">ignore(n, '\n')</code> 跳过坏行再继续。</li>
+<li><strong>死循环写法统一用 <code class="c">while (true)</code></strong>。汇编一样，但审阅时能一眼看出"这是故意的死循环"，而不是"<code class="c">while(1)</code> 是不是写错了"。HFT 主循环、嵌入式 <code class="c">super-loop</code> 都是这个形态，可读性直接关系排障速度。</li>
+<li><strong>条件里的隐式转换要显式化</strong>。<code class="c">if (ptr)</code> 在 C++ 里合法，但 <code class="c">if (flags &amp; MASK)</code> 这类写法在重构时极易改错优先级。写 <code class="c">if (ptr != nullptr)</code> / <code class="c">if ((flags &amp; MASK) != 0)</code>，编译器不会因为你写得更啰嗦而生成更差的代码（实测汇编一致）。</li>
+</ol>
 <h2>自测题</h2>
 <p><strong>1（选择）</strong> 下面 C++ 代码能否编译？</p>
 <pre class="code" data-label="cpp"><code class="c">for (int i = 0; i &lt; 3; ++i) {}
@@ -1038,12 +1535,54 @@ for (i = 0; i &lt; n; ++i) { ... }
 <details>
 <summary>参考答案</summary>
 <ol>
-<li>B。C++ 的 <code class="c">for</code> 变量作用域只在循环体内，循环外不可见。这是和 C（C99）的关键差异。</li>
+<li>B。C++ 的 <code class="c">for</code> 变量作用域只在循环体内，循环外不可见。<strong>注意：C99 起 C 也是同样的行为</strong>（实测 <code class="c">-std=c99</code> 报 <code class="c">use of undeclared identifier 'i'</code>），所以这不是 C/C++ 的差异；只有 C90 且编译器放行扩展时 <code class="c">i</code> 才会泄漏。</li>
 <li><code class="c">sum = 6</code>。读到 <code class="c">x</code> 时 <code class="c">cin &gt;&gt; v</code>（v 是 int）失败，循环结束。1+2+3=6。</li>
 <li>语义等价（都是死循环），但 <code class="c">while (true)</code> 意图更清晰，现代 C++ 推荐这种写法。<code class="c">while(1)</code> 也合法。</li>
 <li>这段代码在 C++ 里其实没问题（<code class="c">i</code> 在循环外声明），只是不够现代。如果循环后不需要 <code class="c">i</code>，应该写 <code class="c">for (int i = 0; ...)</code> 让变量用完即丢；确实需要就用上面的写法（提前声明）。</li>
 </ol>
 </details>
+<p><strong>5（踩坑·高价值）</strong> 输入 <code class="c">1 2 3</code>（后面直接 EOF），循环结束后 <code class="c">v</code> 的值是多少？</p>
+<pre class="code" data-label="cpp"><code class="c">int sum = 0, v = -999;
+while (std::cin &gt;&gt; v) sum += v;
+// 此时 v == ?
+</code></pre>
+<ul>
+<li>A. 0</li>
+<li>B. 3</li>
+<li>C. -999</li>
+</ul>
+<p><strong>6（判断）</strong> <code class="c">cin &gt;&gt; v</code> 失败后，只要再调一次 <code class="c">cin &gt;&gt; w</code> 就能继续读（就像 <code class="c">scanf</code> 那样）。</p>
+<p><strong>7（应用）</strong> <code class="c">while (1)</code> 和 <code class="c">while (true)</code> 哪个更快？如果一样，现代 C++ 推荐哪个？为什么？</p>
+<details>
+<summary>参考答案</summary>
+<ol start="5">
+<li>
+<p><strong>B（v == 3）</strong>。这是最容易猜错的一题。规则是：<strong>只有 sentry 成功后提取才失败，<code class="c">v</code> 才会被清零</strong>（C++11 起标准规定：提取失败时写入 0）。纯 EOF 时 sentry 阶段就失败了（eofbit 已置），根本没走到写 <code class="c">v</code> 那一步，所以 <code class="c">v</code> <strong>保持上一次读到的值 3</strong>。对照：输入 <code class="c">1 2 3 x</code>（类型不匹配）时 sentry 成功、<code class="c">num_get</code> 失败 → <code class="c">v</code> 被置 <strong>0</strong>。两种失败行为不同，别混为一谈。</p>
+</li>
+<li>
+<p><strong>错</strong>。<code class="c">cin</code> 的 <code class="c">failbit</code> 是<strong>粘滞</strong>的：流一旦 fail，后续所有 <code class="c">&gt;&gt;</code> 都会<strong>立即失败并返回</strong>，哪怕缓冲区里还有数据（实测"未 clear 直接读 → 读取失败"）。恢复要两步：
+   <code class="c">cpp
+   std::cin.clear();                          // ① 清状态位
+   std::cin.ignore(1024, '\n');               // ② 丢掉坏数据（否则下次又读到同一个坏 token）</code>
+   <code class="c">scanf</code> 失败后不会锁死流，所以从 C 转过来特别容易在这里栽跟头。</p>
+</li>
+<li>
+<p><strong>一样快</strong>。<code class="c">-O2</code> 下 <code class="c">while(1)</code> / <code class="c">while(true)</code> / <code class="c">for(;;)</code> / <code class="c">for(;1;)</code> 生成<strong>完全相同的汇编</strong>（本例实测都被优化成 4 条指令：直接写 <code class="c">sink = 10</code>）。推荐 <strong><code class="c">while (true)</code></strong>：语义最明确（"故意的死循环"），审阅者不用猜 <code class="c">while(1)</code> 是不是笔误；<code class="c">for(;;)</code> 也可以，是 C 里的传统惯用法。不要因为"性能"去选其中某一个。</p>
+</li>
+</ol>
+</details>
+<h2>可跑例子</h2>
+<pre class="code" data-label="shell"><code class="c"># 1.4-1  for 作用域 / cin 失败后的值 / 流状态位 / 悬空 else
+clang++ -std=c++17 -O2 -Wall 1.4-1-control-flow.cpp -o cf
+
+printf '1 2 3 x\n' | ./cf     # 类型不匹配 → v=0
+printf '1 2 3'     | ./cf     # 纯 EOF     → v=3（保持原值）
+
+# C 对照：for 变量作用域在 C90 / C99 / C11 / C17 下的差异
+# （例子文件末尾有可直接复制的最小复现代码和实测报错）
+clang -x c -std=c99 cf.c
+</code></pre>
+<p>例子里故意保留了一处悬空 else，<code class="c">-Wall</code> 下会给出 <code class="c">-Wdangling-else</code> 告警——这正是要演示的点。</p>
 <h2>延伸</h2>
 <p>← <a href="#s-1-3">1.3 注释简介</a> | <a href="#s-1-5">1.5 类简介 →</a></p>
       </section>
@@ -1129,6 +1668,144 @@ private:
 Sales_item item;
 item.isbn();  // 对象.方法()，不用传 this
 </code></pre>
+<h2>动机：为什么 C++ 要把函数塞进 struct 里</h2>
+<p>C 程序员的第一反应是"把函数放进结构体有什么用？不过是 <code class="c">isbn(&amp;item)</code> 换成 <code class="c">item.isbn()</code> 的语法糖"。<strong>如果只是语法糖，不值得发明一整个语言</strong>。真正的动机是三条：</p>
+<ol>
+<li><strong>不变式（invariant）可以被强制</strong>。C 的 <code class="c">struct</code> 全公开，任何人都能 <code class="c">order.price = -100</code>；C++ 用 <code class="c">private</code> 把字段藏起来，只暴露 <code class="c">set_price()</code>——校验逻辑写在类里，<strong>没人能绕过</strong>。这是 C++ 相对 C 最本质的增值，语法糖只是附赠。</li>
+<li><strong>名字不污染全局</strong>。<code class="c">isbn()</code> 在类里，就不会和别人的 <code class="c">isbn()</code> 撞；C 里得靠 <code class="c">sales_item_isbn()</code> 这种前缀约定。</li>
+<li><strong>接口和实现可以分离</strong>。<code class="c">public</code> 部分是契约，<code class="c">private</code> 部分可以随便改而不影响调用方（1.5.1 详讲）。</li>
+</ol>
+<p><strong>关键认知：<code class="c">item.isbn()</code> 在机器层面确实就是 <code class="c">isbn(&amp;item)</code></strong>——下面用汇编证明。所以"面向对象"在这里<strong>零运行时开销</strong>，你买的单只是编译期的组织方式，不是运行时的跳转表。</p>
+<h2>底层实测：<code class="c">item.isbn()</code> 真的等于 <code class="c">isbn(&amp;item)</code> 吗</h2>
+<blockquote>
+<p>全部在本机 clang 23.1.0 / arm64 实测。</p>
+</blockquote>
+<h3>① 汇编级证明：成员函数 = 普通函数 + 隐式 <code class="c">this</code> 参数</h3>
+<pre class="code" data-label="cpp"><code class="c">struct Box { long a, b, c; };
+
+// C 风格：显式传指针
+long free_sum(const Box* p) { return p-&gt;a + p-&gt;b + p-&gt;c; }
+
+// C++ 风格：成员函数
+struct BoxCxx {
+    long a, b, c;
+    long sum() const { return a + b + c; }
+};
+long call_member(const BoxCxx* p) { return p-&gt;sum(); }
+</code></pre>
+<p><code class="c">clang++ -std=c++17 -O1 -S</code> 后对比两个函数体：</p>
+<pre class="code" data-label="asm"><code class="c">; free_sum(const Box*)          ; call_member(const BoxCxx*)  ← 成员函数已内联进来
+    ldp  x8, x9, [x0]               ldp  x8, x9, [x0]
+    ldr  x10, [x0, #16]             ldr  x10, [x0, #16]
+    add  x8, x9, x8                 add  x8, x9, x8
+    add  x0, x8, x10                add  x0, x8, x10
+    ret                             ret
+</code></pre>
+<p><strong>逐条指令完全相同</strong>。<code class="c">diff</code> 结果为空。唯一的差别是<strong>符号名</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>mangled name</th>
+<th><code class="c">c++filt</code> 还原</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>自由函数</td>
+<td><code class="c">_Z8free_sumPK3Box</code></td>
+<td><code class="c">free_sum(Box const*)</code></td>
+</tr>
+<tr>
+<td>成员函数</td>
+<td><code class="c">_ZNK3Box3sumEv</code></td>
+<td><code class="c">Box::sum() const</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>注意成员函数 mangled name 里的 <code class="c">K</code>（const）和结尾的 <code class="c">v</code>（void 参数列表）——<strong><code class="c">this</code> 不出现在参数列表里，它是隐式的</strong>，但 name mangling 把 <code class="c">const</code> 也编进去了，因为 <code class="c">const</code> 成员函数和同名非 <code class="c">const</code> 成员函数是两个不同的重载。</p>
+<h3>② <code class="c">this</code> 就是对象的地址</h3>
+<pre class="code" data-label="cpp"><code class="c">Tick t{10.5, 100};
+std::cout &lt;&lt; &amp;t &lt;&lt; &quot;\n&quot; &lt;&lt; t.me() &lt;&lt; &quot;\n&quot;;   // me() 里 return this;
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">  &amp;t     = 0x16d89ac40
+  t.me() = 0x16d89ac40
+  this == &amp;t ? 是
+</code></pre>
+<p>所以 <code class="c">this</code> <strong>不是</strong>"指向某个隐藏结构的指针"，就是 <code class="c">&amp;对象</code> 本身，通过 <code class="c">x0</code>（arm64 第一个参数寄存器）传进去——和 <code class="c">isbn(&amp;item)</code> 里传 <code class="c">&amp;item</code> 完全一样。</p>
+<h3>③ 成员函数不占对象空间</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>内容</th>
+<th><code class="c">sizeof</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct Empty { }</code></td>
+<td>空类</td>
+<td><strong>1</strong></td>
+</tr>
+<tr>
+<td><code class="c">struct DataOnly { double px; int qty; }</code></td>
+<td>只有 2 个字段</td>
+<td>16</td>
+</tr>
+<tr>
+<td><code class="c">struct WithMethods { 同上 + 3 个方法 }</code></td>
+<td>字段 + 方法</td>
+<td><strong>16</strong>（不变）</td>
+</tr>
+<tr>
+<td><code class="c">struct WithVirtual { 同上 + 虚函数 }</code></td>
+<td>字段 + 虚析构</td>
+<td><strong>24</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>三点结论：
+- <strong>非虚成员函数零空间开销</strong>——加 3 个方法 <code class="c">sizeof</code> 不变，因为方法不在对象里，它们在代码段，靠 <code class="c">this</code> 找到数据。
+- <strong>空类是 1 字节不是 0</strong>——保证 <code class="c">&amp;a != &amp;b</code>（两个不同对象必须有不同地址），否则数组、指针算术都会崩。
+- <strong>虚函数才加开销</strong>：arm64 上多 8 字节的 vptr（虚表指针）。所以"面向对象 = 慢"这句话<strong>只对虚函数成立</strong>，对普通成员函数完全不成立。</p>
+<h3>④ <code class="c">class</code> vs <code class="c">struct</code>：只有默认访问权限不同</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">class</code></th>
+<th><code class="c">struct</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认成员访问</td>
+<td><code class="c">private</code></td>
+<td><code class="c">public</code></td>
+</tr>
+<tr>
+<td>默认继承方式</td>
+<td><code class="c">private</code></td>
+<td><code class="c">public</code></td>
+</tr>
+<tr>
+<td>其它（能有方法、能继承、能多态）</td>
+<td>完全相同</td>
+<td>完全相同</td>
+</tr>
+</tbody>
+</table></div>
+<p>C 程序员用 <code class="c">struct</code> 完全没问题（而且默认 public 更贴近 C 的直觉）；约定俗成是：<strong>纯数据用 <code class="c">struct</code>，有不变式要维护的用 <code class="c">class</code></strong>。</p>
+<h2>HFT / 嵌入式视角</h2>
+<ol>
+<li><strong>成员函数零开销，可以放心用</strong>。在行情回调里写 <code class="c">tick.mid()</code> 而不是 <code class="c">mid(&amp;tick)</code>，<strong>汇编完全一致</strong>，但可读性和不变式保护是白赚的。不要为了"性能"把 C++ 写成带类的 C。</li>
+<li><strong><code class="c">private</code> 是不变式的唯一强制执行点</strong>。订单的 <code class="c">price</code> 必须 &gt; 0、<code class="c">qty</code> 必须 ≤ 上限——这些约束写在 <code class="c">set_price()</code> 里，外部绕不过去。C 里只能靠"约定 + review"，而约定在 6 个月后的夜班改代码时一定会破。</li>
+<li><strong>谨慎对待虚函数</strong>。vptr 让对象从 16 字节变 24 字节（+50%），在 L1 cache 里塞行情快照时这是真金白银；而且虚调用是一次间接跳转，分支预测失败一次约 15~20 ns——对纳秒级策略是可见的。策略多态尽量用模板（编译期）或 <code class="c">if constexpr</code>，把虚函数留给真正需要运行期动态分派的场合（如插件式风控）。</li>
+<li><strong>空类 1 字节在嵌入式上会累积</strong>。<code class="c">struct Tag {};</code> 作为成员嵌进别的结构体，会因为对齐被放大（比如嵌进 8 字节对齐的结构体，可能占 8 字节）。确认真的不需要区分身份时，用 <code class="c">[[no_unique_address]]</code>（C++20）或干脆别定义空类。</li>
+<li><strong><code class="c">this</code> 存在的意义</strong>：解释了为什么成员函数里可以直接写 <code class="c">px</code>（等价于 <code class="c">this-&gt;px</code>），也解释了为什么静态成员函数里不能写——<strong>静态成员函数没有 <code class="c">this</code></strong>。</li>
+</ol>
 <h2>本节子页</h2>
 <ul>
 <li><a href="chapter-01.html#s-1-5-1">1.5.1 类的使用与头文件分离</a> — 怎么用 <code class="c">Sales_item</code>，<code class="c">.h</code>/<code class="c">.cpp</code> 怎么分</li>
@@ -1144,6 +1821,54 @@ item.isbn();  // 对象.方法()，不用传 this
 <li>对。<code class="c">item.isbn()</code> 在底层就是把 <code class="c">item</code> 的地址作为隐式 <code class="c">this</code> 指针传给 <code class="c">isbn</code> 函数，和 C 的 <code class="c">isbn(&amp;item)</code> 本质相同。C++ 只是把这个"传指针"的动作藏进了语法糖。</li>
 </ol>
 </details>
+<p><strong>3（踩坑·高价值）</strong> 下面两个类型，<code class="c">sizeof</code> 分别是多少？</p>
+<pre class="code" data-label="cpp"><code class="c">struct A { double px; int qty; };
+struct B { double px; int qty;
+           double price() const { return px; }
+           int    size()  const { return qty; }
+           void   set(double p, int q) { px = p; qty = q; } };
+</code></pre>
+<ul>
+<li>A. <code class="c">A</code> = 16，<code class="c">B</code> = 40（多了 3 个函数指针）</li>
+<li>B. <code class="c">A</code> = 16，<code class="c">B</code> = 16</li>
+<li>C. 取决于编译器</li>
+</ul>
+<p><strong>4（判断）</strong> C++ 里的 <code class="c">struct</code> 不能有成员函数，只有 <code class="c">class</code> 可以。</p>
+<p><strong>5（应用）</strong> 你有一个 <code class="c">Order</code> 结构，要求 <code class="c">price &gt; 0</code> 且 <code class="c">qty &lt;= 10000</code>。用 C 和 C++ 分别怎么写？为什么 C++ 的写法能真正阻止非法值？</p>
+<details>
+<summary>参考答案</summary>
+<ol start="3">
+<li>
+<p><strong>B</strong>。两者都是 <strong>16 字节</strong>。非虚成员函数<strong>不在对象里</strong>——它们在代码段，靠隐式 <code class="c">this</code> 找到数据。实测：<code class="c">sizeof(DataOnly) == sizeof(WithMethods) == 16</code>。只有引入虚函数才会变大（实测 <code class="c">WithVirtual == 24</code>，多一个 8 字节 vptr）。另外 <code class="c">sizeof(空类) == 1</code>（不是 0，保证不同对象地址不同）。</p>
+</li>
+<li>
+<p><strong>错</strong>。<code class="c">class</code> 和 <code class="c">struct</code> 在 C++ 里<strong>唯一</strong>的区别是默认访问权限（<code class="c">class</code> 默认 <code class="c">private</code>，<code class="c">struct</code> 默认 <code class="c">public</code>）和默认继承方式。<code class="c">struct</code> 一样可以有成员函数、构造/析构、继承、虚函数。约定是：纯数据用 <code class="c">struct</code>，有不变式要维护的用 <code class="c">class</code>。</p>
+</li>
+<li>
+<p>C 写法（靠约定）：
+   <code class="c">c
+   struct Order { double price; int qty; };
+   /* 文档写：调用前必须校验！但没人强制执行 */</code>
+   C++ 写法（靠编译器强制执行）：
+   <code class="c">cpp
+   class Order {
+   public:
+       bool set_price(double p) { if (p &lt;= 0) return false; price_ = p; return true; }
+       bool set_qty(int q)      { if (q &gt; 10000) return false; qty_ = q; return true; }
+       double price() const { return price_; }
+       int    qty()   const { return qty_; }
+   private:
+       double price_ = 0;   // 外部写不到
+       int    qty_   = 0;
+   };</code>
+   关键差别：C 里 <code class="c">order.price = -1;</code> 是<strong>合法代码</strong>，只能靠 review 发现；C++ 里 <code class="c">order.price_ = -1;</code> 是<strong>编译错误</strong>，物理上不可绕过。不变式从"约定"升级成"编译期保证"，这是 <code class="c">class</code> 相对 <code class="c">struct</code> 的本质增值——而运行时开销为零（成员函数与普通函数汇编一致）。</p>
+</li>
+</ol>
+</details>
+<h2>可跑例子</h2>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -O2 -Wall 1.5-1-class-basics.cpp -o cls &amp;&amp; ./cls
+clang++ -std=c++17 -O1 -S 1.5-1-class-basics.cpp -o cls.s   # 汇编级证明
+</code></pre>
       </section>
       <section class="section" id="s-1-5-1">
         <div class="sec-head"><div class="sec-no">1.5</div><h2>.1 类的使用与头文件分离</h2></div>
@@ -1279,6 +2004,154 @@ public:
 item.bookNo = &quot;123&quot;;  // 编译错误：bookNo 是 private
 </code></pre>
 <p><code class="c">private</code> 就是"外面碰不到"，只能通过 <code class="c">public</code> 方法间接操作。这是 C++ 相对 C 的核心保护机制。</p>
+<h2>动机：<code class="c">.h</code> / <code class="c">.cpp</code> 分开不只是"整洁"，是三条硬约束</h2>
+<p>C 程序员对 <code class="c">.h</code> / <code class="c">.c</code> 的分工不陌生，但 C++ 里这件事的<strong>约束力更强</strong>，因为有三个 C 里没有（或弱得多）的硬约束：</p>
+<ol>
+<li><strong>ODR（单一定义规则）</strong>：一个非 <code class="c">inline</code> 函数在<strong>整个程序</strong>里只能有一份定义。C 里重复定义是"常见符号"问题，链接器有时还能容忍；C++ 的 name mangling + 模板让重复定义几乎必然炸，且报错信息难读。</li>
+<li><strong>编译单元是独立编译的</strong>。每个 <code class="c">.cpp</code> 单独编译、互不知情——头文件是它们之间<strong>唯一</strong>的"共同上下文"。头文件里写了什么，决定了所有使用者的编译结果和编译时间。</li>
+<li><strong>头文件是接口契约</strong>。<code class="c">public</code> 部分就是给别人看的 API 文档；<code class="c">.cpp</code> 可以随便改而不触发使用者的重新编译（这是大型项目能增量构建的基础）。</li>
+</ol>
+<p><strong>一句话动机：</strong> 头文件放"叫什么、长什么样"，实现文件放"怎么做"。违反这条，代价是链接错误、编译时间爆炸、接口和实现耦死。</p>
+<h2>底层实测：ODR 违规长什么样</h2>
+<blockquote>
+<p>全部在本机 clang 23.1.0 实测。</p>
+</blockquote>
+<h3>① 非 <code class="c">inline</code> 的函数定义放头文件 → 链接期炸</h3>
+<pre class="code" data-label="cpp"><code class="c">// bad.h
+#pragma once
+int add_bad(int a, int b) { return a + b; }   // ← 定义（不是声明！）
+
+// u1.cpp
+#include &quot;bad.h&quot;
+int use1() { return add_bad(1, 2); }
+
+// u2.cpp
+#include &quot;bad.h&quot;
+int use2() { return add_bad(3, 4); }
+</code></pre>
+<pre class="code" data-label="code"><code class="c">clang++ -c u1.cpp -o u1.o ; clang++ -c u2.cpp -o u2.o
+clang++ u1.o u2.o main.o -o app
+</code></pre>
+<p>实测报错：</p>
+<pre class="code" data-label="code"><code class="c">duplicate symbol 'add_bad(int, int)' in:
+    u1.o
+    u2.o
+ld: 1 duplicate symbol for architecture arm64
+clang++: error: linker command failed with exit code 1
+</code></pre>
+<p><strong>注意</strong>：<code class="c">#pragma once</code> 只能防止<strong>同一个 <code class="c">.cpp</code></strong> 里重复包含，<strong>挡不住两个 <code class="c">.cpp</code> 各生成一份</strong>。这是新手最常误解的一点——guard 解决的是"重复声明"，ODR 解决的是"重复定义"，两回事。</p>
+<h3>② 用 <code class="c">nm</code> 看符号类型：<code class="c">external</code> vs <code class="c">weak external</code></h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th><code class="c">nm -m</code> 输出</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>非 <code class="c">inline</code></td>
+<td><code class="c">0000000000000000 (__TEXT,__text) external __Z7add_badii</code></td>
+</tr>
+<tr>
+<td><code class="c">inline</code></td>
+<td><code class="c">000000000000001c (__TEXT,__text) **weak** external __Z6add_okii</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>差别就在 <strong><code class="c">weak</code></strong>：弱符号允许在多个目标文件里各有一份，链接器任选其一（配合 COMDAT 保证内容一致时不冲突）。<code class="c">inline</code> 之所以能放进头文件，本质上就是它生成的是弱符号。</p>
+<h3>③ 三种"可以放头文件"的写法，都实测通过</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>例子</th>
+<th>链接结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>显式 <code class="c">inline</code></td>
+<td><code class="c">inline int add_ok(int a, int b) { ... }</code></td>
+<td>✅ 实测输出 <code class="c">10</code></td>
+</tr>
+<tr>
+<td>类内定义（隐式 <code class="c">inline</code>）</td>
+<td><code class="c">struct Adder { int sum() const { ... } };</code></td>
+<td>✅ 实测输出 <code class="c">10</code></td>
+</tr>
+<tr>
+<td><code class="c">inline</code> 变量（C++17）</td>
+<td><code class="c">inline int g_counter = 0;</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>只有声明</td>
+<td><code class="c">int price_of(int qty);</code>（定义在 <code class="c">.cpp</code>）</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table></div>
+<p>反向：<strong>非 <code class="c">inline</code> 的变量定义</strong>放头文件同样炸：</p>
+<pre class="code" data-label="cpp"><code class="c">// var.h
+int g_counter = 0;    // 每个 .cpp 都生成一个
+</code></pre>
+<pre class="code" data-label="code"><code class="c">duplicate symbol '_g_counter' in:
+    w1.o
+    w2.o
+</code></pre>
+<p>C++17 之前的正确写法是头文件里 <code class="c">extern int g_counter;</code>，然后在<strong>某一个</strong> <code class="c">.cpp</code> 里定义。</p>
+<h3>④ 缺 include guard → 编译期炸（和 ODR 是不同的错）</h3>
+<pre class="code" data-label="cpp"><code class="c">// noguard.h
+struct Node { int v; };
+
+// ng.cpp
+#include &quot;noguard.h&quot;
+#include &quot;noguard.h&quot;     // 同一个 TU 里包含两次
+</code></pre>
+<pre class="code" data-label="code"><code class="c">error: redefinition of 'Node'
+</code></pre>
+<p>这是<strong>编译期</strong>错误（同一个翻译单元里类型重复定义），和 ① 的<strong>链接期</strong> duplicate symbol 是两种病。防护手段：<code class="c">#pragma once</code>（简单，主流编译器都支持）或传统的 <code class="c">#ifndef XXX_H / #define XXX_H / #endif</code>（可移植性最好）。</p>
+<h3>⑤ 声明/实现分离的真实收益：增量编译</h3>
+<p>实测（2 个使用者，改一次实现）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>实现放在</th>
+<th>需要重编的文件</th>
+<th>实测耗时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">.cpp</code></td>
+<td>1 个（<code class="c">impl.cpp</code>）</td>
+<td>0.05 s</td>
+</tr>
+<tr>
+<td><code class="c">.h</code></td>
+<td><strong>2 个</strong>（<code class="c">userA.cpp</code> + <code class="c">userB.cpp</code>）</td>
+<td>0.05 s + 0.05 s</td>
+</tr>
+</tbody>
+</table></div>
+<p>使用者是 N 个，就是 N 倍。这就是为什么"实现藏进 <code class="c">.cpp</code>"不只是洁癖——<strong>它是构建时间的可伸缩性</strong>。HFT 项目几千个文件，头文件改一行触发全量重编，一次就是几十分钟。</p>
+<h3>⑥ 漏写 <code class="c">Class::</code> 的报错</h3>
+<pre class="code" data-label="cpp"><code class="c">// Sales_item.cpp
+std::string isbn() const { return bookNo; }     // ← 漏了 Sales_item::
+</code></pre>
+<p>编译器会把它当成<strong>自由函数</strong>，于是 <code class="c">bookNo</code> 不在作用域 → 报"未声明"。而带 <code class="c">const</code> 的自由函数还会额外报"非成员函数不能有 const 限定"。正确写法：</p>
+<pre class="code" data-label="cpp"><code class="c">std::string Sales_item::isbn() const { return bookNo; }
+</code></pre>
+<h2>HFT / 嵌入式视角</h2>
+<ol>
+<li><strong>对外只暴露头文件是常态</strong>。核心策略实现编译成静态库/动态库，客户端只拿到 <code class="c">.h</code> + <code class="c">.a</code>——既保护知识产权，又能精确控制 ABI。这时头文件里的<strong>每一行都是契约</strong>：改一个字段顺序、加一个虚函数，都可能破坏 ABI（尤其是虚函数表布局）。</li>
+<li><strong>头文件里别放"会变的东西"</strong>。策略参数、阈值常量如果写在头文件里，改一次就全量重编；应该走配置加载（运行时读 JSON/二进制），头文件里只放读取接口。</li>
+<li><strong><code class="c">inline</code> 是把双刃剑</strong>。它让函数能进头文件（解决 ODR），但会让<strong>每个调用点都展开一份代码</strong>——在 Flash 只有几百 KB 的 MCU 上，滥用 <code class="c">inline</code> 会让固件体积失控。规则：<strong>1–3 行的访问器 <code class="c">inline</code>，复杂逻辑放 <code class="c">.cpp</code></strong>。</li>
+<li><strong><code class="c">#pragma once</code> vs <code class="c">#ifndef</code> guard</strong>：跨平台项目用 <code class="c">#ifndef</code>（<code class="c">#pragma once</code> 在符号链接/同一文件多路径包含时可能失效）；只跑 clang/gcc 的项目用 <code class="c">#pragma once</code> 更不容易写错（不会出现 guard 宏名撞车）。</li>
+<li><strong>减少头文件依赖 = 减少编译时间</strong>。能用前置声明（<code class="c">class Order;</code>）解决的，就别 <code class="c">#include "Order.h"</code>。配合 pimpl（第 7 章）可以把实现改动完全隔离在 <code class="c">.cpp</code> 里。</li>
+<li><strong><code class="c">nm</code> 是排查链接问题的第一工具</strong>。遇到 duplicate symbol / undefined symbol，先 <code class="c">nm -m xxx.o | grep 符号</code> 看它是 <code class="c">external</code>、<code class="c">weak external</code> 还是 <code class="c">undefined</code>，比读一屏模板报错快得多。</li>
+</ol>
 <h2>自测题</h2>
 <p><strong>1（选择）</strong> 成员函数的定义应该放在哪里？
 - A. 只能放 <code class="c">.h</code>
@@ -1297,6 +2170,39 @@ std::string isbn() const { return bookNo; }
 <li><code class="c">private</code> 把内部数据藏起来，外部只能通过 <code class="c">public</code> 方法操作——这样类的作者能控制"怎么改才安全"（比如 <code class="c">set_price</code> 里校验非负）。C 的 <code class="c">struct</code> 全公开，任何人都能直接改字段，容易破坏不变式（比如把价格设成负数）。</li>
 </ol>
 </details>
+<p><strong>4（踩坑·高价值）</strong> 头文件已经加了 <code class="c">#pragma once</code>，为什么两个 <code class="c">.cpp</code> 都包含它还是链接报错 duplicate symbol？</p>
+<pre class="code" data-label="cpp"><code class="c">// util.h
+#pragma once
+int helper(int x) { return x * 2; }     // ← 定义
+</code></pre>
+<p><strong>5（判断）</strong> <code class="c">#pragma once</code>（或 include guard）能解决"同一个头文件被两个不同 <code class="c">.cpp</code> 包含导致的重复定义"问题。</p>
+<p><strong>6（应用）</strong> 项目里有 50 个 <code class="c">.cpp</code> 都 <code class="c">#include "strategy.h"</code>，你改动了策略的一处实现。实现写在 <code class="c">.h</code> 和实现写在 <code class="c">.cpp</code>，构建时间差多少？怎么改最划算？</p>
+<details>
+<summary>参考答案</summary>
+<ol start="4">
+<li>
+<p>因为 <code class="c">#pragma once</code> 只保证<strong>同一个翻译单元（<code class="c">.cpp</code>）</strong>里这个头文件的内容只出现一次，<strong>它管不了别的 <code class="c">.cpp</code></strong>。两个 <code class="c">.cpp</code> 各自编译、各生成一份 <code class="c">helper</code> 的非 <code class="c">inline</code> 定义（强符号），链接时就是 duplicate symbol。实测报错：
+   <code class="c">duplicate symbol 'helper(int)' in:  u1.o / u2.o
+   ld: 1 duplicate symbol for architecture arm64</code>
+   两种修法：① 改成 <code class="c">inline int helper(int x) { ... }</code>（生成弱符号，允许重复）；② 头文件里只放 <strong>声明</strong> <code class="c">int helper(int);</code>，定义挪到某个 <code class="c">.cpp</code>。</p>
+</li>
+<li>
+<p><strong>错</strong>。这正是第 4 题的陷阱。include guard 解决的是"<strong>同一个 TU 内重复包含 → redefinition</strong>"（编译期错误，实测 <code class="c">error: redefinition of 'Node'</code>）；而"两个 TU 各生成一份定义 → duplicate symbol"是<strong>链接期</strong>的 ODR 问题，guard 完全无能为力。两件事，别混。</p>
+</li>
+<li>
+<p>实测（2 个使用者）：实现放 <code class="c">.cpp</code> 只需重编 1 个文件 0.05 s；实现放 <code class="c">.h</code> 要重编 2 个文件 0.05 + 0.05 s。<strong>50 个使用者就是 1 个文件 vs 50 个文件</strong>，差距是 50 倍量级。最划算的改法：
+   - 把实现挪进 <code class="c">strategy.cpp</code>，<code class="c">strategy.h</code> 只留声明和类定义 → 立即从 50 降到 1；
+   - 顺手减少头文件依赖：能用前置声明 <code class="c">class Foo;</code> 的，就别 <code class="c">#include "foo.h"</code>；
+   - 如果连类的私有成员改动都不想触发重编，用 pimpl（第 7 章）：头文件里只有一个指针成员。
+   注意别矫枉过正——<code class="c">inline</code> 能让小函数留在头文件并获得内联优化，1–3 行的访问器留在 <code class="c">.h</code> 是合理的；复杂逻辑才挪走。</p>
+</li>
+</ol>
+</details>
+<h2>可跑例子</h2>
+<pre class="code" data-label="shell"><code class="c"># 1.5.1-1  单文件可跑的正面演示：inline / 类内定义 / inline 变量 / 分离实现
+clang++ -std=c++17 -O2 -Wall 1.5.1-1-header-separation.cpp -o hdr &amp;&amp; ./hdr
+</code></pre>
+<p>例子文件末尾以注释形式给出了 ①（duplicate symbol）、③（变量 duplicate）、④（redefinition）、⑤（增量编译）的<strong>最小复现代码</strong>、<strong>完整命令</strong>和<strong>实测报错原文</strong>——复制出来建几个小文件即可逐个验证。</p>
 <h2>延伸</h2>
 <p>← <a href="#s-1-5">1.5 类简介</a> | <a href="chapter-01.html#s-1-5-2">1.5.2 链接、编译产物与示例 →</a></p>
       </section>
@@ -1775,6 +2681,130 @@ else {
 </code></pre>
 <p><strong>3. 输入没按书号排序</strong>
 程序假设输入是<strong>按书号排好序</strong>的（同一本书的记录连续）。如果输入乱序，<code class="c">0-201 0-201 0-999 0-201</code> 里的最后一个 <code class="c">0-201</code> 会被当成新书，无法合并到前面的组。要处理乱序需要更复杂的数据结构（map），第 10 章会讲。</p>
+<h2>动机："分组累加"是一个会反复出现的模式</h2>
+<p>书店程序看着只是第 1 章的综合练习，但它承载的<strong>"流式分组累加"模式</strong>在真实系统里到处都是：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>书店程序</th>
+<th>HFT 对应</th>
+<th>嵌入式/日志对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>按 <code class="c">isbn</code> 分组</td>
+<td>按 <code class="c">symbol</code> 聚合成交量</td>
+<td>按设备 ID 汇总采样值</td>
+</tr>
+<tr>
+<td>输入按书号有序</td>
+<td>行情网关按合约分流后天然有序</td>
+<td>日志按时间/来源有序</td>
+</tr>
+<tr>
+<td><code class="c">total += trans</code></td>
+<td>累加成交金额</td>
+<td>累加计数/求和</td>
+</tr>
+<tr>
+<td>换书时输出上一本</td>
+<td>换合约时落盘上一组合计</td>
+<td>换设备时上报</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这个模式的价值</strong>：O(n) 时间、<strong>O(1) 额外内存</strong>（不需要把所有组都留在内存里），可以处理远大于内存的数据流。代价是<strong>要求输入按 key 有序</strong>——理解这个前提，才知道什么时候该换成 <code class="c">map</code>。</p>
+<h2>底层实测</h2>
+<blockquote>
+<p>全部在本机 clang 23.1.0 实测（例子 <code class="c">1.6-1-bookstore.cpp</code> 可直接跑）。</p>
+</blockquote>
+<h3>① 三种输入的实测输出</h3>
+<p><strong>有序输入</strong>（正常路径）：</p>
+<pre class="code" data-label="code"><code class="c">$ printf '0-201-78345-X 3 20.00\n0-201-78345-X 2 25.00\n0-201-78346-X 1 99.00\n' | ./bookstore
+0-201-78345-X 5 110 22      ← 3+2 册、60+50 元、均价 22
+0-201-78346-X 1 99 99
+</code></pre>
+<p><strong>空输入</strong>（防御路径）：</p>
+<pre class="code" data-label="code"><code class="c">$ printf '' | ./bookstore ; echo &quot;exit=$?&quot;
+No data?!
+exit=255                     ← return -1 的低 8 位
+</code></pre>
+<p>如果去掉 <code class="c">if (std::cin &gt;&gt; total)</code> 这层判断，空输入时 <code class="c">total</code> 是<strong>默认构造的 <code class="c">Sales_item</code></strong>（isbn 为空串、"卖了 0 本"），程序会输出一条 <code class="c">0 0 0</code> 的垃圾记录，而不是什么都不输出。<strong>这一处防御是整个程序最容易漏的地方</strong>。</p>
+<p><strong>乱序输入</strong>（模式的前提被破坏）：</p>
+<pre class="code" data-label="code"><code class="c">$ printf '0-201-A 1 10.0\n0-201-B 1 20.0\n0-201-A 1 10.0\n' | ./bookstore
+0-201-A 1 10 10      ← A 出现两次，但没合并
+0-201-B 1 20 20
+0-201-A 1 10 10
+</code></pre>
+<p><strong><code class="c">A</code> 被拆成了两组</strong>：因为程序只比较"当前组"和"下一条"，一旦书号变化就认为换组了。这说明——<strong>这个算法保证的是"相邻同 key 能合并"，不是"全局按 key 聚合"</strong>。</p>
+<h3>② 想处理乱序？三种方案的性能代价（100 万条 / 1000 个不同 key）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>是否要求有序</th>
+<th>实测耗时</th>
+<th>相对有序归并</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 有序归并（书店程序模式）</td>
+<td>✅ 必须有序</td>
+<td><strong>3.9 ~ 5.8 ms</strong></td>
+<td>1×</td>
+</tr>
+<tr>
+<td>② <code class="c">std::map</code> 累加（乱序输入）</td>
+<td>❌ 不要求</td>
+<td><strong>63 ~ 65 ms</strong></td>
+<td><strong>约 11~16 倍</strong></td>
+</tr>
+<tr>
+<td>③ <code class="c">unordered_map</code> 累加（乱序）</td>
+<td>❌ 不要求</td>
+<td><strong>12.5 ~ 14.8 ms</strong></td>
+<td><strong>约 2.5~3.2 倍</strong></td>
+</tr>
+<tr>
+<td>②' <code class="c">std::map</code>（有序输入）</td>
+<td>—</td>
+<td>45.8 ~ 52.1 ms</td>
+<td>—</td>
+</tr>
+<tr>
+<td>③' <code class="c">unordered_map</code>（有序输入）</td>
+<td>—</td>
+<td>6.4 ~ 8.5 ms</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>几点解读：
+- <strong>有序归并快是因为它什么都不建</strong>：一次线性扫描，只维护"当前组"的三个变量；<code class="c">map</code> 每条记录都要做字符串比较 + 红黑树旋转。
+- <strong><code class="c">unordered_map</code> 比 <code class="c">map</code> 快 4~5 倍</strong>，因为哈希是 O(1) 均摊 vs 红黑树 O(log k)；而且 <code class="c">reserve()</code> 预分配能省掉 rehash。
+- <strong>输入有序时 <code class="c">unordered_map</code> 也更快</strong>（6.4~8.5 ms vs 63~65 ms）——因为有序输入让哈希表的缓存局部性更好（相同 key 连续访问同一桶）。
+- <strong>代价对比</strong>：有序归并 O(1) 内存；<code class="c">map</code> / <code class="c">unordered_map</code> 要存下所有 key 的聚合结果。数据量极大时这个差别会变成能不能跑的问题。</p>
+<h3>③ <code class="c">operator&gt;&gt;</code> / <code class="c">operator&lt;&lt;</code> 的关键实现细节</h3>
+<pre class="code" data-label="cpp"><code class="c">std::istream&amp; operator&gt;&gt;(std::istream&amp; in, Sales_item&amp; s) {
+    std::string isbn; unsigned u; double p;
+    if (in &gt;&gt; isbn &gt;&gt; u &gt;&gt; p) s = Sales_item(isbn, u, p);   // 读失败时【不动 s】
+    return in;                                              // 返回流本身 → 可转 bool
+}
+</code></pre>
+<p>两个必须遵守的约定：
+- <strong>返回流本身</strong>（<code class="c">std::istream&amp;</code>），这样 <code class="c">while (cin &gt;&gt; x)</code> 才能工作——流有 <code class="c">operator bool()</code>，读成功为真。
+- <strong>失败时不要修改目标对象</strong>。上面用局部临时变量读，全成功了才赋值。直接写 <code class="c">in &gt;&gt; s.bookNo_ &gt;&gt; s.units_sold_ &gt;&gt; s.revenue_</code> 会导致半途失败时对象处于<strong>半更新状态</strong>——这正是 1.4 讲的"流失败后状态不可信"的具体体现。</p>
+<h2>HFT / 嵌入式视角</h2>
+<ol>
+<li><strong>"按 symbol 聚合"优先走有序归并</strong>。行情网关通常按合约分流，同一 symbol 的 tick 天然连续；此时用 O(1) 内存的归并比建 <code class="c">map</code> 快 10 倍以上，还省掉哈希表的内存抖动（HFT 里要避免运行期动态分配）。</li>
+<li><strong>前提要写成断言</strong>。既然算法依赖"输入有序"，就在循环里加 <code class="c">if (cur_key &gt; e.key) { /* 报乱序 */ }</code> 或在入口做一次性校验。<strong>静默产出错的聚合结果比崩掉危险得多</strong>——盘后对账才发现差了几百万。</li>
+<li><strong>换组时别忘了"重置"</strong>。书店程序里是 <code class="c">total = trans</code>，HFT 里是"上一组合计落盘/上报后，清空累加器开始新组"。这是这类循环最常见的 off-by-one 类 bug（第一组和最后一组最容易出错：最后一组没有"换组"事件来触发输出，必须循环外补一次）。</li>
+<li><strong><code class="c">unordered_map::reserve()</code> 是免费的性能</strong>。知道 key 数量级就先 <code class="c">reserve</code>，能避免运行期的 rehash（rehash 是 O(n) 的停顿，在实时路径上 unacceptable）。</li>
+<li><strong>嵌入式上内存比速度更稀缺</strong>。1000 个 key 的 <code class="c">map</code> 每个节点要几十字节（指针 + 颜色位 + 字符串），在几 KB RAM 的 MCU 上不现实；有序归并只要几个局部变量——<strong>这就是"流式算法"在嵌入式上的真正价值</strong>。</li>
+<li><strong><code class="c">std::endl</code> 别用在聚合循环里</strong>。实测 <code class="c">endl</code> 比 <code class="c">'\n'</code> 慢 23~25 倍（见 1.7），每条记录都 flush 会把这个 O(n) 算法变成 O(n × syscall)。</li>
+</ol>
 <h2>自测题</h2>
 <p><strong>1（选择）</strong> 程序假设输入按什么排序？
 - A. 按销量
@@ -1790,6 +2820,49 @@ else {
 <li>框架：读第一笔成当前组的"基准合约"；后续每笔若合约号相同则累加成交量，不同则输出当前组合计、开启新合约。和书店程序结构一模一样，只是 <code class="c">isbn</code> 换成合约号、<code class="c">+=</code> 换成成交量累加。</li>
 </ol>
 </details>
+<p><strong>4（踩坑·高价值）</strong> 输入 <code class="c">A B A</code>（同一本书不连续），程序会输出几条记录？<code class="c">A</code> 的总销量对吗？</p>
+<pre class="code" data-label="cpp"><code class="c">// 就是原书的书店程序
+while (std::cin &gt;&gt; trans) {
+    if (total.isbn() == trans.isbn()) total += trans;
+    else { std::cout &lt;&lt; total &lt;&lt; std::endl; total = trans; }
+}
+std::cout &lt;&lt; total &lt;&lt; std::endl;
+</code></pre>
+<p><strong>5（判断）</strong> 只要把 <code class="c">if (std::cin &gt;&gt; total)</code> 去掉，空输入时程序会崩溃。</p>
+<p><strong>6（应用）</strong> 现在要处理<strong>乱序</strong>输入（同一 key 可能不连续），且数据量 100 万条。你有哪些选择？各自的代价是什么？</p>
+<details>
+<summary>参考答案</summary>
+<ol start="4">
+<li>
+<p>输出 <strong>3 条</strong>记录，<code class="c">A</code> 的销量是<strong>错的</strong>（被拆成两组，各 1 册，而不是合计 2 册）。实测：
+   <code class="c">0-201-A 1 10 10
+   0-201-B 1 20 20
+   0-201-A 1 10 10</code>
+   因为这个算法保证的是"<strong>相邻</strong>同 key 能合并"，不是"全局按 key 聚合"——它只比较"当前组"和"下一条"，key 一变就认为换组。所以<strong>输入必须按 key 有序</strong>是它的硬前提，而且这个前提<strong>不会报错</strong>，只会静默产出错误结果。生产代码里应该显式校验（或者在入口排一次序）。</p>
+</li>
+<li>
+<p><strong>不会崩，但会输出垃圾</strong>。<code class="c">Sales_item</code> 的默认构造会让 <code class="c">total</code> 是"空书号、0 册、0 元"，程序会正常输出一条 <code class="c">0 0 0</code> 记录，然后 <code class="c">return 0</code>（退出码 0 = 看起来成功）。这比崩溃更危险——下游以为这是一笔合法数据。原书的 <code class="c">if (std::cin &gt;&gt; total)</code> 正是防御这一点：读不到第一条就走 <code class="c">else</code> 分支，什么都不输出并返回非 0。</p>
+</li>
+<li>
+<p>三种选择，实测（100 万条 / 1000 个不同 key）：
+   - <strong>① 先排序再做有序归并</strong>：<code class="c">std::sort</code> + 归并。排序 O(n log n)，但常数极小且内存可控；归并阶段仍是 3.9~5.8 ms 量级。<strong>数据量远大于内存时的首选</strong>（可以外排序）。代价：需要一次性拿到全部数据。
+   - <strong>② <code class="c">std::unordered_map</code> 累加</strong>：乱序直接吃，实测 12.5~14.8 ms（约有序归并的 2.5~3.2 倍）。代价：要存下所有 key 的聚合结果；运行期有哈希开销和潜在 rehash 停顿（用 <code class="c">reserve()</code> 缓解）。<strong>实时流式的首选</strong>。
+   - <strong>③ <code class="c">std::map</code> 累加</strong>：实测 63~65 ms（约 11~16 倍），最慢——红黑树每次插入 O(log k) 且缓存局部性差。<strong>只有需要按 key 有序输出时才选它</strong>（比如要按字典序打印报表）。</p>
+</li>
+</ol>
+<p>决策顺序：<strong>能排序 → ①；要实时流式 → ②；要有序输出 → ③</strong>。别默认用 <code class="c">map</code>（很多人的习惯），它是这里最慢的选项。</p>
+</details>
+<h2>可跑例子</h2>
+<pre class="code" data-label="shell"><code class="c"># 1.6-1  完整可运行的 Sales_item + 书店程序
+clang++ -std=c++17 -O2 -Wall 1.6-1-bookstore.cpp -o bookstore
+
+printf '0-201-A 3 20.00\n0-201-A 2 25.00\n0-201-B 1 99.00\n' | ./bookstore   # 有序
+printf '0-201-A 1 10.0\n0-201-B 1 20.0\n0-201-A 1 10.0\n'    | ./bookstore   # 乱序
+printf '' | ./bookstore ; echo &quot;exit=$?&quot;                                     # 空输入 → 255
+
+# 1.6-2  三种聚合方案的性能对比（100 万条）
+clang++ -std=c++17 -O2 -Wall 1.6-2-group-agg-perf.cpp -o agg &amp;&amp; ./agg
+</code></pre>
 <h2>延伸</h2>
 <p>← <a href="#s-1-5">1.5 类简介</a> | <a href="#s-1-7">1.7 小结与术语表 →</a></p>
       </section>
@@ -1846,7 +2919,7 @@ else {
 <ol>
 <li><strong><code class="c">cin/cout</code> 替代 <code class="c">scanf/printf</code></strong> —— 类型安全，不用记格式串，不会忘 <code class="c">&amp;</code></li>
 <li><strong><code class="c">//</code> 注释放心用</strong> —— C89 没有，C99 起和 C++ 都支持</li>
-<li><strong><code class="c">for</code> 变量作用域收紧</strong> —— C++ 里 <code class="c">for(int i...)</code> 的 <code class="c">i</code> 出循环就没了，C 会泄漏到外层</li>
+<li><strong><code class="c">for</code> 变量作用域在循环内</strong> —— <code class="c">for(int i...)</code> 的 <code class="c">i</code> 出循环就没了；<strong>C99 起 C 也是这个行为</strong>（只有 C90 编译器当扩展放行时才泄漏），别把它当 C/C++ 差异（详见 <a href="#s-1-4">1.4</a> 实测）</li>
 <li><strong><code class="c">class</code> 比 <code class="c">struct</code> 多了方法和访问控制</strong> —— 数据和行为绑定，这是 C→C++ 的核心转变</li>
 <li><strong><code class="c">while(cin&gt;&gt;x)</code> 替代 <code class="c">scanf</code> 返回值检查</strong> —— 流的状态自带 bool 转换</li>
 </ol>
@@ -1862,6 +2935,166 @@ int main() {
     return 0;
 }
 </code></pre>
+<h2>第 1 章的实测账本（把前面各节的结论放在一起）</h2>
+<blockquote>
+<p>全部在本机 clang 23.1.0 / arm64-apple-darwin / libc++ 实测。</p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>主题</th>
+<th>实测结论</th>
+<th>出处</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">main</code> 返回值</td>
+<td><code class="c">return 256</code> 编译成 <code class="c">mov w0, #256</code>，shell 里 <code class="c">echo $?</code> 得到 <strong>0</strong>（OS 只取低 8 位）</td>
+<td>1.1</td>
+</tr>
+<tr>
+<td>不写 <code class="c">return</code></td>
+<td><code class="c">int main(){}</code> 与 <code class="c">int main(){return 0;}</code> 汇编<strong>完全相同</strong></td>
+<td>1.1</td>
+</tr>
+<tr>
+<td><code class="c">main</code> 不能被使用</td>
+<td>调用 / 取地址在 <code class="c">-pedantic-errors</code> 下报 <code class="c">[-Wmain]</code></td>
+<td>1.1</td>
+</tr>
+<tr>
+<td>头文件代价</td>
+<td><code class="c">&lt;iostream&gt;</code> 展开 <strong>31 441 行</strong>（<code class="c">&lt;cstdio&gt;</code> 是 699 行），编译耗时 ×2.7，二进制 16 KB → 52 KB</td>
+<td>1.1</td>
+</tr>
+<tr>
+<td>注释</td>
+<td>行拼接（阶段 2）<strong>先于</strong>注释处理（阶段 3）→ <code class="c">//</code> 末尾的 <code class="c">\</code> 会吃掉下一行</td>
+<td>1.3</td>
+</tr>
+<tr>
+<td>注释是空格</td>
+<td><code class="c">a/**/b</code> 是两个 token（实测报 <code class="c">expected ';'</code>）；但 <code class="c">"he"/*x*/"llo"</code> 会拼成 <code class="c">"hello"</code></td>
+<td>1.3</td>
+</tr>
+<tr>
+<td><code class="c">cin</code> 失败</td>
+<td>类型不匹配 → <code class="c">v</code> <strong>置 0</strong>；纯 EOF → <code class="c">v</code> <strong>保持原值</strong>；<code class="c">failbit</code> 粘滞，不 <code class="c">clear()</code> 后续全失败</td>
+<td>1.4</td>
+</tr>
+<tr>
+<td>死循环写法</td>
+<td><code class="c">while(1)</code> / <code class="c">while(true)</code> / <code class="c">for(;;)</code> <code class="c">-O2</code> 汇编<strong>逐条相同</strong></td>
+<td>1.4</td>
+</tr>
+<tr>
+<td>成员函数</td>
+<td>与普通函数（传指针）汇编<strong>逐条相同</strong>；非虚成员函数<strong>不占对象空间</strong></td>
+<td>1.5</td>
+</tr>
+<tr>
+<td><code class="c">sizeof</code></td>
+<td>空类 <strong>1</strong>；有虚函数 → +8 字节（vptr）</td>
+<td>1.5</td>
+</tr>
+<tr>
+<td>ODR</td>
+<td>非 <code class="c">inline</code> 定义放 <code class="c">.h</code> → 链接期 <code class="c">duplicate symbol</code>；<code class="c">inline</code> 生成 <strong>weak</strong> 符号</td>
+<td>1.5.1</td>
+</tr>
+<tr>
+<td>增量编译</td>
+<td>实现放 <code class="c">.cpp</code> 改一次重编 1 个文件；放 <code class="c">.h</code> 则 N 个使用者全重编</td>
+<td>1.5.1</td>
+</tr>
+<tr>
+<td>分组聚合</td>
+<td>有序归并 3.9~5.8 ms vs <code class="c">map</code> 63~65 ms（<strong>11~16 倍</strong>）vs <code class="c">unordered_map</code> 12.5~14.8 ms（<strong>2.5~3.2 倍</strong>）</td>
+<td>1.6</td>
+</tr>
+<tr>
+<td>IO 开销</td>
+<td><code class="c">endl</code> 比 <code class="c">'\n'</code> 慢 <strong>23~25 倍</strong>；<code class="c">printf</code> 比 <code class="c">std::cout</code> 快约 <strong>2 倍</strong></td>
+<td>本节</td>
+</tr>
+</tbody>
+</table></div>
+<h2>底层实测：流 IO 到底有多贵</h2>
+<blockquote>
+<p>这一节补上第 1 章最后一个没量化的问题——用 <code class="c">cin/cout</code> 替换 <code class="c">scanf/printf</code>，代价是什么。</p>
+</blockquote>
+<h3>① <code class="c">std::endl</code> vs <code class="c">'\n'</code>：数量级的差别</h3>
+<p>写 20 万行到文件，同进程对照实测：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>实测耗时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">ofstream &lt;&lt; ... &lt;&lt; '\n'</code></td>
+<td><strong>37.9 ms</strong></td>
+</tr>
+<tr>
+<td><code class="c">ofstream &lt;&lt; ... &lt;&lt; std::endl</code></td>
+<td><strong>444.0 ms</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>慢约 12 倍</strong>（另一次独立进程测量中是 431~470 ms vs 18.3~18.5 ms，<strong>23~25 倍</strong>；差别来自目标设备与缓存状态，但数量级一致）。</p>
+<p>原因是 <code class="c">std::endl</code> 做两件事：写 <code class="c">'\n'</code> + <strong>强制 flush</strong>。一次 flush 就是一次 <code class="c">write</code> 系统调用（几微秒），20 万次就是几百毫秒。<strong><code class="c">endl</code> 应该只在真正需要"立刻让对方看到"时用</strong>（比如交互式提示、崩溃前的最后一行日志）。</p>
+<h3>② <code class="c">printf</code> vs <code class="c">std::cout</code></h3>
+<p>20 万行写 <code class="c">/dev/null</code>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>实测耗时（3 轮）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">std::cout &lt;&lt; i &lt;&lt; " " &lt;&lt; i*2 &lt;&lt; '\n'</code>（默认）</td>
+<td>42.9 / 42.9 / 42.9 ms</td>
+</tr>
+<tr>
+<td><code class="c">std::cout</code> + <code class="c">sync_with_stdio(false)</code></td>
+<td>42.9 / 42.9 / 42.9 ms</td>
+</tr>
+<tr>
+<td><code class="c">printf("%d %d\n", i, i*2)</code></td>
+<td><strong>21.1 / 21.1 / 21.2 ms</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>写真实文件时：cout 45.8~54.4 ms、关同步 45.8~46.0 ms、printf 23.8~24.0 ms——<strong>结论一致</strong>。</p>
+<p>两条诚实的结论：
+- <strong><code class="c">printf</code> 比 <code class="c">std::cout</code> 快约 2 倍</strong>（在 libc++ 上）。日志热路径值得在意，但先确认瓶颈真在 IO。
+- <strong><code class="c">sync_with_stdio(false)</code> 在 libc++ 上收益接近 0</strong>（42.9 vs 42.9 ms）。网上常说的"关同步快 5~10 倍"是 <strong>libstdc++（GCC）</strong>上的老经验，<strong>别盲信</strong>——换了标准库先自己测。</p>
+<blockquote>
+<p>补充：关同步真正的意义是<strong>保证 <code class="c">printf</code> 和 <code class="c">cout</code> 混用时的输出顺序</strong>。开了同步，两者顺序一致；关了就各走各的缓冲，交叉输出会乱序。<strong>关同步前先确认没有混用</strong>。</p>
+</blockquote>
+<h2>第 1 章给 C 程序员的补充要点（前 5 条之外的）</h2>
+<ol start="6">
+<li><strong><code class="c">return 0</code> 之外只用 0–125 做错误码</strong> —— 256 会静默变成 0（见 1.1）</li>
+<li><strong>整段禁用代码用 <code class="c">#if 0</code>，不要用 <code class="c">/* */</code></strong> —— 注释不能嵌套（见 1.3）</li>
+<li><strong><code class="c">cin</code> 失败会锁死流</strong> —— 必须先 <code class="c">clear()</code> 再 <code class="c">ignore()</code>（见 1.4）</li>
+<li><strong><code class="c">class</code> 的价值是 <code class="c">private</code>，不是语法糖</strong> —— 成员函数和普通函数汇编一样（见 1.5）</li>
+<li><strong><code class="c">#pragma once</code> 挡不住 ODR</strong> —— 头文件里只能放声明、<code class="c">inline</code>、类定义（见 1.5.1）</li>
+<li><strong>别用 <code class="c">std::endl</code> 做换行</strong> —— 除非你真的需要立即 flush（见本节）</li>
+</ol>
+<h2>HFT / 嵌入式视角（全章汇总）</h2>
+<ol>
+<li><strong>日志是 HFT 最大的隐性成本之一</strong>。撮合/行情路径上每笔都 <code class="c">printf</code> 一次，20 万笔就是 20~40 ms——足够吃掉一个交易日的 alpha。<strong>热路径上用无锁环形缓冲 + 后台线程落盘</strong>，而不是同步写。</li>
+<li><strong><code class="c">endl</code> 是"看起来无害"的性能杀手</strong>。代码 review 时见到 <code class="c">endl</code> 就该问一句"这里真的需要 flush 吗"。生产代码里 99% 应该是 <code class="c">'\n'</code>。</li>
+<li><strong>别在头文件里塞实现</strong>。HFT 项目几千个文件，头文件改一行触发全量重编是几十分钟；<code class="c">inline</code> 只留给 1–3 行的访问器。</li>
+<li><strong><code class="c">&lt;iostream&gt;</code> 在 MCU 上基本不可用</strong>。展开 3 万行、二进制 +36 KB——片上运行的代码应该走精简 <code class="c">printf</code> 或直接写 UART，C++ 这边只保留不依赖 <code class="c">&lt;iostream&gt;</code> 的部分（这也是为什么很多嵌入式项目用 <code class="c">-fno-exceptions -fno-rtti</code>）。</li>
+<li><strong>退出码是唯一的跨进程契约</strong>。盘前检查、看门狗、CI 全靠它，取值只用 0–125，别用 <code class="c">exit()</code> 乱杀进程（不析构局部对象）。</li>
+<li><strong>先量化再优化</strong>。本章所有结论都来自实测数字，而不是"听说"。这个习惯比记住任何一个具体数字都重要——换了编译器/标准库/CPU，结论可能反转（比如 <code class="c">sync_with_stdio</code> 那条）。</li>
+</ol>
 <h2>自测题（全章回顾）</h2>
 <p><strong>1（概念）</strong> 列出 C++ 相对 C 在第 1 章里出现的 3 个差异。</p>
 <p><strong>2（判断）</strong> C++ 的 <code class="c">class</code> 和 C 的 <code class="c">struct</code> 本质相同，都只是装数据。</p>
@@ -1882,6 +3115,48 @@ std::cin &gt;&gt; a &gt;&gt; b;
 std::cout &lt;&lt; &quot;sum = &quot; &lt;&lt; a + b &lt;&lt; std::endl;
 </code></pre>
 </details>
+<p><strong>4（踩坑·高价值）</strong> 写 20 万行日志，下面两种写法差多少倍？为什么？</p>
+<pre class="code" data-label="cpp"><code class="c">for (int i = 0; i &lt; 200000; ++i) out &lt;&lt; i &lt;&lt; &quot; &quot; &lt;&lt; i * 2 &lt;&lt; std::endl;   // A
+for (int i = 0; i &lt; 200000; ++i) out &lt;&lt; i &lt;&lt; &quot; &quot; &lt;&lt; i * 2 &lt;&lt; '\n';        // B
+</code></pre>
+<p><strong>5（判断）</strong> 加上 <code class="c">std::ios::sync_with_stdio(false);</code> 就能让 <code class="c">std::cout</code> 快 5~10 倍。</p>
+<p><strong>6（应用）</strong> 你的行情回放程序要处理 100 万条 tick，每条都要打一行日志。列出 3 条能真正降低 IO 成本的措施（按收益排序）。</p>
+<details>
+<summary>参考答案</summary>
+<ol start="4">
+<li>
+<p><strong>A 比 B 慢约 12~25 倍</strong>（实测：同进程内 444 ms vs 37.9 ms；独立进程 431~470 ms vs 18.3~18.5 ms）。原因：<code class="c">std::endl</code> 做两件事——写 <code class="c">'\n'</code> <strong>+ 强制 flush</strong>。一次 flush 就是一次 <code class="c">write</code> 系统调用（几微秒量级），20 万次累积成几百毫秒。<strong><code class="c">endl</code> 只在需要"立刻让对方看到"时才用</strong>（交互式提示、崩溃前的最后一行）。普通换行一律 <code class="c">'\n'</code>，缓冲区满或程序退出时会自动 flush。</p>
+</li>
+<li>
+<p><strong>错（在 libc++ 上）</strong>。实测 20 万行写 /dev/null：<code class="c">std::cout</code> 默认 42.9 ms，关同步后 <strong>42.9 ms</strong>——收益接近 0。写真实文件也一样（45.8 ms vs 45.8 ms）。"关同步快 5~10 倍"是 <strong>libstdc++（GCC）</strong>上的经验，<strong>在 libc++ 上不成立</strong>。关同步真正的语义价值是保证 <code class="c">printf</code> 与 <code class="c">cout</code> <strong>混用时的输出顺序</strong>——关掉之后两者各走各的缓冲，交叉输出会乱序，所以关之前先确认没有混用。
+   顺带一提：<code class="c">printf</code> 实测 21.1 ms，比 <code class="c">std::cout</code>（42.9 ms）<strong>快约 2 倍</strong>，这个差距是稳定的。</p>
+</li>
+<li>
+<p>按收益排序：</p>
+</li>
+<li><strong>把 <code class="c">endl</code> 换成 <code class="c">'\n'</code></strong> —— 立刻省掉 90%+ 的耗时（实测 12~25 倍），一行改动，零风险。<strong>永远先看这个</strong>。</li>
+<li><strong>热路径不要同步写盘</strong> —— 改成无锁环形缓冲（SPSC ring buffer）+ 后台线程批量落盘。把每笔的 <code class="c">write</code> 系统调用摊薄成每 4 KB 一次，这是数量级级别的改进，也是 HFT 日志的标准做法。</li>
+<li><strong>减少要写的内容</strong> —— 二进制日志代替文本（<code class="c">printf</code>/<code class="c">cout</code> 的整数格式化本身也不便宜），或采样记录（每 N 条记一条）。
+   补充：<strong>先 profile 确认瓶颈真在 IO</strong>。如果 100 万条处理总共才几十毫秒，而 IO 占 40 ms，那确实值得优化；如果总共 5 秒瓶颈在别处，改 IO 是白费力气。</li>
+</ol>
+</details>
+<h2>可跑例子</h2>
+<pre class="code" data-label="shell"><code class="c"># 1.7-1  五种 IO 写法的实测对比（各模式独立进程跑，避免缓冲区互相污染）
+clang++ -std=c++17 -O2 -Wall 1.7-1-io-perf.cpp -o io
+
+./io 0 &gt; /dev/null      # cout + '\n'
+./io 1 &gt; /dev/null      # cout + endl      ← 慢一个数量级
+./io 2 &gt; /dev/null      # printf
+./io 3 &gt; /dev/null      # cout + sync_with_stdio(false)
+./io 4                  # 同进程内 '\n' vs endl 直接对照
+</code></pre>
+<p>第 1 章全部 8 个例子都在 <code class="c">examples/</code> 下，命名规则 <code class="c">小节号-序号-主题.cpp</code>：</p>
+<pre class="code" data-label="code"><code class="c">1.1-1-main-return.cpp            1.5-1-class-basics.cpp
+1.3-1-comment-traps.cpp          1.5.1-1-header-separation.cpp
+1.4-1-control-flow.cpp           1.6-1-bookstore.cpp
+                                 1.6-2-group-agg-perf.cpp
+                                 1.7-1-io-perf.cpp
+</code></pre>
 <h2>延伸</h2>
 <p>← <a href="#s-1-6">1.6 书店程序</a> | <a href="chapter-02.html#intro">第 2 章 变量和基本类型 →</a></p>
       </section>

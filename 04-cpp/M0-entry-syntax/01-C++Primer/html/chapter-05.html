@@ -456,11 +456,105 @@ void f() {
     }
 }
 </code></pre>
+<h2>底层实现与实测</h2>
+<blockquote>
+<p>以下均为本机实测（Apple clang 23.1.0，arm64，<code class="c">-std=c++17 -O2</code>）。作用域是<strong>编译期概念</strong>——它决定「什么时候调析构函数」和「哪个名字可见」，但<strong>不保证</strong>内存复用。</p>
+</blockquote>
+<h3>实测 1：作用域什么时候结束？让析构函数告诉你</h3>
+<p>用 RAII 探针（构造/析构各打印一行）：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Probe {
+    const char* name;
+    explicit Probe(const char* n) : name(n) { printf(&quot;+ 构造 %s\n&quot;, name); }
+    ~Probe() { printf(&quot;- 析构 %s\n&quot;, name); }
+};
+
+for (int i = 0; i &lt; 2; ++i) {
+    Probe p(&quot;loop-body&quot;);
+    printf(&quot;i=%d\n&quot;, i);
+}
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">+ 构造 loop-body      i=0
+- 析构 loop-body
++ 构造 loop-body      i=1
+- 析构 loop-body
+</code></pre>
+<p><strong>循环体里的对象每轮迭代都构造 + 析构一次。</strong> 这是热路径上最容易忽略的成本：<code class="c">for</code> 里写 <code class="c">std::string s = fmt(x);</code> 意味着每轮一次构造 + 可能的堆分配。</p>
+<p>手动加一对花括号可以精确控制生命周期：</p>
+<pre class="code" data-label="code"><code class="c">+ 构造 block-a
++ 构造 block-b
+- 析构 block-b        ← 内层块结束就析构
+（b 已销毁）
+- 析构 block-a
+</code></pre>
+<h3>实测 2：出了作用域，栈内存<strong>不一定</strong>复用</h3>
+<pre class="code" data-label="cpp"><code class="c">{ int x = 1; printf(&quot;块1 x 地址 %p\n&quot;, (void*)&amp;x); }
+{ int x = 2; printf(&quot;块2 x 地址 %p\n&quot;, (void*)&amp;x); }
+</code></pre>
+<p>实测：<code class="c">块1 0x16d222cdc</code> / <code class="c">块2 0x16d222cd8</code>——相邻但<strong>不同</strong>。</p>
+<p>编译器按自己的栈布局分配槽位，"变量出了作用域，它占的内存就被释放/复用"是<strong>错误直觉</strong>。真正可靠的只有一条：<strong>出了作用域，对象的析构函数已经跑过了，再访问它就是 UB</strong>（悬垂指针/引用，见 <a href="chapter-06.html#s-6-2">6.2 返回类型</a> 的悬垂引用实测）。</p>
+<h3>实测 3：遮蔽（shadowing）合法，但编译器能帮你抓</h3>
+<pre class="code" data-label="cpp"><code class="c">int v = 100;
+{ int v = 200; /* 内层 v 盖住外层 */ }
+</code></pre>
+<pre class="code" data-label="shell"><code class="c">$ clang++ -std=c++17 -Wshadow x.cpp
+warning: declaration shadows a local variable [-Wshadow]
+</code></pre>
+<p>注意区分两件事（详见 <a href="chapter-03.html#s-3-5-5">3.5.5 易错点</a>）：<strong>内层块</strong>遮蔽外层变量是合法的；<strong>同一作用域</strong>里同名声明两次是 <code class="c">error: redefinition</code>。</p>
+<h3>实测 4：C89 vs C++——声明位置</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>代码</th>
+<th><code class="c">clang -std=c89 -pedantic</code>（C）</th>
+<th><code class="c">-std=c99</code>（C）</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">for (int i = 0; ...)</code></td>
+<td>warning: <code class="c">variable declaration in for loop is a C99-specific feature</code></td>
+<td>✅</td>
+<td>✅（一直允许）</td>
+</tr>
+<tr>
+<td>语句之后再声明</td>
+<td>warning: <code class="c">mixing declarations and code is a C99 extension</code></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以从 C89 移植代码时，「把声明堆在块开头」是历史习惯而不是语言要求；C++ 从一开始就允许随处声明，C99 才追上来。</p>
+<h3>实测 5：C++17 带初始化的 <code class="c">if</code> / <code class="c">switch</code>（C 完全没有）</h3>
+<pre class="code" data-label="cpp"><code class="c">if (int n = get_value(); n &gt; 0) { /* n 可见 */ }
+else                            { /* n 也可见 */ }
+switch (int k = argc; k) { case 1: /* k 可见 */ break; }
+</code></pre>
+<p>实测变量在 <code class="c">if</code> 的<strong>两个分支</strong>和 <code class="c">switch</code> 的<strong>所有 case</strong> 里都可见，出了结构就销毁。价值：把「只给条件用的临时变量」锁死在条件结构里，避免污染外层作用域——这正是 <code class="c">if (auto it = m.find(k); it != m.end())</code> 这类写法的目的。</p>
+<h3>实测 6：空语句有专门的警告</h3>
+<pre class="code" data-label="cpp"><code class="c">while (j &lt; n);   // ← 分号
+</code></pre>
+<pre class="code" data-label="shell"><code class="c">warning: while loop has empty body [-Wempty-body]
+note: put the semicolon on a separate line to silence this warning
+</code></pre>
+<p>把分号单独放一行（<code class="c">while (cond)</code> 换行 <code class="c">;</code>）是社区惯例——明确告诉读者"这是故意的空循环体"。</p>
+<h2>HFT / 嵌入式视角</h2>
+<ul>
+<li><strong>作用域 = 临界区长度</strong>：<code class="c">std::lock_guard</code> 的作用域就是持锁时间。实测 1 说明「块结束即析构」，把锁塞进最小块能直接缩短锁竞争窗口——低延迟代码里最常用的一招。</li>
+<li><strong>热循环里别在循环体构造对象</strong>：实测 1 的证据——每轮一次构造 + 析构。<code class="c">std::string</code>、<code class="c">std::vector</code>、<code class="c">std::lock_guard</code> 都算；能提到循环外就提出来（hoist）。</li>
+<li><strong>嵌入式栈很小</strong>（常见 8–16 KB，RTOS 任务栈可能只有 1–2 KB）：块作用域变量占栈，深层嵌套 + 大数组容易爆栈；大缓冲改 <code class="c">static</code> 或放全局。</li>
+<li><strong>声明时立即初始化</strong>：<code class="c">int x;</code> 在块作用域里是不确定值，读到就是 UB（ASan 未必每次都能抓到）。写 <code class="c">int x{};</code>。</li>
+<li><strong>别依赖栈内存复用</strong>（实测 2）：返回局部变量地址在任何优化等级下都是错的，哪怕"看起来还能读到旧值"。</li>
+</ul>
 <h2>常见错误</h2>
 <ol>
 <li><strong>在控制结构外用内部变量</strong>：<code class="c">for (int i=0;...) {...}</code> 之后再用 <code class="c">i</code>，C89 能过、C++ 报错。这是从 C 移植代码时最常见的编译错误之一。</li>
 <li><strong>空语句误用导致逻辑错误</strong>：<code class="c">while (i &lt; n); { ++i; }</code> —— 末尾分号让循环体变成空语句，花括号成了独立块，导致死循环。</li>
 <li><strong>误以为 <code class="c">for</code> 条件里的变量在整个函数可见</strong>：在 <code class="c">for (int i...)</code> 后还想用 <code class="c">i</code> 做别的事，应该把 <code class="c">i</code> 提到循环外声明。</li>
+<li><strong>在循环体里构造昂贵对象</strong>：实测 1 显示循环体对象每轮构造 + 析构一次。<code class="c">for (...) { std::string s = fmt(x); ... }</code> 在百万级循环里就是百万次构造/析构。<strong>修正</strong>：能复用就在循环外声明并 <code class="c">clear()</code>，或改用 <code class="c">std::string_view</code> / 栈上定长缓冲。</li>
+<li><strong>以为出了作用域内存就会被复用</strong>：实测 2（两个块的 <code class="c">x</code> 落在相邻但不同的地址）。把局部变量地址返回或保存到外面，读到什么全看编译器心情，是 UB。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：以下代码在 C++ 中的输出是？</p>
@@ -520,10 +614,51 @@ while (i &lt; n);
 </code></pre>
 <p><code class="c">i</code>、<code class="c">j</code>、<code class="c">tmp</code> 都限定在最小作用域内，外层不再可见，减少误用风险。</p>
 </details>
+<p><strong>5. 输出题</strong>：下面代码里 <code class="c">Probe</code> 会打印几组构造/析构？顺序如何？</p>
+<pre class="code" data-label="cpp"><code class="c">struct Probe { Probe(const char*); ~Probe(); };   // 各打印一行
+for (int i = 0; i &lt; 3; ++i) {
+    Probe p(&quot;body&quot;);
+    if (i == 1) { Probe q(&quot;inner&quot;); }
+}
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><code class="c">body</code> 构造/析构 <strong>3 组</strong>（每轮一次），<code class="c">inner</code> <strong>1 组</strong>（只在 i==1 那轮、且在内层块结束时析构）。顺序：</p>
+<pre class="code" data-label="code"><code class="c">+ body   (i=0)
+- body
++ body   (i=1)
++ inner      ← 进入内层块
+- inner      ← 内层块结束立即析构，不等循环结束
+- body       ← 循环体结束
++ body   (i=2)
+- body
+</code></pre>
+<p>要点：<strong>内层块有自己的生命周期，不等外层</strong>。这正是把 <code class="c">std::lock_guard</code> 塞进最小块就能缩短临界区的原理。</p>
+</details>
+<p><strong>6. 判断题</strong>：下面两句对不对？</p>
+<blockquote>
+<p>(a) 变量出了作用域，它占的栈内存就一定会被后面的变量复用。
+(b) <code class="c">for</code> 循环体里的对象只构造一次，循环结束才析构。</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>两句都错。</strong></p>
+<p>(a) 实测：两个相邻块里的 <code class="c">int x</code> 地址是 <code class="c">0x16d222cdc</code> 和 <code class="c">0x16d222cd8</code>——相邻但<strong>不同</strong>。栈槽怎么分配由编译器决定，语言只保证"出了作用域析构函数已跑过、再访问是 UB"，不保证内存复用。把局部变量地址传出去是经典 UB。</p>
+<p>(b) 实测输出（<code class="c">examples/5.1-1</code>）：<code class="c">+ 构造 → i=0 → - 析构 → + 构造 → i=1 → - 析构</code>——<strong>每轮迭代都构造 + 析构一次</strong>。热循环里放昂贵对象（string/vector/lock_guard）会被放大成百万次开销。</p>
+</details>
+<h2>可跑的例子</h2>
+<ul>
+<li><a href="chapter-05.html#s-5-1">examples/5.1-1-scope-and-empty-stmt.cpp</a> —— RAII 探针看生命周期、栈地址不复用、遮蔽、C++17 if/switch 初始化、空语句 <code class="c">-Wempty-body</code> 警告。</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -O2 -Wall examples/5.1-1-scope-and-empty-stmt.cpp -o scope &amp;&amp; ./scope
+clang++ -std=c++17 -Wshadow examples/5.1-1-scope-and-empty-stmt.cpp -o /dev/null   # 看遮蔽警告
+</code></pre>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §5.1–5.2：语句基础</li>
 <li>下一节：§5.3 条件语句（if / switch）</li>
+<li>生命周期与悬垂引用：<a href="chapter-06.html#s-6-2">6.2 返回类型</a></li>
+<li>同名遮蔽的更多细节：<a href="chapter-03.html#s-3-5-5">3.5.5 易错点与示例</a></li>
 <li>C 程序员可对比《C 和指针》ch04 控制流部分</li>
 </ul>
       </section>
@@ -596,11 +731,104 @@ switch (x) { case N: ...; }   // 错误：N 不是常量表达式
 const int N = 3;
 switch (x) { case N: ...; }   // OK
 </code></pre>
+<h2>底层实现与实测</h2>
+<blockquote>
+<p>以下均为本机实测（Apple clang 23.1.0，arm64，<code class="c">-std=c++17 -O2</code>）。条件语句的性能问题，九成不在语法，在<strong>分支能不能被预测 / 能不能被消掉</strong>。</p>
+</blockquote>
+<h3>实测 1：紧凑 <code class="c">switch</code> 会变成查表，稀疏 <code class="c">switch</code> 退化成 if-else 链</h3>
+<pre class="code" data-label="cpp"><code class="c">int dense(int k) {   // case 0..5，返回值刻意不连续，逼编译器不能&quot;算术化&quot;
+    switch (k) {
+        case 0: return 100; case 1: return -7; case 2: return 42;
+        case 3: return 3;   case 4: return 999; case 5: return 8;
+        default: return -1;
+    }
+}
+</code></pre>
+<pre class="code" data-label="asm"><code class="c">dense(int):
+    cmp   w0, #5
+    b.hi  LBB0_2                          ; 越界 → default
+    adrp  x8, l_switch.table._Z5densei@PAGE
+    add   x8, x8, l_switch.table._Z5densei@PAGEOFF
+    ldr   w0, [x8, w0, uxtw #2]           ; 一次间接取数，O(1)
+    ret
+LBB0_2:
+    mov   w0, #-1
+    ret
+</code></pre>
+<p>而 case 值跨度很大时（1 / 1000 / 100000 / 10000000），编译器不做表，变成一串 <code class="c">cmp + b.eq</code>（实测汇编里是 <code class="c">cmp w0, #1; b.eq</code> / <code class="c">cmp w0, #1000; b.ne</code> ……），退化成 if-else 链。</p>
+<blockquote>
+<p>补充：如果 case 的返回值本身连续（10/11/12/13/14/15），clang 连表都不用，直接算：<code class="c">add w8, w0, #10; cmp w0, #6; csinv</code>——<strong>一次跳转都没有</strong>。所以"switch 一定生成跳转表"是错的，要看数据形态。</p>
+</blockquote>
+<h3>实测 2：<code class="c">if-else</code> 和三元运算符生成<strong>完全相同</strong>的代码</h3>
+<pre class="code" data-label="cpp"><code class="c">int maxif (int a, int b) { if (a &gt; b) return a; return b; }
+int maxtri(int a, int b) { return a &gt; b ? a : b; }
+</code></pre>
+<pre class="code" data-label="asm"><code class="c">maxif(int, int):            maxtri(int, int):
+    cmp  w0, w1                 cmp  w0, w1
+    csel w0, w0, w1, gt         csel w0, w0, w1, gt     ← 一模一样
+    ret                         ret
+</code></pre>
+<p>两者都被编译成 <code class="c">csel</code>（条件选择），<strong>没有跳转指令</strong>。结论：小分支上纠结 <code class="c">if</code> 还是 <code class="c">?:</code> 毫无意义，编译器会挑等价的无分支形式。</p>
+<h3>实测 3：分支预测到底值多少钱（校准一个流传很广的说法）</h3>
+<p>经典说法是「排序后比随机快 3~6 倍」。本机实测（<code class="c">examples/5.3-1</code>，100 万个 <code class="c">int</code> × 5 轮，<code class="c">if (x &gt;= 128)</code> 二选一）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>数据</th>
+<th>实测（-O2）</th>
+<th>实测（-O1）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>随机数据</td>
+<td>1.73 ms/轮</td>
+<td>2.96 ms/轮</td>
+</tr>
+<tr>
+<td>已排序数据</td>
+<td>1.60 ms/轮</td>
+<td>2.47 ms/轮</td>
+</tr>
+<tr>
+<td>差距</td>
+<td><strong>1.08 倍</strong></td>
+<td><strong>1.20 倍</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>只有 1.1~1.2 倍，不是 3~6 倍。</strong> 两个原因：
+1. 现代分支预测器（TAGE 类）对"50% 随机"也不至于崩盘；
+2. <strong>clang 会做 if-conversion</strong>：分支体足够简单时直接变成 <code class="c">csel</code>/SIMD 选择，压根没有分支可预测。</p>
+<p>这不代表分支预测不重要——<strong>分支体越重、越无法被无分支化，差距越大</strong>；而且一次预测失败在深流水线上是 15~20 个周期。但对"简单二选一"这种形态，编译器已经替你消掉大半。</p>
+<h3>实测 4：跨 case 初始化变量，编译器直接拒绝</h3>
+<pre class="code" data-label="shell"><code class="c">error: cannot jump from switch statement to this case label
+</code></pre>
+<p>加了 <code class="c">{}</code> 把变量锁在这一支里就好了——<code class="c">case 1: { int v = 10; ...; break; }</code>。</p>
+<h3>实测 5：两个能救命的警告</h3>
+<pre class="code" data-label="shell"><code class="c">warning: unannotated fall-through between switch labels [-Wimplicit-fallthrough]
+note: insert '[[fallthrough]];' to silence this warning
+
+warning: add explicit braces to avoid dangling else [-Wdangling-else]
+
+warning: enumeration value 'Blue' not handled in switch [-Wswitch]     ← enum class 漏 case
+</code></pre>
+<p>C++17 起用 <code class="c">[[fallthrough]];</code> 显式声明"故意穿透"，比写 <code class="c">// fall through</code> 注释更可靠（注释骗得过人骗不过编译器）。</p>
+<h2>HFT / 嵌入式视角</h2>
+<ul>
+<li><strong><code class="c">switch</code> 稠密时是 O(1) 查表</strong>（实测 1），稀疏时是 if-else 链——消息类型分发（订单/成交/撤单）用连续枚举值，编译器就能生成跳转表；枚举值乱跳（1/1000/100000）反而更慢。</li>
+<li><strong>热路径上优先"把分支挪出去"</strong>，而不是"把分支写快"：预计算档位表、用算术/掩码替代判断（<code class="c">s += (x &gt;= 128) * x</code> 这类）、或者按数据分桶后批量处理（排序过的批处理更快，实测 3）。</li>
+<li><strong>别手搓 branchless 来"优化"</strong>：实测 2 说明编译器已经会做 if-conversion。手写位运算技巧常常只是让代码更难读，性能零收益，还可能挡掉编译器更好的优化。</li>
+<li><strong>真要提示分支倾向</strong>用 <code class="c">[[likely]]</code> / <code class="c">[[unlikely]]</code>（C++20）或 <code class="c">__builtin_expect</code>，但先测——实测 3 说明这类微优化的收益往往在噪声里。</li>
+<li><strong>嵌入式</strong>：<code class="c">switch</code> 查表会占 <code class="c">.rodata</code>（Flash），if-else 链占 <code class="c">.text</code>；Flash 紧张或指令 cache 小的 MCU 上，稠密 switch 的表可能反而吃亏（一次 Flash 取数 vs 几条指令），要看具体芯片。</li>
+</ul>
 <h2>常见错误</h2>
 <ol>
 <li><strong>悬垂 else 误配对</strong>：<code class="c">if (a) if (b) f(); else g();</code> 里的 <code class="c">else</code> 属于内层 <code class="c">if</code>，导致逻辑与预期不符。<strong>解决</strong>：用花括号明确归属：<code class="c">if (a) { if (b) f(); } else g();</code>。</li>
 <li><strong>忘写 <code class="c">break</code> 导致意外穿透</strong>：<code class="c">case 1: do_a(); case 2: do_b();</code> 中 case 1 会顺带执行 <code class="c">do_b()</code>。即使故意穿透，也要加 <code class="c">// fall through</code> 注释，否则 <code class="c">-Wimplicit-fallthrough</code> 会警告。</li>
-<li><strong><code class="c">switch</code> 内跨 case 定义变量未加块</strong>：<code class="c">switch(x){ case 1: int v=10; f(v); break; case 2: g(v); }</code> —— C++ 报错"不能跨越 case 标签初始化"。<strong>解决</strong>：<code class="c">case 1: { int v=10; f(v); break; }</code>。</li>
+<li><strong><code class="c">switch</code> 内跨 case 定义变量未加块</strong>：<code class="c">switch(x){ case 1: int v=10; f(v); break; case 2: g(v); }</code> —— C++ 报错"不能跨越 case 标签初始化"（实测：<code class="c">cannot jump from switch statement to this case label</code>）。<strong>解决</strong>：<code class="c">case 1: { int v=10; f(v); break; }</code>。</li>
+<li><strong>以为「switch 稠密就一定生成跳转表」</strong>：实测 1 里 case 返回值连续时，clang 直接用算术算出来（<code class="c">add w0, w0, #10</code>），连表都没有；case 稀疏时又退化成 cmp 链。<strong>跳转表只是编译器的一种选择，不是 switch 的定义</strong>。</li>
+<li><strong>照搬「排序能让分支快 3~6 倍」去做优化</strong>：本机实测只有 1.08~1.20 倍（实测 3）——现代预测器 + 编译器无分支化把差距抹平了。<strong>先 profile 再优化</strong>，别拿十年前的传说当依据。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：下列代码输出什么？</p>
@@ -619,8 +847,8 @@ else
 </ul>
 <details>
 <summary>答案</summary>
-<p>D) 无输出。<code class="c">else</code> 与最近的 <code class="c">if (x &gt; 10)</code> 配对，外层 <code class="c">if (x&gt;0)</code> 为真进入内层判断，<code class="c">x&gt;10</code> 为假走 <code class="c">else</code>... 但 <code class="c">else</code> 打印 "B"。等等，重新看：<code class="c">else</code> 属于内层 <code class="c">if (x&gt;10)</code>，所以执行 <code class="c">else</code> 分支打印 "B"。</p>
-<p>答案是 B) B。（这是悬垂 else 的经典陷阱——缩进骗人。）</p>
+<p><strong>B) B</strong>（实测输出 <code class="c">B</code>，<code class="c">-Wdangling-else</code> 同时给出警告：<code class="c">add explicit braces to avoid dangling else</code>）。</p>
+<p><code class="c">else</code> 与<strong>最近的未配对 <code class="c">if</code></strong> 配对，也就是内层 <code class="c">if (x &gt; 10)</code>。执行过程：<code class="c">x=1 &gt; 0</code> 成立 → 进入内层 → <code class="c">x &gt; 10</code> 不成立 → 走 else 打印 <code class="c">B</code>。<strong>缩进完全骗人</strong>：如果真想让 else 属于外层，必须写 <code class="c">if (x &gt; 0) { if (x &gt; 10) printf("A"); } else printf("B");</code>（那样 x=1 时什么都不打印）。</p>
 </details>
 <p><strong>2. 判断题</strong>：在 C++ 中，下面代码合法。</p>
 <pre class="code" data-label="cpp"><code class="c">const int BUF = 1024;
@@ -673,11 +901,44 @@ switch (n) { case BUF: f(); break; }
 </code></pre>
 <p>故意穿透的 case（200→201）可以不加注释，但建议显式写 <code class="c">// fall through</code> 让 <code class="c">-Wimplicit-fallthrough</code> 闭嘴。</p>
 </details>
+<p><strong>5. 判断题</strong>：下面两句对不对？</p>
+<blockquote>
+<p>(a) <code class="c">switch</code> 稠密时一定会被编译成跳转表，所以比 if-else 链快。
+(b) <code class="c">?:</code> 三元运算符比 <code class="c">if-else</code> 快，因为它没有分支。</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>两句都不准确。</strong></p>
+<p>(a) 稠密 case 时编译器<strong>通常</strong>会用表（实测：<code class="c">adrp x8, l_switch.table...; ldr w0, [x8, w0, uxtw #2]</code>），但如果 case 的返回值本身连续，clang 连表都省了，直接算（<code class="c">add w8, w0, #10</code>）；稀疏 case 又退化成 <code class="c">cmp + b.eq</code> 链。所以"case 稠密 + 返回值不规则"才容易看到跳转表，而且<strong>跳转表的价值是 O(1) 与可扩展性，不是"一定更快"</strong>——分支目标可预测时 if-else 链并不慢（对比 <a href="chapter-06.html#s-6-5">6.5 的跳转表实测</a>）。</p>
+<p>(b) 实测：<code class="c">if (a &gt; b) return a; return b;</code> 与 <code class="c">return a &gt; b ? a : b;</code> 生成<strong>完全相同</strong>的汇编（<code class="c">cmp</code> + <code class="c">csel</code> + <code class="c">ret</code>），都没有跳转。三元更快是错觉，选哪个看可读性。</p>
+</details>
+<p><strong>6. 应用题</strong>：热路径上有这么一段：<code class="c">for (int x : data) if (x &gt;= 128) s += x * 7 + 3; else s -= x * 3 + 1;</code>
+有人提议"先把 data 排序，分支预测器就能预测，能快好几倍"。请评价。</p>
+<details>
+<summary>答案</summary>
+<p><strong>实测：只有 1.08 倍（<code class="c">-O2</code>）/ 1.20 倍（<code class="c">-O1</code>），远不到"好几倍"</strong>，而且排序本身是 O(n log n)，比省下的时间贵得多。</p>
+<p>原因有二：① 现代预测器对随机分支没那么脆弱；② 编译器做了 if-conversion，分支体简单时直接生成条件选择/向量选择，"分支"本身就少了。</p>
+<p><strong>真正有效的做法</strong>（按性价比排序）：
+1. 先 profile，确认瓶颈确实在这条分支上；
+2. 把分支<strong>移出循环</strong>（分桶批量处理：先 partition，再对两段分别做无分支求和）；
+3. 用算术/查表替代判断（例如 <code class="c">s += tbl[x]</code>）；
+4. 最后才考虑 <code class="c">[[likely]]</code> / <code class="c">__builtin_expect</code>——收益常在噪声里。</p>
+<p>一句话：<strong>"让分支更好预测"收益有限，"让分支不存在"才有效。</strong></p>
+</details>
+<h2>可跑的例子</h2>
+<ul>
+<li><a href="chapter-05.html#s-5-3">examples/5.3-1-switch-and-branch.cpp</a> —— 紧凑/稀疏 switch 的行为、分支预测（随机 vs 已排序）实测。</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -O2 examples/5.3-1-switch-and-branch.cpp -o cond &amp;&amp; ./cond
+clang++ -std=c++17 -O2 -S examples/5.3-1-switch-and-branch.cpp -o - | grep -E &quot;switch.table|cmp|b\.eq&quot;   # 看表 vs cmp 链
+</code></pre>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §5.3：条件语句</li>
 <li>下一节：§5.4 迭代语句</li>
-<li>HFT 视角：<code class="c">switch</code> 跳转表在 case 稠密时会被编译成 O(1) 间接跳转，热路径优于 if-else 链</li>
+<li>跳转表的另一面（函数指针版）：<a href="chapter-06.html#s-6-5">6.5 函数指针</a></li>
+<li>循环里的分支：<a href="#s-5-4">5.4 迭代语句（循环）</a></li>
+<li>HFT 视角：<code class="c">switch</code> 在 case 稠密时会被编译成 O(1) 间接跳转（或更激进的算术化），但真正的提速来自"消灭分支"而非"预测分支"</li>
 </ul>
       </section>
       <section class="section" id="s-5-4">
@@ -780,11 +1041,83 @@ int sum = 0;
 for (int x : arr)   // arr 是数组或容器，自动取 begin/end
     sum += x;
 </code></pre>
+<h2>底层实现与实测</h2>
+<blockquote>
+<p>本机 clang 实测（<code class="c">-std=c++17</code>，Apple Silicon）。这一节最容易被"经验之谈"误导——比如"迭代器比下标快""范围 for 有额外开销"，实测下来都不成立。</p>
+</blockquote>
+<h3>实测 1：五种遍历写法，性能差别几乎为零</h3>
+<p>100 万个 <code class="c">int</code> 的 <code class="c">vector</code>，每种写法跑 20 轮求和（<code class="c">-O2</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>20 轮耗时（两次运行）</th>
+<th>折合每轮</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>下标 <code class="c">v[i]</code>（<code class="c">size_t i</code>）</td>
+<td>2.83 / 2.02 ms</td>
+<td>≈ 0.10 ms</td>
+</tr>
+<tr>
+<td>下标 <code class="c">v[i]</code>（<code class="c">int i</code>，缓存 size）</td>
+<td>2.83 / 2.01 ms</td>
+<td>≈ 0.10 ms</td>
+</tr>
+<tr>
+<td>迭代器 <code class="c">begin()/end()</code></td>
+<td>2.84 / 2.00 ms</td>
+<td>≈ 0.10 ms</td>
+</tr>
+<tr>
+<td>范围 for（<code class="c">auto x</code> 拷贝）</td>
+<td>2.41 / 1.94 ms</td>
+<td>≈ 0.10 ms</td>
+</tr>
+<tr>
+<td>范围 for（<code class="c">const auto&amp; x</code>）</td>
+<td>2.33 / 1.74 ms</td>
+<td>≈ 0.09 ms</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论</strong>：<code class="c">-O2</code> 下这五种写法生成的机器码几乎一样，差距落在噪声范围内（1 亿次访存 ≈ 2 ms，即<strong>瓶颈是内存带宽，不是循环写法</strong>）。所以：</p>
+<ul>
+<li>别为了"性能"在下标和迭代器之间纠结，<strong>选可读性最好的那个</strong>；</li>
+<li>真正的性能差异只在<strong>循环体</strong>里（有没有拷贝元素、有没有分支、有没有 cache miss）。</li>
+</ul>
+<h3>实测 2：<code class="c">for (auto x)</code> 的拷贝是真的会发生</h3>
+<pre class="code" data-label="cpp"><code class="c">struct Big { std::string s; int pad[8]; };   // sizeof = 56
+std::vector&lt;Big&gt; v(3);
+for (auto  x : v) x.s = &quot;changed&quot;;   // 改的是副本
+for (auto&amp; x : v) x.s = &quot;changed&quot;;   // 改的是元素
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">  for(auto x)     改后 v[0].s = &quot;&quot;        ← 一个都没改到
+  for(auto&amp; x)    改后 v[0].s = &quot;changed&quot;
+</code></pre>
+<p>每个元素拷贝 56 字节 × N 个，且<strong>编译器不会告诉你</strong>。对小类型（<code class="c">int</code>、<code class="c">char</code>）无所谓，对结构体/字符串就是实打实的开销加静默 bug。</p>
+<h3>实测 3：<code class="c">size_t</code> 逆向循环会回绕而不是停下</h3>
+<pre class="code" data-label="cpp"><code class="c">std::vector&lt;int&gt; v{1,2,3};
+for (size_t i = v.size() - 1; i &gt;= 0; --i) { ... }   // ❌
+</code></pre>
+<p>实测第 6 次迭代时 <code class="c">i = 18446744073709551613</code>（即 2⁶⁴−3）——<code class="c">i &gt;= 0</code> 对无符号数<strong>恒为真</strong>，减到 0 后再减就回绕。要么改成 <code class="c">for (size_t i = v.size(); i-- &gt; 0; )</code>，要么直接用有符号 <code class="c">ptrdiff_t</code>/<code class="c">int</code>。同源坑见 <a href="chapter-03.html#s-3-5-2">3.5.2 下标访问与越界</a>。</p>
+<h2>HFT/嵌入式关联</h2>
+<ul>
+<li><strong>热循环的选型依据是循环体，不是循环头</strong>（实测 1）。行情快照遍历、order book 分层扫描这类代码，先确认有没有在循环里做无谓拷贝（实测 2）或随机访存，再谈下标 vs 迭代器。</li>
+<li><strong>范围 for 只用于"遍历"，不用于"增删"</strong>：<code class="c">end()</code> 在循环开始时缓存，任何改变容器大小的操作都让它失效（UB）。要边遍历边删，用 <code class="c">erase-remove</code> 惯用法或索引循环——见 <a href="chapter-10.html#s-10-1">10.1 基础算法与重排</a>。</li>
+<li><strong>遍历前先 <code class="c">reserve</code></strong>：循环里 <code class="c">push_back</code> 触发扩容会搬迁全部旧元素（实测见 <a href="chapter-03.html#s-3-3-5">3.3.5</a>），在延迟敏感的循环里这是典型的毛刺来源。</li>
+<li><strong>小类型用值、大类型用引用</strong>：<code class="c">char</code>/<code class="c">int</code>/<code class="c">double</code> 走值即可（引用底层是指针，反而多一次 load，汇编证据见 <a href="chapter-06.html#s-6-1">6.1 实测 1</a>）；结构体、字符串一律 <code class="c">const auto&amp;</code>。</li>
+</ul>
 <h2>常见错误</h2>
 <ol>
 <li><strong>范围 for 用值类型导致无法修改 + 性能损耗</strong>：<code class="c">for (auto x : v)</code> 会拷贝每个元素，既不能修改原元素，大对象还慢。<strong>修正</strong>：只读用 <code class="c">const auto&amp;</code>，要改用 <code class="c">auto&amp;</code>。</li>
 <li><strong>范围 for 中修改容器大小</strong>：<code class="c">for (auto&amp; x : v) v.push_back(x);</code> —— <code class="c">end()</code> 在循环开始时缓存，扩容后迭代器失效，UB。<strong>修正</strong>：先拷贝或用索引循环。</li>
 <li><strong>范围 for 遍历 <code class="c">vector&lt;bool&gt;</code> 用 <code class="c">auto&amp;</code></strong>：<code class="c">vector&lt;bool&gt;</code> 的元素不是真正的 bool，是代理对象，<code class="c">auto&amp;</code> 推导出的是代理引用而非 bool&amp;。<strong>修正</strong>：用 <code class="c">auto</code> 或 <code class="c">const auto&amp;</code>。</li>
+<li><strong>用 <code class="c">size_t</code> 做逆向循环</strong>（实测 3）：<code class="c">for (size_t i = n-1; i &gt;= 0; --i)</code> 永远成立，减到 0 后回绕成 2⁶⁴−1，越界访问。<strong>修正</strong>：<code class="c">for (size_t i = n; i-- &gt; 0; )</code> 或改用有符号下标。</li>
+<li><strong>循环条件里重复调用 <code class="c">size()</code></strong>：<code class="c">for (size_t i = 0; i &lt; s.size(); ++i)</code> 中 <code class="c">size()</code> 理论上每次都要算。实测 1 表明 <code class="c">-O2</code> 下编译器会把它提到循环外（几种写法耗时相同），所以这属于<strong>可读性问题而非性能问题</strong>——但 <code class="c">-O0</code> 调试构建下确实会变慢，别拿 debug 构建测性能。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：下面哪种写法能正确地把 <code class="c">vector&lt;int&gt;</code> 每个元素翻倍？
@@ -826,11 +1159,18 @@ std::cout &lt;&lt; vowels;  // 3
 </code></pre>
 <p><code class="c">char</code> 是 trivially copyable 类型，用值比引用更高效（引用底层是指针，反而多一次间接寻址）。</p>
 </details>
+<h2>可跑的例子</h2>
+<ul>
+<li><a href="chapter-05.html#s-5-4">examples/5.4-1-loop-traversal.cpp</a> —— 五种遍历写法耗时对比、<code class="c">auto</code> 拷贝陷阱、<code class="c">size_t</code> 回绕。</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -O2 examples/5.4-1-loop-traversal.cpp -o l &amp;&amp; ./l
+</code></pre>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §5.4：迭代语句</li>
 <li>下一节：§5.5 跳转语句</li>
 <li>C 程序员注意：C 没有 foreach，C++ 的范围 for 是迁移时第一个该用起来的特性</li>
+<li>容器遍历时修改大小的坑见 <a href="chapter-03.html#s-3-3-5">3.3.5 拷贝移动与扩容</a>；引用 vs 值的汇编证据见 <a href="chapter-06.html#s-6-1">6.1</a></li>
 </ul>
       </section>
       <section class="section" id="s-5-5">
@@ -922,11 +1262,129 @@ int x = 10;          // 带初始化，goto 跳过了它
 label: use(x);
 </code></pre>
 <p>实践中 <code class="c">goto</code> 在 C 和 C++ 都<strong>不推荐日常使用</strong>，但有一个合法用途：错误处理路径的集中清理（Linux 内核风格 <code class="c">goto cleanup</code>），因为 C 没有 RAII，C++ 有 RAII 所以更少需要 goto。</p>
+<h2>底层实现与实测</h2>
+<blockquote>
+<p>以下均为本机实测（Apple clang 23.1.0，arm64，<code class="c">-std=c++17 -O2</code>）。跳转语句在汇编层就是几条 <code class="c">b.cond</code> / <code class="c">b</code> 指令，本身几乎不花钱——真正的坑都在<strong>语义</strong>上。</p>
+</blockquote>
+<h3>实测 1：嵌套循环里 <code class="c">break</code> 只跳出最内层（附正确输出）</h3>
+<pre class="code" data-label="cpp"><code class="c">for (int i = 0; i &lt; 3; ++i)
+    for (int j = 0; j &lt; 3; ++j) {
+        if (i + j == 2) break;
+        printf(&quot;%d%d &quot;, i, j);
+    }
+</code></pre>
+<p>实测输出：<code class="c">00 01 10</code></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>i</th>
+<th>j 的取值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>j=0 打印 <code class="c">00</code>，j=1 打印 <code class="c">01</code>，j=2 命中 0+2=2 → break</td>
+<td>打印 2 个</td>
+</tr>
+<tr>
+<td>1</td>
+<td>j=0 打印 <code class="c">10</code>，j=1 命中 1+1=2 → break</td>
+<td>打印 1 个</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>j=0 就命中 2+0=2 → break</strong></td>
+<td>一个都没打印</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>修正</strong>：本笔记早期版本的自测题答案写成 <code class="c">00 01 10 11</code>（选项 C），<strong>实测输出是 <code class="c">00 01 10</code></strong>——i=2 那一轮 j=0 就触发 break，压根没机会打印 <code class="c">11</code>。四个选项当时全都不对，已按实测改正。</p>
+</blockquote>
+<h3>实测 2：<code class="c">while</code> 里的 <code class="c">continue</code> 会跳过 <code class="c">++i</code>（经典死循环）</h3>
+<pre class="code" data-label="cpp"><code class="c">int i = 0, guard = 0;
+while (i &lt; 5) {
+    if (++guard &gt; 20) break;    // 保险丝，否则真死循环
+    if (i % 2 == 0) continue;   // ← i 恒为 0，永远走这条
+    ++i;                        // ← 永远执行不到
+}
+</code></pre>
+<p>实测：<code class="c">i=0</code>，保险丝跑了 21 次。</p>
+<p><strong>为什么 <code class="c">for</code> 不会这样</strong>：<code class="c">for (init; cond; expr)</code> 的 <code class="c">continue</code> 跳到的是 <strong><code class="c">expr</code>（<code class="c">++i</code>）</strong>，不是 <code class="c">cond</code>；<code class="c">while</code> 的 <code class="c">continue</code> 直接跳回条件判断，把递增语句留在了循环体里。所以在 <code class="c">while</code> 里做递增，要么放在最前面，要么改用 <code class="c">for</code>。</p>
+<h3>实测 3：跳出多层循环，三种写法耗时完全相同</h3>
+<p>400×400 矩阵、命中在 (100,100)、20 轮（<code class="c">-O2</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">goto found;</code></td>
+<td>0.044 ms/轮</td>
+</tr>
+<tr>
+<td>标志位 <code class="c">bool hit</code> + 外层 <code class="c">&amp;&amp; !hit</code></td>
+<td>0.042 ms/轮</td>
+</tr>
+<tr>
+<td>抽成函数用 <code class="c">return</code></td>
+<td>0.042 ms/轮</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论</strong>：性能上没有区别（编译器把三者优化成同样的代码），<strong>选可读性最好的</strong>。工程上推荐「抽成函数 + return」——既避免 <code class="c">goto</code>，又让函数可以复用、可单测。<code class="c">goto</code> 留到 C 风格的资源清理里。</p>
+<h3>实测 4：C++ 禁止 <code class="c">goto</code> 跳过带初始化的声明，C 不管</h3>
+<pre class="code" data-label="cpp"><code class="c">goto label;
+int x = 10;     // C++：error: cannot jump from this goto statement to its label
+label:
+return x;
+</code></pre>
+<p>同一个文件改成 <code class="c">.c</code> 用 <code class="c">clang -std=c11</code> 编译：<strong>无错误也无警告</strong>（跳过初始化后 <code class="c">x</code> 是不确定值，属于 UB 风险）。</p>
+<p>同样的限制也出现在 <code class="c">switch</code> 里（跳到某个 case 会绕过前一个 case 的初始化）：</p>
+<pre class="code" data-label="shell"><code class="c">error: cannot jump from switch statement to this case label    ← case 1: int x = 10;  case 2: ...
+</code></pre>
+<p><strong>修正办法</strong>：给 case 加一对花括号 <code class="c">case 1: { int x = 10; ... break; }</code>，把变量作用域锁在这一支里。</p>
+<h3>实测 5：<code class="c">goto cleanup</code> vs RAII（同一个函数的两种写法）</h3>
+<pre class="code" data-label="cpp"><code class="c">// C 风格：每个失败点跳到对应标签，逆序释放
+int with_goto(int fail_at) {
+    FILE* f = fopen(...); if (!f) return -1;
+    char* buf = malloc(1024); if (!buf) { fclose(f); return -2; }
+    if (fail_at == 1) goto free_buf;
+    /* 业务逻辑 */
+    free(buf); fclose(f); return 0;
+free_buf:
+    free(buf); fclose(f); return -3;
+}
+
+// C++ 风格：所有权交给对象，失败点直接 return
+int with_raii(int) {
+    auto f = std::unique_ptr&lt;FILE, int(*)(FILE*)&gt;(fopen(...), fclose);
+    if (!f) return -1;
+    auto buf = std::unique_ptr&lt;char[]&gt;(new char[1024]);
+    /* 业务逻辑 */
+    return 0;                      // 什么都不用手写
+}
+</code></pre>
+<p>实测两者都能正确释放（valgrind 之外，最直观的证据是「新增一条失败路径时，goto 版要加一行跳转，RAII 版什么也不用改」）。<strong>维护成本才是差距所在</strong>：goto 版的清理逻辑与出错点数量成正比，RAII 版是常数。</p>
+<h2>HFT / 嵌入式视角</h2>
+<ul>
+<li><strong><code class="c">break</code> / <code class="c">continue</code> 本身的分支几乎免费</strong>：循环里的分支目标固定，CPU 分支预测器命中率极高。<strong>真正贵的是「数据依赖的分支」</strong>（分支走向由行情数据决定、无法预测），见 <a href="#s-5-3">5.3 的分支预测实测</a>。</li>
+<li><strong>别用异常当跳转</strong>：<code class="c">throw</code>/<code class="c">catch</code> 实测约 4 μs/次，比错误码慢三个数量级（详见 <a href="#s-5-6">5.6</a>），在热路径上用异常跳出深层循环是灾难。</li>
+<li><strong>嵌入式里 <code class="c">goto cleanup</code> 仍是主流</strong>：很多项目 <code class="c">-fno-exceptions -fno-rtti</code>，没有 RAII 的替代（或者团队禁用动态分配），Linux 内核风格就是最稳妥的选择；C++ 侧有了 RAII 之后，<code class="c">goto</code> 的唯一正当理由基本消失。</li>
+<li><strong><code class="c">goto</code> 的一个真实用途：生成状态机 / 解析器</strong>，以及内核里跨越多层的错误回滚——记住它只在<strong>同一函数内</strong>可用。</li>
+</ul>
 <h2>常见错误</h2>
 <ol>
 <li><strong><code class="c">break</code>/<code class="c">continue</code> 只对最内层生效</strong>：嵌套循环里 <code class="c">break</code> 只跳出内层，外层继续。想一次跳出多层要用标志位或 <code class="c">goto</code>，或把内层抽成函数用 <code class="c">return</code>。</li>
 <li><strong><code class="c">continue</code> 误用于 <code class="c">switch</code></strong>：<code class="c">continue</code> 只对循环生效，<code class="c">switch</code> 里的 <code class="c">continue</code> 会作用到外层循环，不是 <code class="c">switch</code> 本身。容易和 <code class="c">break</code>（对 switch 生效）混淆。</li>
 <li><strong>滥用 <code class="c">goto</code> 制造意大利面条代码</strong>：<code class="c">goto</code> 用于错误清理是合理的，但用它代替正常循环/分支会让控制流不可读。C++ 有 RAII、异常、lambda 后，<code class="c">goto</code> 几乎没有正当理由。</li>
+<li><strong>在 <code class="c">while</code> 里用 <code class="c">continue</code> 却把递增写在后面</strong>：<code class="c">while (i &lt; 5) { if (skip) continue; ++i; }</code> —— <code class="c">continue</code> 跳回条件判断，<code class="c">++i</code> 永远执行不到，直接死循环（实测 2）。<strong>修正</strong>：改用 <code class="c">for</code>（<code class="c">continue</code> 会先执行 <code class="c">++i</code>），或把递增移到循环体开头。</li>
+<li><strong>让 <code class="c">goto</code> 跳过带初始化的声明</strong>：C++ 直接编译错误 <code class="c">cannot jump from this goto statement to its label</code>（实测 4），<code class="c">switch</code> 的 case 之间同理。<strong>修正</strong>：给 case 加 <code class="c">{}</code>、把变量声明提到跳转之前，或改用 RAII + 提前 <code class="c">return</code>。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：下面代码输出什么？</p>
@@ -942,11 +1400,39 @@ label: use(x);
 <li>B) 00 01 10 11 20 21</li>
 <li>C) 00 01 10 11</li>
 <li>D) 00 01</li>
+<li>E) 00 01 10</li>
 </ul>
 <details>
 <summary>答案</summary>
-<p>A) 00 01 10 11 20。<code class="c">break</code> 只跳出内层 <code class="c">j</code> 循环。i=0：j=0,1 打印（j=2 时 i+j=2 break）；i=1：j=0,1 打印（j=2 break）；i=2：j=0 打印（j=1 时 i+j=3≠2... 等等，j=1 时 2+1=3≠2，继续打印？不对，重新看：i=2, j=0 → 2+0=2 → break，所以 i=2 不打印任何）。</p>
-<p>重新算：i=2,j=0 时 i+j=2，触发 break，所以 i=2 不打印。则输出：00 01 10 11。答案是 C。</p>
+<p><strong>E) <code class="c">00 01 10</code></strong>（实测输出，原题 A~D 全部错误，已按实测补上 E）。</p>
+<p>逐轮推算（<code class="c">break</code> 只跳出内层 <code class="c">j</code> 循环）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>i</th>
+<th>打印</th>
+<th>何时 break</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td><code class="c">00</code>、<code class="c">01</code></td>
+<td>j=2 时 0+2=2</td>
+</tr>
+<tr>
+<td>1</td>
+<td><code class="c">10</code></td>
+<td>j=1 时 1+1=2</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>无</strong></td>
+<td><strong>j=0 时 2+0=2，一进来就 break</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>最容易错的地方就是 i=2：以为还会打印 <code class="c">11</code> 或 <code class="c">20</code>，实际上 <code class="c">j=0</code> 就已经满足条件了。</p>
 </details>
 <p><strong>2. 判断题</strong>：C++ 中 <code class="c">goto</code> 可以跳到另一个函数里的标签。</p>
 <details>
@@ -989,11 +1475,42 @@ close_f:
 </code></pre>
 <p>C++ 中用 RAII（析构函数自动释放）或 <code class="c">unique_ptr</code>/<code class="c">lock_guard</code>，完全不需要这套 <code class="c">goto cleanup</code>——这是 C→C++ 最大的解放之一。</p>
 </details>
+<p><strong>5. 踩坑题</strong>：下面循环想统计奇数之和，实际会发生什么？</p>
+<pre class="code" data-label="cpp"><code class="c">int i = 0, sum = 0;
+while (i &lt; 10) {
+    if (i % 2 == 0) continue;
+    sum += i;
+    ++i;
+}
+</code></pre>
+<details>
+<summary>答案</summary>
+<p><strong>死循环</strong>。<code class="c">i=0</code> 是偶数 → <code class="c">continue</code> 直接跳回 <code class="c">while (i &lt; 10)</code> 的判断，<code class="c">++i</code> 永远执行不到，<code class="c">i</code> 恒为 0。</p>
+<p><strong>三种修法</strong>：
+1. 改成 <code class="c">for (int i = 0; i &lt; 10; ++i) { if (i % 2 == 0) continue; sum += i; }</code> —— <code class="c">for</code> 的 <code class="c">continue</code> 会先执行 <code class="c">++i</code>；
+2. 把 <code class="c">++i</code> 挪到循环体<strong>最前面</strong>（<code class="c">continue</code> 之前）；
+3. 干脆不用 <code class="c">continue</code>：<code class="c">if (i % 2 != 0) sum += i;</code>。</p>
+<p>实测：在 <code class="c">while</code> 里加保险丝后跑 21 次仍未退出，<code class="c">i</code> 一直是 0。</p>
+</details>
+<p><strong>6. 判断题</strong>：跳出多层循环时，<code class="c">goto</code> 比标志位快得多，所以性能敏感的代码应该用 <code class="c">goto</code>。</p>
+<details>
+<summary>答案</summary>
+<p><strong>错</strong>。实测（400×400 矩阵、命中在 (100,100)、20 轮 <code class="c">-O2</code>）：<code class="c">goto</code> 0.044 ms/轮、标志位 0.042 ms/轮、抽函数 <code class="c">return</code> 0.042 ms/轮——<strong>三者持平</strong>（<code class="c">goto</code> 甚至略慢一点，属于噪声）。编译器把三种写法优化成了同样的代码。</p>
+<p>选型应该看<strong>可维护性</strong>：优先「抽成函数 + return」（可复用、可单测），其次是标志位；<code class="c">goto</code> 留给 C 风格的资源清理。这条结论和 <a href="#s-5-4">5.4 遍历写法</a> 那组实测同源：控制流的<strong>写法</strong>几乎不影响性能，影响性能的是<strong>数据访问模式和能不能预测</strong>。</p>
+</details>
+<h2>可跑的例子</h2>
+<ul>
+<li><a href="chapter-05.html#s-5-5">examples/5.5-1-jump-statements.cpp</a> —— 嵌套 <code class="c">break</code> 的真实输出、<code class="c">while</code> + <code class="c">continue</code> 死循环、跳出多层循环的三种写法性能对比。</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -O2 examples/5.5-1-jump-statements.cpp -o jump &amp;&amp; ./jump
+</code></pre>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §5.5：跳转语句</li>
 <li>下一节：§5.6 异常处理（C 没有的重大特性）</li>
+<li>跳出多层循环的替代方案：把内层抽成函数用 <code class="c">return</code>（推荐）、<code class="c">std::optional</code> 返回结果</li>
 <li>C 程序员对比：Linux 内核的 <code class="c">goto cleanup</code> 模式 vs C++ 的 RAII</li>
+<li>异常作为「跨函数跳转」的代价：<a href="#s-5-6">5.6 try 语句块和异常处理</a>（实测约 4 μs/次）</li>
 </ul>
       </section>
       <section class="section" id="s-5-6">
@@ -1090,11 +1607,97 @@ void work() {
     do_something();                // 失败则 throw，r2、r1 自动释放
 }   // 正常退出也自动释放
 </code></pre>
+<h2>底层实现与实测</h2>
+<blockquote>
+<p>以下均为本机实测（Apple clang 23.1.0，arm64，<code class="c">-std=c++17 -O2</code>，libc++）。异常的成本要分三笔账算：<strong>写 try 的成本（≈0）/ 抛出的成本（很贵）/ 二进制与可移植性成本</strong>。</p>
+</blockquote>
+<h3>实测 1：不抛异常时，<code class="c">try/catch</code> 真的是零成本</h3>
+<p>100 万次调用，被调函数 <code class="c">noinline</code> 且从不抛出：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>实测（100 万次）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>带 <code class="c">try { s += work(i); } catch (...) {}</code></td>
+<td><strong>2844.0 μs</strong></td>
+</tr>
+<tr>
+<td>不带 try（直接 <code class="c">s += work(i);</code>）</td>
+<td><strong>2843.8 μs</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>差 0.2 μs / 100 万次 = <strong>0.0002 ns/次</strong>，在噪声里。这就是所谓 <strong>zero-cost exception handling</strong>：正常路径上不执行任何指令，编译器改用一张离线的表（landing pad + 类型信息）来记录"哪里能捕获什么"，只在真正抛出时才去查表。</p>
+<blockquote>
+<p>反面：代价转移到了<strong>二进制体积</strong>和<strong>抛出路径</strong>。表中信息常驻 <code class="c">.rodata</code>/<code class="c">.eh_frame</code>，所以"零成本"是零<strong>时间</strong>成本，不是零<strong>空间</strong>成本。</p>
+</blockquote>
+<h3>实测 2：抛一次异常 ≈ 4 μs，比错误码慢三个数量级</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路径</th>
+<th>实测（10 万次）</th>
+<th>单次</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">throw std::runtime_error("x")</code> + <code class="c">catch</code></td>
+<td>423 310 μs</td>
+<td><strong>≈ 4.23 μs</strong></td>
+</tr>
+<tr>
+<td>返回错误码 <code class="c">int&amp; ec</code></td>
+<td>93.7 μs</td>
+<td><strong>≈ 0.94 ns</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>约 4500 倍。</strong> 4 μs 够做什么？在 3 GHz 上是 12 000 个周期；一笔订单从收包到回包的预算常常只有几微秒——<strong>在热路径上抛一次异常，等于把延迟预算整个吃掉</strong>。</p>
+<p>原因：抛出要走 <code class="c">__cxa_throw</code> → 查表找 landing pad → 逐帧析构 → <code class="c">malloc</code> 异常对象（libc++ 有应急缓冲但仍要走分配路径）→ <code class="c">__cxa_begin_catch</code>。这些都是不可内联、不可预测的调用。</p>
+<h3>实测 3：栈展开按构造逆序析构（RAII 的地基）</h3>
+<pre class="code" data-label="cpp"><code class="c">void inner() { Probe a(&quot;inner-a&quot;); Probe b(&quot;inner-b&quot;); throw std::runtime_error(&quot;boom&quot;); }
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">+ 构造 inner-a
++ 构造 inner-b
+- 析构 inner-b（栈展开调用）
+- 析构 inner-a（栈展开调用）
+catch: boom
+</code></pre>
+<p>逆序析构正是 <code class="c">lock_guard</code> / <code class="c">unique_ptr</code> 能在异常下正确工作的原因。C 的 <code class="c">longjmp</code> <strong>不保证</strong>这件事（它直接跳走，不跑任何清理），所以在 C++ 里跨越对象用 <code class="c">longjmp</code> 是 UB。</p>
+<h3>实测 4：<code class="c">noexcept</code> 函数里抛出 → <code class="c">std::terminate</code>（不是"捕获不到"那么温和）</h3>
+<pre class="code" data-label="cpp"><code class="c">auto f = []() noexcept { throw std::runtime_error(&quot;in noexcept&quot;); };
+</code></pre>
+<pre class="code" data-label="shell"><code class="c">warning: 'operator()' has a non-throwing exception specification but can still throw [-Wexceptions]
+libc++abi: terminating due to uncaught exception of type std::runtime_error: in noexcept
+exit=134        ← 128 + SIGABRT(6)
+</code></pre>
+<p>编译器会在<strong>编译期</strong>警告，运行期直接 <code class="c">abort</code>。所以 <code class="c">noexcept</code> 是契约不是装饰：标了就得保证不抛（析构函数、swap、move 构造都该标）。</p>
+<h3>实测 5：<code class="c">-fno-exceptions</code> 下异常代码根本编译不过</h3>
+<pre class="code" data-label="shell"><code class="c">error: cannot use 'throw' with exceptions disabled
+error: cannot use 'try' with exceptions disabled
+</code></pre>
+<p>嵌入式/低延迟项目常用这个开关（连同 <code class="c">-fno-rtti</code>）。此时代码要整体改成错误码风格（<code class="c">std::error_code</code> / <code class="c">expected&lt;T,E&gt;</code> / 返回 <code class="c">bool</code>），STL 容器也会退化（<code class="c">vector::at</code> 不可用或行为不同）。<strong>选型要在项目初期定，后期切换成本极高。</strong></p>
+<h2>HFT / 嵌入式视角</h2>
+<ul>
+<li><strong>热路径禁异常，冷路径可以用</strong>：启动/配置加载/策略初始化用异常很舒服（错误自动冒泡、信息完整）；撮合主循环、行情解析这类纳秒预算的地方一律错误码。实测 2 的 4 μs 就是分界线。</li>
+<li><strong>异常不能跨线程、不能跨回调</strong>：抛到 C 回调（如 <code class="c">qsort</code> 比较器、libcurl 回调）外面基本是 terminate；跨 shared library 边界抛异常还要求 ABI 一致。</li>
+<li><strong><code class="c">-fno-exceptions</code> 是嵌入式常态</strong>：Flash/RAM 紧、无 RTTI、启动时间敏感。替代方案是错误码 + <code class="c">[[nodiscard]]</code>（强制调用方检查返回值，避免"漏检"这个 C 风格的最大弱点）。</li>
+<li><strong><code class="c">noexcept</code> 不只是文档</strong>：它让编译器省掉展开表、让 <code class="c">vector</code> 扩容敢用移动构造（移动构造函数标 <code class="c">noexcept</code> 才有意义，见 <a href="chapter-09.html#s-9-2">9.2 底层机制</a>）。</li>
+<li><strong>别用异常做控制流</strong>（实测 2 是硬证据）："用 throw 跳出三层循环"比 goto 慢三个数量级。</li>
+</ul>
 <h2>常见错误</h2>
 <ol>
 <li><strong><code class="c">catch</code> 按值捕获大对象 / 漏写 <code class="c">&amp;</code></strong>：<code class="c">catch (std::exception e)</code> 会拷贝切掉派生类型（slicing），丢失 <code class="c">what()</code> 的真实信息。<strong>修正</strong>：用 <code class="c">catch (const std::exception&amp; e)</code> 引用捕获。</li>
 <li><strong>异常析构时再抛异常导致 <code class="c">terminate</code></strong>：析构函数里抛异常（栈展开过程中）会直接调用 <code class="c">std::terminate</code> 终止程序。<strong>修正</strong>：析构函数必须 <code class="c">noexcept</code>，内部异常要 <code class="c">try/catch</code> 吞掉。</li>
-<li><strong>用异常做正常控制流</strong>：拿 <code class="c">throw</code> 当 <code class="c">goto</code> 用，性能差且语义混乱。异常只用于"真正的错误"，正常分支用返回值/<code class="c">optional</code>。</li>
+<li><strong>用异常做正常控制流</strong>：拿 <code class="c">throw</code> 当 <code class="c">goto</code> 用，性能差且语义混乱。异常只用于"真正的错误"，正常分支用返回值/<code class="c">optional</code>。实测代价约 <strong>4 μs/次</strong>（比错误码慢约 4500 倍），在热路径上是灾难。</li>
+<li><strong>标了 <code class="c">noexcept</code> 却可能抛</strong>：编译期只有警告（<code class="c">-Wexceptions</code>），运行期直接 <code class="c">std::terminate</code>（实测 <code class="c">exit=134</code>）。<code class="c">noexcept</code> 是契约——要么保证不抛，要么别标；析构函数、移动构造、<code class="c">swap</code> 都应标 <code class="c">noexcept</code> 并真的不抛。</li>
+<li><strong>以为 <code class="c">try/catch</code> 本身很贵</strong>：实测 100 万次调用，带 try 2844.0 μs vs 不带 2843.8 μs——<strong>零成本</strong>。贵的是"抛出"（4 μs）和二进制体积，不是"写 try"。所以别因为怕开销而放弃异常，该判断的是<strong>抛出频率</strong>。</li>
 </ol>
 <h2>自测题</h2>
 <p><strong>1. 选择题</strong>：下面 <code class="c">catch</code> 块能捕获 <code class="c">throw std::out_of_range("x")</code> 吗？</p>
@@ -1109,7 +1712,17 @@ catch (const std::runtime_error&amp; e) { ... }
 </ul>
 <details>
 <summary>答案</summary>
-<p>A) 能。<code class="c">out_of_range</code> 继承自 <code class="c">runtime_error</code>，基类引用可以捕获派生类异常，且用 <code class="c">const&amp;</code> 不会 slicing，<code class="c">e.what()</code> 仍返回派生类的信息。C++ 异常匹配支持"基类 catch 捕获派生类异常"。</p>
+<p><strong>B) 不能，类型不匹配</strong>（本笔记早期版本误答成 A，已按实测改正）。</p>
+<p><code class="c">std::out_of_range</code> 继承自 <strong><code class="c">std::logic_error</code></strong>，不是 <code class="c">runtime_error</code>（见上面的异常层次图）。实测：</p>
+<pre class="code" data-label="code"><code class="c">typeid(out_of_range).name() = St12out_of_range
+能否 dynamic_cast 到 logic_error   : 是
+能否 dynamic_cast 到 runtime_error : 否
+</code></pre>
+<p>而且后果比"没捕获"更严重——没有任何 catch 匹配时会 <code class="c">std::terminate</code>：</p>
+<pre class="code" data-label="shell"><code class="c">libc++abi: terminating due to uncaught exception of type std::out_of_range: x
+exit=134
+</code></pre>
+<p><strong>正确写法</strong>：<code class="c">catch (const std::logic_error&amp;)</code> 或直接 <code class="c">catch (const std::exception&amp;)</code>（兜底捕获所有标准异常）。基类引用捕获派生类异常这条规则本身没错（用 <code class="c">const&amp;</code> 也不 slicing），但<strong>基类必须真的是基类</strong>。</p>
 </details>
 <p><strong>2. 判断题</strong>：C++ 中可以用 <code class="c">setjmp/longjmp</code> 替代异常，效果一样。</p>
 <details>
@@ -1149,11 +1762,50 @@ void f() {
 </code></pre>
 <p>C 风格要返回错误码，但函数又想返回元素——只能用输出参数 <code class="c">int* out</code> + 返回 int 错误码，调用啰嗦且容易漏检。异常版本调用者写正常路径，错误统一在 <code class="c">catch</code> 处理，代码更清晰。HFT 热路径禁异常时，退回 <code class="c">v[i]</code>（不检查）或自定义 <code class="c">expected&lt;T,E&gt;</code> 类型。</p>
 </details>
+<p><strong>5. 判断题</strong>：下面两句对不对？</p>
+<blockquote>
+<p>(a) <code class="c">try/catch</code> 块本身有可观的运行时开销，所以热路径不能写 try。
+(b) 标了 <code class="c">noexcept</code> 的函数如果抛异常，异常会继续往外冒泡，跟没标一样。</p>
+</blockquote>
+<details>
+<summary>答案</summary>
+<p><strong>两句都错。</strong></p>
+<p>(a) 实测：100 万次调用，带 <code class="c">try/catch</code> 2844.0 μs vs 不带 2843.8 μs，<strong>差 0.0002 ns/次</strong>（零成本异常处理）。贵的是"抛出"——约 4.23 μs/次，比错误码的 0.94 ns 慢约 4500 倍。所以判断标准是<strong>抛出频率</strong>，不是有没有写 try。</p>
+<p>(b) 标了 <code class="c">noexcept</code> 后抛出会直接 <code class="c">std::terminate</code>，进程 abort：</p>
+<pre class="code" data-label="shell"><code class="c">libc++abi: terminating due to uncaught exception of type std::runtime_error: in noexcept
+exit=134
+</code></pre>
+<p>而且编译期会先给警告：<code class="c">'operator()' has a non-throwing exception specification but can still throw [-Wexceptions]</code>。</p>
+</details>
+<p><strong>6. 应用题</strong>：你的行情解析函数每秒要处理 50 万条消息，其中约 0.1% 是坏包（字段缺失）。用异常还是错误码？给出理由和大致数字。</p>
+<details>
+<summary>答案</summary>
+<p><strong>用错误码（或 <code class="c">expected&lt;T,E&gt;</code>）</strong>，不要用异常。</p>
+<p>算一笔账：50 万条/秒 × 0.1% = <strong>500 次坏包/秒</strong>。
+- 异常方案：500 × 4.23 μs ≈ <strong>2.1 ms/秒</strong> 花在栈展开上；更要命的是<strong>抖动</strong>——一旦坏包连续到达，单次解析延迟从几百纳秒跳到 4 μs，P99/P999 延迟直接爆掉，这在撮合系统里比吞吐损失更致命。
+- 错误码方案：500 × 0.94 ns ≈ 0.5 μs/秒，且<strong>延迟恒定</strong>，不会因为坏包而抖动。</p>
+<p><strong>实践建议</strong>：
+1. 热路径（解析、撮合、风控判定）：错误码 + <code class="c">[[nodiscard]]</code>，强制调用方检查；
+2. 冷路径（启动配置、策略加载、文件 IO）：用异常，代码清晰、错误信息完整；
+3. 边界处做转换：冷路径的异常在模块边界 catch 掉，转成热路径的错误码；
+4. 如果整个项目定了 <code class="c">-fno-exceptions</code>，就统一用错误码/<code class="c">expected</code>，别混用。</p>
+<p>一句话：<strong>异常的成本不在频率，在"一旦发生就是 4 μs 的延迟尖刺"</strong>——对延迟敏感的系统，尖刺比平均值可怕得多。</p>
+</details>
+<h2>可跑的例子</h2>
+<ul>
+<li><a href="chapter-05.html#s-5-6">examples/5.6-1-exception-cost.cpp</a> —— 栈展开时的析构顺序、正常路径零成本对比、异常 vs 错误码性能、<code class="c">noexcept</code> 抛异常终止。</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c">clang++ -std=c++17 -O2 examples/5.6-1-exception-cost.cpp -o exc &amp;&amp; ./exc
+./exc x                                    # noexcept 抛异常 → terminate（exit=134）
+clang++ -std=c++17 -O2 -fno-exceptions examples/5.6-1-exception-cost.cpp   # try/throw 直接编译错误
+</code></pre>
 <h2>延伸</h2>
 <ul>
 <li>C++ Primer §5.6：异常处理</li>
 <li>C 程序员必读：RAII + 异常是 C++ 资源管理的基石，对比 C 的 <code class="c">goto cleanup</code></li>
+<li>错误码风格的现代写法：<code class="c">std::optional</code> / <code class="c">std::expected</code>（C++23）/ <code class="c">std::error_code</code></li>
 <li>HFT 视角：热路径通常 <code class="c">-fno-exceptions</code>，用错误码/<code class="c">expected</code>；冷路径可用异常</li>
+<li><code class="c">noexcept</code> 与容器性能：<a href="chapter-09.html#s-9-2">9.2 底层机制</a>（移动构造是否 <code class="c">noexcept</code> 决定 vector 扩容走移动还是拷贝）</li>
 <li>下一章：§6 函数基础</li>
 </ul>
       </section>
