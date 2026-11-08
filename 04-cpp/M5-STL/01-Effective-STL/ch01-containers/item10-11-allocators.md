@@ -1,6 +1,6 @@
 # Item 10-11：了解分配器的限制与自定义用法
 
-> 第 1 章 容器 · Item 10-11 · 上一节：[Item 9 删除元素的正确方式](item09-correct-element-removal.md)
+> 第 1 章 容器 · Item 10-11 · 上一节：[Item 9 删除元素的正确方式](item09-correct-element-removal.md) · 下一节：[Item 11a 线程安全的现实预期](item11a-thread-safety.md)
 
 ## 为什么要学这个（先建立直觉）
 

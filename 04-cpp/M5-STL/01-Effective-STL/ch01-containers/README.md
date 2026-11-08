@@ -1,6 +1,6 @@
 # 第 1 章 容器
 
-**Containers** — Items 1–11
+**Containers** — Items 1–11 · 补遗 11a（原书 Item 12 线程安全）
 
 ## 本章讲什么
 
@@ -65,6 +65,10 @@ for (auto it = src.begin(); it != src.end(); ++it) v.push_back(*it);  // 多次�
 ### Item 10–11：分配器
 
 分配器（allocator）自定义容器内存来源。默认 `std::allocator` 走 `operator new`。HFT 用自定义分配器接 mempool / hugepage，但分配器是"相等性"敏感的——C++11 起要求无状态分配器（stateless），跨容器共享内存才安全。
+
+### Item 11a（原书 12）：线程安全的现实预期
+
+STL 容器只保证两条：并发读同一容器安全；并发写**不同**容器安全。同读同写、同写同写同一容器 = 数据竞争 UB，标准库一概不管。「读」仅指 const 操作。修改与复合操作（empty+back 这类）必须整体加锁，读写都热时用 COW + `shared_ptr` 原子换指针。HFT 第一反应是消灭共享（SPSC/每线程一份），上锁是方案 B。详见 [item11a-thread-safety.md](item11a-thread-safety.md)。
 
 ---
 

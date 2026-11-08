@@ -1,6 +1,6 @@
 # 第 2 章 vector 和 string
 
-**vector and string** — Items 12–17
+**vector and string** — Items 12–17 · 补遗 17a（原书 Item 18 vector<bool>）
 
 ## 本章讲什么
 
@@ -49,6 +49,10 @@ legacy_read(buf.data(), buf.size());   // 可写缓冲
 ### Item 17：交错使用 `vector` 和 `string` 数据
 
 `vector<char>` 和 `string` 都是一段连续字符，可互相借用：`string(v.begin(), v.end())` 构造、`std::string_view`（C++17）零拷贝指向二者。但 `string` 有 `\0` 终止语义，`vector<char>` 没有——二进制数据用 `vector<char>` 或 `string_view`，别用 `string`（见《C 和指针》ch9 的 strlen 陷阱）。
+
+### Item 17a（原书 18）：避免 `vector<bool>`
+
+`vector<bool>` 是位压缩特化，不是真容器：元素是 1 bit 不可寻址，`operator[]` 返回代理对象而非 `bool&`——`&v[0]` 编译失败、`auto x = v[0]` 推导出代理（隐式引用，容器死后悬垂）。替代：通用用 `deque<bool>`，性能用 `vector<uint8_t>`，定长位集用 `bitset<N>`。位压缩还会让相邻标志共享一个字，多线程写入从 false sharing 升级为真数据竞争。详见 [item17a-vector-bool.md](item17a-vector-bool.md)。
 
 ---
 

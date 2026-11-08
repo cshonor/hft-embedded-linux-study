@@ -1,6 +1,6 @@
 # Item 17：交错使用 vector 和 string 数据
 
-> 第 2 章 vector 和 string · Item 17 · 上一节：[Item 16 传给 C API](item16-pass-to-c-api.md)
+> 第 2 章 vector 和 string · Item 17 · 上一节：[Item 16 传给 C API](item16-pass-to-c-api.md) · 下一节：[Item 17a 避免 vector<bool>](item17a-vector-bool.md)
 
 ## 为什么要学这个（先建立直觉）
 
