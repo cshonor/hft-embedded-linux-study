@@ -32,10 +32,14 @@ t.join();              // 等待完成
 ```cpp
 class joining_thread {
     std::thread t;
-public: ~joining_thread() { if(t.joinable()) t.join(); }
+public:
+    explicit joining_thread(std::thread th) : t(std::move(th)) {}
+    joining_thread(joining_thread&&) = default;   // 有析构就必须显式要回移动，否则塞不进容器
+    ~joining_thread() { if (t.joinable()) t.join(); }
 };
 ```
-保证所有路径（含异常）都安全收尾。
+保证所有路径（含异常）都安全收尾。两个必写点：**析构里先判 `joinable()`**（空线程裸 `join` 会 terminate），
+**移动要显式 `= default`**（详见 [2.4](04-raii-guard.md) 的错误 4/5 与实测记录）。
 
 ### 硬件并发数
 
