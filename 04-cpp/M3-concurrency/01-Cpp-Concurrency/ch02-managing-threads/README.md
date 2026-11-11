@@ -43,7 +43,8 @@ public:
 
 ### 硬件并发数
 
-`std::thread::hardware_concurrency()` 返回硬件线程数——决定线程池大小的参考。
+`std::thread::hardware_concurrency()` 返回硬件线程数——决定线程池大小的参考，但只是**hint**：
+可能返回 0、看不见容器配额/CPU 亲和性、异构核（P 核 + E 核）一起数（M1 实测详见 [2.5](05-hardware-concurrency.md)）。
 
 ## HFT 关联
 
